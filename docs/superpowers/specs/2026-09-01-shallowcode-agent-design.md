@@ -1,10 +1,12 @@
-# ShallowCode V1 Agent 设计
+# ShallowCode 目标架构
 
-- 状态：已批准设计，尚未进入实现
+- 状态：目标架构参考；首个实现由 [ShallowCode V1-Lite 收敛规格](./2026-09-02-shallowcode-v1-lite-design.md) 约束
 - 日期：2026-09-01
 - 目标平台：GOSIM Factory 2026 / ARC-Bench
 - 核心假设：运行中的 Agent 得不到官方测试、官方失败日志或隐藏评分反馈
 - 主 Builder：OpenCode，通过 `@opencode-ai/sdk` 驱动
+
+> 本文保留完整演进方向。2026-09-02 决定先搭建并跑通低复杂度 V1-Lite pipeline；如本文与 V1-Lite 规格冲突，首个实现以 V1-Lite 为准。
 
 ## 1. 决策摘要
 
