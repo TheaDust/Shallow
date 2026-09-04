@@ -27,7 +27,7 @@ V1-Lite 不是另一套 coding agent，而是 OpenCode 外的一层轻量比赛�
 | 从需求生成独立的黑盒探针 | ShallowCode 的 LLM Probe Planner | Builder 自测容易复述自己的实现假设 |
 | 用真实浏览器确定性执行探针 | ShallowCode 的 Playwright Probe Runner | 需要统一、可审计的跨 WorkPacket 判定 |
 | 接受候选状态或回到最后接受状态 | ShallowCode 的 Decision Loop | 需要记住整场 accepted SHA 和失败历史 |
-| 预留尾部预算并完成最终交付验证 | ShallowCode | 局部 session 不知道全局时间、token 和交付风险 |
+| 预算耗尽或需求完成后进行最终交付验证 | ShallowCode | 局部 session 不知道全局时间、token 和交付风险 |
 
 ShallowCode 不提供生产级 Capability Kernel，不规定目标应用必须使用哪种框架，也不实现第二套源码编辑工具。
 
@@ -62,7 +62,7 @@ flowchart LR
 4. `LlmProbePlanner` 只根据需求证据生成声明式 `ProbePlan`。
 5. `PlaywrightProbeRunner` 启动目标应用，用真实浏览器执行计划并生成 `ShadowReport`。
 6. `DecisionLoop` 接受、要求修复，或在达到上限后恢复最后接受状态并阻塞该 packet。
-7. 进入预留交付预算后停止开发，`FinalVerifier` 独立验证最终构建、启动和就绪状态。
+7. 没有可调度的 ready 需求或总预算耗尽后停止开发，`FinalVerifier` 独立验证最终构建、启动和就绪状态。
 
 ## 3. 模块规格
 
@@ -280,7 +280,7 @@ V1-Lite 不实现 `CheckpointManager` 类、分支 frontier 或多检查点策�
 
 ### 3.7 FinalVerifier
 
-进入总 wall-clock 预算最后 20% 时，调度器停止领取新 packet。该阈值一旦触发不可退出。
+调度器持续领取新 packet，直到没有可调度的 ready 需求或总 wall-clock 预算耗尽；随后进入交付阶段，一旦进入不可退出。
 
 FinalVerifier 独立于 OpenCode session，执行平台合同中明确的：
 
