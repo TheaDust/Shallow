@@ -1,0 +1,9 @@
+比赛官网：https://create.gosim.org/factory26/
+
+竞赛平台：http://arc-bench.com/
+
+如何评测项目：告诉agent：“读取 https://arc-bench-tutorial.vercel.app/skill.md 并照做,把我的 agent 提交到 ARC-Bench 评测”
+
+官方参考实现仓库：octos-org/arc-adapter
+
+初赛题：https://github.com/code-philia/arc-bench-website/tree/main/data/competition/hackathon
