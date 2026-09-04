@@ -1,0 +1,1297 @@
+id: ROOT
+name: GitHub 协作平台核心需求
+type: FOLDER
+dependencies: []
+description: >-
+  本产品是一个简化的 GitHub 协作平台。首页是未登录访客的起点，显示公开组织和公开仓库入口；登录后的工作区在账户菜单中显示当前账户、该账户所属组织和可访问仓库。
+  “账户”是可登录的个人身份，前端以登录名、头像或账户菜单表示；系统长期保存账户标识、登录名、已验证邮箱、密码凭据状态和会话归属。“组织”是多个账户共同管理资源的命名空间，不是账户或仓库本身；前端以组织概览页呈现，页面标题显示组织名，并有 Repositories、People、Teams 三个标签；系统保存组织标识、显示名、创建人和“组织—账户—Member/Owner”成员关系。“团队”是组织内的账户分组，前端在 Teams 页和团队树中显示，系统保存团队标识、所属组织、名称、可选父团队及“团队—账户”成员关系。
+  “仓库”是一个归属个人账户或组织的代码与协作容器；仓库概览页标题为“所有者/仓库名”，并包含 Code、Issues、Pull requests、Settings 导航。归属组织的仓库称为“组织仓库”，其所有者是组织而非某个个人账户；系统保存仓库标识、所有者类型和标识、名称、可见性、默认分支、描述和创建人。公开仓库可被访客读取；私有仓库只能由规则授权的账户读取。组织、仓库、分支、提交、文件、议题、评论、拉取请求、评审与访问授权均归属明确的上级对象，页面标题或主要区域必须显示当前对象名称。
+  “分支”是仓库中指向某一提交的命名代码线；Code 页的分支选择器决定当前浏览的分支。“提交”是一次不可修改的文件快照变更记录，保存父提交、作者、消息、时间和变更文件。“议题（Issue）”是仓库内带唯一编号的工作或缺陷记录；其详情页显示标题、描述、Open/Closed 状态、评论、负责人、标签、里程碑和活动时间线。“里程碑（Milestone）”是当前仓库已有的目标分类项，前端作为议题或 PR 右侧的可选元数据；系统保存工作项与里程碑的关联，不创建跨仓库关联。“拉取请求（PR）”是将 compare 分支的变更合入 base 分支的提案，详情页显示 Conversation、Commits、Files changed、Checks、评审和状态。
+  所有写操作必须在服务端以持久化对象、关系或状态记录保存；刷新、重新登录或由另一账户打开相关页面后读取同一最终状态；失败时不得创建部分对象或修改部分状态。组织 Owner 对本组织及其仓库拥有 Admin 权限；仓库 Admin 拥有仓库管理权限；Read 仅可查看，Triage 可查看并管理议题/PR 元数据，Write 额外可创建分支、提交文件、创建议题/PR、评论和评审，Maintain 额外可管理标签、里程碑、负责人和请求评审，Admin 额外可管理仓库可见性、访问授权与分支保护。每个写操作先按此规则检查当前会话和目标对象权限，成功后在相关详情页和列表中可见。实时协作、Actions、Packages、Wiki、项目看板、通知投递和外部 Git 远程协议不属于本产品范围。
+children:
+- id: REQ-1
+  name: 身份与访问
+  type: FOLDER
+  dependencies: []
+  description: 本模块定义访问系统所需的“账户”和“会话”。账户是保存登录名、已验证邮箱与凭据状态的持久化个人身份；会话是账户成功登录后创建的、仅代表当前浏览器登录状态的记录。访客从首页的“Sign up”“Sign in”或“Forgot password”进入账户访问页；已登录用户从账户菜单进入安全设置或退出。账户菜单是页面右上角用于显示当前登录账户、组织列表和退出入口的控件。任何页面、错误提示或恢复流程都不得展示完整密码。登录成功后，账户菜单显示当前用户，后续组织、仓库、议题和拉取请求页面以此会话确定可见性和操作权限；退出、密码变更和恢复必须立即改变后续可见会话状态。
+  children:
+  - id: REQ-1-1
+    name: 账户注册与恢复
+    type: FOLDER
+    dependencies: []
+    description: 账户访问页是未登录用户注册、登录和恢复密码的共用页面，前端按操作展示表单和提交按钮。本地产品不实现邮箱验证页面、邮件投递或外部验证码服务：注册成功即保存可登录账户并标记邮箱为已验证；登录成功只保存新会话，不创建重复账户；密码恢复在提交邮箱后直接显示固定验证码 `123456` 和重设密码表单，只有正确验证码与合规新密码才更新同一账户的密码。注册、登录和恢复页面必须以可见标签标识字段和提交操作；失败后保留非敏感输入，密码和确认密码字段不得回显已提交值。
+    children:
+    - id: REQ-1-1-1
+      name: 注册新的 GitHub 账户
+      type: ATOMIC
+      dependencies: []
+      description: >-
+        注册页是账户访问页中由“Create an account”打开的表单；“账户”是之后可登录、拥有组织和仓库权限的个人记录。表单中的用户名和邮箱共同用于定位账户，密码只用于认证且不得在页面回显。本产品将注册成功的邮箱直接标记为已验证，不提供邮件验证后续页面。访客依次输入唯一用户名、邮箱、密码和确认密码，勾选同意条款后点击“Create account”。用户名必须为 1 至 39 个小写 ASCII 字母、数字或单连字符（`-`），且不得以连字符开始或结束；邮箱去除首尾空白后必须包含单个 `@`、长度不超过 254 个字符，且 `@` 后包含至少一个点号与非空域名标签；密码必须为 12 至 128 个字符，同时至少包含一个大写字母、一个小写字母、一个数字和一个非字母数字特殊字符，且不得包含空白字符。系统保存可登录账户及已验证邮箱状态并进入登录页；用户名或邮箱冲突、任一字段缺失、邮箱格式错误、未同意条款、密码不合规或确认密码不一致时保留用户名和邮箱输入，在对应字段旁逐项提示，并且不创建账户。
+        访客可在账户访问页面使用此能力。系统验证输入规则，显示字段错误并防止重复账户；成功时直接创建可用账户。
+
+
+        截图参考：
+
+        ![image](reference/github-sign-up.png)
+      scenarios:
+      - name: 注册新的 GitHub 账户
+        steps:
+        - keyword: GIVEN
+          content: 访客从首页点击“Sign in”进入账户访问页，再点击“Create an account”。注册页显示带可见标签的 Username、Email、Password、Confirm password、同意条款复选框和“Create account”按钮；当前用户名和邮箱均未被占用。
+        - keyword: WHEN
+          content: 访客输入 1–39 位合规用户名、合规邮箱、12–128 位合规密码和完全相同的确认密码，勾选同意条款后点击“Create account”。
+        - keyword: THEN
+          content: 系统显示注册成功并跳转登录页，不展示密码；该账户的邮箱已可用于登录和密码恢复。用户名、邮箱、任一必填字段、条款或密码规则不满足时停留在注册页，在对应字段旁显示原因，保留用户名和邮箱输入，不创建账户。
+        - keyword: THEN
+          content: 访客使用新账户立即登录后可进入工作区；失败提交后重新打开注册页时不存在该失败输入对应的新账户。
+    - id: REQ-1-1-2
+      name: 使用现有账户登录
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >-
+        此功能建立在 REQ-1-1-1（注册新的 GitHub 账户） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        登录页是账户访问页中含“Username or email”“Password”“Sign in”的表单。“会话”是账户认证成功后保存的当前浏览器登录记录，前端通过右上角账户菜单和可访问的受保护页面体现。访客输入登录名或邮箱及密码并提交。系统查找账户、校验凭据和账户可用状态；认证失败（未知登录名/邮箱、错误密码或不可用账户）时显示完全相同的通用失败提示，不泄露账户是否存在或哪一项凭据错误，也不创建会话。认证成功后保存带唯一会话标识、账户标识和有效状态的会话，跳转到该用户可访问的工作区；刷新或重新打开工作区时会话仍有效，后续受保护的组织、仓库和工作项请求必须使用此会话确定当前用户。
+
+
+        截图参考：
+
+        ![image](reference/github-sign-in.png)
+      scenarios:
+      - name: 使用现有账户登录
+        steps:
+        - keyword: GIVEN
+          content: 访客从首页进入账户访问页；存在一个已验证、可用的账户，且访客持有该账户的登录名或已验证邮箱与当前密码。
+        - keyword: WHEN
+          content: 访客在“Username or email”输入框输入登录名或已验证邮箱，在“Password”输入框输入正确密码，并点击“Sign in”。
+        - keyword: THEN
+          content: 系统进入该用户的工作区，账户菜单显示登录名，并允许访问该用户有权查看的组织、仓库和工作项。未知账户、错误密码或不可用账户均显示完全相同的通用失败提示，停留在登录页且不显示账户菜单。
+        - keyword: THEN
+          content: 成功登录后刷新工作区或直接重新打开此前可访问的受保护 URL，仍显示登录用户；失败登录后刷新或打开受保护 URL，仍要求登录。
+    - id: REQ-1-1-3
+      name: 通过已验证邮箱恢复账户访问
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >-
+        密码恢复页由登录页的“Forgot password”打开；本地系统不发送邮件、不生成可复制的重置链接，也不调用外部验证码服务。访客在 Email 输入框填写地址并点击“Send reset link”后，页面直接切换到同一恢复流程的下一步，显示仅供本地演示使用的固定验证码文本“123456”，并显示带可见标签的 Verification code、New password、Confirm password 输入框和“Reset password”按钮；页面不得要求访问邮箱。为避免通过页面泄露账户是否存在，已注册邮箱和未知邮箱都进入该相同下一步并显示相同固定验证码。只有已注册邮箱关联的恢复上下文，且 Verification code 逐字符等于“123456”、新密码符合 REQ-1-1-1 的密码规则并与 Confirm password 一致时，系统才原子更新该账户凭据。验证码错误、未知邮箱、密码不合规或确认不一致时，页面在对应字段旁说明原因，不修改任何账户；提交成功后直接显示密码已更新结果，不产生邮件或链接。该本地验证码不设邮件投递、有效期或一次性链接语义。密码字段不得回显。
+
+
+        截图参考：
+
+        ![image](reference/github-password-reset.png)
+        ![image](reference/github-password-reset-1.png)
+      scenarios:
+      - name: 通过已验证邮箱恢复账户访问
+        steps:
+        - keyword: GIVEN
+          content: 访客从账户访问页打开“Forgot password”；存在一个已注册账户及其邮箱，另有一个不对应任何账户的邮箱用于比较结果。
+        - keyword: WHEN
+          content: 访客分别提交已注册邮箱和未知邮箱；在两次直接打开的下一步中输入固定验证码“123456”、符合 REQ-1-1-1 规则的新密码和相同确认密码，并提交。
+        - keyword: THEN
+          content: 两次请求都直接显示固定验证码“123456”和重设密码表单，不说明邮箱是否存在，也不要求访问邮件或链接。仅已注册邮箱的正确验证码提交更新该账户密码并显示成功结果；未知邮箱、错误验证码、密码不合规或确认不一致时显示原因且不修改任何账户。
+        - keyword: THEN
+          content: 成功后，旧密码登录失败而新密码登录成功；失败后，旧密码仍可登录，候选新密码不可登录。刷新重设页面不得生成邮件、链接或第二个账户。
+  - id: REQ-1-2
+    name: 退出登录并结束当前 Web 会话
+    type: ATOMIC
+    dependencies:
+    - REQ-1-1-2
+    description: >-
+      此功能建立在 REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      账户菜单中的“Sign out”用于结束当前浏览器会话，不删除账户、组织成员关系或仓库数据。已登录用户点击该入口后，确认对话框解释退出只影响当前会话；只有点击确认才使会话失效，取消或关闭对话框必须保留当前会话。确认退出后，刷新、浏览器后退或直接重新打开此前可访问的受保护账户、仓库或组织 URL 都必须恢复为未认证访问状态并要求重新认证。
+
+
+      截图参考：
+
+      ![image](reference/github-account-menu-sign-out.png)
+    scenarios:
+      - name: 退出登录并结束当前 Web 会话
+        steps:
+        - keyword: GIVEN
+          content: 已登录用户已从账户菜单进入一个其有权访问的组织、仓库或账户设置页面，并记录该受保护页面 URL。
+        - keyword: WHEN
+          content: 用户打开账户菜单点击“Sign out”；如出现确认对话框则点击确认，而不是取消或关闭。
+        - keyword: THEN
+          content: 系统返回未认证访问状态，显示“Sign in”入口且不再显示该用户账户菜单；若用户取消确认对话框，会话保持有效且仍可访问原页面。
+        - keyword: THEN
+          content: 用户刷新、浏览器后退或直接打开记录的受保护 URL 时，系统要求重新认证，不能恢复已退出会话。
+  - id: REQ-1-3
+    name: 修改账户密码
+    type: ATOMIC
+    dependencies:
+    - REQ-1-1-2
+    description: >-
+      此功能建立在 REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      “Password and authentication”是账户 Settings 中用于修改当前账户凭据的安全页；修改只影响当前账户的密码记录，不改变会话之外的其他账户或资源。用户必须提供当前密码、符合 REQ-1 密码规则的新密码和逐字符一致的确认密码；三项均为必填。系统验证该变更、防止未经授权的更新，并将新密码应用于后续登录尝试。当前密码错误、新密码不合规、确认不一致或任一字段缺失时，系统在对应字段显示原因，不修改凭据；旧密码继续有效，新密码不得用于登录。成功更新后，新密码立即用于后续基于密码的登录，旧密码不得再用于新登录。
+
+
+      截图参考：
+
+      ![image](reference/github-password-settings.png)
+    scenarios:
+      - name: 修改账户密码
+        steps:
+        - keyword: GIVEN
+          content: 已登录用户从账户菜单进入 Settings，再进入 Password and authentication；用户知道当前密码，并准备一个符合 REQ-1-1-1 规则、与当前密码不同的新密码。
+        - keyword: WHEN
+          content: 用户在 Current password、New password 和 Confirm password 字段输入当前密码、新密码及完全相同确认密码，点击“Update password”。
+        - keyword: THEN
+          content: 系统显示密码已更新的成功结果。当前密码错误、新密码不合规、确认不一致或任一字段缺失时，系统在对应字段旁显示原因且不修改密码。
+        - keyword: THEN
+          content: 用户退出后使用新密码可登录、使用旧密码不能登录；任一失败提交后，旧密码仍可登录而候选新密码不能登录。
+- id: REQ-2
+  name: 组织与治理
+  type: FOLDER
+  dependencies:
+  - REQ-1-1-2
+  description: 已登录用户从账户菜单的“Your organizations”进入组织列表并创建或打开组织；访客只能通过公开组织页查看公开仓库。组织概览提供 Repositories、People 和 Teams 入口。组织 Owner 在 People 直接添加或移除成员，在 Teams 创建团队和维护层级，在仓库 Settings 的 Manage access 授予成员或团队角色。组织成员资格只决定用户能看到组织及成为团队/仓库授权候选人的资格，不自动授予任何私有仓库访问；私有仓库访问仅来自组织 Owner 身份、对该仓库的直接角色授权，或该仓库已授权团队中的直接成员身份。所有变更必须同时反映在组织详情、人员/团队列表和受影响仓库的实际访问结果中。
+  children:
+  - id: REQ-2-1
+    name: 组织身份与发现
+    type: FOLDER
+    dependencies:
+    - REQ-1-1-2
+    description: 组织概览页是以组织名为标题的页面，Repositories 标签列出该组织拥有的仓库，People 标签列出成员及其 Member/Owner 角色，Teams 标签列出团队。该模块支持访客发现组织的公开仓库，以及已登录账户通过“Your organizations”页面创建组织。组织唯一名称采用 REQ-1 用户名的 1–39 位小写 ASCII 格式并全局唯一；显示名为 1–100 个去除首尾空白后非空的字符。创建成功后系统保存组织对象及创建账户的 Owner 成员关系，用户进入新组织概览页；后续团队、成员和组织仓库授权都以此组织标识为范围。此功能建立在 REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-2-1-1
+      name: 浏览组织仓库
+      type: ATOMIC
+      dependencies: []
+      description: >-
+        用户从组织页点击“Repositories”标签，可在筛选框输入仓库名、选择公开/私有筛选，并点击列表中的仓库名称打开概览。 系统仅显示当前用户可见的仓库名称、描述、可见性和更新时间；点击结果后进入该仓库概览。
+        访客可在公开组织概览页查看公开仓库；已登录账户只能在组织概览页的 Repositories 标签看到自己有读取权的仓库。列表读取仓库名称、描述、可见性和更新时间，不提供写操作；私有仓库必须先通过既定义的仓库访问规则验证。
+
+
+        截图参考：
+
+        ![image](reference/github-organization-repositories.png)
+      scenarios:
+      - name: 浏览组织仓库
+        steps:
+        - keyword: GIVEN
+          content: 访客已打开公开组织的概览页，或已登录组织成员已打开其组织概览页；组织同时存在一个公开仓库和一个该访客无权查看的私有仓库。
+        - keyword: WHEN
+          content: 用户点击“Repositories”标签，在筛选框输入公开仓库的完整名称，选择“Public”筛选，并点击该仓库名称。
+        - keyword: THEN
+          content: 列表只显示当前用户可见仓库的名称、描述、可见性和更新时间；访客不能看到私有仓库名称，点击公开仓库后进入标题为“组织名/仓库名”的仓库概览页。
+        - keyword: THEN
+          content: 返回组织页或刷新页面后，筛选结果仍不泄露无权仓库；访客直接访问该私有仓库地址时，系统要求登录或显示无访问权限。
+    - id: REQ-2-1-2
+      name: 身份验证后创建组织
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-2
+      description: 已登录用户从组织创建页输入组织唯一名称和显示信息并确认。组织名称必须符合 REQ-1 用户名的 1–39 位小写 ASCII 格式并全局唯一；显示名必须为 1–100 个去除首尾空白后非空的字符。系统验证这些规则，创建组织标识、显示名和创建时间，并将当前用户作为初始所有者与成员保存；名称或显示名不合规、名称冲突或写入失败时保留非敏感输入、在对应字段显示原因且不创建组织。成功后跳转到新组织概览页，组织出现在当前用户可访问的组织列表中，后续团队、成员和仓库授权均以该组织标识为范围。 此功能建立在 REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 身份验证后创建组织
+        steps:
+        - keyword: GIVEN
+          content: 已登录用户从账户菜单进入“Your organizations”页面，点击“New organization”；候选组织标识在系统中不存在，创建表单展示组织标识和显示名称输入框。
+        - keyword: WHEN
+          content: 用户输入符合 REQ-1 用户名格式且全局唯一的组织标识，以及去除首尾空白后长度为 1 至 100 的显示名称，点击“Create organization”。
+        - keyword: THEN
+          content: 系统进入新组织概览页，页面标题显示该组织标识，当前用户显示为 Owner 和组织成员；“Your organizations”列表出现该组织。
+        - keyword: THEN
+          content: 刷新概览页和重新打开组织列表后该组织仍存在；组织标识重复、格式错误或显示名称为空时，在对应字段显示原因且不创建组织。
+  - id: REQ-2-2
+    name: 团队与成员管理
+    type: FOLDER
+    dependencies:
+    - REQ-2-1-2
+    description: 在当前组织的成员和团队管理页创建团队、维护团队层级和成员关系、直接添加或移除组织成员。团队名为 1–50 个小写 ASCII 字母、数字或连字符，不能以连字符开始或结束，且在同一组织内唯一；团队必须属于一个组织，父团队必须属于同一组织且不能形成直接或间接循环。成员身份和团队隶属关系是独立的持久化关系；团队层级仅用于展示和管理，不会把父团队或子团队成员隐式加入另一团队。Owner 在 People 页输入已有账户的用户名或已验证邮箱并确认后，立即保存该账户的 Member 或 Owner 成员关系，不存在邀请、Pending 或接受步骤。移除成员时，系统原子删除该组织成员关系、该账户在该组织全部团队中的成员关系以及该组织仓库对该账户的直接授权；团队授权本身不删除。若移除后组织将没有 Owner，系统拒绝操作并保持所有关系不变；个人账户、个人仓库及其他组织关系不得删除。 此功能建立在 REQ-2-1-2（身份验证后创建组织） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-2-2-1
+      name: 创建组织团队
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-2
+      description: 团队页是组织内一个账户分组的详情页，标题为“组织名/团队名”，Members 标签显示该团队直接成员，Settings 用于修改父团队。只有组织 Owner 可从组织概览的 Teams 标签点击“New team”。系统保存团队标识、所属组织、名称、可选描述、可选父团队、创建人和时间；组织名称缺失、格式错误、重复、父团队不属于当前组织或创建失败时不生成团队。此功能建立在 REQ-2-1-2（身份验证后创建组织）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 创建组织团队
+        steps:
+        - keyword: GIVEN
+          content: 组织 Owner 已登录并从组织概览页打开“Teams”，组织内可选地已有一个父团队；目标团队名称尚未被该组织使用。
+        - keyword: WHEN
+          content: Owner 点击“New team”，输入长度为 1 至 50、仅含小写 ASCII 字母、数字或连字符且不以连字符开头或结尾的团队名称，可选填写描述和同组织父团队，然后点击“Create team”。
+        - keyword: THEN
+          content: 系统跳转到新团队页，标题显示“组织名/团队名”，团队树显示其归属组织及所选父团队；名称为空、格式错误、重复或父团队不属于该组织时显示错误且不创建团队。
+        - keyword: THEN
+          content: 刷新团队页或重新打开“Teams”列表后，新团队和其父子关系保持一致。
+    - id: REQ-2-2-2
+      name: 管理组织团队成员与层级
+      type: ATOMIC
+      dependencies:
+      - REQ-2-2-1
+      description: 只有组织 Owner 可在组织团队页维护成员或层级。Owner 在团队页点击“Members”添加或移除当前组织成员，或在“Settings”选择新的父团队并保存。系统保存团队成员关系或团队层级，并在组织团队树和成员列表中立即反映；团队层级不产生隐式成员关系或仓库权限，禁止形成循环层级。 此功能建立在 REQ-2-2-1（创建组织团队） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 管理组织团队成员与层级
+        steps:
+        - keyword: GIVEN
+          content: 已登录团队维护者打开组织内一个团队页；存在一名尚未加入该团队的组织成员，以及一个与该团队同属该组织、不会造成循环的候选父团队。
+        - keyword: WHEN
+          content: 维护者在“Members”页通过“Add member”精确搜索并添加该组织成员，再在“Settings”中选择候选父团队并保存；随后从成员操作菜单移除刚添加的成员。
+        - keyword: THEN
+          content: 添加后成员列表显示该账户，保存后团队树显示新的父子关系，移除后该账户不再出现在成员列表；非组织成员不可被添加，任何会令团队成为自身或后代父团队的选择均被拒绝。
+        - keyword: THEN
+          content: 刷新成员页和组织团队树后，页面仅显示已成功保存的父团队和成员关系。
+      - name: 拒绝把后代团队设为父团队
+        steps:
+        - keyword: GIVEN
+          content: 团队维护者打开一个已经存在父团队的组织团队。
+        - keyword: WHEN
+          content: 维护者选择该团队的某个后代团队作为新的父团队并保存。
+        - keyword: THEN
+          content: 系统拒绝该循环关系，保持原父团队不变，并在重新加载后继续显示原有层级。
+    - id: REQ-2-2-3
+      name: 直接添加用户为组织成员
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-2
+      description: 组织 Owner 在“People”页点击“Add member”，输入现有账户的用户名或已验证邮箱，选择“Member”或“Owner”后点击“Add member”。系统原子保存“组织—账户—角色”的成员关系，并立刻在 People 列表和目标账户的“Your organizations”列表中显示该组织；目标账户下次登录、刷新工作区或重新打开组织 URL 时均可看到组织。Member 只获得组织可见性及成为团队/仓库授权候选人的资格；Owner 额外获得该组织与其仓库的 Admin 权限。对已有成员、未知账户、不支持角色或写入失败，系统显示原因且不改变成员关系。此功能建立在 REQ-2-1-2（身份验证后创建组织）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 直接添加用户为组织成员
+        steps:
+        - keyword: GIVEN
+          content: 组织 Owner 已登录并打开组织“People”页；系统中存在一个已注册、尚不是该组织成员的账户，该账户可以随后独立登录。
+        - keyword: WHEN
+          content: Owner 点击“Add member”，输入该账户的用户名或已验证邮箱，选择“Member”，并点击“Add member”。
+        - keyword: THEN
+          content: “People”页立即显示该账户及 Member 角色，不显示 Pending 状态；该账户登录后，账户菜单的“Your organizations”和组织概览均显示该组织，但尚未获得任何未单独授权私有仓库的访问权。
+        - keyword: THEN
+          content: Owner 刷新“People”页和目标账户登录后刷新“Your organizations”页，均读取到同一成员关系；已是成员、未知账户、不支持角色或写入失败时不产生重复成员关系。
+    - id: REQ-2-2-4
+      name: 从组织中移除成员
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-2
+      description: 组织 Owner 在“People”页定位成员，点击其操作菜单中的“Remove from organization”，并在确认对话框中点击“Remove”。系统原子删除该成员的组织成员关系、其在该组织全部团队中的成员关系和该组织仓库对该账户的直接授权；若该账户仍通过其他组织 Owner 身份或未被删除的团队授权获得仓库权限，则按有效权限规则重新计算，否则拒绝访问。系统不得删除个人账户、个人仓库、其他组织关系、团队本身或团队授权；不得移除最后一名 Owner。此功能建立在 REQ-2-1-2（身份验证后创建组织）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 从组织中移除成员
+        steps:
+        - keyword: GIVEN
+          content: 组织 Owner 已登录并打开组织“People”页；列表中存在一名成员，该成员另有可访问的个人账户和个人仓库。
+        - keyword: WHEN
+          content: Owner 通过成员用户名定位该行，点击操作菜单中的“Remove from organization”，并在确认对话框点击“Remove”。
+        - keyword: THEN
+          content: 系统从组织成员列表移除该账户，并撤销其仅因该组织成员身份取得的访问；该账户直接打开组织私有资源会被拒绝。
+        - keyword: THEN
+          content: 刷新“People”页后该账户仍不在成员列表；使用该账户登录后，个人账户和个人仓库仍然存在且可访问。
+      - name: 阻止非所有者移除组织成员
+        steps:
+        - keyword: GIVEN
+          content: 一个已登录但不是组织所有者的用户打开组织 People 页面并看到某个成员。
+        - keyword: WHEN
+          content: 该用户打开成员操作菜单并尝试移除该成员。
+        - keyword: THEN
+          content: 对非所有者来说移除操作不可用或被拒绝，且重新加载后该成员仍属于组织。
+  - id: REQ-2-3
+    name: 向人员和团队授予仓库访问权限
+    type: ATOMIC
+    dependencies:
+    - REQ-2-1-2
+    - REQ-2-2-1
+    description: 组织 Owner 或仓库 Admin 可向当前组织成员或团队授予仓库角色 Read、Triage、Write、Maintain 或 Admin。私有仓库只允许组织 Owner、拥有直接角色的成员、或属于拥有团队角色的直接团队成员访问；普通组织 Member 没有默认私有仓库访问。一个主体在同一仓库只保存一条直接角色授权，重复保存相同角色不创建第二条记录，变更角色替换原角色。账户的有效仓库角色为 Owner 的 Admin 与其所有仍有效直接授权、团队授权中的最高角色；团队层级不传递成员或授权。系统保存授权主体、仓库、角色、授予人和时间，并按 ROOT 角色矩阵授权操作；无权账户不可见私有仓库。 此功能建立在 REQ-2-1-2（身份验证后创建组织）、REQ-2-2-1（创建组织团队）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    scenarios:
+    - name: 向人员和团队授予仓库访问权限
+      steps:
+      - keyword: GIVEN
+        content: 组织 Owner 或仓库 Admin 已登录并打开组织私有仓库的“Manage access”页；组织内存在一个成员和一个团队，二者目前均未获得该仓库的直接授权。
+      - keyword: WHEN
+        content: 管理员选择该成员或团队，选择“Write”角色，并点击“Add”或“Save”。
+      - keyword: THEN
+        content: 授权列表为该主体显示唯一一条“Write”角色记录；该成员或团队成员打开仓库时可查看仓库内容并执行 Write 角色允许的操作，未被授予权限的账户不能获得该访问。
+      - keyword: THEN
+        content: 刷新“Manage access”页后授权仍存在；对同一主体再次保存相同角色不会生成第二条授权记录。
+    - name: 替换已有仓库授权而不是重复创建
+      steps:
+      - keyword: GIVEN
+        content: 管理员打开一个已经为团队保存了授权的仓库访问管理页面。
+      - keyword: WHEN
+        content: 管理员把该团队的角色改成另一种级别并保存更新。
+      - keyword: THEN
+        content: 系统只保留一条团队授权记录，用新角色替换旧角色，并在重新加载后显示更新后的授权。
+- id: REQ-3
+  name: 仓库资产管理
+  type: FOLDER
+  dependencies: []
+  description: 仓库是保存代码、分支、提交、文件和协作工作项的容器。仓库概览页以“所有者/仓库名”为标题，显示所有者、名称、Public/Private 标记、描述和默认分支，并提供 Code、Issues、Pull requests、Settings 入口；“所有者”是个人账户或组织，属于组织的仓库即组织仓库。用户从全局搜索结果、个人/组织 Repositories 列表或直接链接打开仓库概览；已登录且有创建权限的用户从“New repository”创建个人或组织仓库。公开仓库允许访客 Read；个人私有仓库仅允许其所有者和明确授权主体访问；组织私有仓库仅允许组织 Owner、拥有仓库直接角色的成员或拥有仓库角色的团队的直接成员访问，普通组织 Member 不因成员身份自动访问。更改可见性或访问授权后，搜索、列表、直接链接和仓库页必须使用同一条访问规则。
+  children:
+  - id: REQ-3-1
+    name: 搜索并定位仓库
+    type: ATOMIC
+    dependencies: []
+    description: >-
+      访客或已登录用户可搜索其有权查看的仓库。 系统接收搜索查询，应用面向仓库的筛选或范围限定，并显示匹配仓库及足够的元数据，以便用户打开目标仓库。
+
+
+      截图参考：
+
+      ![image](reference/github-repository-search-results.png)
+    scenarios:
+    - name: 搜索并定位仓库
+      steps:
+      - keyword: GIVEN
+        content: 用户位于任意页面；系统中存在名称包含唯一关键字的公开仓库，以及名称包含同一关键字但用户无权查看的私有仓库。
+      - keyword: WHEN
+        content: 用户在顶部全局搜索框输入该唯一关键字并按 Enter，在结果页选择“Repositories”类型筛选，然后点击公开仓库的名称。
+      - keyword: THEN
+        content: 结果页显示公开匹配仓库的“所有者/仓库名”、描述、可见性和更新时间，且不显示无权私有仓库；点击结果后进入目标仓库概览页。
+      - keyword: THEN
+        content: 清空搜索词或切换到不匹配的筛选条件后，结果页不保留旧结果；直接访问无权私有仓库地址时仍要求认证或拒绝访问。
+  - id: REQ-3-2
+    name: 仓库创建与分发
+    type: FOLDER
+    dependencies:
+    - REQ-1-1-2
+    description: 仓库创建页是“New repository”打开的表单，用户在其中选择所有者、名称、可见性和初始化选项。“fork”是从可读取的源仓库复制出的独立仓库：前端在 fork 概览页显示来源链接，系统保存源仓库标识；fork 后的分支和提交可独立变化，绝不回写源仓库。“克隆 URL”是显示在仓库 Code 弹层中的只读地址，可复制到剪贴板，不代表本产品实现外部 Git 协议。新仓库与 fork 都必须进入可浏览的仓库概览页。此功能建立在 REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-3-2-1
+      name: 使用所有者、可见性和初始化选项创建仓库
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-2
+      description: >-
+        此功能建立在 REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        已登录用户在仓库创建页选择个人或组织所有者、输入仓库名称和描述、选择公开或私有可见性，并选择是否用 README 创建初始提交。系统验证用户可在该所有者命名空间创建仓库、名称唯一且选项有效；成功时保存仓库标识、所有者、可见性、默认分支和创建者。选择初始化时还须原子创建初始分支、README 文件和初始提交；任一步失败均不留下半创建的仓库。成功后进入新仓库概览页。
+
+
+        截图参考：
+
+        ![image](reference/github-create-repository.png)
+      scenarios:
+      - name: 使用所有者、可见性和初始化选项创建仓库
+        steps:
+        - keyword: GIVEN
+          content: 已登录用户从“New repository”打开创建页，个人命名空间可选；若选择组织命名空间，则该用户具有该组织创建仓库权限，候选仓库名称在目标命名空间中未使用。
+        - keyword: WHEN
+          content: 用户选择目标所有者，输入有效且唯一的仓库名称和可选描述，选择“Private”，勾选“Add a README file”，然后点击“Create repository”。
+        - keyword: THEN
+          content: 系统进入“所有者/仓库名”概览页，标记为 Private，默认分支存在 README 文件，提交历史含一条初始化提交；仓库同时出现在目标所有者的仓库列表。
+        - keyword: THEN
+          content: 刷新概览页后所有者、可见性、README 和初始化提交均保持；名称为空、名称重复、无组织创建权限或创建过程中任一步失败时显示原因且不留下半创建仓库。
+    - id: REQ-3-2-2
+      name: 将仓库 fork 到另一个命名空间
+      type: ATOMIC
+      dependencies:
+      - REQ-3-3
+      - REQ-1-1-2
+      description: >-
+        用户在源仓库页点击“Fork”，选择目标个人或组织命名空间、填写可选新名称和可见性后点击“Create fork”。 系统创建独立 fork、复制可访问的默认分支历史并记录源仓库链接，随后打开新的 fork 概览页。
+        此功能建立在 REQ-3-3（查看公共仓库概览）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        已登录用户只有对源仓库拥有 Read 或更高权限、且对目标个人或组织命名空间拥有创建仓库权限时才能 fork；源仓库为私有时 fork 必须保持 Private，公开源仓库可选择 Public 或 Private。系统验证两端权限，保存新 fork 的所有者、可见性、源仓库标识、默认分支和复制的可访问历史；任一检查失败不创建 fork。
+
+
+        截图参考：
+
+        ![image](reference/github-fork-repository.png)
+      scenarios:
+      - name: 将仓库 fork 到另一个命名空间
+        steps:
+        - keyword: GIVEN
+          content: 已登录用户打开一个可访问的源仓库概览页；该用户可选择个人命名空间或具有创建权限的组织命名空间，且目标命名空间中不存在同名 fork。
+        - keyword: WHEN
+          content: 用户点击“Fork”，选择目标命名空间，保留或输入一个有效的新仓库名和可选可见性，然后点击“Create fork”。
+        - keyword: THEN
+          content: 系统打开目标“所有者/fork 名”概览页，页面显示 fork 来源为源仓库，默认分支含源仓库可访问的历史和文件；后续向 fork 提交不会修改源仓库。
+        - keyword: THEN
+          content: 刷新 fork 页和目标所有者仓库列表后 fork 及来源链接仍存在；目标名称冲突、无目标命名空间权限或源仓库不可访问时不创建 fork。
+    - id: REQ-3-2-3
+      name: 复制仓库克隆 URL
+      type: ATOMIC
+      dependencies:
+      - REQ-3-3
+      description: >-
+        用户在仓库概览页点击“Code”，选择 HTTPS 或 SSH 克隆方式，再点击 URL 右侧的复制图标。 系统将所选克隆 URL 写入浏览器剪贴板，并显示短暂的“Copied”反馈；该只读操作不修改仓库。
+        此功能建立在 REQ-3-3（查看公共仓库概览） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        访客或已登录用户可在仓库页面使用此能力。 此能力要求目标公共对象可用，或用户具有查看权限。 系统验证资格，显示任何所需警告或不可用状态，并防止未经授权的变更。 所选仓库访问值可供用户粘贴到本地工具中。
+
+
+        截图参考：
+
+        ![image](reference/github-code-clone-menu.png)
+      scenarios:
+      - name: 复制仓库克隆 URL
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开一个公开仓库，或已登录并打开有查看权限的私有仓库概览页；浏览器允许页面写入剪贴板。
+        - keyword: WHEN
+          content: 用户点击“Code”，选择“HTTPS”或“SSH”标签，并点击对应克隆 URL 右侧的复制图标。
+        - keyword: THEN
+          content: 剪贴板内容等于当前选中协议的完整克隆 URL，按钮附近显示短暂“Copied”反馈；仓库文件、提交历史和可见性均不发生变化。
+        - keyword: THEN
+          content: 关闭并重新打开菜单后仍显示同一仓库的正确 URL；无权访问私有仓库的用户不能进入该页面或取得其克隆 URL。
+  - id: REQ-3-3
+    name: 查看公共仓库概览
+    type: ATOMIC
+    dependencies: []
+    description: >-
+      访客或授权用户可打开仓库概览，以确认仓库身份、可见性、描述、主要元数据和可用内容。 该概览提供浏览文件、查看仓库上下文并开始协作的主要入口。
+
+
+      截图参考：
+
+      ![image](reference/github-repository-overview.png)
+    scenarios:
+    - name: 查看公共仓库概览
+      steps:
+      - keyword: GIVEN
+        content: 访客持有一个公开仓库的搜索结果、个人/组织仓库列表项或直接地址；该仓库已有描述、默认分支和至少一个文件。
+      - keyword: WHEN
+        content: 访客点击仓库名称或直接打开该仓库地址。
+      - keyword: THEN
+        content: 概览页显示“所有者/仓库名”、Public 标记、描述、默认分支和文件列表，并提供“Code”“Issues”“Pull requests”等入口；访客可点击文件名进入文件内容页。
+      - keyword: THEN
+        content: 刷新或通过相同地址重新打开后仍显示同一仓库状态；将地址替换为私有且无授权仓库时，不向访客展示其内容。
+  - id: REQ-3-4
+    name: 在权限检查下修改仓库可见性
+    type: ATOMIC
+    dependencies:
+    - REQ-3-3
+    - REQ-1-1-2
+    description: >-
+      此功能建立在 REQ-3-3（查看公共仓库概览）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      仓库管理员在查看对访问权限的影响后修改仓库可见性。 系统阻止未经授权的变更，应用所选可见性，并在用户后续打开仓库时执行更新后的访问规则。
+
+
+      截图参考：
+
+      ![image](reference/github-repository-visibility-settings.png)
+    scenarios:
+    - name: 在权限检查下修改仓库可见性
+      steps:
+      - keyword: GIVEN
+        content: 仓库 Admin 已登录并打开一个当前为 Private 的仓库概览页；另有一名未登录访客，且仓库已有可公开展示的文件和描述。
+      - keyword: WHEN
+        content: Admin 进入“Settings”→“General”→“Danger Zone”，选择将可见性改为 Public，点击“Change visibility”，在确认对话框按页面要求输入仓库全名并确认。
+      - keyword: THEN
+        content: 系统在仓库概览页显示 Public 标记；访客刷新后可从直接地址查看仓库内容，搜索和仓库列表也按公开访问规则显示该仓库。
+      - keyword: THEN
+        content: 刷新设置页后可见性仍为 Public；非 Admin 不显示可执行的可见性修改入口或提交被拒绝，确认文本不匹配时可见性保持 Private。
+- id: REQ-4
+  name: 代码与版本控制
+  type: FOLDER
+  dependencies:
+  - REQ-3-3
+  description: Code 页是仓库中浏览代码的主页面：页面顶部显示当前分支选择器，主体显示当前分支在当前路径的文件和目录，点击文件进入只读文件页，点击 Commits 进入提交历史。文件是某分支某路径上的内容；目录只是用于组织路径的层级，不是独立协作对象。分支是指向提交的命名引用，切换分支只切换当前页面读取的文件快照。提交是不可修改的变更记录，保存父提交、作者、消息、时间与变更文件；有 Write、Maintain、Admin 或组织 Owner 权限的用户可在文件页通过 Edit 或 Add file 创建新提交。每个文件、提交、比较和分支页面显示仓库及当前分支或修订。文件编辑必须创建新提交，不得改写历史内容。
+  children:
+  - id: REQ-4-1
+    name: 浏览仓库文件和目录
+    type: ATOMIC
+    dependencies:
+    - REQ-3-3
+    description: >-
+      此功能建立在 REQ-3-3（查看公共仓库概览） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      任何拥有仓库查看权的用户可在 Code 页的所选分支浏览目录和文件；目录页显示当前路径，文件页读取该分支该路径保存的内容、最近提交和文件名，不产生文件变更。
+
+
+      截图参考：
+
+      ![image](reference/github-code-file-browser.png)
+    scenarios:
+    - name: 浏览仓库文件和目录
+      steps:
+      - keyword: GIVEN
+        content: 用户已打开一个可访问仓库的“Code”页，当前分支含根目录文件、一个嵌套目录以及该目录内的文本文件。
+      - keyword: WHEN
+        content: 用户点击嵌套目录名称，再点击其中的文本文件名称。
+      - keyword: THEN
+        content: 目录页显示当前分支、路径面包屑和该目录的文件列表；文件页显示完整路径、当前分支和可读的文件内容，面包屑可返回上级目录。
+      - keyword: THEN
+        content: 切换到不含该文件的另一分支时不显示该文件；刷新当前文件页不会修改文件内容或分支。
+  - id: REQ-4-2
+    name: 提交历史与代码搜索
+    type: FOLDER
+    dependencies:
+    - REQ-4-1
+    description: “提交历史”页按时间倒序显示某分支或文件路径的提交记录；“差异”页把两个提交或修订的文件内容逐行对比，base 是较早或目标修订，compare 是较新或待比较修订；“代码搜索”页仅在当前仓库可读取的文件内容中查找关键词。三者均为只读视图，不创建提交、不修改文件或分支，并遵循仓库可见性和访问权限。此功能建立在 REQ-4-1（浏览仓库文件和目录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-4-2-1
+      name: 查看仓库提交历史
+      type: ATOMIC
+      dependencies:
+      - REQ-4-1
+      description: >-
+        此功能建立在 REQ-4-1（浏览仓库文件和目录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        任何拥有仓库查看权的用户可在 Commits 页读取分支历史，或在文件页读取仅修改过该文件的历史；每条记录引用已保存的提交标识、作者、时间、消息、父提交和变更文件。
+
+
+        截图参考：
+
+        ![image](reference/github-commit-history.png)
+      scenarios:
+      - name: 查看仓库提交历史
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库的默认分支，且该分支至少有两条提交，其中后一条提交修改了一个已知文件。
+        - keyword: WHEN
+          content: 用户点击文件列表上方的提交数量链接或“Commits”，然后选择该已知文件的历史范围。
+        - keyword: THEN
+          content: 历史页按最新在前显示该范围内的提交；每项显示短哈希、提交消息、作者和时间，文件范围不显示未改动该文件的提交。
+        - keyword: THEN
+          content: 点击任一提交进入其详情页后仍能看到对应父修订和变更文件；刷新历史页不改变提交顺序或内容。
+    - id: REQ-4-2-2
+      name: 检查提交和修订差异
+      type: ATOMIC
+      dependencies:
+      - REQ-4-2-1
+      description: >-
+        此功能建立在 REQ-4-2-1（查看仓库提交历史） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        任何拥有仓库查看权的用户可在差异页比较两个可读取的提交或修订；页面读取并显示两者之间已变更文件和逐行增删，不创建评审、评论或提交。
+
+
+        截图参考：
+
+        ![image](reference/github-commit-diff.png)
+      scenarios:
+      - name: 检查提交和修订差异
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库的提交历史，且存在一条包含新增和修改文件的提交，并且其父提交可访问。
+        - keyword: WHEN
+          content: 用户点击该提交的短哈希，或在比较页选择其父提交作为 base、该提交作为 compare 并点击“Compare”。
+        - keyword: THEN
+          content: 差异页显示 base 与 compare 标识、变更文件清单及每个文件的新增/删除行；点击变更文件可定位到该文件差异，未变化文件不出现在列表中。
+        - keyword: THEN
+          content: 刷新或返回提交历史后仓库分支、提交和文件均不被该只读比较修改；无权查看任一修订时不显示其差异内容。
+    - id: REQ-4-2-3
+      name: 在仓库范围内搜索代码
+      type: ATOMIC
+      dependencies:
+      - REQ-4-1
+      description: >-
+        用户在仓库页顶部搜索框输入代码关键词并按 Enter，选择“Code”结果页，可继续按路径或语言筛选并点击匹配文件。 系统在当前仓库可见代码范围内显示匹配片段、文件路径和分支/修订上下文；点击结果打开对应文件位置。
+        此功能建立在 REQ-4-1（浏览仓库文件和目录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        访客可在公开仓库的 Code 页面搜索，已登录账户可在任何自己有查看权的仓库搜索；结果页仅读取当前仓库当前可见分支的文件内容、命中片段和路径，不能跨仓库泄露结果或写入代码。
+
+
+        截图参考：
+
+        ![image](reference/github-repository-code-search.png)
+      scenarios:
+      - name: 在仓库范围内搜索代码
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库；默认分支中有两个文件包含唯一代码词，其中一个位于 `src/` 路径，另有无权查看的私有仓库也包含该词。
+        - keyword: WHEN
+          content: 用户在仓库页顶部搜索框输入该唯一代码词并按 Enter，选择“Code”结果，再用路径筛选限定为 `src/`，点击一个匹配文件。
+        - keyword: THEN
+          content: 结果页仅列出当前仓库且位于 `src/` 的匹配文件，显示命中片段、文件路径和分支或修订上下文；点击后打开该文件并定位到命中附近。
+        - keyword: THEN
+          content: 清除路径筛选后可看到当前仓库的其他匹配文件，但不显示无权私有仓库内容；搜索不会创建提交或改变文件。
+      - name: 代码搜索无匹配项时显示空状态
+        steps:
+        - keyword: GIVEN
+          content: 用户已经在仓库代码搜索页面中选择了仓库范围。
+        - keyword: WHEN
+          content: 用户输入一个不会命中任何代码的查询并打开 Code 结果视图。
+        - keyword: THEN
+          content: 系统显示空结果状态，保持仓库范围和筛选条件不变，并且不打开任何文件。
+  - id: REQ-4-3
+    name: 分支管理
+    type: FOLDER
+    dependencies:
+    - REQ-4-1
+    description: 分支选择器是 Code 页顶部列出和切换分支的控件；系统对每个分支保存唯一名称及其当前指向的提交。创建分支是在指定基准提交上新建一个名称引用，不复制文件、也不改写基准历史。默认分支是新打开仓库概览和未指定分支 URL 时默认读取的分支，不是唯一存在或唯一可写分支。分支名称为 1–255 个字符，只能包含 ASCII 字母、数字、`-`、`_`、`.` 和 `/`，不得以 `/`、`.` 结尾，不得包含连续 `..` 或 `//`；重名、非法名称或无权限时不得创建分支。修改默认分支不能改变现有分支、提交或已打开 PR 的源/目标引用。此功能建立在 REQ-4-1（浏览仓库文件和目录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-4-3-1
+      name: 列出并切换仓库分支
+      type: ATOMIC
+      dependencies:
+      - REQ-4-1
+      description: >-
+        此功能建立在 REQ-4-1（浏览仓库文件和目录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        任何拥有仓库查看权的用户可使用 Code 页顶部的分支选择器列出和切换分支；“当前分支”指选择器、URL 和文件列表共同指向的分支，不是额外保存的用户设置。
+
+
+        截图参考：
+
+        ![image](reference/github-branch-selector.png)
+      scenarios:
+      - name: 列出并切换仓库分支
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库的 `main` 分支，仓库还存在 `feature/login` 分支，且两分支在一个已知文件的内容不同。
+        - keyword: WHEN
+          content: 用户打开当前显示 `main` 的分支选择器，输入 `feature/login` 并点击该分支名称。
+        - keyword: THEN
+          content: 页面 URL、分支选择器和文件列表均切换到 `feature/login`，已知文件展示该分支的内容；选择器能列出 `main` 和目标分支并标明当前分支。
+        - keyword: THEN
+          content: 重新选择 `main` 后恢复其文件内容；分支切换不创建提交、不改变任一分支头。
+      - name: 没有匹配项时保持当前活动分支不变
+        steps:
+        - keyword: GIVEN
+          content: 一个拥有仓库查看权的用户已在 Code 页打开分支选择器，且选择器当前显示一个已有分支。
+        - keyword: WHEN
+          content: 参与者输入一个没有匹配结果的分支查询。
+        - keyword: THEN
+          content: 系统显示空的分支搜索状态，并在关闭选择器或重新加载后继续保留当前活动分支。
+    - id: REQ-4-3-2
+      name: 基于现有修订创建分支
+      type: ATOMIC
+      dependencies:
+      - REQ-4-3-1
+      - REQ-1-1-2
+      description: >-
+        用户打开分支选择器，输入新分支名，确认显示的基准分支或提交后点击“Create branch: <name>”。 系统创建指向该基准提交的新分支并在选择器中切换到它；名称已存在或无权限时不创建。
+        此功能建立在 REQ-4-3-1（列出并切换仓库分支）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        只有拥有 Write、Maintain、Admin 或组织 Owner 身份的已登录用户可在仓库代码和版本控制页面创建分支；Read 与 Triage 只能浏览。系统验证角色，保存新分支名、基准提交、创建人和时间，并拒绝未授权请求。
+
+
+        截图参考：
+
+        ![image](reference/github-create-branch.png)
+      scenarios:
+      - name: 基于现有修订创建分支
+        steps:
+        - keyword: GIVEN
+          content: 具有写权限的已登录用户已打开仓库 `main` 分支；当前分支头提交已知，目标名称 `feature/api-v2` 不存在。
+        - keyword: WHEN
+          content: '用户打开分支选择器，输入 `feature/api-v2`，确认基准为当前 `main` 分支头提交，并点击“Create branch: feature/api-v2”。'
+        - keyword: THEN
+          content: 系统创建该分支并切换浏览上下文，分支详情的初始提交与原 `main` 分支头一致，原分支历史和文件不被改写。
+        - keyword: THEN
+          content: 刷新分支列表后新分支仍存在；名称为空、包含非法字符、以 `/` 或 `.` 结尾、含 `..` 或 `//`、名称重名或用户无写权限时显示错误且不创建分支。
+    - id: REQ-4-3-3
+      name: 修改仓库默认分支
+      type: ATOMIC
+      dependencies:
+      - REQ-4-3-1
+      - REQ-1-1-2
+      description: >-
+        仓库管理员进入“Settings”→“Branches”，在“Default branch”下拉框选择已有分支并点击“Update”，再确认变更。 系统保存新的默认分支并更新新访问仓库时的初始分支；不会删除或重写原默认分支。
+        此功能建立在 REQ-4-3-1（列出并切换仓库分支）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        只有仓库 Admin 或组织 Owner 可在仓库代码和版本控制页面修改默认分支；其他角色只能查看。系统验证角色，保存新的默认分支及操作人和时间，并拒绝未授权请求。
+
+
+        截图参考：
+
+        ![image](reference/github-default-branch-settings.png)
+      scenarios:
+      - name: 修改仓库默认分支
+        steps:
+        - keyword: GIVEN
+          content: 仓库 Admin 已登录；仓库已有 `main` 和 `release` 分支，当前默认分支为 `main`，两分支均保留各自提交历史。
+        - keyword: WHEN
+          content: Admin 进入“Settings”→“Branches”，在“Default branch”下拉框选择 `release`，点击“Update”并在确认对话框确认。
+        - keyword: THEN
+          content: 系统保存 `release` 为默认分支；新打开仓库概览时默认展示 `release`，而 `main` 分支及其提交仍可在选择器中查看。
+        - keyword: THEN
+          content: 刷新设置页后默认分支仍是 `release`；只能从现有分支中选择，非 Admin 的更新入口不可用或请求被拒绝且默认分支不变。
+      - name: 阻止非管理员修改默认分支
+        steps:
+        - keyword: GIVEN
+          content: 一个没有仓库管理权限的已登录用户打开仓库设置的分支页面。
+        - keyword: WHEN
+          content: 该用户尝试查看或更新默认分支设置。
+        - keyword: THEN
+          content: 对非管理员来说默认分支更新操作不可用或被拒绝，且已保存的默认分支保持不变。
+  - id: REQ-4-4
+    name: 通过 Web 界面管理仓库文件
+    type: ATOMIC
+    dependencies:
+    - REQ-4-1
+    - REQ-1-1-2
+    description: >-
+      此功能建立在 REQ-4-1（浏览仓库文件和目录）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      文件编辑器是从 Code 页的 Edit 或 Add file 打开的表单；用户在其中编辑当前分支某路径的文件内容并提交。只有 Write、Maintain、Admin 或组织 Owner 可提交，Read 与 Triage 只能查看。一次提交把文件路径和内容变更、提交消息、作者、父提交和目标分支作为一个不可分割的记录保存，并把目标分支指向该新提交。新建或重命名的文件路径不得为空、不得以 `/` 开始、不得包含 `..` 路径段，且不得与当前分支上的现有文件或目录冲突；提交消息为 1–72 个去除首尾空白后非空字符。若路径冲突、内容校验失败、提交消息不合规、分支受保护或写入失败，页面显示原因且不改变文件、分支头或提交历史。
+
+
+      截图参考：
+
+      ![image](reference/github-web-file-editor.png)
+    scenarios:
+    - name: 通过 Web 界面管理仓库文件
+      steps:
+      - keyword: GIVEN
+        content: 已登录贡献者在可写仓库的未受保护分支打开文件浏览页；该分支头提交已知，目标新文件路径 `docs/guide.md` 尚不存在。
+      - keyword: WHEN
+        content: 用户点击“Add file”→“Create new file”，输入路径 `docs/guide.md` 和文件内容，填写去除首尾空白后长度为 1 至 72 的提交消息，并点击“Commit changes”。
+      - keyword: THEN
+        content: 系统创建一条以原分支头为父提交的新提交，提交详情记录作者、消息和新增路径；分支头更新为新提交，文件浏览页显示新文件和内容。
+      - keyword: THEN
+        content: 刷新文件页和提交历史后新文件及提交仍存在；路径为空、以 `/` 开始、含 `..`、与现有文件冲突、提交消息不合规、分支受保护或写入失败时显示原因且文件、分支头和历史均不改变。
+- id: REQ-5
+  name: 工作规划与议题管理
+  type: FOLDER
+  dependencies:
+  - REQ-3-3
+  description: 议题是仓库内用于记录一个待处理工作、缺陷或讨论主题的持久化工作项，不是代码文件或 PR。Issues 页是仓库导航中的列表页，每一行显示议题编号、标题、Open/Closed 状态、作者和标签；点击编号或标题进入议题详情页。详情页顶部显示标题与状态，右侧依次显示 Assignees、Labels 和 Milestone 元数据，主体显示描述、评论与活动时间线。“活动时间线”是按发生时间记录创建、编辑、评论、分配、标签、里程碑和状态变化的只追加历史。标签是当前仓库预先存在的彩色分类名称；里程碑是当前仓库预先存在的目标分类项，可关联多个议题或 PR，但不改变它们的内容或状态。Write、Maintain、Admin 可创建议题、编辑标题/描述和评论，Triage、Maintain、Admin 可分配负责人、应用标签、设置里程碑、关闭或重开议题，Read 只能查看。每项操作围绕仓库内唯一议题编号进行，详情页和列表显示同一持久化数据；刷新、重新登录或由其他有查看权账户打开后仍读取同一记录。
+  children:
+  - id: REQ-5-1
+    name: 议题发现与详情
+    type: FOLDER
+    dependencies:
+    - REQ-3-3
+    description: Issues 列表页在当前仓库范围内展示议题；状态、关键词和标签筛选只改变浏览器当前显示的行，不写入或删除议题。议题详情页是同一编号工作项的完整视图，聚合描述、右侧元数据、评论和活动时间线，也是编辑、评论、分配、打标签、归入里程碑和关闭/重开的共同入口。此功能建立在 REQ-3-3（查看公共仓库概览）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-5-1-1
+      name: 列出并筛选仓库议题
+      type: ATOMIC
+      dependencies:
+      - REQ-3-3
+      description: >-
+        此功能建立在 REQ-3-3（查看公共仓库概览） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        有仓库查看权的用户可在 Issues 列表页读取当前仓库的议题行；每行引用一个持久化议题编号，并显示标题、状态、作者、标签和更新时间。用户可按 Open/Closed、标题或正文关键词、标签筛选；筛选不产生或修改工作项。
+
+
+        截图参考：
+
+        ![image](reference/github-issues-list.png)
+      scenarios:
+      - name: 列出并筛选仓库议题
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库的“Issues”页；列表包含一个带 `bug` 标签、标题含唯一词的 Open 议题和一个同样带该标签的 Closed 议题。
+        - keyword: WHEN
+          content: 用户选择“Open”，输入该唯一词，并在标签筛选中选择 `bug`。
+        - keyword: THEN
+          content: 列表只显示匹配的 Open 议题，每行显示编号、标题、标签、作者和状态；点击标题可进入该议题详情页。
+        - keyword: THEN
+          content: 切换为“Closed”后不显示 Open 议题而显示匹配的 Closed 议题；筛选仅改变列表显示，不改变任一议题数据。
+      - name: 仅筛选关闭状态的议题
+        steps:
+        - keyword: GIVEN
+          content: 一个拥有仓库查看权的用户正在当前仓库的 Issues 列表页查看同时包含 Open 和 Closed 议题的行。
+        - keyword: WHEN
+          content: 参与者切换到关闭状态筛选并搜索一个已关闭议题标题。
+        - keyword: THEN
+          content: 系统只显示匹配的已关闭议题，并在重新加载后保持议题数据不变。
+    - id: REQ-5-1-2
+      name: 查看议题及其讨论
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-1
+      description: 议题详情页是一个仓库内唯一编号工作项的阅读页：顶部显示编号、标题和 Open/Closed 状态，正文显示描述，右侧显示负责人、标签和里程碑，底部按时间显示评论与活动记录。任何拥有仓库查看权的用户可读取这些已保存数据，但页面仅为拥有相应角色的用户显示可编辑控件。此功能建立在 REQ-5-1-1（列出并筛选仓库议题）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 查看议题及其讨论
+        steps:
+        - keyword: GIVEN
+          content: 用户在可访问仓库的议题列表中看到一个 Open 议题；该议题有标题、描述、一个标签、一名负责人和至少一条评论。
+        - keyword: WHEN
+          content: 用户点击该议题的编号或标题并滚动查看讨论时间线。
+        - keyword: THEN
+          content: 详情页显示仓库内议题编号、标题、Open 状态、描述、标签、负责人、评论作者和正文，并以时间顺序显示创建和评论活动。
+        - keyword: THEN
+          content: 刷新或从列表重新打开同一编号后，展示相同的标题、状态、元数据和已保存评论；无权访问仓库的用户不能查看详情内容。
+  - id: REQ-5-2
+    name: 议题创建与讨论
+    type: FOLDER
+    dependencies:
+    - REQ-5-1-2
+    description: 支持在当前仓库创建议题、编辑标题与描述、追加讨论评论。议题标题为 1–256 个去除首尾空白后非空字符，描述可为空且最多 65536 个字符；评论为 1–65536 个去除首尾空白后非空字符。创建成功后为议题分配仓库内唯一编号并进入详情页；编辑只能改变目标议题当前字段，评论作为带作者和时间的独立记录追加到活动时间线。无权限、空必填字段、超长输入或写入失败时不得创建空议题、覆盖原描述或追加部分评论。 此功能建立在 REQ-5-1-2（查看议题及其讨论） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-5-2-1
+      name: 创建仓库议题
+      type: ATOMIC
+      dependencies:
+      - REQ-3-3
+      - REQ-1-1-2
+      description: >-
+        此功能建立在 REQ-3-3（查看公共仓库概览）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        拥有 Write、Maintain 或 Admin 的已登录用户从当前仓库 Issues 列表页点击“New issue”打开创建表单，填写非空标题、可选描述并提交。系统分配仓库内递增且唯一的议题编号，保存仓库标识、标题、描述、作者、创建时间和 Open 状态，并追加创建活动；失败时不分配编号或写入部分数据。成功后跳转到新议题详情页，列表可按新编号和状态找到该议题。
+
+
+        截图参考：
+
+        ![image](reference/github-new-issue.png)
+      scenarios:
+      - name: 从仓库、评论、代码、讨论或项目上下文创建议题
+        steps:
+        - keyword: GIVEN
+          content: 已登录且有议题写权限的用户打开仓库“Issues”页；当前最大议题编号已知，候选标题未被当前页面使用。
+        - keyword: WHEN
+          content: 用户点击“New issue”，输入去除首尾空白后长度为 1 至 256 的标题和可选描述，点击“Submit new issue”。
+        - keyword: THEN
+          content: 系统跳转至新议题详情页，显示仓库内唯一的递增编号、Open 状态、输入的标题和描述，以及当前用户为作者；活动时间线含创建记录。
+        - keyword: THEN
+          content: 返回议题列表后可按新编号找到该项；标题为空白、超过 256 字符、用户无写权限或提交失败时显示原因且不新增议题或编号。
+    - id: REQ-5-2-2
+      name: 编辑议题标题和描述
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-2
+      description: 只有拥有 Write、Maintain 或 Admin 的已登录用户可在议题详情页点击标题或描述旁的“Edit”，修改对应文本后点击“Save”；Read 与 Triage 只能查看，编辑控件不可用且服务端拒绝其提交。系统只更新目标议题的标题或描述，并保存编辑人、编辑时间和新值，在详情、列表摘要和活动时间线中显示；空标题、超长输入或保存失败时保留原值。此功能建立在 REQ-5-1-2（查看议题及其讨论）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 编辑议题标题和描述
+        steps:
+        - keyword: GIVEN
+          content: 已登录且具有编辑权限的用户打开一个已有标题和描述的议题详情页，并记下该议题编号及原描述。
+        - keyword: WHEN
+          content: 用户点击标题旁“Edit”将标题改为有效新值并保存，再点击描述旁“Edit”将描述改为有效新值并保存。
+        - keyword: THEN
+          content: 同一议题编号的详情标题和描述更新，议题列表摘要显示新标题，活动时间线记录编辑；其他议题及该议题的状态、标签和负责人不变。
+        - keyword: THEN
+          content: 刷新详情页后新值仍存在；保存空白标题、超过长度限制的输入或保存失败时保留对应字段原值。
+      - name: 拒绝空白议题标题更新
+        steps:
+        - keyword: GIVEN
+          content: 具备编辑权限的用户打开一个可编辑标题的议题详情页。
+        - keyword: WHEN
+          content: 用户把标题清空成空白值并尝试保存。
+        - keyword: THEN
+          content: 系统拒绝保存，保留原标题，并在重新加载后继续显示原标题。
+    - id: REQ-5-2-3
+      name: 评论议题讨论
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-2
+      - REQ-1-1-2
+      description: 只有拥有 Write、Maintain 或 Admin 的已登录用户可在当前仓库的议题详情页输入非空评论；所有已登录且可查看该议题的用户均可对既有议题或评论添加或移除自己的反应。系统保存评论标识、议题标识、作者、正文和创建时间，或保存“主体—目标—反应类型”关联；同一用户对同一目标的同一反应只保存一条，第二次选择视为移除。成功后将新评论或反应显示在讨论与活动时间线中；失败时不显示本地伪评论或部分反应。此功能建立在 REQ-5-1-2（查看议题及其讨论）、REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 评论议题讨论并添加反应
+        steps:
+        - keyword: GIVEN
+          content: 已登录且有评论权限的用户打开一个议题详情页；时间线中已有一条可添加反应的评论。
+        - keyword: WHEN
+          content: 用户在评论框输入去除首尾空白后非空的评论并点击“Comment”，再在已有评论的反应菜单选择一个反应。
+        - keyword: THEN
+          content: 时间线追加一条显示当前用户、评论正文和创建时间的评论；目标评论显示该反应及计数，同一用户重复选择同一反应不会产生重复反应。
+        - keyword: THEN
+          content: 刷新详情页后评论与反应仍存在；空白或超过 65536 字符的评论、无评论权限或发布失败时不追加部分评论或时间线记录。
+      - name: 拒绝空白议题评论
+        steps:
+        - keyword: GIVEN
+          content: 用户打开议题讨论页，且评论框和提交按钮可见。
+        - keyword: WHEN
+          content: 用户在评论框中只输入空白字符并尝试提交。
+        - keyword: THEN
+          content: 系统不会创建新的评论或时间线记录，并且重新加载后讨论数量保持不变。
+  - id: REQ-5-3
+    name: 议题元数据与分类
+    type: FOLDER
+    dependencies:
+    - REQ-5-1-2
+    description: “负责人（Assignee）”是被指派跟进某个议题的账户，前端显示在详情页右侧；它只保存议题与账户的关联，不改变该账户的仓库权限。“标签（Label）”是当前仓库预置的分类名称，前端以标签徽章显示；它只保存议题与标签的关联。“里程碑（Milestone）”是当前仓库预置的阶段或版本目标，前端以右侧单选元数据显示；一个工作项最多关联一个里程碑，选择 None 表示删除该关联。本版本不提供创建、编辑或删除标签、里程碑的页面或接口，测试数据和初始仓库必须提供可选项。每次增删关系都更新详情与活动记录，不自动创建跨仓库标签、里程碑或成员关系。此功能建立在 REQ-5-1-2（查看议题及其讨论）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-5-3-1
+      name: 分配或取消分配议题参与者
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-2
+      description: 只有拥有 Triage、Maintain 或 Admin 的已登录用户可在议题右侧“Assignees”区域点击设置图标，搜索并勾选可分配成员，或取消已选成员后关闭菜单。可分配成员是当前仓库拥有至少 Triage 权限的账户；系统保存议题—账户关系、操作人和时间并记录活动，不可分配用户不出现在结果中。取消分配只删除该议题关系，不删除成员账户或仓库授权；无角色用户的控件不可用且服务端拒绝提交。此功能建立在 REQ-5-1-2（查看议题及其讨论）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 分配或取消分配议题参与者
+        steps:
+        - keyword: GIVEN
+          content: 已登录且有维护议题权限的用户打开议题详情页；仓库存在一名可分配成员和一名不属于该仓库协作者范围的账户。
+        - keyword: WHEN
+          content: 用户在右侧“Assignees”点击设置图标，搜索并勾选可分配成员，关闭菜单后再次打开并取消该成员。
+        - keyword: THEN
+          content: 勾选后该成员显示在负责人区域并记录分配活动，取消后不再显示且记录取消活动；不可分配账户不出现在搜索结果，取消分配不删除账户。
+        - keyword: THEN
+          content: 刷新详情页后仅保留最终已选负责人集合；无维护权限的用户不能保存负责人变更。
+    - id: REQ-5-3-2
+      name: 为议题应用标签
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-2
+      description: 只有拥有 Triage、Maintain 或 Admin 的用户可应用或移除当前仓库已经存在的标签；系统保存议题—标签关系及活动记录。标签选择器不得创建标签、不得显示或关联其他仓库标签；Read 与 Write 用户只能查看，控件不可用且服务端拒绝提交。此功能建立在 REQ-5-1-2（查看议题及其讨论）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 为议题应用标签
+        steps:
+        - keyword: GIVEN
+          content: 具有议题维护权限的已登录用户打开议题详情页；当前仓库已定义 `bug` 和 `documentation` 标签，其他仓库另有同名外部标签。
+        - keyword: WHEN
+          content: 用户在右侧“Labels”打开选择器，勾选 `bug`，保存后再次打开选择器并取消 `bug`。
+        - keyword: THEN
+          content: 勾选后详情页和议题列表显示 `bug` 标签，取消后不再显示；选择器只提供当前仓库标签，不会创建或关联其他仓库标签。
+        - keyword: THEN
+          content: 刷新页面后标签集合与最后一次保存一致；无权限用户不能提交标签变更。
+    - id: REQ-5-3-3
+      name: 将议题和拉取请求归入里程碑
+      type: ATOMIC
+      dependencies:
+      - REQ-5-1-2
+      description: >-
+        用户在议题或拉取请求右侧“Milestone”区域点击设置图标，从当前仓库的里程碑列表选择一项，或选择“None”移除。 系统保存该工作项与里程碑的关联并更新详情元数据；不会创建跨仓库里程碑。
+        此功能建立在 REQ-5-1-2（查看议题及其讨论） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        只有拥有 Triage、Maintain 或 Admin 的用户可在仓库规划和议题管理页面使用此能力；Read 与 Write 用户只能查看当前里程碑。系统验证角色并拒绝未授权提交。
+
+
+        截图参考：
+
+        ![image](reference/github-milestones.png)
+      scenarios:
+      - name: 将议题和拉取请求归入里程碑
+        steps:
+        - keyword: GIVEN
+          content: 拥有 Triage、Maintain 或 Admin 的已登录用户打开议题或拉取请求详情页；当前仓库存在一个名为 `v1.0` 的里程碑，另一仓库存在不可选里程碑。
+        - keyword: WHEN
+          content: 用户在右侧“Milestone”点击设置图标，选择 `v1.0`，然后重新打开选择器并选择“None”。
+        - keyword: THEN
+          content: 选择后详情页显示 `v1.0` 并记录关联活动，选择“None”后移除该显示；选择器不提供其他仓库里程碑且不会创建跨仓库关联。
+        - keyword: THEN
+          content: 刷新详情页后里程碑状态与最后一次保存一致；Read 或 Write 用户不能保存变更。
+  - id: REQ-5-4
+    name: 关闭或重新打开议题
+    type: ATOMIC
+    dependencies:
+    - REQ-5-1-2
+    description: 只有拥有 Triage、Maintain 或 Admin 的用户可从议题详情视图关闭或重新打开议题；Write 与 Read 用户只能查看状态。系统保存 Open 或 Closed 状态、操作人和时间，在活动历史中记录转换并向后续查看者显示；状态转换不得修改标题、描述、评论、标签、负责人或里程碑。此功能建立在 REQ-5-1-2（查看议题及其讨论）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    scenarios:
+    - name: 关闭或重新打开议题
+      steps:
+      - keyword: GIVEN
+        content: 有议题管理权限的已登录用户打开一个 Open 议题详情页，该页显示编号、标题和活动时间线。
+      - keyword: WHEN
+        content: 用户点击“Close issue”，确认页面显示 Closed 后再点击“Reopen issue”。
+      - keyword: THEN
+        content: 议题依次显示 Closed 与 Open 状态，时间线依次新增关闭和重新打开事件；议题编号、标题、描述、评论和元数据不因状态切换而改变。
+      - keyword: THEN
+        content: 刷新详情页和议题列表后，最终 Open 状态保持一致；无管理权限用户的关闭或重开操作不可用或被拒绝，状态不改变。
+    - name: 阻止没有议题管理权限的用户关闭议题
+      steps:
+      - keyword: GIVEN
+        content: 一个只能查看议题、但没有议题管理权限的已登录用户打开议题详情页。
+      - keyword: WHEN
+        content: 该用户尝试关闭或重新打开议题。
+      - keyword: THEN
+        content: 关闭和重新打开操作对该用户不可用或被拒绝，且议题状态保持不变。
+- id: REQ-6
+  name: 变更评审与合并控制
+  type: FOLDER
+  dependencies:
+  - REQ-3-3
+  - REQ-4-3
+  description: 拉取请求（PR）是“请求把 compare 分支中的代码变更合入 base 分支”的持久化提案，不是分支、提交或议题。Pull requests 页列出当前仓库的 PR 编号、标题、作者、源/目标分支与状态；“New pull request”先打开比较页，用户选择 base（接收变更的目标分支）和 compare（提供变更的源分支）并查看差异。PR 详情页的 Conversation 显示标题、描述、普通评论、活动与评审摘要；Commits 显示 compare 分支相对 base 的提交；Files changed 显示逐文件逐行差异；Checks 显示该 PR 当前 compare 提交的检查状态。PR 的持久化状态只能是 Draft、Open、Closed 或 Merged：普通创建为 Open，草稿创建为 Draft，作者或 Maintain/Admin 可将 Draft 标记为 Ready for review 转为 Open；作者或 Maintain/Admin 可将尚未合并的 Open 或 Draft 转为 Closed，并可将 Closed 转回 Open；Merged 为终态，不能关闭或重开。Write、Maintain、Admin 可添加行内评论和提交评审，作者或 Maintain/Admin 可请求评审者，只有 Maintain、Admin 或组织 Owner 可合并。每个 PR 保存仓库内编号、源/目标分支、创建和当前 compare 提交、创建时 base 提交、标题、描述、作者、状态和活动记录。compare 分支产生新提交时，系统更新当前 compare 提交，将所有既有评审决定标记为过期但保留在时间线，重新计算合并资格；行内评论保留原提交和行位置并标为 Outdated。失败不改变分支或 PR 状态。
+  children:
+  - id: REQ-6-1
+    name: 使用评审和状态检查要求保护分支
+    type: ATOMIC
+    dependencies:
+    - REQ-4-3-1
+    - REQ-1-1-2
+    description: >-
+      此功能建立在 REQ-4-3-1（列出并切换仓库分支）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      “分支保护规则”是绑定到一个精确分支名的持久化合并限制，前端显示在 Settings → Branches，后端保存分支名与规则开关。本产品只支持“至少 1 个非 PR 作者的有效 Approve”与“必需检查 `test` 为 success”两个要求，均可独立勾选；同一评审者在同一当前 compare 提交上只以其最新的 Comment、Approve 或 Request changes 决定为准。PR 作者不能满足批准要求；任何有效 Request changes 都阻止合并；compare 分支新增提交后所有决定过期，必须重新评审。“Checks”是 PR 详情页中附着当前 compare 提交的检查结果区，`test` 的 pending、success 或 failure 状态、设置人和时间均需保存；仅仓库 Admin 可从该区域更新该状态。系统阻止对受保护分支的直接写入，并在后续 PR 合并时应用该规则。
+
+
+      截图参考：
+
+      ![image](reference/github-branch-protection.png)
+    scenarios:
+    - name: 使用评审和状态检查要求保护分支
+      steps:
+      - keyword: GIVEN
+        content: 仓库 Admin 已登录并打开“Settings”→“Branches”；仓库存在 `main` 分支及一个以 `main` 为目标的 Open PR。
+      - keyword: WHEN
+        content: Admin 点击“Add branch protection rule”，输入精确分支名 `main`，勾选“Require 1 approval”和“Require status check test”，并点击“Create”或“Save changes”；随后在该 PR 的“Checks”区域将 `test` 从 pending 更新为 success。
+      - keyword: THEN
+        content: '设置页显示针对 `main` 的唯一规则及两个要求；PR 详情页持久显示 `test: success`、设置人和时间。后续没有 1 个非作者有效批准、存在有效 Request changes 或 `test` 非 success 的 PR 显示不能合并，不能绕过该规则直接更新受保护分支。'
+      - keyword: THEN
+        content: 刷新设置页后规则仍存在；非 Admin 不显示可保存的规则编辑入口或其请求被拒绝且规则不变。
+    - name: 阻止非管理员修改分支保护规则
+      steps:
+      - keyword: GIVEN
+        content: 一个没有仓库管理权限的已登录用户打开分支保护设置页。
+      - keyword: WHEN
+        content: 该用户尝试创建或修改一条分支保护规则。
+      - keyword: THEN
+        content: 对非管理员来说分支保护控件不可用或被拒绝，且不会保存任何保护规则。
+    - name: 管理员更新拉取请求检查状态
+      steps:
+      - keyword: GIVEN
+        content: 仓库 Admin 打开一个以受保护 `main` 为目标的 Open PR 详情页；Checks 区域显示该 PR 当前 compare 提交的 `test` 状态为 pending。
+      - keyword: WHEN
+        content: Admin 在 Checks 区域将 `test` 更新为 success 并保存。
+      - keyword: THEN
+        content: Checks 区域显示 success、设置人和更新时间；刷新 PR 详情页后该状态仍对应同一 compare 提交。若 compare 分支产生新提交，新的 compare 提交从 pending 开始，旧提交的 success 不可用于合并。
+  - id: REQ-6-2
+    name: 拉取请求发现与创建
+    type: FOLDER
+    dependencies:
+    - REQ-4-3
+    description: 支持在当前仓库列出和筛选拉取请求、选择源/目标分支查看比较结果，并基于有效比较创建普通或草稿拉取请求。Read 仅可查看，Write、Maintain、Admin 可创建 PR。比较结果为创建页的临时只读上下文；创建成功后持久化源/目标分支、当前 compare 提交、创建时 base 提交、标题、描述、作者和状态，并进入新拉取请求详情页。源与目标相同、无可比较提交、同一仓库中已有相同源/目标的 Draft 或 Open PR、或无创建权限时必须拒绝创建且不留下部分记录。此功能建立在 REQ-4-3（分支管理）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-6-2-1
+      name: 列出并筛选仓库拉取请求
+      type: ATOMIC
+      dependencies:
+      - REQ-3-3
+      description: >-
+        Pull requests 列表页只读取当前仓库的 PR 记录；每行显示编号、标题、作者、状态、源分支和目标分支。任何拥有仓库查看权的用户可按 Draft/Open/Closed/Merged 状态、作者或评审状态筛选，筛选只影响当前列表显示，不会修改 PR、分支或评审。
+        此功能建立在 REQ-3-3（查看公共仓库概览）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+
+
+        截图参考：
+
+        ![image](reference/github-pull-requests-list.png)
+      scenarios:
+      - name: 列出并筛选仓库拉取请求
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开可访问仓库的“Pull requests”页；列表含一个由 `alice` 创建的 Open PR 和一个由 `alice` 创建的 Closed PR。
+        - keyword: WHEN
+          content: 用户选择“Open”并将作者筛选为 `alice`。
+        - keyword: THEN
+          content: 列表只显示该 Open PR，并显示编号、标题、源/目标分支、作者和状态；点击标题进入该 PR 详情页。
+        - keyword: THEN
+          content: 切换为“Closed”后不显示 Open PR；筛选不会改变任一 PR 的状态或评审数据。
+    - id: REQ-6-2-2
+      name: 在打开拉取请求前比较分支
+      type: ATOMIC
+      dependencies:
+      - REQ-4-3-1
+      - REQ-1-1-2
+      description: >-
+        PR 比较页是创建前的只读页面：base 是接收合并结果的目标分支，compare 是提供待合并变更的源分支。拥有 Write、Maintain、Admin 或组织 Owner 身份的用户在“Pull requests”页点击“New pull request”后选择两个分支；系统按它们当前指向的提交计算可比较提交、变更文件和差异摘要。分支相同或没有差异时禁用创建入口；比较不保存 PR、提交或分支变更。
+        此功能建立在 REQ-4-3-1（列出并切换仓库分支）、REQ-1-1-2（使用现有账户登录） 提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+        只有拥有 Write、Maintain、Admin 或组织 Owner 身份的已登录用户可在仓库拉取请求页面比较分支；Read 与 Triage 可查看已有 PR，但不能进入创建比较流程。系统验证角色并拒绝未授权请求。
+
+
+        截图参考：
+
+        ![image](reference/github-compare-branches.png)
+      scenarios:
+      - name: 在打开拉取请求前比较分支
+        steps:
+        - keyword: GIVEN
+          content: 拥有 Write、Maintain、Admin 或组织 Owner 身份的已登录用户打开“Pull requests”页；`feature/login` 比 `main` 多一条提交并修改一个文件。
+        - keyword: WHEN
+          content: 用户点击“New pull request”，选择 base 为 `main`、compare 为 `feature/login`，并点击“Compare changes”。
+        - keyword: THEN
+          content: 比较页显示两个分支名称、至少一条可比较提交、变更文件和差异摘要，并提供可用的“Create pull request”入口。
+        - keyword: THEN
+          content: 将 compare 改为 `main` 后页面说明分支相同或没有差异并禁用创建入口；该只读比较不创建 PR 或修改分支。
+      - name: base 和 compare 分支相同时禁用拉取请求创建
+        steps:
+        - keyword: GIVEN
+          content: 协作者在可选择 base 分支和 compare 分支的比较页面中打开比较视图。
+        - keyword: WHEN
+          content: 协作者把 base 和 compare 都选成同一个分支并点击 Compare changes。
+        - keyword: THEN
+          content: 系统说明两个分支相同或没有差异，并保持拉取请求创建入口处于禁用状态。
+    - id: REQ-6-2-3
+      name: 基于比较结果创建拉取请求
+      type: ATOMIC
+      dependencies:
+      - REQ-6-2-2
+      description: 拥有 Write、Maintain 或 Admin 的用户在有效比较结果页点击“Create pull request”，输入 1–256 个去除首尾空白后非空字符的标题、最多 65536 个字符的可选描述，确认不同且存在差异的 base/compare 分支后点击“Create pull request”。系统原子创建 Open PR，保存仓库内唯一编号、源/目标分支、当前 compare 提交、当前 base 提交、标题、描述、作者、创建时间和活动记录并跳转详情页；无差异、分支相同、已有相同源/目标的 Draft 或 Open PR、标题为空或超长、无权限或提交失败时不创建记录。此功能建立在 REQ-6-2-2（在打开拉取请求前比较分支）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 基于比较结果创建拉取请求
+        steps:
+        - keyword: GIVEN
+          content: 已登录协作者位于 `main` 与 `feature/login` 的有效比较结果页，页面显示至少一个变更文件且当前不存在该比较对应的打开 PR。
+        - keyword: WHEN
+          content: 用户点击“Create pull request”，输入长度为 1 至 256 的标题和可选描述，确认 base 为 `main`、compare 为 `feature/login` 后提交。
+        - keyword: THEN
+          content: 系统跳转到新 PR 详情页，显示仓库内唯一编号、Open 状态、源/目标分支、标题、描述和当前用户为作者。
+        - keyword: THEN
+          content: 刷新详情页和 PR 列表后该 PR 仍存在；标题空白或超长、分支相同、无差异、无创建权限或写入失败时不创建部分记录。
+    - id: REQ-6-2-4
+      name: 创建草稿拉取请求
+      type: ATOMIC
+      dependencies:
+      - REQ-6-2-2
+      description: 拥有 Write、Maintain 或 Admin 的用户完成有效 base/compare 分支选择后点击“Create draft pull request”，输入有效标题和可选描述并确认创建。系统以与普通 PR 相同的持久化字段创建 Draft 状态 PR 并显示“Draft”标识；草稿不能提交评审或合并。仅作者、Maintain、Admin 或组织 Owner 可在 Draft 详情页点击“Ready for review”将它转换为 Open 并记录活动；该转换不改变分支、提交、标题或编号。此功能建立在 REQ-6-2-2（在打开拉取请求前比较分支）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 创建草稿拉取请求
+        steps:
+        - keyword: GIVEN
+          content: 已登录协作者位于两个不同且有差异分支的有效比较页，且具备创建 PR 权限。
+        - keyword: WHEN
+          content: 用户点击“Create draft pull request”，输入有效标题和可选描述后确认创建。
+        - keyword: THEN
+          content: 系统创建详情页显示“Draft”标识和源/目标分支，PR 列表中也显示草稿状态；“Merge pull request”入口不可执行。
+        - keyword: THEN
+          content: 刷新后草稿状态和内容保持；无有效差异或创建失败时不创建草稿记录。
+      - name: 将草稿拉取请求标记为可评审
+        steps:
+        - keyword: GIVEN
+          content: PR 作者已登录并打开自己创建的 Draft PR 详情页；页面显示“Ready for review”按钮且尚未有已提交评审。
+        - keyword: WHEN
+          content: 作者点击“Ready for review”并确认。
+        - keyword: THEN
+          content: 系统将同一 PR 编号的状态从 Draft 保存为 Open，移除 Draft 徽章并在 Conversation 追加状态事件；刷新和由评审者重新打开后均显示 Open。该操作不改变 PR 的分支、提交、标题或描述。
+  - id: REQ-6-3
+    name: 拉取请求评审工作区
+    type: FOLDER
+    dependencies:
+    - REQ-6-2-3
+    description: 支持在拉取请求详情页查看概览、提交、已更改文件和差异，并在差异的具体文件与行范围上添加评审评论或提交评审决定。Read 可查看；Write、Maintain、Admin 且不是 PR 作者的用户可对 Open PR 发表评论、提交 Comment、Approve 或 Request changes；Draft 不允许提交评审。行级评论必须保存目标 PR、compare 提交、文件路径、行位置、作者和正文；评审决定必须保存评审者、当前 compare 提交、状态和说明。每个评审者在一个当前 compare 提交上只有一个有效决定，新的决定替换其有效决定但保留历史。查看操作只读，评论或评审提交失败时不得显示为已发布。此功能建立在 REQ-6-2-3（基于比较结果创建拉取请求）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    children:
+    - id: REQ-6-3-1
+      name: 查看拉取请求概览和提交
+      type: ATOMIC
+      dependencies:
+      - REQ-6-2-3
+      description: PR 详情页是同一 PR 编号的统一阅读页。Conversation 是作者描述、普通评论、评审摘要和状态事件的时间线；Commits 是该 PR 当前 compare 分支相对 base 的提交列表；Files changed 是当前差异入口。拥有仓库查看权的用户可在三个标签之间切换，它们都读取同一持久化 PR、分支和提交数据，不产生评论、评审或合并。此功能建立在 REQ-6-2-3（基于比较结果创建拉取请求）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 查看拉取请求概览和提交
+        steps:
+        - keyword: GIVEN
+          content: 评审者在可访问仓库的 PR 列表看到一个 Open PR，该 PR 含标题、描述、至少一条提交和一条讨论评论。
+        - keyword: WHEN
+          content: 评审者点击该 PR 标题，依次打开“Conversation”“Commits”和“Files changed”标签。
+        - keyword: THEN
+          content: Conversation 显示标题、描述、base/compare 分支和讨论，Commits 显示该 PR 的提交，Files changed 显示变更摘要；三者均指向同一 PR 编号。
+        - keyword: THEN
+          content: 刷新任一标签后 PR 标题、分支和提交不变；查看操作不产生评论、评审或分支更新。
+    - id: REQ-6-3-2
+      name: 检查已更改文件和汇总差异
+      type: ATOMIC
+      dependencies:
+      - REQ-6-3-1
+      description: Files changed 是 PR 详情页按当前 base 与 compare 提交计算出的只读差异视图。每个差异块显示文件路径及新增/删除行；汇总统计是当前 PR 变更文件数和增删行数。拥有仓库查看权的用户可展开文件或定位行，但该操作不修改文件、提交、分支、评论或评审状态。此功能建立在 REQ-6-3-1（查看拉取请求概览和提交）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 检查已更改文件和汇总差异
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开一个可访问 PR 详情页，该 PR 比较中包含一个新增文件和一个修改文件。
+        - keyword: WHEN
+          content: 用户点击“Files changed”，选择修改文件并展开其差异块。
+        - keyword: THEN
+          content: 页面显示该 PR 的变更文件路径、每个文件的新增/删除行以及汇总统计；未变更文件不显示，差异对应当前 source/base 提交。
+        - keyword: THEN
+          content: 刷新或切换回 Conversation 后文件、PR 状态和评审状态均不改变；无权查看私有 PR 的用户不能获得差异内容。
+    - id: REQ-6-3-3
+      name: 向已更改的代码行添加评审评论
+      type: ATOMIC
+      dependencies:
+      - REQ-6-3-2
+      - REQ-1-1-2
+      description: 行内评审评论是锚定在 Files changed 中某个文件路径、当前 compare 提交和具体新增/删除行的评论记录；它不同于 Conversation 中不带代码位置的普通评论。拥有 Write、Maintain 或 Admin 且不是 PR 作者的用户悬停变更行点击“+”后，可选择“Add single comment”立即发布，或“Start a review”作为待提交评审草稿。系统保存 PR、文件路径、compare 提交、行位置、作者、正文和发布状态；compare 提交变化后已发布评论保留但标记 Outdated，草稿不自动发布。此功能建立在 REQ-6-3-2（检查已更改文件和汇总差异）、REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 向已更改的代码行添加评审评论
+        steps:
+        - keyword: GIVEN
+          content: 已登录评审者打开可评论 PR 的“Files changed”页，并定位到一个新增代码行及其文件路径。
+        - keyword: WHEN
+          content: 评审者悬停该新增行并点击“+”，输入非空行内评论，选择“Add single comment”。
+        - keyword: THEN
+          content: Conversation 和差异页立即显示该评论，评论记录关联当前 PR、文件路径、差异提交和目标行位置，并显示评审者和正文。
+        - keyword: THEN
+          content: 刷新后评论仍锚定该文件与行；选择“Start a review”时评论保持待提交且在提交评审前不公开，空评论或失败时不显示部分评论。
+      - name: 开始评审时让行内评论保持待提交状态
+        steps:
+        - keyword: GIVEN
+          content: 评审者在拉取请求的 Files changed 视图中定位到一条变更行。
+        - keyword: WHEN
+          content: 评审者输入行内评论并选择 Start a review 而不是 Add single comment。
+        - keyword: THEN
+          content: 系统保持该评论为待提交状态，不会立即发布，并且只有在评审提交后才显示。
+    - id: REQ-6-3-4
+      name: 提交拉取请求评审
+      type: ATOMIC
+      dependencies:
+      - REQ-6-3-1
+      - REQ-1-1-2
+      description: 非 PR 作者且拥有 Write、Maintain 或 Admin 的用户可对 Open PR 提交 Comment、Approve 或 Request changes；作者和 Draft PR 都不能提交评审。系统保存评审决定、评审者、当前 compare 提交、可选说明和时间；同一评审者的新决定替换其对该当前提交的有效决定并保留旧记录。Approve 仅在评审者不是作者且 compare 提交仍相同的情况下有效；Request changes 阻止合并，直到该评审者在当前 compare 提交提交新的 Comment 或 Approve，或 compare 分支出现新提交使旧决定过期。此功能建立在 REQ-6-3-1（查看拉取请求概览和提交）、REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+      scenarios:
+      - name: 提交拉取请求评审
+        steps:
+        - keyword: GIVEN
+          content: 已登录评审者打开一个可评审的 Open PR，且该 PR 当前没有该评审者的“Approved”决定。
+        - keyword: WHEN
+          content: 评审者在“Files changed”点击“Review changes”，输入总体评论，选择“Approve”，并点击“Submit review”。
+        - keyword: THEN
+          content: Conversation 和右侧评审摘要显示该评审者、Approved 状态、总体评论和时间；分支保护的合并资格检查可读取该决定。
+        - keyword: THEN
+          content: 刷新后决定仍存在；选择“Request changes”会显示对应状态，用户无评审权限或提交失败时不写入决定。
+      - name: 记录请求修改的评审决定
+        steps:
+        - keyword: GIVEN
+          content: 评审者打开一个可以评审的拉取请求。
+        - keyword: WHEN
+          content: 评审者输入评审意见，选择 Request changes，并提交评审。
+        - keyword: THEN
+          content: 系统保存评审评论和 changes requested 状态，并在重新加载后继续显示该决定。
+  - id: REQ-6-4
+    name: 请求或移除拉取请求评审者
+    type: ATOMIC
+    dependencies:
+    - REQ-6-2-3
+    - REQ-1-1-2
+    description: “评审者请求”是 PR 与候选评审账户之间的待评审关系，前端显示在 PR 详情右侧 Reviewers 区域，不等同于已提交的评审决定。Open 或 Draft PR 的作者、Maintain、Admin 或组织 Owner 可创建或删除该关系。候选评审者必须拥有该仓库的 Write、Maintain 或 Admin，且不能是 PR 作者；系统保存或删除“PR—评审者请求”、操作人和时间。移除请求不删除该用户已提交的评审、评论或活动记录，也不改变其有效评审决定。此功能建立在 REQ-6-2-3（基于比较结果创建拉取请求）、REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    scenarios:
+    - name: 请求或移除拉取请求评审者
+      steps:
+      - keyword: GIVEN
+        content: PR 作者或维护者已登录并打开 Open PR 详情页；仓库存在一名可请求的协作者评审者。
+      - keyword: WHEN
+        content: 用户在右侧“Reviewers”搜索并选择该协作者，保存后再次点击其旁边的移除按钮。
+      - keyword: THEN
+        content: 选择后右侧显示该账户为 requested reviewer，移除后该请求消失；不会因此自动生成批准或评论。
+      - keyword: THEN
+        content: 刷新详情页后仅保留最终请求集合；非作者且非维护者不能修改请求。
+  - id: REQ-6-5
+    name: 合并符合条件的拉取请求
+    type: ATOMIC
+    dependencies:
+    - REQ-6-3-4
+    - REQ-6-1
+    description: “合并”是把 Open PR 当前 compare 提交的变更写入 base 分支的唯一写操作，不是简单地把 PR 标记为完成。只有 Maintain、Admin 或组织 Owner 可在 PR 详情页使用唯一支持的“Create a merge commit”方式合并；合并确认区应展示满足与未满足的条件。系统在确认前重新读取目标分支头、当前 compare 提交、合并冲突状态和保护规则：若目标受保护，必须有 1 个非作者、针对当前 compare 提交的有效 Approve，不能有有效 Request changes，且 `test` 为 success；若目标未受保护，只要求无合并冲突。通过后系统原子创建一个父提交为合并时目标分支头和当前 compare 提交的合并提交，更新目标分支头，将 PR 置为 Merged，并保存合并人、时间和结果提交标识。任一条件不满足或写入失败时，不改变目标分支或 PR；Merged 为终态。此功能建立在 REQ-6-3-4（提交拉取请求评审）、REQ-6-1（使用评审和状态检查要求保护分支）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    scenarios:
+    - name: 合并符合条件的拉取请求
+      steps:
+      - keyword: GIVEN
+        content: 拥有 Maintain、Admin 或组织 Owner 身份的已登录用户打开一个 Open、非草稿 PR；其目标 `main` 分支受保护，已有 1 个非作者针对当前 compare 提交的有效 Approve，Checks 中 `test` 为 success，且当前差异无合并冲突。
+      - keyword: WHEN
+        content: 维护者确认页面唯一可选方式为“Create a merge commit”，点击“Merge pull request”，并在确认框点击“Confirm merge”。
+      - keyword: THEN
+        content: PR 显示 Merged、合并人、时间和结果提交标识；`main` 分支头更新为合并结果，PR 的源分支与目标分支内容按所选合并方式集成。
+      - keyword: THEN
+        content: 刷新 PR 和 `main` 分支后合并状态与结果提交保持；草稿、未批准、检查失败、不可合并或无权限时合并入口禁用或被拒绝，目标分支和 PR 状态不改变。
+  - id: REQ-6-6
+    name: 不合并地关闭或重新打开拉取请求
+    type: ATOMIC
+    dependencies:
+    - REQ-6-2-3
+    - REQ-1-1-2
+    description: 当拟议变更不应继续推进时，PR 作者、Maintain、Admin 或组织 Owner 可将尚未合并的 Open 或 Draft PR 不合并地关闭；同一角色可将 Closed PR 重新打开为 Open。系统保存状态、操作人和时间并记录转换，保持 PR 讨论、评审、差异和分支引用可查看；关闭或重开不得更新任一分支。Merged 为终态，页面不显示关闭或重开操作且服务端拒绝状态变更。此功能建立在 REQ-6-2-3（基于比较结果创建拉取请求）、REQ-1-1-2（使用现有账户登录）提供的已保存对象、已打开页面或已认证会话上下文之上；应复用该上下文并在其变更后保持页面与数据一致。
+    scenarios:
+    - name: 不合并地关闭或重新打开拉取请求
+      steps:
+      - keyword: GIVEN
+        content: PR 作者或维护者已登录并打开一个尚未合并的 Open PR，该 PR 有标题、讨论和源/目标分支。
+      - keyword: WHEN
+        content: 用户点击“Close pull request”，确认状态为 Closed 后再点击“Reopen pull request”。
+      - keyword: THEN
+        content: PR 依次显示 Closed 和 Open，时间线记录两个状态转换；关闭操作不合并提交、不更新目标分支，也不删除讨论或差异。
+      - keyword: THEN
+        content: 刷新详情页后最终 Open 状态和原有讨论保持；既非作者也非维护者的查看者不能关闭或重开，PR 状态不变。
+    - name: 阻止非作者且非维护者关闭拉取请求
+      steps:
+      - keyword: GIVEN
+        content: 一个既不是拉取请求作者也不是维护者的已登录查看者打开受保护的拉取请求。
+      - keyword: WHEN
+        content: 该查看者尝试查找关闭或重新打开操作，或者尝试修改拉取请求状态。
+      - keyword: THEN
+        content: 关闭和重新打开操作对该用户不可用或被拒绝，且拉取请求状态保持不变。
+data:
+  - category: 账户与权限预置数据
+    items:
+    - 系统中存在已验证账户，可用于通过用户名或已验证邮箱登录、通过已验证邮箱恢复访问、修改密码，以及从受保护页面退出登录。
+    - 本地密码恢复测试不依赖邮件、短信、外部认证器、重置 URL 或环境变量。每次用例通过注册页创建独立账户；恢复页在提交邮箱后直接显示固定验证码 `123456` 与重设密码表单。测试使用错误码 `000000` 验证拒绝结果，使用 `123456` 验证成功结果。
+    - 除每次由注册页创建的唯一账户、组织、仓库、议题、评论、文件和 PR 标题外，GitHub 测试所需的角色账户、页面 URL、可见名称、分支名、提交文本、标签、里程碑和检查状态均是本地测试环境在本 `data` 字段各分类中定义的预置数据。测试配置只把这些已定义值传入浏览器；它不调用接口、读取数据库、访问真实 GitHub、邮件或其他外部服务。每个会写入预置对象的用例在下一次执行前恢复本条所述的初始状态。
+    - 系统中存在具备组织 Owner、组织 Member、仓库 Read、Triage、Write、Maintain、Admin、拉取请求作者、非作者评审者和无仓库访问权角色的已验证账户。
+    - 系统中存在受保护的账户、组织、仓库、议题和拉取请求页面，用于验证退出登录后直接打开时必须重新认证。
+  - category: 组织与仓库预置数据
+    items:
+    - 系统中存在一个公共组织，其中至少有一个访客可见的公开仓库，以及至少一个对无权限访客不可见的私有仓库。
+    - 系统中存在一个可由组织 Owner 管理的组织，并包含可移除 Member、第二名 Owner、团队、团队候选成员，以及适合验证成员关系和层级关系的嵌套团队。为 REQ-2-2-3 单独提供一个每次运行前均不是成员的已注册账户（`E2E_ORGANIZATION_NEW_MEMBER_*`）、一个已是成员的账户（`E2E_ORGANIZATION_EXISTING_MEMBER_*`）和该组织未向两者直接或经团队授权的私有仓库 URL（`E2E_ORGANIZATION_UNGRANTED_PRIVATE_REPOSITORY_URL`）；每个测试运行前恢复这三者的成员/授权状态，禁止与其他成员测试共用会被写入的账户。
+    - 系统中存在名称不同的公开仓库和私有仓库，用于仓库搜索、公开仓库查看、复制克隆 URL 和可见性筛选。
+    - 系统中存在由预置账户管理的仓库，用于访问授权、角色变更、可见性变更、默认分支变更、分支保护、文件变更和拉取请求流程；该仓库有非作者批准、有效和失败的 `test` 检查状态及可产生新 compare 提交的分支。分支保护创建测试使用独立仓库或独立分支模式（`E2E_PROTECTION_REPOSITORY_URL`、`E2E_PROTECTED_BRANCH_PATTERN`），运行前不存在同名规则；检查状态测试使用独立的、目标为已保护 `main` 的 Open PR（`E2E_PROTECTION_PULL_REQUEST_URL`），其当前 compare 提交的 `test` 初始为 pending，且运行前恢复为该状态。
+    - 系统中存在一个可由预置用户 fork 的源仓库，并且存在一个可被识别为已经创建的 fork。
+  - category: 代码、分支与提交预置数据
+    items:
+    - 系统中存在一个代码仓库，包含可浏览目录、已知文件名、可见文件内容、可搜索代码文本，以及会返回空结果的搜索词。
+    - 系统中存在一个仓库的提交历史，其中至少包含一条可见提交消息和提交作者。
+    - 系统中存在一个提交详情页，包含已变更文件和足够用于检查新增行、删除行的差异内容。
+    - 系统中存在一个分支仓库，包含当前活动分支、另一个可切换分支、仅存在于目标分支的文件，以及一个无法匹配任何分支的查询词。
+    - 系统中存在一个包含旧默认分支和新默认分支候选项的仓库，管理员可修改默认分支，非管理员不可修改。
+    - 系统中存在一个分支保护仓库和分支名模式，管理员可配置保护规则，非管理员不可修改。
+  - category: 议题预置数据
+    items:
+    - 系统中存在一个议题列表，至少包含一个打开状态议题标题和一个关闭状态议题标题，用于筛选。
+    - 系统中存在一个议题详情页，其中稳定显示标题和描述，访客或授权用户可查看。
+    - 系统中存在可编辑、非法编辑校验、可评论、评论校验、可分配、可打标签、可设置里程碑、可关闭，以及受保护的议题，用于议题编辑、评论、元数据和状态流转测试。
+    - 系统中存在可从相关议题控件中选择的议题负责人、标签和里程碑。
+  - category: 拉取请求预置数据
+    items:
+    - 系统中存在一个拉取请求列表，至少包含一个打开状态拉取请求标题，用于筛选。
+    - 系统中存在可用于创建拉取请求的分支比较数据，包括有效的 base 分支、compare 分支、已变更文件、无差异比较、普通 compare URL 和草稿 compare URL。
+    - 为草稿转可评审测试单独提供作者账户（`E2E_DRAFT_PR_AUTHOR_*`）及其 Draft PR URL、标题、源分支和目标分支（`E2E_DRAFT_PULL_REQUEST_URL`、`E2E_DRAFT_PULL_REQUEST_TITLE`、`E2E_DRAFT_PULL_REQUEST_SOURCE_BRANCH`、`E2E_DRAFT_PULL_REQUEST_TARGET_BRANCH`）。该 PR 在每次测试前均为 Draft、尚无提交评审，且不会与草稿创建测试共用；测试环境必须在用例结束后或下一次启动前恢复其状态。
+    - 系统中存在用于概览查看、公开变更文件检查、行内评审评论、待提交评审评论、提交评审、提交 request changes 评审、分配评审者、合并、不可合并校验、关闭或重新打开，以及受保护关闭/重新打开权限校验的拉取请求详情页。
+    - 系统中存在可用于拉取请求评审者请求测试的评审者用户名。

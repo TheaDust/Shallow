@@ -1,0 +1,881 @@
+id: ROOT
+name: 在线电子表格数据工作台核心需求
+type: FOLDER
+dependencies: []
+description: >
+  一个界面参考 Google Sheets 的精简在线电子表格应用，重点覆盖工作簿与工作表管理、表格数据编辑、公式计算、排序筛选、数据校验和基础透视分析。用户从工作簿首页进入编辑页；编辑页以当前活动工作表为上下文，所有网格、公式栏、行列菜单、筛选器和透视表操作只影响当前工作簿中的目标工作表。刷新页面或从首页重新打开工作簿后，页面恢复工作簿名称、工作表及顺序、活动工作表、每个工作表最后一次成功选择的完整矩形区域（单个单元格视为 1×1 区域）、行列结构、单元格值和公式、筛选视图、校验规则及透视表结果。任何修改要么完整生效并在重新打开后保持，要么显示错误并让当前页面及重新打开后的页面继续显示最近一次成功状态，不得出现部分修改。共享协作、历史版本恢复、复杂视觉样式、图表、宏脚本、实时协同光标以及外部办公套件集成不属于核心范围。
+children:
+- id: REQ-1
+  name: 工作簿访问与生命周期
+  type: FOLDER
+  dependencies: []
+  description: >
+    支持在应用中查看、打开、创建、重命名以及导入导出工作簿。首页是工作簿入口；打开、创建和导入成功后都进入同一编辑页，后续操作只能改变当前打开的工作簿。打开、创建或导入后，浏览器中显示的编辑页 URL 必须是稳定且可直接访问的工作簿 URL：访问或刷新该精确 URL 时应打开同一个工作簿，而不是另一个工作簿或临时空白页，且成功的工作簿修改仍可通过该 URL 获取。返回首页或重新打开后，工作簿名称、最近更新时间、工作表顺序和最后活动的工作表保持一致。同一编辑页中的工作表标签使用 ARIA tab 角色，当前活动标签通过 aria-selected="true" 表示；活动工作表网格使用 ARIA grid 角色，可访问名称为“Worksheet grid”，并暴露 aria-multiselectable="true”。网格单元格使用 ARIA gridcell 角色，以单元格坐标作为可访问名称（例如 A1）；当前单元格及当前选中矩形区域内的每个单元格通过 aria-selected="true" 表示，区域外单元格通过 aria-selected="false" 表示。
+  children:
+  - id: REQ-1-1
+    name: 工作簿导航
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持从首页查看和打开可用工作簿。创建、重命名或 CSV 导入成功后，返回首页或刷新页面时应在列表中看到更新后的记录。
+
+
+      页面参考：
+
+      ![image](reference/workbook-home.png)
+    children:
+    - id: REQ-1-1-1
+      name: 查看并打开工作簿
+      type: ATOMIC
+      dependencies: []
+      description: >
+        用户在工作簿首页查看可用工作簿。每条记录显示“Last updated: <最近更新时间值>”，并提供以工作簿名称为可访问名称的链接。点击该链接后，编辑页显示相同的“Last updated: <最近更新时间值>”、对应的工作簿名称、工作表标签及顺序、当前活动工作表、行列结构、网格值、公式栏内容、筛选视图、校验入口和透视表结果；不得把其他工作簿的数据带入当前网格。浏览器当前编辑页 URL 可以直接访问，刷新后仍标识同一个工作簿；在同一或之后的浏览器会话中访问该精确 URL 时，无需经过首页导航即可恢复该工作簿最近一次成功的状态。URL 形状和内部标识格式由实现决定。
+
+
+        页面参考：
+
+        ![image](reference/workbook-home.png)
+      scenarios:
+      - name: 打开工作簿
+        steps:
+        - keyword: GIVEN
+          content: 至少存在一个已保存的工作簿。
+        - keyword: WHEN
+          content: 用户在工作簿首页的列表中点击以该工作簿名为可访问名称的链接。
+        - keyword: THEN
+          content: 系统打开对应编辑页并显示上次活动的工作表。
+        - keyword: THEN
+          content: 页面显示的工作簿名称和最近更新时间与首页记录一致。
+        - keyword: THEN
+          content: 直接访问或刷新浏览器当前编辑页 URL 时，系统在相同 URL 打开同一个工作簿，并恢复其最近一次成功的状态。
+  - id: REQ-1-2
+    name: 工作簿创建与命名
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持创建空白工作簿和修改工作簿名称；两项操作均从首页或编辑页的可见入口发起，成功后工作簿首页记录和编辑页标题同步更新，并在刷新或重新打开后保持。
+    children:
+    - id: REQ-1-2-1
+      name: 创建空白工作簿
+      type: ATOMIC
+      dependencies: []
+      description: >
+        用户从工作簿首页创建空白工作簿。首页提供可见名称为“新建空白工作簿”的按钮；点击后进入创建页，创建页的提交按钮名称为“创建”。创建成功后进入编辑页，只显示名为 Sheet1 的空白工作表，Sheet1 处于活动状态且 A1 被选中；刷新或返回首页后重新打开时状态相同。创建失败时显示错误，停留在可重试状态，首页不得出现不完整的工作簿记录。
+
+
+        页面参考：
+
+        ![image](reference/create-workbook.png)
+      scenarios:
+      - name: 创建并重新打开空白工作簿
+        steps:
+        - keyword: GIVEN
+          content: 用户位于工作簿首页。
+        - keyword: WHEN
+          content: 用户在工作簿首页点击“新建空白工作簿”按钮，并在创建页点击“创建”。
+        - keyword: THEN
+          content: 系统创建关联到应用且包含 Sheet1 的工作簿。
+        - keyword: THEN
+          content: 编辑页打开 Sheet1 并选中 A1。
+        - keyword: THEN
+          content: 刷新或重新打开后，该工作簿及默认工作表仍然存在。
+    - id: REQ-1-2-2
+      name: 重命名工作簿
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >
+        用户可在工作簿编辑页修改工作簿名称。编辑页标题旁提供可见名称为“重命名工作簿”的按钮；点击后显示标签为“工作簿名称”的文本框，文本框预填最后保存的名称，并显示“保存”按钮。去除首尾空格后，名称不得为空；空名称应被拒绝并显示“工作簿名称不能为空”。保存成功后编辑页标题和首页链接同时显示新名称；保存失败时显示错误并继续显示原名称。重新打开工作簿后显示最后一次成功保存的名称。
+      scenarios:
+      - name: 保存有效的新名称
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开仅包含 Sheet1 的工作簿，且 Sheet1 的 A1 为 Existing data。
+        - keyword: WHEN
+          content: 用户点击“重命名工作簿”，在“工作簿名称”中输入非空名称后点击“保存”或按 Enter。
+        - keyword: THEN
+          content: 编辑页和工作簿首页均显示新名称。
+        - keyword: THEN
+          content: 重新打开工作簿后仍显示新名称。
+      - name: 拒绝空名称
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开工作簿，且新名称去除首尾空格后为空。
+        - keyword: WHEN
+          content: 用户在“工作簿名称”中只输入空格或留空后点击“保存”。
+        - keyword: THEN
+          content: 系统拒绝修改、显示名称不能为空，列表仍显示原名称，刷新后也不出现空名称。
+  - id: REQ-1-3
+    name: CSV 数据交换
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持将外部 CSV 数据完整导入为工作簿，并将当前活动工作表导出为 CSV。导入成功后打开 Sheet1 编辑页，刷新或重新打开时仍显示完整导入结果；导出只读取当前活动工作表，不能改变工作簿内容或当前界面状态。
+    children:
+    - id: REQ-1-3-1
+      name: 导入 CSV 创建工作簿
+      type: ATOMIC
+      dependencies: []
+      description: >
+        用户在工作簿首页点击“导入 CSV”按钮开始导入。名称为“导入 CSV”的对话框提供标签为“CSV 文件”的文件控件和“确认导入”按钮。系统按照原始行列顺序解析数据，保留空字段，支持 UTF-8 中文、英文和数字文本，并正确处理被双引号包裹的逗号、成对双引号和字段内换行；带起始双引号却没有闭合双引号的字段属于无效 CSV，必须拒绝并显示“CSV 文件格式无效，导入失败”。导入成功后创建新工作簿，名称为文件名去除最后一个 .csv 扩展名后的结果，并打开包含完整 CSV 行列和原始文本的 Sheet1；首行保持普通数据。刷新或重新打开后网格内容和行列顺序不变。解析或导入失败时，首页不得出现该名称的工作簿链接，也不得显示或保留部分导入结果。
+      scenarios:
+      - name: 导入有效 CSV
+        steps:
+        - keyword: GIVEN
+          content: 存在可读取的 UTF-8 CSV 文件，其中包含普通字段、空字段、中文、数字文本、带逗号字段、成对双引号和字段内换行。
+        - keyword: WHEN
+          content: 用户在首页点击“导入 CSV”，在文件选择器中选取该文件后点击“确认导入”。
+        - keyword: THEN
+          content: 系统创建新工作簿，Sheet1 的单元格与 CSV 行列对应。
+        - keyword: THEN
+          content: 空字段和中文内容在重新打开后仍保持。
+      - name: 拒绝无法解析的 CSV
+        steps:
+        - keyword: GIVEN
+          content: 所选 CSV 文件含有未闭合双引号字段，无法按 CSV 解析。
+        - keyword: WHEN
+          content: 用户在导入对话框选取该不可解析文件后点击“确认导入”。
+        - keyword: THEN
+          content: 系统显示导入失败信息，且不创建部分填充的工作簿。
+    - id: REQ-1-3-2
+      name: 导出当前工作表为 CSV
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      - REQ-1-3-1
+      description: >
+        用户可通过工作簿编辑页工具栏中可见名称为“导出 CSV”的按钮导出当前活动工作表。点击后启动浏览器下载，建议文件名以“.csv”结尾，下载的 UTF-8 文本即为导出的 CSV。导出的 CSV 按网格实际行列顺序保留已使用范围内的空单元格，并正确转义包含逗号、引号或换行的文本。普通单元格导出显示值；公式单元格导出当前计算结果而不是公式表达式。导出前后活动工作表、筛选视图、网格值和公式栏内容均不改变，刷新后仍保持原状态。
+      scenarios:
+      - name: 导出包含公式的工作表
+        steps:
+        - keyword: GIVEN
+          content: 工作簿已打开，已保存的活动工作表表头为地区、说明、数量、空列和公式结果；数据包含华东/“含,逗号”/2/空/公式结果 4，以及华北/带引号和换行的中文文本/3/空/公式结果 5。
+        - keyword: WHEN
+          content: 用户在已打开工作簿的工具栏点击“导出 CSV”。
+        - keyword: THEN
+          content: 浏览器启动下载，建议文件名以 .csv 结尾，CSV 文本与活动工作表的行列顺序一致。
+        - keyword: THEN
+          content: 公式单元格写入当前结果，重新打开工作簿后原数据不变。
+- id: REQ-2
+  name: 工作表与表格结构
+  type: FOLDER
+  dependencies: []
+  description: >
+    支持在一个工作簿中管理多个工作表，并调整行列结构。每个工作表的名称、顺序、网格值、公式、校验规则、筛选视图和透视表结果相互独立；切换工作表或重新打开工作簿时不得显示其他工作表的数据。
+
+    页面参考：
+
+    ![image](reference/worksheet-overview.png)
+  children:
+  - id: REQ-2-1
+    name: 工作表生命周期
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持创建、切换、重命名和删除工作表，并保证各工作表的网格、公式、校验行为、筛选视图、透视表字段选择和结果相互独立且在重新打开后保持。工作表标签栏显示最后一次成功操作后的工作表顺序和活动状态，并提供可见名称为“新增工作表”的按钮。每个工作表标签提供可见名称为“<工作表名称> 的工作表选项”的按钮；点击后打开菜单，菜单命令使用 ARIA menuitem 角色。
+
+
+      页面参考：
+
+      ![image](reference/worksheet-lifecycle.png)
+    children:
+    - id: REQ-2-1-1
+      name: 新增工作表
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      - REQ-2-1-3
+      description: >
+        用户通过工作簿编辑页标签栏中可见名称为“新增工作表”的按钮新增工作表。新标签按正整数顺序使用第一个未占用的 SheetN 名称；只有 Sheet1 时创建 Sheet2。新增工作表为空，不继承其他工作表的筛选、校验或透视结果，新增后成为活动 tab 且 A1 被选中；现有工作表及其数据不变。刷新或重新打开后新标签仍存在。新增失败时显示错误，不出现新标签，现有工作表保持不变。
+      scenarios:
+      - name: 新增工作表并在刷新后保持
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开工作簿。
+        - keyword: WHEN
+          content: 用户在编辑页底部工作表标签栏点击“新增工作表”。
+        - keyword: THEN
+          content: 系统新增并激活空白 Sheet2，选中 A1，同时 Sheet1 的 A1 仍为 Existing data。
+        - keyword: THEN
+          content: 重新打开工作簿后该工作表仍然存在。
+    - id: REQ-2-1-2
+      name: 切换工作表
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-1
+      - REQ-5-1-2
+      - REQ-5-2-1
+      description: >
+        用户点击另一个 ARIA tab 后，网格、行列结构、选中单元格、标签为“公式栏”的文本框、筛选按钮、校验入口和透视表结果都切换为目标工作表的状态；公式栏显示选中单元格的普通值或原公式。首次打开且没有历史选择的工作表选中 A1。切换不能修改原工作表；再次返回时恢复其最后一次成功状态。重新打开工作簿后直接显示最后活动的 tab，并恢复各工作表最后确认的选中单元格。
+      scenarios:
+      - name: 切换后保持各工作表数据独立
+        steps:
+        - keyword: GIVEN
+          content: 工作簿至少有两个工作表，当前工作表已有保存的数据。
+        - keyword: WHEN
+          content: 用户依次点击另一工作表标签和原工作表标签。
+        - keyword: THEN
+          content: 每个标签显示各自的数据。
+        - keyword: THEN
+          content: 返回原工作表后，其原有数据保持不变。
+      - name: 切换时保持筛选和校验入口相互隔离
+        steps:
+        - keyword: GIVEN
+          content: Sheet1 的 Region 表头提供“筛选 Region”，C2 提供“打开 C2 的下拉列表”；Sheet2 没有这两个入口。
+        - keyword: WHEN
+          content: 用户从 Sheet1 切换到 Sheet2，再返回 Sheet1 并再次切换到 Sheet2。
+        - keyword: THEN
+          content: 仅在 Sheet1 活动时显示“筛选 Region”和“打开 C2 的下拉列表”，两个工作表始终显示各自的网格值。
+        - keyword: THEN
+          content: Sheet2 活动时刷新页面，Sheet2 仍为活动工作表，且页面中没有只属于 Sheet1 的两个入口。
+    - id: REQ-2-1-3
+      name: 重命名工作表
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >
+        用户从工作表标签菜单修改名称。“重命名”菜单项打开名称为“重命名工作表”的对话框，其中显示标签为“工作表名称”的文本框，预填当前名称，并显示“保存”按钮。新名称去除首尾空格后不得为空，并且在同一工作簿内必须唯一；空名称显示“工作表名称不能为空”，重复名称显示“工作表名称已存在”。保存成功后 tab 显示新名称；保存失败、名称重复或名称为空时显示错误并保留原名称。刷新或重新打开后显示最后一次成功名称。
+      scenarios:
+      - name: 保存唯一的工作表名称
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开工作簿，且目标名称未被其他工作表使用。
+        - keyword: WHEN
+          content: 用户打开当前工作表标签菜单，点击“重命名”，输入新名称后按 Enter 或点击“保存”。
+        - keyword: THEN
+          content: 系统保存名称并更新标签，重新打开工作簿后名称保持。
+      - name: 拒绝重复名称
+        steps:
+        - keyword: GIVEN
+          content: 同一工作簿已有工作表使用目标名称。
+        - keyword: WHEN
+          content: 用户在工作表重命名输入框输入已被同一工作簿使用的名称后点击“保存”。
+        - keyword: THEN
+          content: 系统显示名称重复提示并保留原名称。
+      - name: 拒绝空工作表名称
+        steps:
+        - keyword: GIVEN
+          content: 用户已打开工作簿，当前工作表具有已保存的非空名称。
+        - keyword: WHEN
+          content: 用户打开当前工作表标签菜单，点击“重命名”，在“工作表名称”中留空或只输入空格，然后点击“保存”。
+        - keyword: THEN
+          content: 系统显示“工作表名称不能为空”，重新打开后仍保留原名称。
+    - id: REQ-2-1-4
+      name: 删除工作表
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-1
+      - REQ-5-3-1
+      description: >
+        用户通过工作表标签菜单中的“删除”命令删除工作表。允许删除时，系统显示名称为“删除工作表”的对话框，说明目标工作表并提供“删除工作表”确认按钮。删除成功后目标 tab 及其数据、公式、筛选、校验和透视结果均不再出现，并激活相邻工作表；刷新后目标 tab 仍不存在。删除透视结果工作表后，对应源工作表不再受该透视表限制。若目标仍是透视表源工作表，确认后拒绝删除并显示“请先删除或重建依赖的透视表”，关闭对话框，源数据和透视结果保持不变。仅剩一个工作表时点击“删除”不显示确认对话框，而显示“工作簿必须至少包含一个工作表”。其他删除失败显示错误，目标 tab 和网格保持可见且刷新后不变。
+      scenarios:
+      - name: 删除多个工作表中的一个
+        steps:
+        - keyword: GIVEN
+          content: 工作簿至少包含两个工作表。
+        - keyword: WHEN
+          content: 用户打开当前工作表标签菜单，点击“删除”，并在确认对话框点击“删除工作表”。
+        - keyword: THEN
+          content: 目标工作表 tab 及其数据消失，并激活另一个工作表。
+        - keyword: THEN
+          content: 重新打开后，被删除工作表仍不存在。
+      - name: 保留最后一个工作表
+        steps:
+        - keyword: GIVEN
+          content: 工作簿仅剩一个工作表。
+        - keyword: WHEN
+          content: 用户在仅剩一个工作表时打开其标签菜单并点击“删除”。
+        - keyword: THEN
+          content: 系统显示“工作簿必须至少包含一个工作表”，拒绝删除并保留该工作表。
+      - name: 拒绝删除透视表的源工作表
+        steps:
+        - keyword: GIVEN
+          content: 当前工作簿中存在一个透视表，其源工作表为待删除工作表。
+        - keyword: WHEN
+          content: 用户在被透视表引用的源工作表标签菜单中点击“删除”并确认。
+        - keyword: THEN
+          content: 系统显示“请先删除或重建依赖的透视表”，拒绝删除，源工作表、透视表字段选择和结果均保持不变。
+  - id: REQ-2-2
+    name: 行列结构管理
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持在当前活动工作表插入和删除行列。操作后网格值、公式栏、筛选视图、校验行为和透视表刷新结果保持一致，其他工作表不变；刷新或重新打开后结构保持。行号使用 ARIA rowheader 角色，以十进制行号作为可访问名称；列标题使用 ARIA columnheader 角色，以列字母作为可访问名称。右键点击行号或列标题后打开菜单，菜单命令使用 ARIA menuitem 角色。
+    children:
+    - id: REQ-2-2-1
+      name: 插入和删除行
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >
+        用户在当前活动工作表中通过行号菜单在目标行上方或下方插入空白行，或删除目标行。行号菜单提供“在上方插入 1 行”“在下方插入 1 行”和“删除行”命令。插入时目标行及之后的完整记录、校验规则和公式引用整体下移；删除时后续行整体上移并移除目标行规则。受影响公式显示调整后的原公式和正确结果，无法保留的引用显示明确错误；筛选仍作用于原数据区域。若变更与透视表源范围重叠，现有透视结果保持不变，点击“刷新透视表”后按调整后的范围重新汇总。操作失败时显示错误，网格立即和刷新后都保持操作前结构，不得只移动部分行。
+
+
+        页面参考：
+
+        ![image](reference/manage-rows.png)
+      scenarios:
+      - name: 在现有数据中插入行
+        steps:
+        - keyword: GIVEN
+          content: 目标工作表已打开，A1/B1 为 Item/Amount，A2/B2 为 Alpha/10，A3/B3 为 Beta/20。
+        - keyword: WHEN
+          content: 用户右键点击第 3 行行号，在菜单中选择“在上方插入 1 行”。
+        - keyword: THEN
+          content: 第 3 行为空，Beta/20 整体移动至 A4/B4，Alpha/10 保持在 A2/B2，刷新后状态相同。
+      - name: 删除行并重新打开
+        steps:
+        - keyword: GIVEN
+          content: 目标工作表已打开，A2 为 Alpha，A3 为 Remove me，A4 为 Beta。
+        - keyword: WHEN
+          content: 用户右键点击第 3 行行号并选择“删除行”，看到更新后的网格后关闭并重新打开该工作簿。
+        - keyword: THEN
+          content: A3 显示 Beta，A4 为空，重新打开后仍保持该顺序。
+    - id: REQ-2-2-2
+      name: 插入和删除列
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >
+        用户在当前活动工作表中通过列标题菜单在目标列左侧或右侧插入空白列，或删除目标列。列标题菜单提供“在左侧插入 1 列”“在右侧插入 1 列”和“删除列”命令。插入时目标列及之后的完整数据、校验规则和公式引用整体右移；删除时后续列整体左移并移除目标列规则。被删除列之外的数据保持；受影响公式显示调整后的原公式和正确结果，无法保留的直接引用显示 #REF!；筛选继续作用于调整后的区域。透视表源列移动后，现有结果保持不变，点击“刷新透视表”后使用移动后的字段；若所选表头被删除，刷新或打开透视表编辑器时显示需要重新选择字段的可见错误，并保留上一次成功结果。操作失败时显示错误，网格立即和刷新后都保持操作前结构。
+
+
+        页面参考：
+
+        ![image](reference/manage-columns.png)
+      scenarios:
+      - name: 在现有数据旁插入列
+        steps:
+        - keyword: GIVEN
+          content: 目标工作表已打开，A1/B1/C1 为 Alpha/Beta/Gamma。
+        - keyword: WHEN
+          content: 用户右键点击 B 列标题，在菜单中选择“在左侧插入 1 列”。
+        - keyword: THEN
+          content: 在 B 左侧插入后，A1 保持 Alpha，B1 为空，C1 显示 Beta，D1 显示 Gamma，刷新后状态相同。
+      - name: 删除被公式引用的列
+        steps:
+        - keyword: GIVEN
+          content: 工作表中 A1/B1/C1 为 Unit price/Quantity/Total，A2/B2 为 10/2，C2 是已保存公式 =A2*B2 且结果为 20。
+        - keyword: WHEN
+          content: 用户右键点击 B 列标题并在菜单中选择“删除列”。
+        - keyword: THEN
+          content: 'B 列被删除，总计移动到 B1，对已删除列的直接引用使 B2 显示 #REF!，A1/A2 保持不变，重新打开后状态相同。'
+- id: REQ-3
+  name: 单元格与区域编辑
+  type: FOLDER
+  dependencies: []
+  description: >
+    支持当前活动工作表内单元格和连续区域的数据录入、批量粘贴、复制剪切以及撤销重做。每次操作要么完整更新目标网格、公式结果和相关校验行为，并在刷新后保持；要么显示错误并让当前工作表及其他工作表继续显示操作前状态。
+  children:
+  - id: REQ-3-1
+    name: 直接数据录入
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持通过当前工作表的网格、标签为“公式栏”的文本框或外部剪贴板录入数据。网格、公式栏和选中状态必须显示同一单元格的一致内容；刷新后普通值和原公式保持。双击网格单元格后显示可见名称为“编辑 <单元格坐标>”的行内文本框。
+    children:
+    - id: REQ-3-1-1
+      name: 通过网格或公式栏编辑单元格
+      type: ATOMIC
+      description: >
+        用户在当前活动工作表选中单元格后，可直接在网格或公式栏修改内容。单元格支持文本、数字、布尔类值、日期文本和以等号开头的公式。按 Enter 或点击其他单元格提交；按 Escape 取消未提交修改。普通单元格在网格和公式栏显示相同输入；公式单元格在网格显示计算结果，在公式栏显示用户提交的原公式。源值提交后，直接和间接依赖公式更新结果。刷新后值、原公式和结果保持。提交失败时显示错误，网格和公式栏继续显示上一个成功值或公式，依赖结果不变。
+      dependencies:
+      - REQ-1-1-1
+      scenarios:
+      - name: 编辑单元格并在刷新后保持
+        steps:
+        - keyword: GIVEN
+          content: 已打开全新预置工作表，A1 已选中且保存值为 2，B1 包含公式 =A1*2 且结果为 4。
+        - keyword: WHEN
+          content: 用户点击公式栏，将 A1 替换为 3 后按 Enter。
+        - keyword: THEN
+          content: A1 在网格和公式栏显示 3；B1 在网格重算为 6，选中 B1 后公式栏显示 =A1*2。
+        - keyword: THEN
+          content: 重新打开工作簿后，该内容仍然存在。
+      - name: 取消未提交编辑
+        steps:
+        - keyword: GIVEN
+          content: 已打开全新预置工作表，A1 的已保存值为 Saved value。
+        - keyword: WHEN
+          content: 用户双击 A1，在“编辑 A1”中输入 Unsaved value，并在提交前按 Escape。
+        - keyword: THEN
+          content: A1 和公式栏显示 Saved value，行内编辑框关闭，刷新后不会出现 Unsaved value。
+    - id: REQ-3-1-2
+      name: 粘贴二维表格数据
+      type: ATOMIC
+      dependencies:
+      - REQ-3-1-1
+      description: >
+        用户在当前活动工作表将包含制表符分列、换行分行的文本粘贴到起始单元格。系统应用完整矩形并保留空字段，只覆盖目标矩形；目标中的公式被新内容替换，相关公式显示重算结果。整块粘贴要么更新矩形内的每个单元格并在刷新后保持，要么显示错误且所有目标单元格维持原值，不得静默丢弃部分值。网格右键菜单提供使用 ARIA menuitem 角色且可访问名称为“粘贴”的命令，Ctrl+V 粘贴相同的外部剪贴板内容。
+      scenarios:
+      - name: 粘贴多行多列数据
+        steps:
+        - keyword: GIVEN
+          content: 已打开全新预置工作表，A1 为 Outside、E4 为 Keep，剪贴板文本为 Alpha<TAB><TAB>3<NEWLINE>Beta<TAB>二<TAB>4。
+        - keyword: WHEN
+          content: 用户单击 B2 后使用 Ctrl+V。
+        - keyword: THEN
+          content: B2/C2/D2 一次性变为 Alpha/空/3，B3/C3/D3 一次性变为 Beta/二/4。
+        - keyword: THEN
+          content: A1 保持 Outside，E4 保持 Keep，重新打开后完整粘贴矩形保持。
+    - id: REQ-3-1-3
+      name: 选择矩形单元格区域
+      type: ATOMIC
+      dependencies:
+      - REQ-1-1-1
+      description: >
+        用户可以点击选择单个单元格，也可以从矩形区域的一个角拖拽到对角单元格，选择连续的矩形区域。活动工作表应可见地指示完整选区；网格暴露 aria-multiselectable="true"；矩形区域内每个 gridcell 暴露 aria-selected="true"，区域外每个 gridcell 暴露 aria-selected="false"。后续区域操作只使用该精确矩形，不得隐式扩展到相邻的已有数据。再次选择其他单元格或区域后，之前的选择被替换，ARIA 状态同步更新。每个工作表必须持久保存最后一次成功选择的完整矩形，而非只保存其左上角：刷新或重新打开工作簿并回到该活动工作表后，矩形内外的 aria-selected 状态与保存前完全一致；切换到其他工作表不得覆盖原工作表的选区。
+      scenarios:
+      - name: 选择精确的矩形区域
+        steps:
+        - keyword: GIVEN
+          content: 全新工作表在 A1:B3 有数据，矩形外还有相邻数据。
+        - keyword: WHEN
+          content: 用户从 A1 拖拽到 B3，并打开区域操作。
+        - keyword: THEN
+          content: 页面可见地指示 A1:B3 为选中矩形，区域操作报告并只使用 A1:B3，不包含相邻单元格。
+        - keyword: THEN
+          content: 用户刷新页面或重新打开该工作簿后，A1:B3 仍是唯一 aria-selected="true" 的矩形区域；点击 C1 后仅 C1 为选中状态，随后刷新也保持 C1。
+  - id: REQ-3-2
+    name: 区域转移与操作恢复
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持在当前活动工作表的区域之间转移数据，并通过撤销和重做恢复网格值、公式、规则范围及行列结构。每次撤销或重做后的可见状态在刷新后保持。
+    children:
+    - id: REQ-3-2-1
+      name: 复制、剪切和粘贴单元格区域
+      type: ATOMIC
+      dependencies:
+      - REQ-3-1-1
+      - REQ-3-1-3
+      description: >
+        用户在当前活动工作表从矩形区域一个角拖拽到另一个角完成选择后执行复制或剪切，再选择目标位置粘贴；仅支持同一工作表。复制后源区域保持；剪切只有在目标区域完整显示后才清空源区域。值和公式保持二维布局；复制公式时相对引用按目标偏移调整，绝对引用不变，公式栏显示调整后的原公式。源区域、目标区域和受影响公式要么全部更新并在刷新后保持，要么全部维持原状态；区域之外的单元格不得改变。
+
+
+        页面参考：
+
+        ![image](reference/copy-paste-range.png)
+      scenarios:
+      - name: 复制区域到新位置
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表中 A1/B1 为 1/2，A2 为 3，B2 是公式 =A1+$B$1 且结果为 3，D1:E2 为空，G1 为 Keep。
+        - keyword: WHEN
+          content: 用户从 A1 拖拽到 B2，使用 Ctrl+C，点击 D1 后使用 Ctrl+V。
+        - keyword: THEN
+          content: D1/E1/D2/E2 显示 1/2/3/3，A1:B2 保持不变，G1 保持 Keep。
+        - keyword: THEN
+          content: 选中 E2 后公式栏显示 =D1+$B$1，相对引用移动且绝对引用保持不变。
+        - keyword: THEN
+          content: 重新打开工作簿后，源区域和目标区域保持复制后的已保存状态。
+      - name: 剪切并移动区域
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表中 A1/B1/A2/B2 为 A/B/C/D，D1:E2 为空，G1 为 Keep。
+        - keyword: WHEN
+          content: 用户从 A1 拖拽到 B2，使用 Ctrl+X，点击 D1 后使用 Ctrl+V。
+        - keyword: THEN
+          content: D1/E1/D2/E2 变为 A/B/C/D，A1:B2 被清空，G1 保持 Keep，重新打开后状态相同。
+    - id: REQ-3-2-2
+      name: 撤销和重做近期操作
+      type: ATOMIC
+      dependencies:
+      - REQ-2-2-1
+      - REQ-2-2-2
+      - REQ-3-1-1
+      - REQ-3-1-2
+      - REQ-3-2-1
+      description: >
+        用户可以撤销当前工作簿会话中的近期单元格编辑、批量粘贴、区域移动和行列结构修改。工具栏提供可见名称为“撤销”和“重做”的按钮，Ctrl+Z 与 Ctrl+Y 执行相同操作。撤销恢复该操作之前的网格值、原公式、行列结构、规则范围、透视结果有效性和计算结果；连续撤销按相反顺序恢复，重做重新应用刚撤销的完整操作。一个工作簿中的撤销不得改变另一个工作簿。每次撤销或重做后的状态在刷新后保持；历史本身只需存在于当前会话，重新打开后可以为空。撤销后执行新修改时，“重做”按钮变为禁用，Ctrl+Y 不能恢复旧分支。
+      scenarios:
+      - name: 撤销并重做一次修改
+        steps:
+        - keyword: GIVEN
+          content: 用户在新建工作簿中刚向原本为空的 A1 提交了唯一值。
+        - keyword: WHEN
+          content: 用户在工具栏依次点击“撤销”和“重做”，或分别使用 Ctrl+Z 与 Ctrl+Y。
+        - keyword: THEN
+          content: 撤销将 A1 恢复为空。
+        - keyword: THEN
+          content: 重做恢复该唯一值、保存结果并在刷新后保持。
+      - name: 新修改清除重做分支
+        steps:
+        - keyword: GIVEN
+          content: 用户在新建工作簿中向 A1 提交唯一旧分支值后已撤销，A1 为空且当前存在可重做记录。
+        - keyword: WHEN
+          content: 用户在 A1 输入并提交不同的唯一新分支值。
+        - keyword: THEN
+          content: 新值被保存，“重做”处于禁用状态，Ctrl+Y 不能恢复旧分支，刷新后仍显示新值。
+      - name: 撤销和重做带依赖公式的源值编辑
+        steps:
+        - keyword: GIVEN
+          content: A1 已从 2 改为 3，B1 包含 =A1*2 并显示 6。
+        - keyword: WHEN
+          content: 用户依次点击“撤销”和“重做”。
+        - keyword: THEN
+          content: 撤销将 A1 恢复为 2、B1 恢复为 4，B1 公式栏仍为 =A1*2；重做将 A1 恢复为 3、B1 恢复为 6。
+        - keyword: THEN
+          content: 刷新后 A1 仍为 3，B1 仍为 6 且公式为 =A1*2。
+      - name: 撤销和重做带校验的行列变更
+        steps:
+        - keyword: GIVEN
+          content: A1 为 Keep，并提供可见名称为“打开 A1 的下拉列表”的按钮。
+        - keyword: WHEN
+          content: 用户在第 1 行上方插入一行、在 A 列左侧插入一列，然后依次撤销两项操作并依次重做。
+        - keyword: THEN
+          content: 随着两项操作被撤销和重做，值与下拉按钮一起依次位于 B2、A2、A1、A2 和 B2。
+        - keyword: THEN
+          content: 刷新后 B2 仍为 Keep，并提供“打开 B2 的下拉列表”。
+- id: REQ-4
+  name: 公式计算
+  type: FOLDER
+  dependencies: []
+  description: >
+    支持当前活动工作表内的基础公式计算、相对与绝对引用、依赖重算和错误处理。网格显示公式结果或错误，公式栏显示用户提交的表达式；复制、粘贴、行列变更和源值编辑遵循相同的引用调整与重算规则。重新打开工作簿后，公式表达式和基于当前源值计算的正确结果仍然可见。
+  children:
+  - id: REQ-4-1
+    name: 公式输入与函数
+    type: FOLDER
+    description: >
+      支持通过 REQ-3-1-1 的网格和“公式栏”输入基础表达式及聚合函数，并通过 REQ-3-2-1 复制公式。公式栏始终显示原公式，网格显示与当前源数据一致的结果，刷新后两者保持。
+    dependencies: []
+    children:
+    - id: REQ-4-1-1
+      name: 计算基础表达式和聚合函数
+      type: ATOMIC
+      description: >
+        用户通过 REQ-3-1-1 的网格或公式栏输入以等号开头的公式。公式至少支持数字常量、括号、加减乘除、同一工作表内的 A1 形式引用，以及对连续区域使用 SUM、AVERAGE、COUNT、MIN 和 MAX；暂不要求跨工作表引用。网格显示基于当前源数据计算的结果，选中公式单元格时公式栏显示用户输入的原表达式，刷新后保持。函数名不区分大小写；聚合函数忽略空单元格，COUNT 只统计数值单元格，SUM/AVERAGE/MIN/MAX 只使用数值单元格且不把空白作为零。
+
+        页面参考：
+
+        ![image](reference/basic-formulas.png)
+      dependencies:
+      - REQ-3-1-1
+      scenarios:
+      - name: 根据引用单元格进行算术计算
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表中 A1 为 3、B1 为 4，C1 为空。
+        - keyword: WHEN
+          content: 用户选中 C1，在公式栏输入 =(A1+B1)*2 后按 Enter。
+        - keyword: THEN
+          content: C1 显示 14，选中 C1 后公式栏显示 =(A1+B1)*2。
+        - keyword: THEN
+          content: 重新打开工作簿后，公式栏仍显示原表达式且网格结果正确。
+      - name: 计算连续区域聚合函数
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表中 B2 为 2、B4 为 4、B6 为 6，B2:B10 其余单元格为空，D2:D6 为空。
+        - keyword: WHEN
+          content: 用户在 D2 到 D6 依次输入 =sum(B2:B10)、=AVERAGE(B2:B10)、=COUNT(B2:B10)、=MIN(B2:B10) 和 =MAX(B2:B10)。
+        - keyword: THEN
+          content: D2:D6 依次显示 12、4、3、2、6；小写 SUM 正常工作，空单元格不会导致失败且不计为数值。
+    - id: REQ-4-1-2
+      name: 复制公式并调整相对引用
+      type: ATOMIC
+      description: >
+        经 REQ-3-2-1 将公式单元格复制到同一工作表其他位置时，目标公式栏中的相对行列引用按目标偏移变化，绝对引用保持不变；源公式和结果不变，目标网格根据新引用显示结果，刷新后保持。若偏移使相对引用超出工作表范围，目标公式栏显示 =#REF!，网格显示 #REF!。
+      dependencies:
+      - REQ-4-1-1
+      - REQ-3-2-1
+      - REQ-4-2-2
+      scenarios:
+      - name: 向下复制公式
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表中 A1 为 1、B1 为 2、A2 为 10，C1 为 =A1+$B$1 且结果为 3，C2 为空。
+        - keyword: WHEN
+          content: 用户选中 C1，使用 Ctrl+C，再选中 C2 并使用 Ctrl+V。
+        - keyword: THEN
+          content: C2 保存 =A2+$B$1 并显示 12；相对行引用变化，绝对引用保持不变。
+        - keyword: THEN
+          content: C1 的公式和结果保持不变。
+        - keyword: THEN
+          content: 重新打开工作簿后，C1 和 C2 仍保存各自的公式表达式。
+  - id: REQ-4-2
+    name: 依赖更新与错误处理
+    type: FOLDER
+    description: >
+      支持源数据变化后的依赖重算和公式错误隔离。REQ-3 的值编辑、粘贴、移动与 REQ-2 的行列变更后，所有受影响公式都显示与当前源数据一致的结果；一个错误公式不影响无关单元格。
+    dependencies: []
+    children:
+    - id: REQ-4-2-1
+      name: 源数据变化后重算依赖公式
+      type: ATOMIC
+      description: >
+        当源值编辑、批量粘贴、区域移动或行列结构变更成功后，所有直接和间接依赖公式按依赖顺序更新；公式栏继续显示各自原公式，网格显示新结果或错误。刷新或重新打开后结果仍与当前源值一致，不得显示变更前结果；其他工作表中不引用这些源单元格的公式保持不变。
+      dependencies:
+      - REQ-2-2-1
+      - REQ-2-2-2
+      - REQ-3-1-1
+      - REQ-3-1-2
+      - REQ-3-2-1
+      - REQ-4-1-1
+      scenarios:
+      - name: 更新多级公式依赖
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作簿的活动 Sheet1 中 A1 为 10、B1 为 =A1*2 且显示 20、C1 为 =B1+5 且显示 25；Sheet2 中 A1 为 Other、B1 为 =1+1 且显示 2。
+        - keyword: WHEN
+          content: 用户在公式栏中将 Sheet1 的 A1 改为 20，然后按 Enter 提交。
+        - keyword: THEN
+          content: Sheet1 的 B1 更新为 40、C1 更新为 45；Sheet2 的 A1 保持 Other，B1 保持 2 且公式仍为 =1+1。
+        - keyword: THEN
+          content: 重新打开工作簿后仍显示更新后的结果。
+      - name: 移动源值后重算依赖公式
+        steps:
+        - keyword: GIVEN
+          content: A1 为 2、B1 为 3、C1 为 =B1*2 且显示 6，D1 为 =C1+1 且显示 7。
+        - keyword: WHEN
+          content: 用户剪切 A1 并粘贴到 B1，替换 B1 原值。
+        - keyword: THEN
+          content: A1 为空、B1 显示 2、C1 显示 4 且公式为 =B1*2，D1 显示 5 且公式为 =C1+1。
+        - keyword: THEN
+          content: 刷新后仍显示相同的值、公式和结果。
+    - id: REQ-4-2-2
+      name: 显示并修复公式错误
+      type: ATOMIC
+      description: >
+        公式错误使用稳定可见值：除零显示 #DIV/0!，无效引用显示 #REF!，不支持函数显示 #NAME?，表达式格式错误显示 #ERROR!，直接或间接循环引用显示 #REF!。选中错误单元格时公式栏显示用户提交的原公式；刷新后错误值和原公式保持。错误单元格不阻断其他单元格的查看、编辑或重算。用户通过 REQ-3-1-1 改为有效公式后，网格显示新结果，公式栏显示新公式，相关依赖结果更新，刷新后错误不再出现。
+      dependencies:
+      - REQ-4-1-1
+      scenarios:
+      - name: 隔离无效公式
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表可编辑，A1 为 Keep，B1:B5 为空。
+        - keyword: WHEN
+          content: 用户在 B1 到 B5 依次输入 =1/0、=A0、=UNSUPPORTED(1)、=1+ 和 =B5。
+        - keyword: THEN
+          content: 'B1:B5 依次显示 #DIV/0!、#REF!、#NAME?、#ERROR!、#REF!；每个公式栏显示提交的原表达式，A1 仍可独立修改并保存。'
+      - name: 修正错误公式
+        steps:
+        - keyword: GIVEN
+          content: '全新预置工作表中 A1 为 2，B1 为 =1/0 且显示 #DIV/0!。'
+        - keyword: WHEN
+          content: 用户选中 B1，用 =A1*3 替换原公式后按 Enter。
+        - keyword: THEN
+          content: B1 显示 6，公式栏显示 =A1*3，重新打开后仍保持修正后的公式和结果。
+- id: REQ-5
+  name: 数据组织与分析
+  type: FOLDER
+  dependencies: []
+  description: >
+    支持当前活动工作表的数据排序、筛选、校验和透视汇总。刷新或重新打开后，排序顺序、筛选视图、校验行为和透视结果保持；其他工作表不受影响。排序改变网格行顺序，筛选只改变可见性，校验约束后续输入，透视表读取源范围但不修改源数据。编辑页工具栏提供可见名称为“数据”的按钮，点击后打开菜单，菜单命令使用 ARIA menuitem 角色；具名组合框的选项使用 ARIA option 角色及其可见名称。
+  children:
+  - id: REQ-5-1
+    name: 排序与筛选
+    type: FOLDER
+    dependencies: []
+    description: >
+      支持在当前工作表选定的矩形区域按列排序以及按值或条件筛选。排序和筛选只作用于用户选定的范围，不扩展到相邻数据或其他工作表；刷新后保持相同顺序和可见行。
+    children:
+    - id: REQ-5-1-1
+      name: 按指定列排序数据区域
+      type: ATOMIC
+      dependencies:
+      - REQ-3-1-3
+      - REQ-4-2-1
+      - REQ-5-1-2
+      - REQ-5-2-1
+      description: >
+        用户在当前活动工作表选择矩形数据区域，并在“数据”菜单选择“排序范围”。名称为“排序范围”的对话框提供标签为“排序依据”和“顺序”的组合框、“数据包含表头”复选框及“排序”按钮。“排序依据”的选项以选定区域的表头文本作为可访问名称；“顺序”提供名称为“升序”和“降序”的选项。声明首行为表头后表头不参与排序。数值、可解析日期和文本分别按其类型比较，相同排序键保持原有先后顺序，完整记录整行移动。排序后公式栏显示与新位置一致的引用和结果，筛选与校验继续作用于同一选定区域，选区外数据不变；刷新后顺序和结果保持。排序失败时显示错误且网格保持原顺序。
+
+
+        页面参考：
+
+        ![image](reference/sort-range.png)
+      scenarios:
+      - name: 按销售额降序排序
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表的 A1:C5 为 Region/Sales/Status；第 2-5 行依次为 East/1200/Open、North/800/Closed、South/1200/Pending、West/500/Open；E1 为 Outside。
+        - keyword: WHEN
+          content: 用户从 A1 拖拽到 C5，在“数据”菜单选择“排序范围”，在“排序依据”选择 Sales，在“顺序”选择“降序”，勾选“数据包含表头”后点击“排序”。
+        - keyword: THEN
+          content: 表头保持在第 1 行；记录依次变为 East/1200/Open、South/1200/Pending、North/800/Closed、West/500/Open，相同 1200 值保持原有先后顺序。
+        - keyword: THEN
+          content: E1 保持 Outside。
+        - keyword: THEN
+          content: 重新打开工作簿后，记录仍按已保存的顺序排列。
+      - name: 排序后保持公式与校验对应
+        steps:
+        - keyword: GIVEN
+          content: A1:C4 为 Item/Score/Double，数据为 Alpha/3/=B2*2、Bravo/1/=B3*2、Charlie/2/=B4*2；B2:B4 只接受 0 到 10 的数字。
+        - keyword: WHEN
+          content: 用户启用表头选项，按 Score 升序排序 A1:C4。
+        - keyword: THEN
+          content: 各行变为 Bravo/1/2、Charlie/2/4、Alpha/3/6；每个 Double 公式引用其当前行的 Score 单元格。
+        - keyword: THEN
+          content: 在 B2 输入 11 时显示“请输入 0 到 10 之间的数字”，B2 保持 1、C2 保持 2，刷新后仍显示相同排序结果。
+      - name: 排序后保持已有筛选条件
+        steps:
+        - keyword: GIVEN
+          content: A1:B4 为 Item/Score，数据为 Alpha/3、Bravo/1、Charlie/2；Score 筛选条件为“大于 1”，因此 Bravo 隐藏。
+        - keyword: WHEN
+          content: 用户启用表头选项，按 Score 升序排序 A1:B4。
+        - keyword: THEN
+          content: “筛选 Score”仍可见；隐藏的 Bravo 移到第 2 行，可见的 Charlie 和 Alpha 移到第 3、4 行。
+        - keyword: THEN
+          content: 刷新后相同筛选条件仍生效，相同行保持可见或隐藏。
+    - id: REQ-5-1-2
+      name: 按值或条件筛选行
+      type: ATOMIC
+      dependencies:
+      - REQ-1-3-2
+      - REQ-3-1-3
+      description: >
+        用户通过“数据”菜单中的“创建筛选器”为当前活动工作表中包含表头的数据区域建立筛选器。每个表头提供可见名称为“筛选 <表头文本>”的按钮，同名对话框支持勾选具体值，以及名称为“文本包含”“大于”“早于”“为空”“非空”的条件选项。值筛选对话框提供“清除选择”、按不同源值生成的复选框和“应用”；每个复选框以显示的源值作为可访问名称。条件对话框提供标签为“条件”的组合框、标签为“值”的文本框和“应用”。“文本包含”“大于”和“早于”使用“值”文本框；“为空”和“非空”不要求输入值。不同列条件按 AND 组合；不匹配行只隐藏，不删除或重排。刷新或重新打开后显示相同可见行。CSV 导出和透视汇总仍包含筛选范围内的隐藏行。“清除筛选”恢复全部源记录的原顺序和值，刷新后仍全部可见，且公式和校验行为不变。
+      scenarios:
+      - name: 使用多列条件筛选
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作表的 A1:C6 为 Region/Sales/Status；第 2-6 行依次为 East/1200/Open、East/900/Closed、North/2000/Open、East/1500/Closed、South/700/Open。
+        - keyword: WHEN
+          content: 用户选中 A1:C6 并启用“创建筛选器”，清除 Region 的值选择后只勾选 East 并应用，再在 Sales 筛选中选择“大于”、输入 1000 并应用。
+        - keyword: THEN
+          content: 表头及第 2、5 行可见，第 3、4、6 行隐藏；仅显示同时满足两个条件的记录，五条源记录仍全部保存。
+        - keyword: THEN
+          content: 重新打开工作簿后仍应用相同筛选条件。
+        - keyword: THEN
+          content: 选择“清除筛选”后第 2-6 行按原顺序全部恢复可见且值不变。
+  - id: REQ-5-2
+    name: 数据校验
+    type: FOLDER
+    description: >
+      支持为当前活动工作表的区域配置下拉或数值校验。通过网格、公式栏、粘贴和区域移动写入时执行相同规则；行列变更后，下拉按钮和数值限制随原受限单元格移动。刷新后规则继续生效且现有有效值保持。
+    dependencies: []
+    children:
+    - id: REQ-5-2-1
+      name: 为区域设置下拉或数值校验
+      type: ATOMIC
+      dependencies:
+      - REQ-3-1-1
+      - REQ-3-1-2
+      - REQ-3-1-3
+      - REQ-3-2-1
+      description: >
+        用户选择目标区域并在“数据”菜单点击“数据校验”。名称为“数据校验”的对话框提供标签为“规则类型”的组合框；“下拉列表”使用标签为“允许值”的文本框，其中逗号分隔项裁剪首尾空格；“数值范围”使用标签为“最小值”和“最大值”的文本框；“保存”按钮应用包含边界的规则。有效保存成功后对话框关闭。下拉单元格提供可见名称为“打开 <单元格坐标> 的下拉列表”的按钮；每个选项使用 ARIA option 角色，并以裁剪后的允许值作为可访问名称。通过网格、公式栏、粘贴或区域移动输入无效值时，整项操作被拒绝且原值保持；无效下拉值显示“请选择以下值之一：<逗号分隔的允许值>”，无效数字显示“请输入 <最小值> 到 <最大值> 之间的数字”。批量操作中任一目标无效时，所有目标均保持原值。刷新后规则继续生效。重新打开已有规则时，对话框预填规则类型和参数并显示“删除规则”按钮；保存修改后新范围立即生效，删除后约束消失，且任一成功操作都会关闭对话框，但两项操作都不改变现有单元格值。
+      scenarios:
+      - name: 使用下拉规则录入状态
+        steps:
+        - keyword: GIVEN
+          content: 新建工作簿中 A1:A2 为空且可编辑。
+        - keyword: WHEN
+          content: 用户选择 A1:A2，创建允许值为 Not Started、In Progress、Completed 的“下拉列表”规则并保存，打开 A1 的下拉列表后选择 In Progress。
+        - keyword: THEN
+          content: A1 保存 In Progress，A2 仍有独立下拉按钮，重新打开后值和规则均保持。
+      - name: 拒绝超出范围的数字
+        steps:
+        - keyword: GIVEN
+          content: 新建工作簿中 A1 已保存为 50。
+        - keyword: WHEN
+          content: 用户为 A1 创建包含边界的 0 到 100“数值范围”规则，在公式栏输入 120 后按 Enter。
+        - keyword: THEN
+          content: 系统拒绝 120，显示“请输入 0 到 100 之间的数字”并保留 A1 为 50；重新打开后规则仍拒绝 101，并接受边界值 100。
+      - name: 拒绝下拉规则之外的值
+        steps:
+        - keyword: GIVEN
+          content: A1 为 Open，并设置只允许 Open 和 Closed 的下拉规则。
+        - keyword: WHEN
+          content: 用户在公式栏为 A1 输入 Pending 后按 Enter。
+        - keyword: THEN
+          content: 页面显示“请选择以下值之一：Open, Closed”，A1 保持 Open，公式栏仍显示 Open。
+        - keyword: THEN
+          content: 刷新后输入 Pending 仍被拒绝，A1 保持 Open。
+  - id: REQ-5-3
+    name: 基础透视汇总
+    type: FOLDER
+    description: >
+      支持基于当前工作表的数据区域创建基础透视表。透视表结果位于独立工作表，只读取源数据；切换回源工作表时原值和顺序不变，刷新或重新打开后透视结果保持。
+    dependencies: []
+    children:
+    - id: REQ-5-3-1
+      name: 创建并刷新基础透视表
+      type: ATOMIC
+      dependencies:
+      - REQ-2-1-1
+      - REQ-2-2-1
+      - REQ-2-2-2
+      - REQ-3-1-3
+      - REQ-5-1-2
+      description: >
+        用户选择含表头的源区域，在“数据”菜单点击“创建透视表”。名称为“创建透视表”的对话框以“Source range: <单元格范围>”格式显示选定范围的可见文本，提供“新工作表”单选项和“创建”按钮；未有透视结果表时使用第一个未占用的 PivotN 名称，即创建 Pivot1。名称为“透视表编辑器”的区域提供标签为“行”“列”“值”“汇总方式”的组合框及“应用”按钮。“行”“列”和“值”的选项以源表头文本作为可访问名称；“汇总方式”提供名称为 SUM、COUNT 和 AVERAGE 的选项。配置支持一个行字段、一个可选列字段和一个值字段。SUM/AVERAGE 仅聚合可解析数字，COUNT 统计值字段中的非空记录且不因非数值内容失败。
+
+        未选择列字段时，A1 显示行字段名称，B1 显示“<汇总方式> of <值字段>”；行分组按其在源数据中的首次出现顺序排列，最后一行为 Grand Total，并汇总全部符合条件的源记录。选择列字段时，A1 显示行字段名称，各列字段值按首次出现顺序从 B1 开始排列，最后一列为 Grand Total；各行字段值同样按首次出现顺序排列，最后一行为 Grand Total。COUNT 在某个行列组合没有非空值字段记录时显示 0。
+
+        应用成功后刷新或重新打开仍显示相同透视工作表、字段布局、汇总方式和结果。结果工作表提供“刷新透视表”按钮；源数据或行列变化后，点击刷新按当前源区域完整替换旧汇总。已选源表头被删除后，点击刷新显示“透视字段已不存在，请重新选择字段”，保留上一次成功结果且不修改源工作表；其他无效源范围或字段同样显示可见错误并保留两个工作表。当对不存在可解析数字的值字段应用 SUM 或 AVERAGE 时，显示“数值字段必须包含可解析数字”，保留旧结果且不修改源工作表。
+      scenarios:
+      - name: 按地区汇总销售额
+        steps:
+        - keyword: GIVEN
+          content: 全新预置 Sheet1 的 A1:B6 为 Region/Sales；第 2-6 行为 East/1200、North/800、East/600、South/1000、North/700。
+        - keyword: WHEN
+          content: 用户选择 A1:B6，点击“创建透视表”，选择“新工作表”并点击“创建”，再在编辑器中为“行”选择 Region、为“值”选择 Sales、为“汇总方式”选择 SUM 后点击“应用”。
+        - keyword: THEN
+          content: Pivot1 中表头为 Region/SUM of Sales，随后为 East/1800、North/1500、South/1000、Grand Total/4300。
+        - keyword: THEN
+          content: Sheet1 A1:B6 保持不变，重新打开后 Pivot1 及结果仍存在。
+      - name: 刷新源数据变化后的透视表
+        steps:
+        - keyword: GIVEN
+          content: 全新预置工作簿的 Sheet1 已修改为 Region/Sales 数据 East/1500、North/800、East/600；Pivot1 仍显示旧结果 East/1800、North/800、Grand Total/2600。
+        - keyword: WHEN
+          content: 用户打开 Pivot1 并点击“刷新透视表”。
+        - keyword: THEN
+          content: Pivot1 更新为 East/2100、North/800、Grand Total/2900；Sheet1 保持不变，重新打开后刷新结果仍保持。
+      - name: 源范围插入行列后刷新透视表
+        steps:
+        - keyword: GIVEN
+          content: Sheet1 A1:B4 为 Region/Sales，数据为 East/100、North/200、East/300；Pivot1 的 SUM 结果为 East/400、North/200、Grand Total/600。
+        - keyword: WHEN
+          content: 用户在源范围内插入一行并输入 East/50，刷新 Pivot1；随后在 Sales 前插入一列并再次刷新。
+        - keyword: THEN
+          content: 两次刷新后 Pivot1 均显示 East/450、North/200、Grand Total/650；Sheet1 显示新增行和移动到新位置的 Sales 列。
+        - keyword: THEN
+          content: 重新打开后仍显示刷新后的结果。
+      - name: 删除已选源字段时保留上次透视结果
+        steps:
+        - keyword: GIVEN
+          content: Sheet1 包含 Region 和 Sales 源列，Pivot1 使用 Sales 成功显示 East/400、North/200、Grand Total/600。
+        - keyword: WHEN
+          content: 用户删除 Sales 列，并在 Pivot1 点击“刷新透视表”。
+        - keyword: THEN
+          content: 页面显示“透视字段已不存在，请重新选择字段”，Pivot1 保持 East/400、North/200、Grand Total/600。
+        - keyword: THEN
+          content: Sheet1 的其余 Region 数据保持不变，重新打开后仍显示最后一次成功的透视结果。
+data:
+- category: 工作簿入口与隔离预置数据
+  items:
+  - 系统中至少存在一个可在首页看到的已保存工作簿，具有稳定的工作簿名、可见的最近更新时间文本、已记住的活动工作表，以及该活动工作表上的可见数据。
+  - 系统中存在彼此独立的全新预置工作簿实例，用于会修改数据的测试，确保某个场景写入的行、列、单元格、公式、筛选、校验、工作表或透视表状态不会影响其他场景。
+  - 系统中存在一个用于导出 CSV 的预置工作簿，其活动工作表包含小型 CSV 形态数据，包括表头、带逗号文本、带引号文本、包含换行的文本、空白单元格、数值，以及导出时应输出计算结果的公式。
+- category: 工作表生命周期预置数据
+  items:
+  - 系统中存在一个仅含 Sheet1 的全新工作簿，Sheet1 的 A1 有已有数据，用于验证新增 Sheet2 不会修改原工作表。
+  - 系统中存在一个包含两个不同工作表的工作簿，每个工作表分别记住自己的选中单元格、公式栏值和可见单元格值，用于切换标签和刷新恢复。
+  - 系统中存在一个源工作表被已有透视结果工作表引用的工作簿，用于验证源工作表删除会被阻止，且源数据和透视结果都保持可见。
+- category: 网格结构与剪贴板预置数据
+  items:
+  - 剪贴板相关测试由浏览器可见的 Ctrl+C、Ctrl+X、Ctrl+V 或网格右键“粘贴”完成；测试夹具只向浏览器剪贴板放入需求场景中的文本，不读取或调用应用的内部状态、接口或存储。
+  - 系统中存在用于插入和删除行的预置工作簿，包含简单表头和有序行数据，使空白行下移、保留行和删除行在刷新后可观察。
+  - 系统中存在用于插入和删除列的预置工作簿，其中一个工作簿在删除被公式引用的列后会让依赖公式显示引用错误，同时保留剩余列数据。
+  - 系统中存在一个粘贴测试工作簿，在粘贴目标矩形之外有保留数据，用于验证二维粘贴不会覆盖无关单元格。
+  - 系统中存在用于复制和剪切的预置工作簿，包含源区域、目标空位、使用相对与绝对引用的公式，以及必须保持不变的区域外单元格。
+- category: 公式与重算预置数据
+  items:
+  - 系统中存在包含简单数值输入、依赖公式、多级链式公式，以及独立第二工作表的预置工作簿，用于验证重算范围。
+  - 系统中存在用于算术和聚合公式的预置工作簿，包含空白单元格、数值、非数值文本和类似布尔值的文本，使 SUM、AVERAGE、COUNT、MIN 和 MAX 行为可观察。
+  - 系统中存在一个公式复制预置工作簿，其中相对引用和绝对引用的位置安排能够验证复制公式时只调整相对部分。
+  - 系统中存在公式错误预置工作簿：一个包含需保留的无关单元格，用于创建多类公式错误；另一个包含已有除零公式，用于验证错误可被有效公式修复。
+- category: 排序、筛选与校验预置数据
+  items:
+  - 系统中存在一个排序预置工作簿，包含 Region、Sales 和 Status 记录、重复的数值排序值，以及选区外必须保持不变的数据。
+  - 系统中存在一个筛选预置工作簿，包含 Region、Sales 和 Status 记录，支持组合值选择和数值条件；清除筛选后完整已保存行仍可见。
+  - 系统中存在可创建数值范围和下拉列表校验规则的工作簿或源数据，包括有效边界值、越界无效值和不在允许列表中的下拉值。
+- category: 透视表预置数据
+  items:
+  - 系统中存在一个预置工作簿，Sheet1 包含 Region/Sales 源记录，可创建新的 Pivot1 工作表按 Region 汇总 Sales，并保持源工作表不变。
+  - 系统中存在一个带有已有 Pivot1 的预置工作簿，Pivot1 显示旧汇总结果，而 Sheet1 源数据已变化，用于验证刷新透视表会以当前聚合替换旧结果。
+  - 系统中存在包含重复分类、可选列字段、空白值、非数值值和被筛选隐藏行的透视源数据，使 SUM、COUNT、AVERAGE、刷新和隐藏行参与汇总行为可观察。
