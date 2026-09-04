@@ -20,6 +20,7 @@ import {
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  readEnvFile,
   readGatewayConfig,
   type GatewayConfig,
 } from "./src/runtime-config.js";
@@ -41,9 +42,10 @@ export async function main(
   argv: string[] = process.argv.slice(2),
   env: Record<string, string | undefined> = process.env,
   execute: AgentExecution = executeProduction,
+  envFile: string | null = ".env",
 ): Promise<number> {
   const cli = parseCliArgs(argv);
-  const gateway = readGatewayConfig(env);
+  const gateway = readGatewayConfig(await mergeGatewayEnv(env, envFile));
   const requirementsFile = join(cli.requirementsDir, "requirements.yaml");
   try {
     await access(requirementsFile);
@@ -65,6 +67,20 @@ export async function main(
     modelTimeouts: deriveModelTimeouts(cli.budgetMs),
   });
   return summary.status === "failed" ? 1 : 0;
+}
+
+async function mergeGatewayEnv(
+  env: Record<string, string | undefined>,
+  envFile: string | null,
+): Promise<Record<string, string | undefined>> {
+  if (!envFile) return env;
+  const merged: Record<string, string | undefined> = {
+    ...(await readEnvFile(envFile)),
+  };
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged;
 }
 
 async function executeProduction(

@@ -34,8 +34,36 @@ test("CLI rejects a missing required path", () => {
   );
 });
 
-test("CLI rejects a non-positive or non-integer budget", () => {
-  for (const budget of ["0", "-1", "2.5", "nope"]) {
+test("CLI treats an omitted budget as unlimited", () => {
+  const parsed = parseCliArgs([
+    "--requirements-dir",
+    "C:/fixture/requirements",
+    "--output-dir",
+    "C:/fixture/output",
+  ]);
+
+  assert.deepEqual(parsed, {
+    requirementsDir: resolve("C:/fixture/requirements"),
+    outputDir: resolve("C:/fixture/output"),
+    budgetMs: 0,
+  });
+});
+
+test("CLI accepts an explicit zero budget as unlimited", () => {
+  const parsed = parseCliArgs([
+    "--requirements-dir",
+    "C:/fixture/requirements",
+    "--output-dir",
+    "C:/fixture/output",
+    "--budget-ms",
+    "0",
+  ]);
+
+  assert.equal(parsed.budgetMs, 0);
+});
+
+test("CLI rejects a negative or non-integer budget", () => {
+  for (const budget of ["-1", "2.5", "nope"]) {
     assert.throws(
       () =>
         parseCliArgs([

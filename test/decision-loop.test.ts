@@ -43,7 +43,7 @@ test("Decision Loop refines an inconclusive locator only once", () => {
   });
 });
 
-test("RunState enters delivery at the final 20 percent and never leaves it", () => {
+test("RunState enters delivery only when the budget is exhausted and never leaves it", () => {
   const state = new RunStateStore({
     statusByRequirementId: { REQ: "todo" },
     acceptedSha: "initial",
@@ -52,9 +52,22 @@ test("RunState enters delivery at the final 20 percent and never leaves it", () 
   });
 
   assert.equal(state.shouldEnterDelivery(1_799), false);
-  assert.equal(state.shouldEnterDelivery(1_800), true);
-  assert.equal(state.shouldEnterDelivery(1_200), true);
+  assert.equal(state.shouldEnterDelivery(1_999), false);
+  assert.equal(state.shouldEnterDelivery(2_000), true);
+  assert.equal(state.shouldEnterDelivery(1_500), true);
   assert.equal(state.snapshot.deliveryMode, true);
+});
+
+test("RunState never enters delivery by time when the budget is unlimited", () => {
+  const state = new RunStateStore({
+    statusByRequirementId: { REQ: "todo" },
+    acceptedSha: "initial",
+    startedAtMs: 1_000,
+    totalBudgetMs: 0,
+  });
+
+  assert.equal(state.shouldEnterDelivery(1_001_000), false);
+  assert.equal(state.snapshot.deliveryMode, false);
 });
 
 test("RunState records global transitions and writes a redacted JSONL ledger", async () => {

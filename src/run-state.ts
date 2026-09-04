@@ -79,8 +79,9 @@ export class RunStateStore {
 
   shouldEnterDelivery(nowMs: number): boolean {
     if (this.state.deliveryMode) return true;
+    if (this.state.totalBudgetMs <= 0) return false;
     const elapsed = Math.max(0, nowMs - this.state.startedAtMs);
-    if (elapsed >= this.state.totalBudgetMs * 0.8) {
+    if (elapsed >= this.state.totalBudgetMs) {
       this.state.deliveryMode = true;
     }
     return this.state.deliveryMode;

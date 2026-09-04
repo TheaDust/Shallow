@@ -8,9 +8,13 @@ import {
 import { CommandAppLifecycle, FinalVerifier } from "../src/final-verifier.js";
 import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
-import { createArcPlatformContract } from "../src/runtime-config.js";
+import { createArcPlatformContract, readEnvFile } from "../src/runtime-config.js";
 import type { WorkPacket } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
+
+for (const [name, value] of Object.entries(await readEnvFile(".env"))) {
+  if (!(name in process.env)) process.env[name] = value;
+}
 
 const required = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL"] as const;
 const missing = required.filter((name) => !process.env[name]);

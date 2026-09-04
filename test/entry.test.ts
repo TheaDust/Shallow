@@ -41,6 +41,7 @@ test("Agent entry validates paths and passes bounded production context", async 
       ],
       gatewayEnv(),
       execute,
+      null,
     );
 
     assert.equal(exitCode, 0);
@@ -72,6 +73,7 @@ test("Agent entry rejects a missing requirements.yaml before execution", async (
         ],
         gatewayEnv(),
         execute,
+        null,
       ),
       /requirements\.yaml/,
     );
@@ -103,11 +105,59 @@ test("Agent entry returns a non-zero exit code when final delivery fails", async
         "--budget-ms",
         "600000",
       ],
-      gatewayEnv(),
-      execute,
-    );
+        gatewayEnv(),
+        execute,
+        null,
+      );
 
-    assert.equal(exitCode, 1);
+      assert.equal(exitCode, 1);
+  });
+});
+
+test("Agent entry loads the gateway from an env file with real env winning", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    await writeFile(
+      join(directory, "gateway.env"),
+      [
+        "# gateway config",
+        "OPENAI_API_KEY=file-key",
+        "OPENAI_BASE_URL=https://file.example/v1",
+        'MODEL="file/model"',
+      ].join("\n"),
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+    const argv = [
+      "--requirements-dir",
+      requirementsDir,
+      "--output-dir",
+      join(directory, "output"),
+      "--budget-ms",
+      "0",
+    ];
+
+    await main(argv, {}, execute, join(directory, "gateway.env"));
+    assert.equal(received?.gateway.apiKey, "file-key");
+    assert.equal(received?.gateway.baseUrl, "https://file.example/v1");
+    assert.equal(received?.gateway.model, "file/model");
+
+    await main(argv, { MODEL: "env/model" }, execute, join(directory, "gateway.env"));
+    assert.equal(received?.gateway.model, "env/model");
+    assert.equal(received?.gateway.apiKey, "file-key");
   });
 });
 

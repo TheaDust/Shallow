@@ -30,10 +30,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
   const requirementsDir = required(values, "--requirements-dir");
   const outputDir = required(values, "--output-dir");
-  const budgetText = required(values, "--budget-ms");
+  const budgetText = values.get("--budget-ms") ?? "0";
   const budgetMs = Number(budgetText);
-  if (!Number.isSafeInteger(budgetMs) || budgetMs <= 0) {
-    throw new Error(`--budget-ms must be a positive integer, received: ${budgetText}`);
+  if (!Number.isSafeInteger(budgetMs) || budgetMs < 0) {
+    throw new Error(`--budget-ms must be a non-negative integer, received: ${budgetText}`);
   }
 
   return {

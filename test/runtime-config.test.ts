@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  readEnvFile,
   readGatewayConfig,
 } from "../src/runtime-config.js";
+import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Runtime config requires the three explicit gateway variables", () => {
   const complete = {
@@ -55,7 +59,7 @@ test("Runtime config expresses the ARC frontend and backend process contract", (
   assert.equal(windows.startCommand.executable, "npm.cmd");
 });
 
-test("Runtime config bounds model calls while preserving the delivery reserve", () => {
+test("Runtime config bounds model calls by the total budget", () => {
   assert.deepEqual(deriveModelTimeouts(600_000), {
     builderTimeoutMs: 240_000,
     plannerTimeoutMs: 60_000,
@@ -63,5 +67,33 @@ test("Runtime config bounds model calls while preserving the delivery reserve", 
   assert.deepEqual(deriveModelTimeouts(60_000), {
     builderTimeoutMs: 30_000,
     plannerTimeoutMs: 10_000,
+  });
+  assert.deepEqual(deriveModelTimeouts(0), {
+    builderTimeoutMs: 240_000,
+    plannerTimeoutMs: 60_000,
+  });
+});
+
+test("Runtime config parses an env file and tolerates a missing one", async () => {
+  await withTempDir("shallow-env-", async (directory) => {
+    const envFile = join(directory, ".env");
+    await writeFile(
+      envFile,
+      [
+        "# gateway config",
+        "",
+        "OPENAI_API_KEY = file-key",
+        "OPENAI_BASE_URL=https://file.example/v1/",
+        'MODEL="file/model"',
+        "not a pair",
+      ].join("\n"),
+    );
+
+    assert.deepEqual(await readEnvFile(envFile), {
+      OPENAI_API_KEY: "file-key",
+      OPENAI_BASE_URL: "https://file.example/v1/",
+      MODEL: "file/model",
+    });
+    assert.deepEqual(await readEnvFile(join(directory, "absent.env")), {});
   });
 });
