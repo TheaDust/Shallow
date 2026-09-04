@@ -134,12 +134,54 @@ flowchart TD
 
 `src/runtime-config.ts` 固定目标应用的平台合同（不来自 LLM 输出）：
 
-- 端口 3000，健康检查 `/health`
+- 健康检查 `/health`
 - `frontend/`、`backend/` 各自 `npm install`
 - `frontend/` 执行 `npm run build`
-- `backend/` 执行 `npm run start`
+- `backend/` 执行 `npm run start`，必须读取 `PORT` 环境变量（缺省 3000）
+- 前端通过同源相对路径访问后端，构建产物中不写死主机或端口
+
+端口 3000 是评测端口：平台在评测阶段用它访问网站，生成期占用会被 SIGTERM。因此 ShallowCode 在生成与验证阶段使用独立探针端口——每次运行随机挑选空闲端口，可用 `SHALLOW_PROBE_PORT` 显式指定；Builder prompt 中会写明这两个端口语义。
 
 无论 OpenCode 选择什么框架，Builder 按此形态产出，判定与交付按此形态验证，保证跨 WorkPacket 的可复现判定。
+
+## ARC-Bench 提交（适配包契约）
+
+ShallowCode 依照官方参考实现 [`octos-org/arc-adapter`](https://github.com/octos-org/arc-adapter) 的适配包契约提交评测。
+
+平台调用方式：
+
+```
+python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
+```
+
+| 输入 | 来源 |
+| --- | --- |
+| 需求目录 | argv 或 `ARCBENCH_TASK_DIR` |
+| 交付目录 | `--output-dir` 或 `ARCBENCH_TEMPLATE_DIR` |
+| 模型通道 | 环境变量 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `MODEL`（也支持 `.env`） |
+
+`main.py`（仅用 Python 标准库）只做四件事：解析参数与 `ARCBENCH_*` 回退、准备 Node 运行时（`npm ci` + `npx playwright install chromium`）、以 `npx tsx index.ts` 驱动管线（参数映射为 `--requirements-dir/--output-dir/--budget-ms`，总预算可用 `SHALLOW_BUDGET_MS` 注入）、收尾检查交付目录含 `frontend/` 与 `backend/`。
+
+平台通过交付目录内的文件观察进度，管线运行时写入：
+
+- `<交付目录>/.arc/runner-events.jsonl`：`runner_state` / `requirement_state` / `signal` 事件流（`src/arc-protocol.ts`，时间戳为 UTC `YYYY-MM-DD HH:MM:SS`）
+- `<交付目录>/.arc/traceability/*.json`：七张溯源表——requirements、scenarios（从需求树生成）、node_states（随 accept/block 更新），其余表保留空对象
+- 交付仓库的 git 提交历史（`captureAccepted` 每次 accept 自动产生）
+
+工程要点：
+
+- 关键运行事件同时镜像到 stderr（平台会截断长 stdout）
+- 上传上限约 50MB：本仓库不含 node_modules 与浏览器二进制，Playwright Chromium 在评测机运行时下载
+- 评测机是共享的：探针端口随机化、每个 case 隔离 context、不依赖本地残留状态
+- UI 契约（写入 Builder prompt）：关键输入用 `type="text"`、每个字段配可见 `<label>`、校验错误用 JS 输出文字而不用 HTML5 `required`、按钮用带纯文本的 `<button>`
+
+提交流程（按官方 `arc.sh`）：
+
+```sh
+sh arc.sh pack   https://github.com/<org>/<repo>   # 验证打包
+sh arc.sh submit <题目> <模型> https://github.com/<org>/<repo>
+sh arc.sh check
+```
 
 ## 测试
 
@@ -163,6 +205,7 @@ npm run smoke:credentials
 ## 目录结构
 
 ```text
+main.py                     ARC-Bench 适配包入口：参数解析、Node 运行时准备、驱动管线
 index.ts                    生产入口：参数解析、.env 加载、凭证装配、退出码
 src/
   cli.ts                    纯函数 CLI 参数解析
@@ -170,10 +213,11 @@ src/
   builder/                  OpenCode SDK Builder（窄端口 + prompt + 适配器）
   judge/                    ProbePlan schema、LLM Planner、Playwright Runner
   run-state.ts              DecisionLoop、RunState、追加式 ledger
+  arc-protocol.ts           平台 .arc/ 事件流与溯源表写入
   git-ops.ts                captureAccepted / restoreAccepted
   pipeline.ts               依赖注入式编排
   final-verifier.ts         交付验证 + 交付修复
-  runtime-config.ts         网关配置、预算派生、平台合同
+  runtime-config.ts         网关配置、预算派生、平台合同、探针端口
 test/
   fakes/ fixtures/ helpers/ 测试专用 fake 与 fixture（不属于生产架构）
 data/

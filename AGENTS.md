@@ -35,14 +35,18 @@ npm start                # tsx index.ts
 
 `npm start -- --requirements-dir <dir> --output-dir <dir> [--budget-ms <ms>]`（严格解析：只认这三个 flag，且必须 `--key value` 成对出现，未知/缺值直接抛错；`--budget-ms` 可选，缺省或 `0` 表示不限时，管线在没有 ready 需求后进入交付）。
 
+ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]`（契约见 `octos-org/arc-adapter`；env 回退 `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`；`SHALLOW_BUDGET_MS` 注入总预算）。`main.py` 只做参数解析、Node 运行时准备与驱动 TS 管线，不写业务逻辑。
+
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
-- 平台合同（ARC-Bench）：目标应用必须能在端口 3000 启动、暴露 `/health`，布局为 `frontend/` + `backend/` 目录（npm install/build/start）；Windows 上自动用 `npm.cmd`。
+- 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000），暴露 `/health`；Windows 上自动用 `npm.cmd`。
+- 端口 3000 是评测端口，生成期不得占用：管线每次运行用随机空闲端口做探针/交付验证，可用 `SHALLOW_PROBE_PORT` 覆盖。
+- 平台观察协议：管线把 `runner_state`/`requirement_state`/`signal` 事件追加到 `<output-dir>/.arc/runner-events.jsonl`，维护 `.arc/traceability/` 七张 JSON 表（`src/arc-protocol.ts`），关键事件同时镜像 stderr。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 运行 ledger 追加写到 `%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（仅审计用）。
 
 ## 架构不变量（改动前必读）
 
-管线：`catalog → scheduler → WorkPacket → OpenCodeSdkBuilder → LlmProbePlanner → PlaywrightProbeRunner → DecisionLoop → GitOps`。
+管线：`catalog → scheduler → WorkPacket → OpenCodeSdkBuilder → LlmProbePlanner → PlaywrightProbeRunner → DecisionLoop → GitOps`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 以下约束当前是设计核心：
 
