@@ -47,3 +47,18 @@ export interface RunEvent {
   packetId?: string;
   detail?: Record<string, unknown>;
 }
+
+export interface ProbeFailure {
+  caseId: string;
+  stepIndex: number;
+  category: "assertion" | "locator" | "navigation" | "timeout" | "runner";
+  message: string;
+  locatorSnapshot?: string;
+}
+
+export interface ShadowReport {
+  packetId: string;
+  verdict: "pass" | "fail" | "inconclusive";
+  passedCases: string[];
+  failures: ProbeFailure[];
+}
