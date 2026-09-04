@@ -1,386 +1,392 @@
 # ShallowCode V1-Lite 收敛规格
 
-- 状态：已批准进入框架实现
-- 日期：2026-09-02
-- 上位参考：[ShallowCode 目标架构](./2026-09-01-shallowcode-agent-design.md)
-- 首个里程碑：不依赖真实模型密钥，使用 FakeBuilder 跑通完整 pipeline
-- 主 Builder：OpenCode SDK；FakeBuilder 仅用于 harness 自测
+- 状态：首个实现的约束规格
+- 初版日期：2026-09-02
+- 修订日期：2026-09-04
+- 目标平台：GOSIM Factory 2026 / ARC-Bench
+- 主 Builder：OpenCode，通过 `@opencode-ai/sdk` 驱动
+- 核心假设：运行中的 Agent 得不到官方测试、官方失败日志或隐藏评分反馈
 
-## 1. 收敛目标
+本文约束首个可运行版本。若与[目标架构](./2026-09-01-shallowcode-agent-design.md)冲突，以本文为准。
 
-V1-Lite 只验证三个最可能提高比赛分数的假设：
+## 1. 收敛结论
 
-1. 按依赖和共享上下文选择垂直切片，比把整份需求交给一个长会话更可控；
-2. Builder 与黑盒 Judge 分离，可以在没有官方反馈时发现可重现缺陷；
-3. 有界修复、健康检查点和交付保留预算，可以避免局部失败拖垮整次运行。
+V1-Lite 不是另一套 coding agent，而是 OpenCode 外的一层轻量比赛控制器：
 
-第一阶段不追求完整目标架构。框架必须先做到可启动、可观测、可替换 Builder、可从输入走到可运行输出。
+> ShallowCode 只实现 OpenCode 因为不知道整场比赛的全局状态而无法可靠实现的部分。
 
-## 2. V1-Lite Pipeline
+因此边界如下：
+
+| 责任 | 所有者 | 理由 |
+| --- | --- | --- |
+| 创建和修改目标应用 | OpenCode | 这是 Builder 的核心能力，不在 ShallowCode 重复实现 |
+| 选择技术栈、文件结构、局部实现策略 | OpenCode | 依赖目标仓库上下文，应由 coding agent 判断 |
+| 执行局部 build、lint、开发者测试和修复 | OpenCode | 与代码修改属于同一局部闭环 |
+| 解析整棵需求树并跟踪跨 session 状态 | ShallowCode | 单个短 session 不知道整场进度 |
+| 在全局预算下选择下一个 WorkPacket | ShallowCode | 需要比较所有未完成需求及剩余资源 |
+| 从需求生成独立的黑盒探针 | ShallowCode 的 LLM Probe Planner | Builder 自测容易复述自己的实现假设 |
+| 用真实浏览器确定性执行探针 | ShallowCode 的 Playwright Probe Runner | 需要统一、可审计的跨 WorkPacket 判定 |
+| 接受候选状态或回到最后接受状态 | ShallowCode 的 Decision Loop | 需要记住整场 accepted SHA 和失败历史 |
+| 预留尾部预算并完成最终交付验证 | ShallowCode | 局部 session 不知道全局时间、token 和交付风险 |
+
+ShallowCode 不提供生产级 Capability Kernel，不规定目标应用必须使用哪种框架，也不实现第二套源码编辑工具。
+
+## 2. 最小生产闭环
 
 ```mermaid
 flowchart LR
-    A[requirements.yaml] --> B[CatalogParser]
-    B --> C[Deterministic SliceScheduler]
-    C --> D[WorkPacket]
-    D --> E[BuilderPort]
-    E -->|local test| F[FakeBuilder]
-    E -->|competition| G[OpenCodeSdkBuilder]
-    F --> H[Candidate App]
-    G --> H
-    H --> I[ShadowSmokeJudge]
-    I --> J[RepairGate]
-    J -->|pass| K[Healthy Checkpoint]
-    J -->|hard failure, max 2| E
-    J -->|stop| C
-    K --> L[DeliverGate]
-    L --> M[frontend/ + backend/]
+    R[requirements.yaml] --> C[CatalogState]
+    C --> S[SliceScheduler]
+    S --> W[WorkPacket]
+    W --> B[OpenCodeSdkBuilder]
+    B --> A[Candidate App]
+    W --> P[LlmProbePlanner]
+    P --> PP[ProbePlan]
+    A --> PR[PlaywrightProbeRunner]
+    PP --> PR
+    PR --> SR[ShadowReport]
+    SR --> D[DecisionLoop]
+    D -->|accept| G[capture accepted SHA]
+    D -->|repair, max 2| B
+    D -->|give up| X[restore accepted SHA and block packet]
+    G --> C
+    X --> C
+    C --> F[FinalVerifier]
 ```
 
-首个可执行闭环：
+一次正常迭代为：
 
-1. 解析 requirement tree；
-2. 生成一个确定性 WorkPacket；
-3. FakeBuilder 复制最小 Kernel，生成可构建应用；
-4. 启动候选应用；
-5. ShadowSmokeJudge 从外部检查 health、页面文本和刷新；
-6. RepairGate 接收结构化结果；
-7. 通过时创建健康 Git checkpoint；
-8. DeliverGate 在干净状态下重新 build/start；
-9. 写出 Run Ledger、checkpoint 和最终输出目录。
+1. `CatalogState` 读取完整需求树和历史状态。
+2. `SliceScheduler` 选择 1 至 3 个相邻、依赖已满足的 ATOMIC requirement，形成一个 `WorkPacket`。
+3. `OpenCodeSdkBuilder` 创建短 session，让 OpenCode 在输出仓库中实现并自检该 packet。
+4. `LlmProbePlanner` 只根据需求证据生成声明式 `ProbePlan`。
+5. `PlaywrightProbeRunner` 启动目标应用，用真实浏览器执行计划并生成 `ShadowReport`。
+6. `DecisionLoop` 接受、要求修复，或在达到上限后恢复最后接受状态并阻塞该 packet。
+7. 进入预留交付预算后停止开发，`FinalVerifier` 独立验证最终构建、启动和就绪状态。
 
-该闭环通过后，再把 BuilderPort 从 FakeBuilder 切换为 OpenCodeSdkBuilder。两者必须通过同一 contract tests。
+## 3. 模块规格
 
-## 3. 严格范围
+### 3.1 CatalogState
 
-### 3.1 V1-Lite 包含
+职责：
 
-- TypeScript 控制平面和 `index.ts` 主入口；
-- 极薄 `main.py` 兼容入口，启动预编译 `dist/index.js`；
-- YAML requirement tree 的确定性解析；
-- 简单依赖图和启发式 SliceScheduler；
-- `BuilderPort`、`FakeBuilder`、`OpenCodeSdkBuilder`；
-- 最小 Kernel template；
-- 不调用模型的 ShadowSmokeJudge；
-- 最多两次的 RepairGate；
-- 单个“最近健康 commit”；
-- JSONL Run Ledger；
-- 固定 20% Deliver reserve；
-- build/start/readiness 的 DeliverGate；
-- 单元测试和 FakeBuilder 端到端测试。
-
-### 3.2 本阶段不包含
-
-- SemanticCompiler 或任何模型生成的 Behavior IR；
-- Capability Hypergraph、Pareto candidate filter 或学习型成本模型；
-- 模型生成 Shadow probes；
-- 完整 Probe DSL；
-- 独立 Investigator Agent；
-- OpenCode CLI fallback；
-- RecordPack、GridPack 等通用能力包抽象；
-- 多候选 Git Frontier；
-- 并行 Builder/worktree 竞赛；
-- 视觉/OCR Judge；
-- 完整 ARC traceability 数据模型。
-
-目标架构中的上述能力只有在基线或 ablation 证明收益后才进入后续版本。
-
-## 4. 技术栈与版本
-
-目标 runner 使用 Node 20.19.x。提交依赖固定并生成 lockfile：
-
-| 依赖 | 固定版本 | 用途 |
-|---|---:|---|
-| `@opencode-ai/sdk` | `1.18.26` | OpenCode server/client/session API |
-| `yaml` | `2.9.0` | requirement YAML 解析 |
-| `tsx` | `4.23.13` | TypeScript Agent 入口与测试 |
-| `typescript` | `7.0.2` | 类型检查和预编译 |
-| `@types/node` | `20.19.43` | 与目标 Node 20 对齐的类型 |
-
-测试使用 Node 内置 `node:test` 和 `node:assert`，不引入测试框架。
-
-生成应用的 frontend/backend 运行时依赖为零：
-
-- frontend：原生 HTML/CSS/ES modules；
-- frontend build：Node 脚本把 `src/` 复制到 `dist/`；
-- backend：Node 内置 `http`，服务 API、health 和 `frontend/dist`；
-- persistence：JSON 文件 + 串行写队列 + 临时文件原子替换。
-
-## 5. 文件结构与所有权
-
-```text
-shallow/
-├── index.ts
-├── main.py
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-├── src/
-│   ├── cli.ts
-│   ├── pipeline.ts
-│   ├── types.ts
-│   ├── catalog.ts
-│   ├── scheduler.ts
-│   ├── ledger.ts
-│   ├── builder/
-│   │   ├── port.ts
-│   │   ├── fake.ts
-│   │   └── opencode-sdk.ts
-│   ├── judge/
-│   │   └── shadow-smoke.ts
-│   ├── repair/
-│   │   └── gate.ts
-│   ├── checkpoint.ts
-│   └── deliver.ts
-├── assets/kernel/
-│   ├── frontend/...
-│   └── backend/...
-└── test/
-    ├── fixtures/requirements.yaml
-    ├── catalog.test.ts
-    ├── scheduler.test.ts
-    ├── builder-contract.test.ts
-    ├── repair-gate.test.ts
-    └── pipeline.e2e.test.ts
-```
-
-模块必须保持单一职责。Pipeline 只编排接口，不包含 YAML、Git、HTTP 或 OpenCode 的具体实现。
-
-## 6. 最小数据合同
-
-### 6.1 RequirementCatalog
+- 无损读取 requirement 的 ID、原文、父目录、依赖、scenario、reference 和显式 UI 文本。
+- 为每个 ATOMIC requirement 维护 `todo | verified | blocked`。
+- 拒绝未知依赖、重复 ID 和依赖环。
+- 只保存编排需要的结构，不把自然语言提前压缩为自创语义 IR。
 
 ```ts
-type RequirementNode = {
+type RequirementStatus = "todo" | "verified" | "blocked";
+
+interface AtomicRequirement {
   id: string;
-  name: string;
-  type: "ROOT" | "FOLDER" | "ATOMIC";
-  description: string;
-  dependencies: string[];
-  scenarios: Scenario[];
-  parentId?: string;
-};
+  folderPath: string[];
+  text: string;
+  dependencyIds: string[];
+  scenarios: string[];
+  references: string[];
+  exactUiStrings: string[];
+}
 
-type RequirementCatalog = {
-  rootId: string;
-  nodes: Map<string, RequirementNode>;
-  atomics: RequirementNode[];
-};
+interface RequirementCatalog {
+  requirements: AtomicRequirement[];
+  statusById: Record<string, RequirementStatus>;
+}
 ```
 
-CatalogParser 必须：
+### 3.2 SliceScheduler
 
-- 保留全部 id、name、description、dependency 和 scenario step 原文；
-- 拒绝重复 id、悬空 dependency 和不支持的节点类型；
-- 不读取 requirement path 之外的文件；
-- 不推断 actor、entity 或隐藏测试结构。
+职责：在不调用模型的情况下，从全局 catalog 选出下一组最有价值且可实现的需求。
 
-### 6.2 WorkPacket
+V1-Lite 规则固定且可测试：
+
+- 只选择所有依赖均为 `verified` 的 `todo` requirement。
+- 一个 packet 包含 1 至 3 个 ATOMIC requirement。
+- 优先合并同一最近 FOLDER 下、共享依赖或共享 scenario 词项的 requirement。
+- 排序信号依次为：具名 scenario 数、直接依赖者数、显式 UI 文本数、估算成本的倒数、原始声明顺序。
+- 不做 Pareto frontier、超图搜索或模型驱动调度。
 
 ```ts
-type WorkPacket = {
+interface WorkPacket {
   id: string;
   requirementIds: string[];
-  title: string;
-  sourceText: string;
-  scenarios: Scenario[];
-  allowedPaths: string[];
-  attempt: 0 | 1 | 2;
-};
+  requirements: AtomicRequirement[];
+  attempt: 1 | 2 | 3;
+}
 ```
 
-V1-Lite 每个 packet 包含 1–3 个 ATOMIC：同一最近 FOLDER、依赖已满足，并共享直接 dependency 或场景上下文。
+`attempt: 1` 是首次实现；`2` 和 `3` 分别是最多两次修复。第三次 Shadow 失败后不得继续在该 packet 消耗预算。
 
-### 6.3 BuilderPort
+### 3.3 OpenCodeSdkBuilder
+
+职责：把 `WorkPacket`、平台合同和上一轮 Shadow 证据交给 OpenCode，并等待 session 完成。
+
+约束：
+
+- 一次 Agent run 只启动一个 OpenCode server/client。
+- 每个首次实现或修复使用一个短 session，不保留无限增长的对话。
+- 通过 `@opencode-ai/sdk` 创建 session、发送 prompt，并在超时时 abort；V1-Lite 不额外维护事件订阅状态机。
+- OpenCode 是唯一生产 Builder，可以读写目标仓库、选择目标技术栈、运行局部命令并修复代码。
+- ShallowCode 不为目标应用生成页面、数据层、认证层或组件骨架。
+- 首次 prompt 包含完整 packet 原文、相关 scenario/reference、依赖完成状态、平台构建/端口合同。
+- 修复 prompt 只增加结构化 `ShadowReport`，不得泄露 Judge planner 的隐藏推理文本。
+- 第二次修复必须要求先给出根因判断再改代码，但仍由同一个 Builder 完成，不新增 Investigator 角色。
 
 ```ts
+interface BuilderRequest {
+  packet: WorkPacket;
+  outputDir: string;
+  platformContract: PlatformContract;
+  shadowReport?: ShadowReport;
+  requireRootCauseFirst: boolean;
+}
+
+interface BuilderResult {
+  sessionId: string;
+  outcome: "completed" | "failed" | "timed_out";
+  summary: string;
+}
+
 interface BuilderPort {
-  readonly kind: "fake" | "opencode-sdk";
-  health(): Promise<void>;
-  execute(packet: WorkPacket, context: BuildContext): Promise<BuilderResult>;
+  run(request: BuilderRequest): Promise<BuilderResult>;
   close(): Promise<void>;
 }
 ```
 
-`BuilderResult` 只返回 session id、状态、usage 和改动文件；不返回官方测试信息。
+### 3.4 LlmProbePlanner
 
-### 6.4 ShadowResult
+这是 Shadow Judge 的生成部分。它调用与比赛兼容的 LLM，但不具备源码工具，也不运行浏览器。
+
+输入边界：
+
+- 当前 `WorkPacket` 的 requirement 原文、scenario、reference 描述和显式 UI 文本。
+- 平台基础 URL、允许的 probe DSL 和通用可访问性定位规则。
+- 不提供目标应用源码、OpenCode 对话、git diff、官方测试或官方测试结果。
+
+首次生成在一次有界 LLM 调用中尽量覆盖三类 probe：
+
+1. 主成功路径。
+2. 刷新、重开 context 或重新登录后的持久性路径；仅当需求涉及状态时生成。
+3. 非法输入、权限或隔离路径；仅当需求明确要求时生成。
+
+Planner 必须通过 JSON Schema 返回声明式计划。计划不能包含 JavaScript、shell、CSS 注入或任意 URL 请求。
 
 ```ts
-type ShadowResult = {
-  status: "pass" | "hard_failure" | "inconclusive";
-  failureType?: "build" | "start" | "health" | "content" | "refresh";
-  expected?: string;
-  actual?: string;
-  evidence: string[];
-  fingerprint: string;
-};
+type ProbeLocator =
+  | { by: "role"; role: string; name?: string; exact?: boolean }
+  | { by: "label"; text: string; exact?: boolean }
+  | { by: "text"; text: string; exact?: boolean };
+
+type ProbeStep =
+  | { op: "goto"; path: string }
+  | { op: "click"; locator: ProbeLocator }
+  | { op: "fill"; locator: ProbeLocator; value: string }
+  | { op: "select"; locator: ProbeLocator; value: string }
+  | { op: "expectVisible"; locator: ProbeLocator }
+  | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean }
+  | { op: "expectValue"; locator: ProbeLocator; value: string }
+  | { op: "expectCount"; locator: ProbeLocator; count: number }
+  | { op: "reload" }
+  | { op: "newContext"; actor?: string };
+
+interface ProbeCase {
+  id: string;
+  requirementIds: string[];
+  purpose: "happy_path" | "persistence" | "negative" | "permission";
+  steps: ProbeStep[];
+}
+
+interface ProbePlan {
+  packetId: string;
+  cases: ProbeCase[];
+}
 ```
 
-## 7. 确定性 SliceScheduler
+允许一次可选的 locator refinement：仅当 Runner 能明确分类为“定位器未命中且行为结论不成立”时，把清洗后的 accessibility snapshot 和原计划发给 Planner。Planner 只能修改 locator，不能改变期望行为、输入值或断言。每个 packet 最多调用一次 refinement。
 
-V1-Lite 不实现超图。Scheduler 维护 `todo`、`verified`、`blocked` 三个集合。
+### 3.5 PlaywrightProbeRunner
 
-候选必须满足：
+这是 Shadow Judge 的执行部分，必须使用真实 Playwright browser/context/page，而不是 DOM 字符串模拟。
 
-- 所有显式 dependencies 已在 `verified`；
-- 不依赖 `blocked`；
-- packet 构建后仍保留 20% Deliver reserve。
+职责和安全边界：
 
-种子优先级：
+- 按顺序解释 allowlist 中的 `ProbeStep`。
+- locator 只映射到 `getByRole`、`getByLabel` 和 `getByText`。
+- `goto.path` 必须是相对路径，并绑定到受控 `baseUrl`。
+- 禁止 `page.evaluate`、任意网络请求、文件系统、shell、动态代码和未声明 CSS/XPath selector。
+- 每个 case 使用隔离 context；`newContext` 用于显式模拟第二 actor 或新会话。
+- 每个 step 和 case 均有硬超时；超时被记录为确定性失败。
+- 输出结构化、可复现的报告；不得由 LLM 在执行后自由改判。
 
-```text
-3 × scenarioCount
-+ 2 × directDependentCount
-+ exactUiTextCount
-- descriptionCostBucket
+```ts
+interface ProbeFailure {
+  caseId: string;
+  stepIndex: number;
+  category: "assertion" | "locator" | "navigation" | "timeout" | "runner";
+  message: string;
+  locatorSnapshot?: string;
+}
+
+interface ShadowReport {
+  packetId: string;
+  verdict: "pass" | "fail" | "inconclusive";
+  passedCases: string[];
+  failures: ProbeFailure[];
+}
 ```
 
-随后最多加入两个与种子同属最近 FOLDER、依赖已满足的 ATOMIC。每次 pass、hard failure 或 skip 后重新计算。
+判定规则：
 
-这只是透明、可测试的启发式，不宣称近似官方评分。
+- 所有 case 通过才是 `pass`。
+- 行为断言失败、导航错误或超时是 `fail`。
+- 只有 locator 未命中且 snapshot 足以进行一次安全 refinement 时是 `inconclusive`。
+- refinement 后仍未命中则转为 `fail`，不无限调整测试来适应实现。
 
-## 8. Builder 实现
+### 3.6 DecisionLoop、RunState 与最小 GitOps
 
-### 8.1 FakeBuilder
+ShallowCode 需要保留唯一一个看似“代码管理”的例外：最后接受提交的 SHA。原因不是 OpenCode 不会使用 Git，而是接受、止损和回滚依赖跨所有 session 的全局判定。
 
-FakeBuilder 用于证明 harness pipeline，而不是模拟模型质量：
+```ts
+interface RunState {
+  statusByRequirementId: Record<string, RequirementStatus>;
+  attemptsByPacketId: Record<string, number>;
+  acceptedSha: string;
+  remainingBudget: {
+    wallClockMs: number;
+    modelTokens?: number;
+  };
+  ledger: RunEvent[];
+}
 
-- 第一次执行时复制 `assets/kernel` 到 output；
-- 写入当前 WorkPacket 的 id、title 和一个可见 marker；
-- 返回确定性的 BuilderResult；
-- 测试模式可配置为第一次失败、第二次成功，以验证 RepairGate；
-- 不调用网络或模型。
+interface GitOps {
+  captureAccepted(message: string): Promise<string>;
+  restoreAccepted(sha: string): Promise<void>;
+}
+```
 
-### 8.2 OpenCodeSdkBuilder
+V1-Lite 不实现 `CheckpointManager` 类、分支 frontier 或多检查点策略。`GitOps` 只有两个窄操作：
 
-- 每个 pipeline run 启动一次 `createOpencode()`；
-- 使用比赛环境的 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`；
-- 每个 WorkPacket 创建一个短 session；
-- prompt 只包含 packet 原文、scenarios、attempt 和 allowed paths；
-- attempt 1 提供可重现 ShadowResult；
-- attempt 2 追加“先说明根因，再做最小修改”，不创建独立 Investigator；
-- 订阅事件并把 usage、session 和状态转换为 RunEvent；
-- 达到 packet time cap 时调用 `session.abort()`；
-- `close()` 关闭 server。
+- pipeline 启动、Builder 尚未运行时调用一次 `captureAccepted`，把 starter output（空目录时允许空提交）记录为初始 `acceptedSha`。
+- Shadow `pass` 后调用 `captureAccepted`，更新 `acceptedSha`，把 packet requirement 标为 `verified`。
+- 第三次 Shadow 失败、Builder 失败且无预算修复，或候选状态破坏全局启动时，调用 `restoreAccepted`，把 packet requirement 标为 `blocked`。
 
-本阶段没有 CLI fallback。SDK 健康检查失败时必须产生明确错误，并保留 FakeBuilder pipeline 的可验证性。
+首次实现加两次修复共最多三次 Builder 调用：
 
-## 9. ShadowSmokeJudge
+- 第一次失败：新 session，携带精确 `ShadowReport` 修复。
+- 第二次失败：新 session，要求先做根因分析再修复。
+- 第三次失败：恢复 `acceptedSha` 并阻塞 packet。
 
-V1-Lite Judge 不调用模型，只执行固定黑盒合同：
+`RunState` 只需单进程内存实现和追加式 JSONL ledger；V1-Lite 不实现崩溃恢复数据库。ledger 用于审计，不驱动复杂规划。
 
-1. frontend build 成功；
-2. backend start 后 `/health` 在超时内返回 2xx；
-3. `/` 返回 HTML；
-4. HTML 包含 WorkPacket 的可见 marker；
-5. 再次请求或刷新后 marker 仍存在；
-6. console/start log 不包含未处理异常。
+### 3.7 FinalVerifier
 
-Judge 启动应用时使用临时 `DATA_DIR`，不会污染最终默认状态。它只能访问候选应用 origin，不读取源码、Git diff 或 tests 目录。
+进入总 wall-clock 预算最后 20% 时，调度器停止领取新 packet。该阈值一旦触发不可退出。
 
-Playwright 场景 DSL 和模型探针属于后续里程碑；首个 pipeline 用 HTTP/HTML smoke 足以证明模块边界和反馈闭环。
+FinalVerifier 独立于 OpenCode session，执行平台合同中明确的：
 
-## 10. RepairGate 与 Checkpoint
+- 依赖安装或已有依赖检查。
+- 前端/后端构建命令。
+- 生产启动命令。
+- 端口 3000 readiness。
+- 根页面的最小浏览器 smoke。
+- 停止由本次验证启动的进程。
 
-### 10.1 RepairGate
+失败时只允许在保留预算内启动一次交付修复 session；随后重新运行完整 FinalVerifier，不继续开发新 feature。
 
-- pass：标记 packet requirement 为 verified；
-- inconclusive：重启应用并复测一次，不消耗代码 repair attempt；
-- 第一次 hard failure：生成 attempt 1 packet；
-- 第二次同 fingerprint hard failure：生成 attempt 2 root-cause-first packet；
-- attempt 2 后仍失败：恢复最近健康 commit，标记 packet blocked，继续其他 ready packet；
-- 若没有 ready packet，则进入 Deliver Mode。
+## 4. 信息防火墙
 
-### 10.2 单健康检查点
+在严格 Shadow Judge 假设下，模块可见信息固定如下：
 
-- Builder 不执行 Git commit；
-- Shadow pass 后由 CheckpointManager 检查 changed paths 并提交；
-- 只记录 `latestHealthyCommit`，不实现 Pareto Frontier；
-- commit message 包含 packet id 和 attempt；
-- rollback 不修改 Run Ledger；
-- Fake pipeline 的临时输出 repo 使用本地命令级 Git identity，不依赖用户全局配置。
+| 信息 | Scheduler | OpenCode Builder | Probe Planner | Probe Runner |
+| --- | ---: | ---: | ---: | ---: |
+| 完整 requirement catalog | 是 | 否，只看 packet | 否，只看 packet | 否 |
+| 当前 packet 原文和场景 | 是 | 是 | 是 | 仅看 ProbePlan |
+| 目标应用源码和 diff | 否 | 是 | 否 | 否 |
+| 浏览器页面 | 否 | 可自行开发测试 | 否 | 是 |
+| ShadowReport | 是 | 修复时是 | locator refinement 时仅清洗快照 | 生成者 |
+| 官方测试/官方结果 | 否 | 否 | 否 | 否 |
+| 全局预算和 accepted SHA | 是 | 否 | 否 | 否 |
 
-## 11. Run Ledger 与 DeliverGate
+官方测试即使在评测机器文件系统上技术可达，也不构成本设计读取或使用它们的授权。
 
-Run Ledger 使用 append-only JSONL，至少记录：
+## 5. 运行时和依赖
 
-- pipeline started/finished；
-- catalog parsed；
-- packet selected；
-- builder started/finished/aborted；
-- shadow result；
-- repair/skip；
-- checkpoint created/restored；
-- delivery started/finished；
-- wall-clock、Builder usage（FakeBuilder 为 0）和错误摘要。
+首个实现只提供 TypeScript 主入口 `index.ts`，匹配当前开放版 runner。若正式 runner 明确要求 Python，再增加只负责转发参数的薄包装，不预先维护双实现。
 
-DeliverGate：
+固定依赖：
 
-1. 停止新 packet；
-2. 恢复 latest healthy commit；
-3. 使用全新临时 `DATA_DIR`；
-4. 在 frontend 执行 `npm install --no-audit --no-fund` 和 `npm run build`；
-5. 在 backend 执行 `npm install --no-audit --no-fund`；
-6. 以 `PORT=3000 npm run start` 启动；
-7. 等待 `/health`；
-8. 请求 `/` 并验证 2xx；
-9. 终止服务，写入成功事件，保留 frontend/backend 输出。
+- 生产：`@opencode-ai/sdk@1.18.27`、`yaml@2.9.0`。
+- 测试/构建：`@playwright/test@1.54.0`、`tsx@4.23.13`、`typescript@7.0.2`、`@types/node@20.19.43`。
+- 单元测试优先使用 Node 内建 `node:test`；Playwright 包同时供 Runner 和浏览器集成测试使用。
+- LLM Probe Planner 使用 Node 内建 `fetch` 调用 OpenAI-compatible gateway，不再引入第二个模型 SDK。
 
-固定在总运行预算剩余 20% 时进入 Deliver Mode。V1-Lite 不实现动态 rehearsal estimate。
+环境变量：
 
-## 12. 信息边界
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `MODEL`
 
-- Agent 只接收调用参数指定的 requirement directory；
-- CatalogParser 不遍历父目录；
-- OpenCode cwd 为 output project；
-- OpenCode 禁用 external directory、web 和 subagent；
-- WorkPacket 不含 tests path、Playwright report 或官方结果；
-- ShadowSmokeJudge 不调用模型，不接受任意脚本；
-- Ledger 记录模型输入 hash 和目的，不记录密钥；
-- 若日志或 event 中出现已知官方 tests/report 路径，pipeline 立即失败，不继续利用该信息。
+OpenCode Builder 和 Probe Planner 共用 gateway/model 配置，但各自维护独立上下文；模型调用次数和超时由全局 budget policy 限制。
 
-这是严格逻辑隔离；若平台未来提供 OS namespace，可在后续版本强化为文件系统隔离。
+## 6. 首个里程碑：框架和 pipeline 跑通
 
-## 13. 首个里程碑完成定义
+首个里程碑只证明控制流和边界正确，不承诺比赛分数：
 
-以下命令必须在无比赛 API key 的环境通过：
+1. TypeScript 入口能解析平台参数并初始化 `RunState`。
+2. Catalog parser 能读取 fixture requirements，Scheduler 能产出确定性 `WorkPacket`。
+3. 生产 `OpenCodeSdkBuilder` 和 `LlmProbePlanner` 具备真实适配器接口与配置校验。
+4. 测试目录中的 `FakeBuilder` 创建一个最小 fixture app；它不属于生产架构。
+5. 测试目录中的 `FakeProbePlanner` 返回合法 ProbePlan；它只用于无凭证 CI。
+6. 生产 `PlaywrightProbeRunner` 启动真实 Chromium，在 fixture app 上执行 click/fill/reload/assertion。
+7. pipeline 测试证明 `schedule -> build -> plan -> browser judge -> accept` 全链路通过。
+8. 失败测试证明 `fail -> repair -> pass`，以及三次失败后 `restore -> blocked`。
+9. credential-gated smoke 才调用真实 OpenCode SDK 和真实 LLM Probe Planner；缺少凭证时明确 skip，不伪装成功。
 
-```text
+最小验收命令：
+
+```powershell
 npm ci
 npm run typecheck
 npm test
-npm run pipeline:fake -- test/fixtures/requirements.yaml --output-dir <temp>
+npm run test:browser
 ```
 
-端到端测试必须证明：
+## 7. 明确延期
 
-- fixture requirement 全量解析且依赖校验生效；
-- Scheduler 选择预期的 ready packet；
-- FakeBuilder 通过 BuilderPort 执行；
-- 生成 `frontend/` 和 `backend/`；
-- ShadowSmokeJudge 能发现失败并在成功时返回 pass；
-- RepairGate 的 attempt 上限有效；
-- 健康 commit 被记录；
-- DeliverGate 完成干净 build/start/readiness；
-- Run Ledger 包含从 started 到 finished 的关键事件；
-- pipeline 不读取 fixture 目录之外的 sibling tests；
-- 所有子进程在测试结束后退出，不残留端口进程。
+以下能力不进入 V1-Lite：
 
-真实 OpenCode 验收分两级：
+- Durable Behavior IR / SemanticCompiler。
+- capability hypergraph 和 Pareto frontier。
+- 生产 Capability Kernel、RecordPack、GridPack 或应用脚手架生成器。
+- 独立 Investigator、多 Agent 辩论或多 Builder 投票。
+- `CheckpointManager`、多分支 frontier、持久化恢复数据库。
+- Python 主实现、CLI fallback 和双 Playwright adapter。
+- 无 LLM 的模板化 Shadow Judge。
+- 截图视觉相似度模型、跨运行学习和官方反馈回灌。
 
-1. 无密钥：SDK import、配置构造、Builder contract 和 health failure 行为通过；
-2. 有比赛密钥：单个最小 WorkPacket 完成一次真实 session，产生可运行 output，usage 和 session id 进入 Ledger。
+## 8. 升级门槛
 
-## 14. 升级门槛
+只有观测到具体瓶颈才扩展：
 
-只有满足以下证据才增加复杂模块：
+| 观测证据 | 允许的升级 |
+| --- | --- |
+| LLM ProbePlan 经常违反 schema | 增加一次结构化重试或更严格 decoder |
+| locator-only 失败占显著比例 | 改进 accessibility snapshot refinement |
+| OpenCode 重复生成同类基础设施且稳定性差 | 提供 prompt 级模板说明；仍不先建生产 Kernel |
+| 单次 packet 经常跨越过多页面导致失败 | 将 packet 上限从 3 动态降为 1 或 2 |
+| Runner 与正式平台入口不兼容 | 基于正式 runner 证据增加薄兼容层 |
+| 进程崩溃导致大量有效工作丢失 | 再引入可恢复 RunState；不直接升级为复杂 frontier |
 
-- SemanticCompiler：确定性分组在真实需求上频繁产生错误切片；
-- 模型 Shadow Judge：HTTP smoke 无法发现足够多的可重现行为错误；
-- Capability packs：重复实现代码成为主要 token 成本；
-- Pareto Frontier：单健康 checkpoint 经常因局部回归错失更好候选；
-- CLI fallback：SDK 在目标 runner 上出现可复现的不稳定；
-- Investigator：第二轮 root-cause-first prompt 的修复率不足。
+## 9. V1-Lite 成功定义
 
-每项升级必须有 baseline/ablation 数据，并作为独立规格和实施计划进入。
+V1-Lite 完成必须同时满足：
+
+- 生产路径只有一个业务代码 Builder：OpenCode SDK。
+- ShallowCode 的每个生产模块都能解释其所需的比赛全局信息。
+- Shadow Judge 至少一次调用 LLM 生成 probe，并由真实 Playwright 执行。
+- Probe Runner 不执行模型生成的任意代码。
+- 无凭证测试通过 fake model adapters 和真实浏览器跑通完整 pipeline。
+- 失败有严格上限，并能回到最后接受 SHA。
+- 最终交付验证有独立预算和可重复命令。
+
+满足这些条件后再讨论调度优化和更丰富的 Judge；在此前不扩大框架。
