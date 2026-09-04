@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 
 import type { AppLifecycle } from "./pipeline.js";
+import { spawnProcess } from "./process-spawn.js";
 import { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import type { PlatformContract, ProcessCommand } from "./types.js";
 
@@ -160,7 +161,7 @@ function spawnCommand(
   command: ProcessCommand,
   env: NodeJS.ProcessEnv,
 ): ChildProcess {
-  return spawn(command.executable, command.args, {
+  return spawnProcess(command.executable, command.args, {
     cwd: commandCwd(outputDir, command.cwd),
     env,
     shell: false,

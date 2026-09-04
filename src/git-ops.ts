@@ -1,6 +1,7 @@
-import { spawn } from "node:child_process";
 import { mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
+
+import { spawnProcess } from "./process-spawn.js";
 
 export interface GitOps {
   captureAccepted(message: string): Promise<string>;
@@ -105,7 +106,7 @@ async function requireGit(cwd: string, args: string[]): Promise<CommandResult> {
 
 function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<CommandResult> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn("git", args, {
+    const child = spawnProcess("git", args, {
       cwd,
       shell: false,
       windowsHide: true,
@@ -113,12 +114,12 @@ function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<Com
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
       stdout += chunk;
     });
-    child.stderr.on("data", (chunk: string) => {
+    child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.once("error", reject);

@@ -11,35 +11,40 @@ import type { ShadowReport } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Decision Loop accepts a passing Shadow report", () => {
-  assert.deepEqual(decideAfterReport(report("pass"), 1, false), {
+  assert.deepEqual(decideAfterReport(report("pass"), 1), {
     kind: "accept",
   });
 });
 
 test("Decision Loop allows exactly two repairs and makes the second root-cause-first", () => {
-  assert.deepEqual(decideAfterReport(report("fail"), 1, false), {
+  assert.deepEqual(decideAfterReport(report("fail"), 1), {
     kind: "repair",
     nextAttempt: 2,
     requireRootCauseFirst: false,
   });
-  assert.deepEqual(decideAfterReport(report("fail"), 2, false), {
+  assert.deepEqual(decideAfterReport(report("fail"), 2), {
     kind: "repair",
     nextAttempt: 3,
     requireRootCauseFirst: true,
   });
-  assert.deepEqual(decideAfterReport(report("fail"), 3, false), {
+  assert.deepEqual(decideAfterReport(report("fail"), 3), {
     kind: "block_and_restore",
   });
 });
 
-test("Decision Loop refines an inconclusive locator only once", () => {
-  assert.deepEqual(decideAfterReport(report("inconclusive"), 1, false), {
-    kind: "refine_locators",
-  });
-  assert.deepEqual(decideAfterReport(report("inconclusive"), 1, true), {
+test("Decision Loop routes inconclusive verdicts through the bounded repair ladder", () => {
+  assert.deepEqual(decideAfterReport(report("inconclusive"), 1), {
     kind: "repair",
     nextAttempt: 2,
     requireRootCauseFirst: false,
+  });
+  assert.deepEqual(decideAfterReport(report("inconclusive"), 2), {
+    kind: "repair",
+    nextAttempt: 3,
+    requireRootCauseFirst: true,
+  });
+  assert.deepEqual(decideAfterReport(report("inconclusive"), 3), {
+    kind: "block_and_restore",
   });
 });
 

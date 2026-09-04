@@ -232,6 +232,94 @@ test("Pipeline E2E allows one delivery repair and reruns full final verification
   });
 });
 
+test("Pipeline E2E blocks a packet when the probe planner keeps failing", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const git = new FakeGitOps(["baseline"]);
+
+    const summary = await runPipeline(
+      { ...options(requirementsFile, outputDir, ledgerFile), plannerRetryDelayMs: 0 },
+      {
+        builder,
+        planner: new FakeProbePlanner([]),
+        runner: new PlaywrightProbeRunner(),
+        git,
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
+      },
+    );
+
+    assert.equal(builder.requests.length, 1);
+    assert.deepEqual(git.restoredShas, ["baseline"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["REQ-PROFILE"]);
+    assert.equal(summary.status, "partial");
+    const events = (await readFile(ledgerFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => (JSON.parse(line) as { type: string }).type);
+    assert.ok(events.includes("probe_planner_retry"));
+    assert.ok(events.includes("probe_planner_failed"));
+    assert.ok(events.includes("packet_blocked"));
+  });
+});
+
+test("Pipeline E2E treats an application start failure as a repairable attempt", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const lifecycle = new FlakyLifecycle(1);
+
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline", "accepted"]),
+        appLifecycle: lifecycle,
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
+      },
+    );
+
+    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2]);
+    assert.equal(
+      builder.requests[1].shadowReport?.failures[0].caseId,
+      "<application>",
+    );
+    assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
+    assert.equal(summary.status, "delivered");
+    const events = (await readFile(ledgerFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => (JSON.parse(line) as { type: string }).type);
+    assert.ok(events.includes("application_start_failed"));
+  });
+});
+
+test("Pipeline E2E converts a throwing Builder into a failed attempt", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new ThrowingBuilder(1);
+
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline", "accepted"]),
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
+      },
+    );
+
+    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2]);
+    assert.equal(builder.requests[1].shadowReport?.failures[0].caseId, "<builder>");
+    assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
+  });
+});
+
 class RecordingLifecycle implements AppLifecycle {
   startCount = 0;
   stopCount = 0;
@@ -304,6 +392,52 @@ class FixtureVariantBuilder implements BuilderPort {
     this.callIndex += 1;
     return {
       sessionId: `variant-${this.callIndex}`,
+      outcome: "completed",
+      summary: "fixture written",
+    };
+  }
+
+  async close(): Promise<void> {}
+}
+
+class FlakyLifecycle implements AppLifecycle {
+  private calls = 0;
+
+  constructor(private readonly failures: number) {}
+
+  async start(outputDir: string) {
+    this.calls += 1;
+    if (this.calls <= this.failures) {
+      throw new Error("fixture application failed to start");
+    }
+    const server = await startFixtureServer(outputDir);
+    return {
+      baseUrl: server.baseUrl,
+      stop: async () => {
+        await server.stop();
+      },
+    };
+  }
+}
+
+class ThrowingBuilder implements BuilderPort {
+  readonly requests: BuilderRequest[] = [];
+  private calls = 0;
+
+  constructor(private readonly failures: number) {}
+
+  async run(request: BuilderRequest): Promise<BuilderResult> {
+    this.requests.push(request);
+    this.calls += 1;
+    if (this.calls <= this.failures) {
+      throw new Error("OpenCode runtime crashed");
+    }
+    await cp(resolve("test/fixtures/app"), request.outputDir, {
+      recursive: true,
+      force: true,
+    });
+    return {
+      sessionId: `throwing-${this.calls}`,
       outcome: "completed",
       summary: "fixture written",
     };

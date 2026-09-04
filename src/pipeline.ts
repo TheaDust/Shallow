@@ -1,4 +1,7 @@
-import type { BuilderPort } from "./builder/port.js";
+import type {
+  BuilderPort,
+  BuilderResult,
+} from "./builder/port.js";
 import {
   buildArcRequirementRows,
   type ArcRequirementRow,
@@ -63,6 +66,7 @@ export interface PipelineOptions {
   ledgerFile: string;
   totalBudgetMs: number;
   platformContract: PlatformContract;
+  plannerRetryDelayMs?: number;
 }
 
 export interface RunSummary {
@@ -111,18 +115,27 @@ export async function runPipeline(
         type: "delivery_repair_started",
         detail: { stage: finalReport.stage, message: finalReport.message },
       });
-      const builderResult = await deps.builder.run({
-        packet: {
-          id: "delivery-repair",
-          requirementIds: [],
-          requirements: [],
-          attempt: 3,
-        },
-        outputDir: options.outputDir,
-        platformContract: options.platformContract,
-        shadowReport: deliveryFailureReport(finalReport),
-        requireRootCauseFirst: true,
-      });
+      let builderResult: BuilderResult;
+      try {
+        builderResult = await deps.builder.run({
+          packet: {
+            id: "delivery-repair",
+            requirementIds: [],
+            requirements: [],
+            attempt: 3,
+          },
+          outputDir: options.outputDir,
+          platformContract: options.platformContract,
+          shadowReport: deliveryFailureReport(finalReport),
+          requireRootCauseFirst: true,
+        });
+      } catch (error) {
+        builderResult = {
+          sessionId: "unavailable",
+          outcome: "failed",
+          summary: errorMessage(error),
+        };
+      }
       state.setPacketAttempt("delivery-repair", 3);
       await state.record({
         at: now(),
@@ -192,8 +205,21 @@ async function executePacket(
   let requireRootCauseFirst = false;
   let plan: ProbePlan | undefined;
   let refinementUsed = false;
+  let iteration = 0;
 
   while (true) {
+    iteration += 1;
+    if (iteration > MAX_PACKET_ITERATIONS) {
+      await blockPacket(
+        deps,
+        state,
+        { ...selected, attempt },
+        catalogStatus,
+        "packet iteration cap exceeded",
+      );
+      return;
+    }
+
     const packet: WorkPacket = { ...selected, attempt };
     state.setPacketAttempt(packet.id, attempt);
     for (const requirementId of packet.requirementIds) {
@@ -201,13 +227,23 @@ async function executePacket(
         arc.requirementState(requirementId, "implement", "running"),
       );
     }
-    const builderResult = await deps.builder.run({
-      packet,
-      outputDir: options.outputDir,
-      platformContract: options.platformContract,
-      ...(previousReport ? { shadowReport: previousReport } : {}),
-      requireRootCauseFirst,
-    });
+
+    let builderResult: BuilderResult;
+    try {
+      builderResult = await deps.builder.run({
+        packet,
+        outputDir: options.outputDir,
+        platformContract: options.platformContract,
+        ...(previousReport ? { shadowReport: previousReport } : {}),
+        requireRootCauseFirst,
+      });
+    } catch (error) {
+      builderResult = {
+        sessionId: "unavailable",
+        outcome: "failed",
+        summary: errorMessage(error),
+      };
+    }
     await state.record({
       at: now(),
       type: "builder_finished",
@@ -220,53 +256,27 @@ async function executePacket(
       report = builderFailureReport(packet.id, builderResult.summary);
     } else {
       if (!plan) {
-        plan = await deps.planner.plan(packet);
+        plan = await planProbe(packet, options, deps, state);
+        if (!plan) {
+          await blockPacket(deps, state, packet, catalogStatus, "probe planner failed");
+          return;
+        }
         await state.record({ at: now(), type: "probe_planned", packetId: packet.id });
       }
-      const application = await deps.appLifecycle.start(
-        options.outputDir,
-        options.platformContract,
+      const probeOutcome = await runShadowProbes(
+        packet,
+        plan,
+        options,
+        deps,
+        state,
+        refinementUsed,
       );
-      try {
-        report = await deps.runner.run(plan, {
-          baseUrl: application.baseUrl,
-          stepTimeoutMs: 2_000,
-          caseTimeoutMs: 15_000,
-        });
-        await state.record({
-          at: now(),
-          type: "probe_finished",
-          packetId: packet.id,
-          detail: { verdict: report.verdict },
-        });
-
-        if (report.verdict === "inconclusive" && !refinementUsed) {
-          const snapshot = report.failures.find(
-            (failure) => failure.category === "locator" && failure.locatorSnapshot,
-          )?.locatorSnapshot;
-          if (snapshot) {
-            plan = await deps.planner.refineLocators(plan, snapshot);
-            refinementUsed = true;
-            await state.record({ at: now(), type: "probe_refined", packetId: packet.id });
-            report = await deps.runner.run(plan, {
-              baseUrl: application.baseUrl,
-              stepTimeoutMs: 2_000,
-              caseTimeoutMs: 15_000,
-            });
-            await state.record({
-              at: now(),
-              type: "probe_finished",
-              packetId: packet.id,
-              detail: { verdict: report.verdict, refined: true },
-            });
-          }
-        }
-      } finally {
-        await application.stop();
-      }
+      plan = probeOutcome.plan;
+      refinementUsed = probeOutcome.refinementUsed;
+      report = probeOutcome.report;
     }
 
-    const decision = decideAfterReport(report, attempt, refinementUsed);
+    const decision = decideAfterReport(report, attempt);
     if (decision.kind === "accept") {
       const acceptedSha = await deps.git.captureAccepted(`shallow: accept ${packet.id}`);
       state.setAcceptedSha(acceptedSha);
@@ -290,24 +300,169 @@ async function executePacket(
       requireRootCauseFirst = decision.requireRootCauseFirst;
       continue;
     }
-    if (decision.kind === "refine_locators") {
-      previousReport = report;
-      attempt = attempt === 3 ? 3 : ((attempt + 1) as 2 | 3);
-      requireRootCauseFirst = attempt === 3;
-      continue;
-    }
 
-    await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-    state.markRequirements(packet.requirementIds, "blocked");
-    setCatalogStatus(catalogStatus, packet.requirementIds, "blocked");
-    await state.record({ at: now(), type: "packet_blocked", packetId: packet.id });
-    for (const requirementId of packet.requirementIds) {
-      await emitArc(deps, (arc) =>
-        arc.requirementState(requirementId, "implement", "failed"),
-      );
-    }
+    await blockPacket(deps, state, packet, catalogStatus, "shadow attempts exhausted");
     return;
   }
+}
+
+interface ProbeOutcome {
+  report: ShadowReport;
+  plan: ProbePlan;
+  refinementUsed: boolean;
+}
+
+async function runShadowProbes(
+  packet: WorkPacket,
+  plan: ProbePlan,
+  options: PipelineOptions,
+  deps: PipelineDeps,
+  state: RunStateStore,
+  refinementUsed: boolean,
+): Promise<ProbeOutcome> {
+  let application: Awaited<ReturnType<AppLifecycle["start"]>>;
+  try {
+    application = await deps.appLifecycle.start(
+      options.outputDir,
+      options.platformContract,
+    );
+  } catch (error) {
+    await state.record({
+      at: now(),
+      type: "application_start_failed",
+      packetId: packet.id,
+      detail: { message: errorMessage(error) },
+    });
+    return { report: applicationFailureReport(packet.id, error), plan, refinementUsed };
+  }
+
+  try {
+    let currentPlan = plan;
+    let used = refinementUsed;
+    const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
+    let report = await deps.runner.run(currentPlan, {
+      baseUrl: application.baseUrl,
+      ...runOptions,
+    });
+    await state.record({
+      at: now(),
+      type: "probe_finished",
+      packetId: packet.id,
+      detail: { verdict: report.verdict },
+    });
+
+    if (report.verdict === "inconclusive" && !used) {
+      const snapshot = report.failures.find(
+        (failure) => failure.category === "locator" && failure.locatorSnapshot,
+      )?.locatorSnapshot;
+      if (snapshot) {
+        try {
+          currentPlan = await deps.planner.refineLocators(currentPlan, snapshot);
+          used = true;
+          await state.record({ at: now(), type: "probe_refined", packetId: packet.id });
+          report = await deps.runner.run(currentPlan, {
+            baseUrl: application.baseUrl,
+            ...runOptions,
+          });
+          await state.record({
+            at: now(),
+            type: "probe_finished",
+            packetId: packet.id,
+            detail: { verdict: report.verdict, refined: true },
+          });
+        } catch (error) {
+          used = true;
+          await state.record({
+            at: now(),
+            type: "probe_refinement_failed",
+            packetId: packet.id,
+            detail: { message: errorMessage(error) },
+          });
+        }
+      }
+    }
+    return { report, plan: currentPlan, refinementUsed: used };
+  } finally {
+    await application.stop();
+  }
+}
+
+const MAX_PACKET_ITERATIONS = 6;
+
+async function planProbe(
+  packet: WorkPacket,
+  options: PipelineOptions,
+  deps: PipelineDeps,
+  state: RunStateStore,
+): Promise<ProbePlan | undefined> {
+  try {
+    return await deps.planner.plan(packet);
+  } catch (error) {
+    await state.record({
+      at: now(),
+      type: "probe_planner_retry",
+      packetId: packet.id,
+      detail: { message: errorMessage(error) },
+    });
+  }
+  const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;
+  if (retryDelayMs > 0) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, retryDelayMs));
+  }
+  try {
+    return await deps.planner.plan(packet);
+  } catch (error) {
+    await state.record({
+      at: now(),
+      type: "probe_planner_failed",
+      packetId: packet.id,
+      detail: { message: errorMessage(error) },
+    });
+    return undefined;
+  }
+}
+
+async function blockPacket(
+  deps: PipelineDeps,
+  state: RunStateStore,
+  packet: WorkPacket,
+  catalogStatus: Record<string, "todo" | "verified" | "blocked">,
+  reason: string,
+): Promise<void> {
+  await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+  state.markRequirements(packet.requirementIds, "blocked");
+  setCatalogStatus(catalogStatus, packet.requirementIds, "blocked");
+  await state.record({
+    at: now(),
+    type: "packet_blocked",
+    packetId: packet.id,
+    detail: { reason },
+  });
+  for (const requirementId of packet.requirementIds) {
+    await emitArc(deps, (arc) =>
+      arc.requirementState(requirementId, "implement", "failed"),
+    );
+  }
+}
+
+function applicationFailureReport(packetId: string, error: unknown): ShadowReport {
+  return {
+    packetId,
+    verdict: "fail",
+    passedCases: [],
+    failures: [
+      {
+        caseId: "<application>",
+        stepIndex: -1,
+        category: "runner",
+        message: errorMessage(error),
+      },
+    ],
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function emitArc(
@@ -367,7 +522,7 @@ async function runFinalVerifier(
     return {
       ok: false,
       stage: "readiness",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     };
   }
 }

@@ -9,7 +9,6 @@ import type {
 
 export type Decision =
   | { kind: "accept" }
-  | { kind: "refine_locators" }
   | {
       kind: "repair";
       nextAttempt: 2 | 3;
@@ -41,12 +40,8 @@ export interface LogSink {
 export function decideAfterReport(
   report: ShadowReport,
   attempt: 1 | 2 | 3,
-  refinementUsed: boolean,
 ): Decision {
   if (report.verdict === "pass") return { kind: "accept" };
-  if (report.verdict === "inconclusive" && !refinementUsed) {
-    return { kind: "refine_locators" };
-  }
   if (attempt === 1) {
     return { kind: "repair", nextAttempt: 2, requireRootCauseFirst: false };
   }

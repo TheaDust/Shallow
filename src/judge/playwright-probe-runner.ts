@@ -32,6 +32,17 @@ class ProbeExecutionError extends Error {
   }
 }
 
+export function deriveProbeVerdict(
+  failures: ProbeFailure[],
+): ShadowReport["verdict"] {
+  if (failures.length === 0) return "pass";
+  const locatorOnly = failures.every((failure) => failure.category === "locator");
+  const hasSnapshot = failures.some(
+    (failure) => failure.locatorSnapshot !== undefined,
+  );
+  return locatorOnly && hasSnapshot ? "inconclusive" : "fail";
+}
+
 export class PlaywrightProbeRunner {
   async run(plan: ProbePlan, options: ProbeRunOptions): Promise<ShadowReport> {
     let browser: Browser | undefined;
@@ -58,12 +69,7 @@ export class PlaywrightProbeRunner {
 
     return {
       packetId: plan.packetId,
-      verdict:
-        failures.length === 0
-          ? "pass"
-          : failures.every((failure) => failure.category === "locator")
-            ? "inconclusive"
-            : "fail",
+      verdict: deriveProbeVerdict(failures),
       passedCases,
       failures,
     };
