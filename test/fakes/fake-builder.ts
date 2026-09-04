@@ -9,6 +9,7 @@ import type {
 
 export class FakeBuilder implements BuilderPort {
   readonly requests: BuilderRequest[] = [];
+  closeCount = 0;
   private callIndex = 0;
 
   constructor(
@@ -30,5 +31,7 @@ export class FakeBuilder implements BuilderPort {
     };
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    this.closeCount += 1;
+  }
 }
