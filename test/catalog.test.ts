@@ -1,0 +1,102 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { test } from "node:test";
+
+import { loadRequirementCatalog } from "../src/catalog.js";
+
+const fixture = resolve("test/fixtures/requirements.yaml");
+
+test("Catalog preserves atomic requirements and source evidence in declaration order", async () => {
+  const catalog = await loadRequirementCatalog(fixture);
+
+  assert.deepEqual(
+    catalog.requirements.map((requirement) => requirement.id),
+    ["REQ-A", "REQ-B", "REQ-C"],
+  );
+  assert.deepEqual(catalog.statusById, {
+    "REQ-A": "todo",
+    "REQ-B": "todo",
+    "REQ-C": "todo",
+  });
+
+  const first = catalog.requirements[0];
+  assert.deepEqual(first.folderPath, ["ROOT", "AREA-A"]);
+  assert.equal(first.declarationIndex, 0);
+  assert.equal(first.name, "Create a profile");
+  assert.match(first.text, /keeps the value/);
+  assert.deepEqual(first.dependencyIds, []);
+  assert.deepEqual(first.references, ["reference/profile.png"]);
+  assert.deepEqual(first.exactUiStrings, [
+    "Profile name",
+    "Save",
+    "Profile name",
+    "Save",
+    "Save",
+    "Name is required",
+  ]);
+  assert.deepEqual(first.scenarios, [
+    "Save a profile\nGIVEN: The profile page is open.\nWHEN: The user fills “Profile name” and clicks `Save`.\nTHEN: The saved name remains visible after refresh.",
+    "Reject an empty profile\nWHEN: The user clicks `Save` without a name.\nTHEN: The page displays “Name is required”.",
+  ]);
+});
+
+test("Catalog rejects duplicate identifiers", async () => {
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n  - id: X\n    name: Two\n    type: ATOMIC\n    dependencies: []\n    description: Two\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /Duplicate requirement id: X/);
+    },
+  );
+});
+
+test("Catalog rejects unknown dependencies", async () => {
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: [MISSING]\n    description: One\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /Unknown dependency MISSING/);
+    },
+  );
+});
+
+test("Catalog rejects dependency cycles", async () => {
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: [Y]\n    description: One\n  - id: Y\n    name: Two\n    type: ATOMIC\n    dependencies: [X]\n    description: Two\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /Dependency cycle/);
+    },
+  );
+});
+
+test("Catalog reads only the explicitly selected YAML file", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "shallow-catalog-"));
+  try {
+    const selected = join(directory, "requirements.yaml");
+    await writeFile(
+      selected,
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren: []\n",
+    );
+    await writeFile(join(directory, "sibling.yaml"), "not: [valid");
+
+    const catalog = await loadRequirementCatalog(selected);
+
+    assert.deepEqual(catalog.requirements, []);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+async function withYaml(
+  contents: string,
+  callback: (file: string) => Promise<void>,
+): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), "shallow-catalog-"));
+  const file = join(directory, "requirements.yaml");
+  try {
+    await writeFile(file, contents);
+    await callback(file);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
