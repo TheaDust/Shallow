@@ -1,6 +1,10 @@
 import type { BuilderPort } from "./builder/port.js";
 import { loadRequirementCatalog } from "./catalog.js";
 import type { GitOps } from "./git-ops.js";
+import type {
+  FinalVerificationReport,
+  FinalVerifierPort,
+} from "./final-verifier.js";
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import type { ProbePlan } from "./judge/probe-schema.js";
@@ -26,6 +30,7 @@ export interface PipelineDeps {
   git: GitOps;
   appLifecycle: AppLifecycle;
   clock: Clock;
+  finalVerifier: FinalVerifierPort;
 }
 
 export interface PipelineOptions {
@@ -68,11 +73,65 @@ export async function runPipeline(
       await executePacket(packet, options, deps, state, catalog.statusById);
     }
 
+    await state.record({ at: now(), type: "delivery_started" });
+    let finalReport = await runFinalVerifier(options, deps);
+    if (!finalReport.ok) {
+      await state.record({
+        at: now(),
+        type: "delivery_repair_started",
+        detail: { stage: finalReport.stage, message: finalReport.message },
+      });
+      const builderResult = await deps.builder.run({
+        packet: {
+          id: "delivery-repair",
+          requirementIds: [],
+          requirements: [],
+          attempt: 3,
+        },
+        outputDir: options.outputDir,
+        platformContract: options.platformContract,
+        shadowReport: deliveryFailureReport(finalReport),
+        requireRootCauseFirst: true,
+      });
+      state.setPacketAttempt("delivery-repair", 3);
+      await state.record({
+        at: now(),
+        type: "builder_finished",
+        packetId: "delivery-repair",
+        detail: { outcome: builderResult.outcome, sessionId: builderResult.sessionId },
+      });
+      finalReport = await runFinalVerifier(options, deps);
+      if (finalReport.ok && builderResult.outcome === "completed") {
+        const acceptedSha = await deps.git.captureAccepted(
+          "shallow: accept delivery repair",
+        );
+        state.setAcceptedSha(acceptedSha);
+        await state.record({
+          at: now(),
+          type: "delivery_repair_accepted",
+          packetId: "delivery-repair",
+        });
+      }
+    }
+    await state.record({
+      at: now(),
+      type: "delivery_finished",
+      detail: {
+        ok: finalReport.ok,
+        stage: finalReport.stage,
+        message: finalReport.message,
+      },
+    });
+
     const snapshot = state.snapshot;
     const verifiedRequirementIds = idsWithStatus(snapshot.statusByRequirementId, "verified");
     const blockedRequirementIds = idsWithStatus(snapshot.statusByRequirementId, "blocked");
     const summary: RunSummary = {
-      status: blockedRequirementIds.length > 0 ? "partial" : "delivered",
+      status: finalReport.ok
+        ? blockedRequirementIds.length > 0
+          ? "partial"
+          : "delivered"
+        : "failed",
       verifiedRequirementIds,
       blockedRequirementIds,
       acceptedSha: snapshot.acceptedSha,
@@ -209,6 +268,40 @@ function builderFailureReport(packetId: string, message: string): ShadowReport {
       },
     ],
   };
+}
+
+function deliveryFailureReport(report: FinalVerificationReport): ShadowReport {
+  return {
+    packetId: "delivery-repair",
+    verdict: "fail",
+    passedCases: [],
+    failures: [
+      {
+        caseId: "<delivery>",
+        stepIndex: -1,
+        category: "runner",
+        message: report.message,
+      },
+    ],
+  };
+}
+
+async function runFinalVerifier(
+  options: PipelineOptions,
+  deps: PipelineDeps,
+): Promise<FinalVerificationReport> {
+  try {
+    return await deps.finalVerifier.verify(
+      options.outputDir,
+      options.platformContract,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      stage: "readiness",
+      message: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function setCatalogStatus(

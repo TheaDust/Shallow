@@ -29,7 +29,7 @@ export async function startFixtureServer(
   };
 }
 
-async function reservePort(): Promise<number> {
+export async function reservePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolvePromise, reject) => {
     server.once("error", reject);

@@ -10,6 +10,10 @@ import type {
 } from "../src/builder/port.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
+import type {
+  FinalVerificationReport,
+  FinalVerifierPort,
+} from "../src/final-verifier.js";
 import {
   runPipeline,
   type AppLifecycle,
@@ -28,6 +32,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
     const planner = new FakeProbePlanner([workingPlan()]);
     const git = new FakeGitOps(["baseline", "accepted"]);
     const lifecycle = new RecordingLifecycle();
+    const finalVerifier = new RecordingFinalVerifier();
 
     const summary = await runPipeline(
       options(requirementsFile, outputDir, ledgerFile),
@@ -38,6 +43,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
         git,
         appLifecycle: lifecycle,
         clock: fixedClock(),
+        finalVerifier,
       },
     );
 
@@ -53,6 +59,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
     assert.equal(lifecycle.startCount, 1);
     assert.equal(lifecycle.stopCount, 1);
     assert.equal(builder.closeCount, 1);
+    assert.equal(finalVerifier.calls, 1);
     const events = (await readFile(ledgerFile, "utf8"))
       .trim()
       .split("\n")
@@ -64,6 +71,8 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
       "probe_planned",
       "probe_finished",
       "packet_accepted",
+      "delivery_started",
+      "delivery_finished",
       "pipeline_finished",
     ]);
   });
@@ -84,6 +93,7 @@ test("Pipeline E2E repairs the app and reruns the same behavior probes", async (
         git,
         appLifecycle: new RecordingLifecycle(),
         clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
       },
     );
 
@@ -110,6 +120,7 @@ test("Pipeline E2E stops after two repairs, restores baseline, and blocks the pa
         git,
         appLifecycle: new RecordingLifecycle(),
         clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
       },
     );
 
@@ -138,6 +149,7 @@ test("Pipeline E2E refines a missing locator without another Builder attempt", a
         git: new FakeGitOps(["baseline", "accepted"]),
         appLifecycle: new RecordingLifecycle(),
         clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
       },
     );
 
@@ -145,6 +157,66 @@ test("Pipeline E2E refines a missing locator without another Builder attempt", a
     assert.equal(planner.refinements.length, 1);
     assert.match(planner.refinements[0].snapshot, /Profile name|Save/);
     assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
+  });
+});
+
+test("Pipeline E2E reports failure when independent final verification fails", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder: new FakeBuilder(),
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline", "accepted"]),
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier({
+          ok: false,
+          stage: "build",
+          message: "production build failed",
+        }),
+      },
+    );
+
+    assert.equal(summary.status, "failed");
+  });
+});
+
+test("Pipeline E2E allows one delivery repair and reruns full final verification", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const git = new FakeGitOps(["baseline", "accepted", "delivery-fixed"]);
+    const finalVerifier = new SequencedFinalVerifier([
+      { ok: false, stage: "build", message: "production build failed" },
+      { ok: true, stage: "complete", message: "Final verification passed" },
+    ]);
+
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git,
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier,
+      },
+    );
+
+    assert.equal(finalVerifier.calls, 2);
+    assert.equal(builder.requests.length, 2);
+    assert.equal(builder.requests[1].packet.id, "delivery-repair");
+    assert.equal(builder.requests[1].requireRootCauseFirst, true);
+    assert.equal(builder.requests[1].shadowReport?.failures[0].message, "production build failed");
+    assert.equal(summary.status, "delivered");
+    assert.equal(summary.acceptedSha, "delivery-fixed");
+    assert.deepEqual(git.captureMessages, [
+      "shallow: initial state",
+      "shallow: accept packet-req-profile",
+      "shallow: accept delivery repair",
+    ]);
   });
 });
 
@@ -194,6 +266,36 @@ class FixtureVariantBuilder implements BuilderPort {
   }
 
   async close(): Promise<void> {}
+}
+
+class RecordingFinalVerifier implements FinalVerifierPort {
+  calls = 0;
+
+  constructor(
+    private readonly result: FinalVerificationReport = {
+      ok: true,
+      stage: "complete",
+      message: "Final verification passed",
+    },
+  ) {}
+
+  async verify(): Promise<FinalVerificationReport> {
+    this.calls += 1;
+    return this.result;
+  }
+}
+
+class SequencedFinalVerifier implements FinalVerifierPort {
+  calls = 0;
+
+  constructor(private readonly results: FinalVerificationReport[]) {}
+
+  async verify(): Promise<FinalVerificationReport> {
+    const result = this.results[this.calls] ?? this.results.at(-1);
+    this.calls += 1;
+    if (!result) throw new Error("SequencedFinalVerifier has no result");
+    return result;
+  }
 }
 
 function workingPlan(): ProbePlan {
