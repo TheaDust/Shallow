@@ -9,3 +9,4 @@ coverage/
 Thumbs.db
 .worktrees/
 .superpowers/
+__pycache__/

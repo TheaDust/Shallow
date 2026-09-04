@@ -7,6 +7,7 @@ import {
   OpenCodeSdkBuilder,
   SdkOpenCodeRuntime,
 } from "./src/builder/opencode-sdk.js";
+import { ArcEventSink } from "./src/arc-protocol.js";
 import { parseCliArgs } from "./src/cli.js";
 import { CommandAppLifecycle, FinalVerifier } from "./src/final-verifier.js";
 import { GitCliOps } from "./src/git-ops.js";
@@ -20,6 +21,8 @@ import {
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseProbePortOverride,
+  pickFreePort,
   readEnvFile,
   readGatewayConfig,
   type GatewayConfig,
@@ -54,12 +57,13 @@ export async function main(
   }
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
+  const probePort = parseProbePortOverride(env) ?? (await pickFreePort());
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
     ledgerFile: join(tmpdir(), "shallowcode-runs", runId, "run-ledger.jsonl"),
     totalBudgetMs: cli.budgetMs,
-    platformContract: createArcPlatformContract(),
+    platformContract: createArcPlatformContract(process.platform, probePort),
   };
   const summary = await execute({
     gateway,
@@ -99,6 +103,8 @@ async function executeProduction(
   const lifecycle = new CommandAppLifecycle();
   const git = await GitCliOps.open(pipelineOptions.outputDir);
   const finalVerifier = new FinalVerifier(runner, lifecycle);
+  const arcEvents = new ArcEventSink(pipelineOptions.outputDir);
+  await arcEvents.init();
   return runPipeline(pipelineOptions, {
     builder,
     planner,
@@ -107,6 +113,10 @@ async function executeProduction(
     appLifecycle: lifecycle,
     clock: { nowMs: () => Date.now() },
     finalVerifier,
+    arcEvents,
+    logSink: {
+      write: (chunk) => process.stderr.write(chunk),
+    },
   });
 }
 

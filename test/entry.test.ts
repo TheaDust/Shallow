@@ -39,7 +39,7 @@ test("Agent entry validates paths and passes bounded production context", async 
         "--budget-ms",
         "600000",
       ],
-      gatewayEnv(),
+      { ...gatewayEnv(), SHALLOW_PROBE_PORT: "3000" },
       execute,
       null,
     );
@@ -50,6 +50,47 @@ test("Agent entry validates paths and passes bounded production context", async 
     assert.equal(received?.pipelineOptions.outputDir, outputDir);
     assert.equal(received?.pipelineOptions.totalBudgetMs, 600_000);
     assert.equal(received?.pipelineOptions.platformContract.port, 3000);
+  });
+});
+
+test("Agent entry picks a non-3000 probe port when the override is absent", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    const outputDir = join(directory, "output");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+
+    await main(
+      [
+        "--requirements-dir",
+        requirementsDir,
+        "--output-dir",
+        outputDir,
+        "--budget-ms",
+        "0",
+      ],
+      gatewayEnv(),
+      execute,
+      null,
+    );
+
+    const contract = received?.pipelineOptions.platformContract;
+    assert.ok(contract);
+    assert.notEqual(contract.port, 3000);
+    assert.equal(contract.baseUrl, `http://127.0.0.1:${contract.port}`);
   });
 });
 

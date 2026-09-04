@@ -25,6 +25,12 @@ test("Builder prompt exposes the packet and platform contract but not global sta
   assert.match(prompt, /C:\\candidate-app/);
   assert.match(prompt, /npm --prefix frontend run build/);
   assert.match(prompt, /http:\/\/127\.0\.0\.1:3000/);
+  assert.match(prompt, /read the PORT environment variable.*\(default 3000\)/);
+  assert.match(prompt, /relative same-origin paths/);
+  assert.match(prompt, /type="text"/);
+  assert.match(prompt, /visible <label> element/);
+  assert.match(prompt, /never rely on HTML5 required or pattern attributes/);
+  assert.match(prompt, /<button> elements with visible plain text/);
   assert.doesNotMatch(prompt, /SECRET-OTHER-REQ/);
   assert.doesNotMatch(prompt, /acceptedSha|global budget|\/workspace\/tests/i);
   assert.doesNotMatch(prompt, /Capability Kernel|use React|use Vue/i);

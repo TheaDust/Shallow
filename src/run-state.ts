@@ -34,6 +34,10 @@ export interface InitialRunState {
   totalBudgetMs: number;
 }
 
+export interface LogSink {
+  write(chunk: string): void;
+}
+
 export function decideAfterReport(
   report: ShadowReport,
   attempt: 1 | 2 | 3,
@@ -58,6 +62,7 @@ export class RunStateStore {
   constructor(
     initial: InitialRunState,
     private readonly ledgerFile?: string,
+    private readonly logSink?: LogSink | null,
   ) {
     this.state = {
       ...initial,
@@ -107,6 +112,7 @@ export class RunStateStore {
   async record(event: RunEvent): Promise<void> {
     const safeEvent = redactEvent(event);
     this.state.ledger.push(safeEvent);
+    this.logSink?.write(`${JSON.stringify(safeEvent)}\n`);
     if (!this.ledgerFile) return;
     await mkdir(dirname(this.ledgerFile), { recursive: true });
     await appendFile(this.ledgerFile, `${JSON.stringify(safeEvent)}\n`, "utf8");

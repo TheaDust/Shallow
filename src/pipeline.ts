@@ -1,4 +1,9 @@
 import type { BuilderPort } from "./builder/port.js";
+import {
+  buildArcRequirementRows,
+  type ArcRequirementRow,
+  type ArcScenarioRow,
+} from "./arc-protocol.js";
 import { loadRequirementCatalog } from "./catalog.js";
 import type { GitOps } from "./git-ops.js";
 import type {
@@ -8,7 +13,7 @@ import type {
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import type { ProbePlan } from "./judge/probe-schema.js";
-import { RunStateStore, decideAfterReport } from "./run-state.js";
+import { RunStateStore, decideAfterReport, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
 import type { PlatformContract, ShadowReport, WorkPacket } from "./types.js";
 
@@ -23,6 +28,23 @@ export interface Clock {
   nowMs(): number;
 }
 
+export interface ArcEventsPort {
+  runnerState(
+    state: "running" | "completed" | "failed",
+    message?: string,
+  ): Promise<void>;
+  requirementState(
+    reqId: string,
+    phase: "design" | "implement" | "test",
+    status: "running" | "completed" | "failed" | "passed",
+  ): Promise<void>;
+  commitHistorySignal(reason: string): Promise<void>;
+  storeRequirementTree(
+    requirementRows: Record<string, ArcRequirementRow>,
+    scenarioRows: Record<string, ArcScenarioRow>,
+  ): Promise<void>;
+}
+
 export interface PipelineDeps {
   builder: BuilderPort;
   planner: ProbePlanner;
@@ -31,6 +53,8 @@ export interface PipelineDeps {
   appLifecycle: AppLifecycle;
   clock: Clock;
   finalVerifier: FinalVerifierPort;
+  arcEvents?: ArcEventsPort;
+  logSink?: LogSink;
 }
 
 export interface PipelineOptions {
@@ -62,9 +86,15 @@ export async function runPipeline(
       totalBudgetMs: options.totalBudgetMs,
     },
     options.ledgerFile,
+    deps.logSink ?? null,
   );
 
   await state.record({ at: now(), type: "pipeline_started" });
+  await emitArc(deps, (arc) => arc.runnerState("running", "pipeline started"));
+  const arcRows = buildArcRequirementRows(catalog.requirements);
+  await emitArc(deps, (arc) =>
+    arc.storeRequirementTree(arcRows.requirementRows, arcRows.scenarioRows),
+  );
   try {
     while (!state.shouldEnterDelivery(deps.clock.nowMs())) {
       const packet = selectNextPacket(catalog);
@@ -111,6 +141,7 @@ export async function runPipeline(
           type: "delivery_repair_accepted",
           packetId: "delivery-repair",
         });
+        await emitArc(deps, (arc) => arc.commitHistorySignal("git_commit"));
       }
     }
     await state.record({
@@ -136,6 +167,12 @@ export async function runPipeline(
       blockedRequirementIds,
       acceptedSha: snapshot.acceptedSha,
     };
+    await emitArc(deps, (arc) =>
+      arc.runnerState(
+        finalReport.ok ? "completed" : "failed",
+        `summary ${summary.status}`,
+      ),
+    );
     await state.record({ at: now(), type: "pipeline_finished" });
     return summary;
   } finally {
@@ -159,6 +196,11 @@ async function executePacket(
   while (true) {
     const packet: WorkPacket = { ...selected, attempt };
     state.setPacketAttempt(packet.id, attempt);
+    for (const requirementId of packet.requirementIds) {
+      await emitArc(deps, (arc) =>
+        arc.requirementState(requirementId, "implement", "running"),
+      );
+    }
     const builderResult = await deps.builder.run({
       packet,
       outputDir: options.outputDir,
@@ -231,6 +273,15 @@ async function executePacket(
       state.markRequirements(packet.requirementIds, "verified");
       setCatalogStatus(catalogStatus, packet.requirementIds, "verified");
       await state.record({ at: now(), type: "packet_accepted", packetId: packet.id });
+      for (const requirementId of packet.requirementIds) {
+        await emitArc(deps, (arc) =>
+          arc.requirementState(requirementId, "implement", "completed"),
+        );
+        await emitArc(deps, (arc) =>
+          arc.requirementState(requirementId, "test", "passed"),
+        );
+      }
+      await emitArc(deps, (arc) => arc.commitHistorySignal("git_commit"));
       return;
     }
     if (decision.kind === "repair") {
@@ -250,6 +301,23 @@ async function executePacket(
     state.markRequirements(packet.requirementIds, "blocked");
     setCatalogStatus(catalogStatus, packet.requirementIds, "blocked");
     await state.record({ at: now(), type: "packet_blocked", packetId: packet.id });
+    for (const requirementId of packet.requirementIds) {
+      await emitArc(deps, (arc) =>
+        arc.requirementState(requirementId, "implement", "failed"),
+      );
+    }
+    return;
+  }
+}
+
+async function emitArc(
+  deps: PipelineDeps,
+  emit: (arc: ArcEventsPort) => Promise<void> | void,
+): Promise<void> {
+  if (!deps.arcEvents) return;
+  try {
+    await emit(deps.arcEvents);
+  } catch {
     return;
   }
 }

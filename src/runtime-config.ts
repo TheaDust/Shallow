@@ -1,3 +1,4 @@
+import { createServer } from "node:net";
 import { readFile } from "node:fs/promises";
 
 import type { PlatformContract } from "./types.js";
@@ -48,11 +49,12 @@ export async function readEnvFile(
 
 export function createArcPlatformContract(
   platform: NodeJS.Platform = process.platform,
+  port = 3000,
 ): PlatformContract {
   const npm = platform === "win32" ? "npm.cmd" : "npm";
   return {
-    baseUrl: "http://127.0.0.1:3000",
-    port: 3000,
+    baseUrl: `http://127.0.0.1:${port}`,
+    port,
     installCommands: [
       {
         executable: npm,
@@ -77,6 +79,34 @@ export function createArcPlatformContract(
     buildTimeoutMs: 180_000,
     startTimeoutMs: 30_000,
   };
+}
+
+export function parseProbePortOverride(
+  env: Record<string, string | undefined>,
+): number | null {
+  const raw = env["SHALLOW_PROBE_PORT"]?.trim();
+  if (!raw) return null;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error(`SHALLOW_PROBE_PORT must be a port number, got "${raw}"`);
+  }
+  return port;
+}
+
+export async function pickFreePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => {
+        if (port > 0) resolvePort(port);
+        else reject(new Error("no free port available"));
+      });
+    });
+  });
 }
 
 export function deriveModelTimeouts(totalBudgetMs: number): {

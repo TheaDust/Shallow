@@ -17,6 +17,7 @@ import type {
 import {
   runPipeline,
   type AppLifecycle,
+  type ArcEventsPort,
   type Clock,
 } from "../src/pipeline.js";
 import type { PlatformContract } from "../src/types.js";
@@ -33,6 +34,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
     const git = new FakeGitOps(["baseline", "accepted"]);
     const lifecycle = new RecordingLifecycle();
     const finalVerifier = new RecordingFinalVerifier();
+    const arcEvents = new RecordingArcEvents();
 
     const summary = await runPipeline(
       options(requirementsFile, outputDir, ledgerFile),
@@ -44,6 +46,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
         appLifecycle: lifecycle,
         clock: fixedClock(),
         finalVerifier,
+        arcEvents,
       },
     );
 
@@ -60,6 +63,15 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
     assert.equal(lifecycle.stopCount, 1);
     assert.equal(builder.closeCount, 1);
     assert.equal(finalVerifier.calls, 1);
+    assert.deepEqual(arcEvents.runnerStates, ["running", "completed"]);
+    assert.deepEqual(arcEvents.requirementStates, [
+      ["REQ-PROFILE", "implement", "running"],
+      ["REQ-PROFILE", "implement", "completed"],
+      ["REQ-PROFILE", "test", "passed"],
+    ]);
+    assert.deepEqual(arcEvents.commitSignals, ["git_commit"]);
+    assert.deepEqual(Object.keys(arcEvents.requirementRows), ["REQ-PROFILE"]);
+    assert.deepEqual(Object.keys(arcEvents.scenarioRows), ["REQ-PROFILE::0"]);
     const events = (await readFile(ledgerFile, "utf8"))
       .trim()
       .split("\n")
@@ -234,6 +246,38 @@ class RecordingLifecycle implements AppLifecycle {
         await server.stop();
       },
     };
+  }
+}
+
+class RecordingArcEvents implements ArcEventsPort {
+  runnerStates: string[] = [];
+  requirementStates: Array<[string, string, string]> = [];
+  commitSignals: string[] = [];
+  requirementRows: Record<string, unknown> = {};
+  scenarioRows: Record<string, unknown> = {};
+
+  async runnerState(state: "running" | "completed" | "failed"): Promise<void> {
+    this.runnerStates.push(state);
+  }
+
+  async requirementState(
+    reqId: string,
+    phase: "design" | "implement" | "test",
+    status: "running" | "completed" | "failed" | "passed",
+  ): Promise<void> {
+    this.requirementStates.push([reqId, phase, status]);
+  }
+
+  async commitHistorySignal(reason: string): Promise<void> {
+    this.commitSignals.push(reason);
+  }
+
+  async storeRequirementTree(
+    requirementRows: Record<string, unknown>,
+    scenarioRows: Record<string, unknown>,
+  ): Promise<void> {
+    this.requirementRows = requirementRows;
+    this.scenarioRows = scenarioRows;
   }
 }
 

@@ -6,6 +6,8 @@ import { test } from "node:test";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseProbePortOverride,
+  pickFreePort,
   readEnvFile,
   readGatewayConfig,
 } from "../src/runtime-config.js";
@@ -72,6 +74,42 @@ test("Runtime config bounds model calls by the total budget", () => {
     builderTimeoutMs: 240_000,
     plannerTimeoutMs: 60_000,
   });
+});
+
+test("Runtime config accepts an explicit probe port and derives its base URL", () => {
+  const contract = createArcPlatformContract("linux", 3100);
+  assert.equal(contract.port, 3100);
+  assert.equal(contract.baseUrl, "http://127.0.0.1:3100");
+});
+
+test("Runtime config keeps port 3000 as the default contract port", () => {
+  const contract = createArcPlatformContract("linux");
+  assert.equal(contract.port, 3000);
+  assert.equal(contract.baseUrl, "http://127.0.0.1:3000");
+});
+
+test("Runtime config reads the probe port override from the environment", () => {
+  assert.equal(parseProbePortOverride({}), null);
+  assert.equal(parseProbePortOverride({ SHALLOW_PROBE_PORT: "3100" }), 3100);
+  assert.equal(parseProbePortOverride({ SHALLOW_PROBE_PORT: "  3100  " }), 3100);
+  assert.throws(
+    () => parseProbePortOverride({ SHALLOW_PROBE_PORT: "0" }),
+    /SHALLOW_PROBE_PORT/,
+  );
+  assert.throws(
+    () => parseProbePortOverride({ SHALLOW_PROBE_PORT: "not-a-port" }),
+    /SHALLOW_PROBE_PORT/,
+  );
+  assert.throws(
+    () => parseProbePortOverride({ SHALLOW_PROBE_PORT: "70000" }),
+    /SHALLOW_PROBE_PORT/,
+  );
+});
+
+test("Runtime config picks a free loopback port for probe binding", async () => {
+  const port = await pickFreePort();
+  assert.ok(Number.isInteger(port));
+  assert.ok(port > 0 && port <= 65_535);
 });
 
 test("Runtime config parses an env file and tolerates a missing one", async () => {
