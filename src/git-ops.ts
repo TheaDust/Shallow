@@ -1,5 +1,5 @@
-import { mkdir, realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import { spawnProcess } from "./process-spawn.js";
 
@@ -13,6 +13,10 @@ interface CommandResult {
   stdout: string;
   stderr: string;
 }
+
+const GIT_TIMEOUT_MS = 30_000;
+
+const GITIGNORE_CONTENT = ["node_modules/", "dist/", "build/", ".next/", ".env", ""].join("\n");
 
 export class GitCliOps implements GitOps {
   private constructor(private readonly repositoryRoot: string) {}
@@ -30,6 +34,7 @@ export class GitCliOps implements GitOps {
     if (!samePath(actualRoot, canonical)) {
       throw new Error(`Output directory must be a Git repository root: ${canonical}`);
     }
+    await ensureIgnoreRules(canonical);
     return new GitCliOps(canonical);
   }
 
@@ -104,7 +109,12 @@ async function requireGit(cwd: string, args: string[]): Promise<CommandResult> {
   return result;
 }
 
-function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<CommandResult> {
+export function runGit(
+  cwd: string,
+  args: string[],
+  allowFailure: boolean,
+  timeoutMs: number = GIT_TIMEOUT_MS,
+): Promise<CommandResult> {
   return new Promise((resolvePromise, reject) => {
     const child = spawnProcess("git", args, {
       cwd,
@@ -114,6 +124,18 @@ function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<Com
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+    const hardTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`git ${args.join(" ")} timed out after ${timeoutMs}ms`));
+    }, timeoutMs + 2_000);
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => {
@@ -122,8 +144,22 @@ function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<Com
     child.stderr?.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.once("error", reject);
+    child.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(hardTimer);
+      reject(error);
+    });
     child.once("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(hardTimer);
+      if (timedOut) {
+        reject(new Error(`git ${args.join(" ")} timed out after ${timeoutMs}ms`));
+        return;
+      }
       const result = { code: code ?? -1, stdout, stderr };
       if (!allowFailure && result.code !== 0) {
         reject(new Error(`git ${args.join(" ")} failed: ${stderr.trim()}`));
@@ -132,6 +168,29 @@ function runGit(cwd: string, args: string[], allowFailure: boolean): Promise<Com
       }
     });
   });
+}
+
+async function ensureIgnoreRules(root: string): Promise<void> {
+  const gitignorePath = join(root, ".gitignore");
+  let existing = "";
+  try {
+    existing = await readFile(gitignorePath, "utf8");
+  } catch {
+    existing = "";
+  }
+  if (existing.trim().length > 0) return;
+  await writeFile(gitignorePath, GITIGNORE_CONTENT, "utf8");
+  await requireGit(root, ["add", ".gitignore"]);
+  await requireGit(root, [
+    "-c",
+    "user.name=ShallowCode",
+    "-c",
+    "user.email=shallowcode@local.invalid",
+    "commit",
+    "--allow-empty",
+    "-m",
+    "chore: add ShallowCode ignore rules",
+  ]);
 }
 
 function samePath(left: string, right: string): boolean {

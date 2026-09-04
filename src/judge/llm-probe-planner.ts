@@ -165,7 +165,7 @@ export class LlmProbePlanner implements ProbePlanner {
   ): ProbePlan {
     let value: unknown;
     try {
-      value = JSON.parse(content);
+      value = JSON.parse(extractJsonPayload(content));
     } catch (error) {
       throw new ProbePlannerError("json", "Probe planner content is not JSON", {
         cause: error,
@@ -179,6 +179,67 @@ export class LlmProbePlanner implements ProbePlanner {
       });
     }
   }
+}
+
+function extractJsonPayload(content: string): string {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*[\r\n]+([\s\S]*?)[\r\n]*```$/);
+  const candidate = fenced ? fenced[1] : trimmed;
+  const blocks = balancedBlocks(candidate);
+  const parsed = blocks.filter((block) => {
+    try {
+      JSON.parse(block);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (parsed.length === 0) return candidate;
+  return parsed.reduce((best, block) => (block.length > best.length ? block : best));
+}
+
+function balancedBlocks(content: string): string[] {
+  const blocks: string[] = [];
+  let searchFrom = 0;
+  while (searchFrom < content.length) {
+    const start = content.indexOf("{", searchFrom);
+    if (start < 0) break;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let index = start; index < content.length; index += 1) {
+      const char = content[index];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === "{") {
+        depth += 1;
+      } else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = index;
+          break;
+        }
+      }
+    }
+    if (end < 0) {
+      searchFrom = start + 1;
+      continue;
+    }
+    blocks.push(content.slice(start, end + 1));
+    searchFrom = end + 1;
+  }
+  return blocks;
 }
 
 function extractContent(value: unknown): string | undefined {

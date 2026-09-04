@@ -3,8 +3,13 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { GitCliOps } from "../src/git-ops.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+import { GitCliOps, runGit } from "../src/git-ops.js";
 import { withTempDir } from "./helpers/temp-dir.js";
+
+const execFileAsync = promisify(execFile);
 
 test("GitOps captures an empty baseline and returns HEAD when nothing changed", async () => {
   await withTempDir("shallow-git-", async (directory) => {
@@ -15,6 +20,40 @@ test("GitOps captures an empty baseline and returns HEAD when nothing changed", 
 
     assert.match(baseline, /^[0-9a-f]{40}$/);
     assert.equal(unchanged, baseline);
+  });
+});
+
+test("GitOps writes and tracks ignore rules when initializing", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await GitCliOps.open(directory);
+
+    const content = await readFile(join(directory, ".gitignore"), "utf8");
+    assert.match(content, /node_modules\//);
+    assert.match(content, /\.env/);
+
+    const tracked = await execFileAsync("git", ["ls-files", ".gitignore"], {
+      cwd: directory,
+    });
+    assert.equal(tracked.stdout.trim(), ".gitignore");
+  });
+});
+
+test("GitOps keeps an existing .gitignore untouched", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await writeFile(join(directory, ".gitignore"), "custom/\n", "utf8");
+
+    await GitCliOps.open(directory);
+
+    assert.equal(await readFile(join(directory, ".gitignore"), "utf8"), "custom/\n");
+  });
+});
+
+test("runGit kills the child and rejects when the command exceeds its timeout", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await assert.rejects(
+      runGit(directory, ["rev-parse", "--show-toplevel"], true, 1),
+      /timed out after 1ms/,
+    );
   });
 });
 

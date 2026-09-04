@@ -104,13 +104,37 @@ test("Builder starts one runtime and creates one short session per call", async 
 test("Builder aborts the active session when its prompt times out", async () => {
   const runtime = new RecordingRuntime();
   runtime.promptResult = new Promise(() => undefined);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5 });
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
 
   const result = await builder.run(builderRequest(1));
   await builder.close();
 
   assert.equal(result.outcome, "timed_out");
   assert.deepEqual(runtime.abortedSessions, ["session-1"]);
+});
+
+test("Builder waits for the prompt to settle after abort before returning timed_out", async () => {
+  const runtime = new GhostRuntime();
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  runtime.events.push("returned");
+  await builder.close();
+
+  assert.equal(result.outcome, "timed_out");
+  assert.deepEqual(runtime.events, ["prompt-start", "abort", "prompt-settled", "returned"]);
+});
+
+test("Builder reports failure when the abort call itself fails", async () => {
+  const runtime = new GhostRuntime();
+  runtime.failAbort = true;
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.summary, "OpenCode session abort failed");
 });
 
 test("FakeBuilder copies only the test fixture app into output", async () => {
@@ -162,6 +186,39 @@ class RecordingRuntime implements OpenCodeRuntime {
   async close(): Promise<void> {
     this.closeCount += 1;
   }
+}
+
+class GhostRuntime implements OpenCodeRuntime {
+  events: string[] = [];
+  failAbort = false;
+  private rejectPrompt?: (error: Error) => void;
+
+  async start(): Promise<void> {}
+
+  async createSession(): Promise<string> {
+    return "session-1";
+  }
+
+  async prompt(): Promise<string> {
+    this.events.push("prompt-start");
+    return new Promise((_resolve, reject) => {
+      this.rejectPrompt = reject;
+    });
+  }
+
+  async abort(): Promise<void> {
+    this.events.push("abort");
+    if (this.failAbort) throw new Error("abort endpoint down");
+    const reject = this.rejectPrompt;
+    if (reject) {
+      queueMicrotask(() => {
+        reject(new Error("session aborted"));
+        this.events.push("prompt-settled");
+      });
+    }
+  }
+
+  async close(): Promise<void> {}
 }
 
 function builderRequest(attempt: 1 | 2 | 3): BuilderRequest {

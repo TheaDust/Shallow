@@ -112,6 +112,25 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   );
 });
 
+test("Probe Planner extracts JSON from fenced and annotated responses", async () => {
+  const raw = JSON.stringify(validPlan());
+  const contents = [
+    `\`\`\`json\n${raw}\n\`\`\``,
+    `\`\`\`\n${raw}\n\`\`\``,
+    `Here is the probe plan:\n${raw}\nDone.`,
+    `Notes {not: "the plan"} aside. ${raw}`,
+  ];
+
+  for (const content of contents) {
+    const planner = new LlmProbePlanner(config(), async () =>
+      jsonResponse({ choices: [{ message: { content } }] }),
+    );
+    const result = await planner.plan(packet());
+    assert.equal(result.packetId, "packet-profile");
+    assert.equal(result.cases.length, 2);
+  }
+});
+
 test("Probe Planner reports stable transport, JSON, and schema categories", async () => {
   const cases: Array<{ response: Response; category: string }> = [
     { response: new Response("bad", { status: 503 }), category: "transport" },

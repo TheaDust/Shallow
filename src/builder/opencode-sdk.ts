@@ -13,6 +13,23 @@ export interface OpenCodeRuntime {
 
 export interface OpenCodeSdkBuilderOptions {
   timeoutMs: number;
+  promptSettleTimeoutMs?: number;
+}
+
+async function waitForPromptSettlement(
+  promptPromise: Promise<string>,
+  timeoutMs: number,
+): Promise<void> {
+  const settled = promptPromise.then(
+    () => undefined,
+    () => undefined,
+  );
+  await Promise.race([
+    settled,
+    new Promise<void>((resolvePromise) => {
+      setTimeout(resolvePromise, timeoutMs);
+    }),
+  ]);
 }
 
 export class OpenCodeSdkBuilder implements BuilderPort {
@@ -31,11 +48,12 @@ export class OpenCodeSdkBuilder implements BuilderPort {
       `${request.packet.id} attempt ${request.packet.attempt}`,
     );
     const prompt = buildBuilderPrompt(request);
+    const promptPromise = this.runtime.prompt(sessionId, prompt);
     let timeout: NodeJS.Timeout | undefined;
 
     try {
       const result = await Promise.race([
-        this.runtime.prompt(sessionId, prompt).then((summary) => ({
+        promptPromise.then((summary) => ({
           kind: "completed" as const,
           summary,
         })),
@@ -44,7 +62,15 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         }),
       ]);
       if (result.kind === "timed_out") {
-        await this.runtime.abort(sessionId);
+        try {
+          await this.runtime.abort(sessionId);
+        } catch {
+          return { sessionId, outcome: "failed", summary: "OpenCode session abort failed" };
+        }
+        await waitForPromptSettlement(
+          promptPromise,
+          this.options.promptSettleTimeoutMs ?? 5_000,
+        );
         return { sessionId, outcome: "timed_out", summary: "OpenCode session timed out" };
       }
       return { sessionId, outcome: "completed", summary: result.summary };
