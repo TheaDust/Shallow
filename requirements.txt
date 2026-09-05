@@ -1,0 +1,3 @@
+# ShallowCode 的 Python 适配层（main.py）只使用标准库（argparse/os/subprocess/sys/pathlib），
+# 无第三方依赖。本文件仅为满足平台 runner 无条件执行 `pip install -r requirements.txt` 的
+# 契约而存在；真正的运行时依赖是 Node 侧的 package.json（由 main.py 的 ensure_node_runtime 安装）。
