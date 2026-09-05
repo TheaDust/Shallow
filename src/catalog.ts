@@ -7,6 +7,7 @@ import type {
   ProductContext,
   ProductKind,
   RequirementCatalog,
+  SeedDataCategory,
 } from "./types.js";
 
 type NodeType = "ROOT" | "FOLDER" | "ATOMIC";
@@ -30,7 +31,8 @@ export async function loadRequirementCatalog(
   requirementsFile: string,
 ): Promise<RequirementCatalog> {
   const source = await readFile(requirementsFile, "utf8");
-  const root = parseNode(parse(source), "root");
+  const record = requireRecord(parse(source), "root");
+  const root = parseNode(record, "root");
   const nodes = new Map<string, ParsedNode>();
   collectNodes(root, nodes);
   validateDependencies(nodes);
@@ -41,6 +43,7 @@ export async function loadRequirementCatalog(
     rootId: root.id,
     rootName: root.name,
     description: root.description,
+    seedData: parseSeedData(record.data),
   };
   collectAtomics(root, [], [], product, requirements);
   // Folder dependencies are completion barriers over their atomic descendants.
@@ -72,6 +75,17 @@ function classifyProduct(rootName: string): ProductKind {
     return "spreadsheet";
   }
   return "generic_web";
+}
+
+function parseSeedData(value: unknown): SeedDataCategory[] {
+  if (value === undefined) return [];
+  return requireArray(value, "root.data").map((entry, index) => {
+    const record = requireRecord(entry, `root.data[${index}]`);
+    return {
+      category: requireString(record.category, `root.data[${index}].category`),
+      items: requireStringArray(record.items ?? [], `root.data[${index}].items`),
+    };
+  });
 }
 
 function parseNode(value: unknown, location: string): ParsedNode {

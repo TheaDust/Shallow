@@ -134,6 +134,7 @@ function requirement(
       rootId: "ROOT",
       rootName: "Demo Product",
       description: "Root description.",
+      seedData: [],
     },
     ancestors: [{ id: parent, name: parent, description: `${parent} area` }],
   };

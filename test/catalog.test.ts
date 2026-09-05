@@ -45,6 +45,7 @@ test("Catalog preserves atomic requirements and source evidence in declaration o
     rootId: "ROOT",
     rootName: "Demo Product",
     description: "Root description.",
+    seedData: [],
   });
   assert.deepEqual(first.ancestors, [
     { id: "AREA-A", name: "Account Area", description: "Account features." },
@@ -142,6 +143,57 @@ test("Catalog rejects a cycle introduced by a dependency on an enclosing folder"
   await withYaml("id: ROOT\nname: Root\ntype: ROOT\nchildren:\n  - id: AREA\n    name: Area\n    type: FOLDER\n    children:\n      - id: X\n        name: One\n        type: ATOMIC\n        dependencies: [AREA]\n", async (file) => {
     await assert.rejects(loadRequirementCatalog(file), /Dependency cycle/);
   });
+});
+
+test("Catalog parses top-level seed data into the product context", async () => {
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\ndata:\n  - category: Account Seed Data\n    items:\n      - Verified accounts can sign in by username or verified email.\n      - Recovery displays the fixed verification code `+"`123456`"+`.\n  - category: Repository Seed Data\n    items:\n      - A public organization with one public repository.\n`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.deepEqual(catalog.requirements[0].product.seedData, [
+        {
+          category: "Account Seed Data",
+          items: [
+            "Verified accounts can sign in by username or verified email.",
+            "Recovery displays the fixed verification code `123456`.",
+          ],
+        },
+        {
+          category: "Repository Seed Data",
+          items: ["A public organization with one public repository."],
+        },
+      ]);
+    },
+  );
+});
+
+test("Catalog reads seed data from the bundled requirement files", async () => {
+  for (const file of ["data/github/requirements.yaml", "data/sheet/requirements.yaml"]) {
+    const catalog = await loadRequirementCatalog(resolve(file));
+    const { seedData } = catalog.requirements[0].product;
+    assert.ok(seedData.length > 0, file);
+    for (const entry of seedData) {
+      assert.ok(entry.category.length > 0, file);
+      assert.ok(entry.items.length > 0, file);
+    }
+  }
+  const github = await loadRequirementCatalog(resolve("data/github/requirements.yaml"));
+  assert.equal(github.requirements[0].product.seedData[0].category, "Account and Permission Seed Data");
+});
+
+test("Catalog rejects malformed seed data", async () => {
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren: []\ndata:\n  - category: 42\n    items: []\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /root\.data\[0\]\.category must be a string/);
+    },
+  );
+  await withYaml(
+    `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren: []\ndata: not-a-list\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /root\.data must be an array/);
+    },
+  );
 });
 
 async function withYaml(

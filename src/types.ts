@@ -5,11 +5,17 @@ export type ProductKind =
   | "spreadsheet"
   | "generic_web";
 
+export interface SeedDataCategory {
+  category: string;
+  items: string[];
+}
+
 export interface ProductContext {
   kind: ProductKind;
   rootId: string;
   rootName: string;
   description: string;
+  seedData: SeedDataCategory[];
 }
 
 export interface RequirementAncestor {

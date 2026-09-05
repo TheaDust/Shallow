@@ -303,6 +303,7 @@ function packet(): WorkPacket {
           rootId: "ROOT",
           rootName: "Demo Product",
           description: "Root description.",
+          seedData: [],
         },
         ancestors: [
           { id: "PROFILE", name: "Profile", description: "Profile area" },

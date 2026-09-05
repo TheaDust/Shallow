@@ -181,6 +181,7 @@ function packetRequest(
         rootId: "ROOT",
         rootName: "Demo Product",
         description: "Root description.",
+        seedData: [],
       },
       ancestors: ancestorNames.map((name, index) => ({
         id: `AREA-${index}`,
@@ -214,6 +215,7 @@ function packet(kind: string, requirementNames: string[]): WorkPacket {
         rootId: "ROOT",
         rootName: "Demo Product",
         description: "Root description.",
+        seedData: [],
       },
       ancestors: [
         { id: "AREA-0", name: "Area", description: "Area description." },

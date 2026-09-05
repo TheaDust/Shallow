@@ -105,6 +105,7 @@ function smokePacket(): WorkPacket {
           rootId: "ROOT",
           rootName: "Demo Product",
           description: "Root description.",
+          seedData: [],
         },
         ancestors: [
           { id: "SMOKE", name: "SMOKE", description: "SMOKE area" },
