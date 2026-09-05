@@ -130,6 +130,11 @@ export async function runPipeline(
         type: "delivery_repair_started",
         detail: { stage: finalReport.stage, message: finalReport.message },
       });
+      await state.record({
+        at: now(),
+        type: "builder_started",
+        packetId: "delivery-repair",
+      });
       let builderResult: BuilderResult;
       try {
         builderResult = await deps.builder.run({

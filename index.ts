@@ -1,6 +1,7 @@
 import { access, mkdir } from "node:fs/promises";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -11,6 +12,7 @@ import { ArcEventSink } from "./src/arc-protocol.js";
 import { parseCliArgs } from "./src/cli.js";
 import { CommandAppLifecycle, FinalVerifier } from "./src/final-verifier.js";
 import { GitCliOps } from "./src/git-ops.js";
+import { HumanRunFormatter } from "./src/human-log.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "./src/judge/playwright-probe-runner.js";
 import {
@@ -18,6 +20,7 @@ import {
   type PipelineOptions,
   type RunSummary,
 } from "./src/pipeline.js";
+import type { LogSink } from "./src/run-state.js";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
@@ -91,6 +94,8 @@ async function executeProduction(
   context: AgentExecutionContext,
 ): Promise<RunSummary> {
   const { gateway, pipelineOptions, modelTimeouts } = context;
+  const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
+  process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
   const runtime = new SdkOpenCodeRuntime(gateway.model);
   const builder = new OpenCodeSdkBuilder(runtime, {
     timeoutMs: modelTimeouts.builderTimeoutMs,
@@ -114,10 +119,22 @@ async function executeProduction(
     clock: { nowMs: () => Date.now() },
     finalVerifier,
     arcEvents,
-    logSink: {
-      write: (chunk) => process.stderr.write(chunk),
-    },
+    logSink: createRunLogSink(runLogFile),
   });
+}
+
+function createRunLogSink(runLogFile: string): LogSink {
+  const runLogDir = dirname(runLogFile);
+  mkdirSync(runLogDir, { recursive: true });
+  const formatter = new HumanRunFormatter();
+  return {
+    write: (chunk) => {
+      process.stderr.write(chunk);
+      const line = formatter.format(chunk);
+      if (line === null) return;
+      appendFileSync(runLogFile, `${line}\n`, "utf8");
+    },
+  };
 }
 
 const invokedPath = process.argv[1]
