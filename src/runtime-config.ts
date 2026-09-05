@@ -1,5 +1,6 @@
 import { createServer } from "node:net";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import type { PlatformContract } from "./types.js";
 
@@ -94,6 +95,14 @@ export function parseProbePortOverride(
     throw new Error("SHALLOW_PROBE_PORT must not use reserved evaluation port 3000");
   }
   return port;
+}
+
+export function parseRunDirOverride(
+  env: Record<string, string | undefined>,
+): string | null {
+  const raw = env["SHALLOW_RUN_DIR"]?.trim();
+  if (!raw) return null;
+  return resolve(raw);
 }
 
 export async function pickFreePort(): Promise<number> {

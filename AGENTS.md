@@ -79,7 +79,10 @@ test/
   helpers/                      withTempDir、fixture-server 等工具
 
 docs/superpowers/               设计文档（specs/）与实施计划（plans/）
-data/github、data/sheet         比赛需求样例（原文、结构化 YAML）
+data/github、data/sheet         初赛题目的需求树（原文、结构化 YAML）：github 对应
+                                repository_collaboration、sheet 对应 spreadsheet；两者就是初赛题，
+                                不是样例。generic_web 只是未识别根名时的兜底分类（评测若引入
+                                新题目则落入此分支）。
 ```
 
 排错速查：想知道"跑哪一步了"→ run-log.txt（路径在启动时打印到 stderr）；想知道"某事件的原始字段"→ run-ledger.jsonl 或 stderr JSON 行；想知道"平台看到了什么"→ `<output-dir>/.arc/`。
@@ -96,6 +99,7 @@ data/github、data/sheet         比赛需求样例（原文、结构化 YAML）
 可选覆盖：
 
 - `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
+- `SHALLOW_RUN_DIR`：环境变量或 `.env` 指定运行日志目录（run-ledger.jsonl 与 run-log.txt；缺省 `%TMP%/shallowcode-runs/<pid>-<ts>/`，设置后仍按运行 ID 分子目录）。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 OpenCode/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：仅供 `main.py` 适配入口使用。
 

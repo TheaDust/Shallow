@@ -25,6 +25,7 @@ import {
   createArcPlatformContract,
   deriveModelTimeouts,
   parseProbePortOverride,
+  parseRunDirOverride,
   pickFreePort,
   readEnvFile,
   readGatewayConfig,
@@ -62,10 +63,11 @@ export async function main(
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
   const probePort = parseProbePortOverride(mergedEnv) ?? (await pickFreePort());
+  const runDir = parseRunDirOverride(mergedEnv) ?? join(tmpdir(), "shallowcode-runs");
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
-    ledgerFile: join(tmpdir(), "shallowcode-runs", runId, "run-ledger.jsonl"),
+    ledgerFile: join(runDir, runId, "run-ledger.jsonl"),
     totalBudgetMs: cli.budgetMs,
     platformContract: createArcPlatformContract(process.platform, probePort),
   };

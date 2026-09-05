@@ -135,7 +135,7 @@ flowchart TD
 
 - **stderr**：每个运行事件一行脱敏 JSON（`key/token/password/secret/cookie` 字段替换为 `[redacted]`，超长文本截断到 1500 字符），覆盖 `pipeline_started / packet_selected / builder_started / builder_finished / probe_planned / probe_finished / probe_refined / packet_accepted / packet_blocked / delivery_* / pipeline_finished` 等全部阶段。
 - **run-log.txt（人类可读）**：与 ledger 同目录的中文运行日志，每个事件一行 `[本地时间 +耗时] 描述`（如 `[14:02:13 +2m13s] Builder 完成（auth-login）`）；启动时会把该文件的绝对路径打印到 stderr。
-- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<运行ID>/run-ledger.jsonl`，与 stderr 同源同脱敏，仅审计用。
+- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<运行ID>/run-ledger.jsonl`，与 stderr 同源同脱敏，仅审计用；可用 `SHALLOW_RUN_DIR` 换到自定义目录（仍按运行 ID 分子目录）。
 - **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
 
 GitOps（`src/git-ops.ts`）细节：

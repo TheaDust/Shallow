@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -201,6 +202,86 @@ test("Agent entry loads the gateway from an env file with real env winning", asy
     await main(argv, { MODEL: "env/model" }, execute, join(directory, "gateway.env"));
     assert.equal(received?.gateway.model, "env/model");
     assert.equal(received?.gateway.apiKey, "file-key");
+  });
+});
+
+test("Agent entry places run artifacts under SHALLOW_RUN_DIR when set", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    const outputDir = join(directory, "output");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    const runDir = join(directory, "runs");
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+
+    await main(
+      [
+        "--requirements-dir",
+        requirementsDir,
+        "--output-dir",
+        outputDir,
+        "--budget-ms",
+        "0",
+      ],
+      { ...gatewayEnv(), SHALLOW_RUN_DIR: runDir },
+      execute,
+      null,
+    );
+
+    const ledgerFile = received?.pipelineOptions.ledgerFile ?? "";
+    assert.equal(basename(ledgerFile), "run-ledger.jsonl");
+    assert.equal(dirname(dirname(ledgerFile)), runDir);
+  });
+});
+
+test("Agent entry keeps default run artifacts under the temp shallowcode-runs directory", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+
+    await main(
+      [
+        "--requirements-dir",
+        requirementsDir,
+        "--output-dir",
+        join(directory, "output"),
+        "--budget-ms",
+        "0",
+      ],
+      gatewayEnv(),
+      execute,
+      null,
+    );
+
+    const ledgerDir = dirname(received?.pipelineOptions.ledgerFile ?? "");
+    assert.equal(basename(dirname(ledgerDir)), "shallowcode-runs");
+    assert.equal(dirname(dirname(ledgerDir)), tmpdir());
   });
 });
 
