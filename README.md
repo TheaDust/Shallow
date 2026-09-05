@@ -269,7 +269,7 @@ test/
   browser/                     真实 Chromium 测试
   fakes/ fixtures/ helpers/    测试专用 fake、fixture app 与工具（不属于生产架构）
 docs/superpowers/              设计文档（specs/）与实施计划（plans/）
-data/guthub、data/sheet        比赛需求样例
+data/github、data/sheet        比赛需求样例
 ```
 
 ## 设计边界

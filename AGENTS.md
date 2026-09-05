@@ -79,7 +79,7 @@ test/
   helpers/                      withTempDir、fixture-server 等工具
 
 docs/superpowers/               设计文档（specs/）与实施计划（plans/）
-data/guthub、data/sheet         比赛需求样例（原文、结构化 YAML）
+data/github、data/sheet         比赛需求样例（原文、结构化 YAML）
 ```
 
 排错速查：想知道"跑哪一步了"→ run-log.txt（路径在启动时打印到 stderr）；想知道"某事件的原始字段"→ run-ledger.jsonl 或 stderr JSON 行；想知道"平台看到了什么"→ `<output-dir>/.arc/`。

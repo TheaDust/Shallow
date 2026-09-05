@@ -124,7 +124,7 @@ test("Catalog reads only the explicitly selected YAML file", async () => {
 });
 
 test("Catalog expands folder dependencies and inherits ancestor prerequisites", async () => {
-  const catalog = await loadRequirementCatalog(resolve("data/guthub/requirements.yaml"));
+  const catalog = await loadRequirementCatalog(resolve("data/github/requirements.yaml"));
   const atomicIds = new Set(catalog.requirements.map((item) => item.id));
   for (const item of catalog.requirements) {
     assert.ok(item.dependencyIds.every((id) => atomicIds.has(id)), item.id);
