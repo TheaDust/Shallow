@@ -14,11 +14,15 @@
   "dependencies": {
     "@opencode-ai/sdk": "1.18.27",
     "@playwright/test": "1.54.0",
+    "undici": "^8.10.2",
     "yaml": "2.9.0"
   },
   "devDependencies": {
     "@types/node": "20.19.43",
     "tsx": "4.23.13",
     "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }

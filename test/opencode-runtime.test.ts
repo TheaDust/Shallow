@@ -1,7 +1,77 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { createOpencodeClient, type createOpencode } from "@opencode-ai/sdk";
-import { SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
+import { sdkFetch, SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
+
+test("SDK runtime does not use the Node global fetch that enforces the 300s headers timeout", async () => {
+  let options: (Parameters<typeof createOpencode>[0] & { fetch?: typeof fetch }) | undefined;
+  const runtime = new SdkOpenCodeRuntime(
+    { apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" },
+    async (input) => {
+      options = input;
+      return {
+        server: { url: "http://127.0.0.1:1", close() {} },
+        client: createOpencodeClient({ baseUrl: "http://127.0.0.1:1" }),
+      };
+    },
+  );
+  await runtime.start("candidate");
+  await runtime.close();
+
+  assert.equal(typeof options?.fetch, "function");
+  assert.notEqual(options?.fetch, globalThis.fetch);
+});
+
+test("sdkFetch adapts the SDK's Node Request objects", async () => {
+  const bodies: string[] = [];
+  const server = createServer((request, response) => {
+    let raw = "";
+    request.on("data", (chunk) => {
+      raw += chunk;
+    });
+    request.on("end", () => {
+      bodies.push(raw);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ id: "ses_probe", title: "probe" }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const client = createOpencodeClient({
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    fetch: sdkFetch,
+  });
+  try {
+    const response = await client.session.create({ body: { title: "probe" } });
+    assert.equal(response.error, undefined);
+    assert.equal(response.data?.id, "ses_probe");
+    assert.deepEqual(
+      bodies.map((body) => JSON.parse(body) as unknown),
+      [{ title: "probe" }],
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("sdkFetch completes a request whose response headers arrive late", async () => {
+  const server = createServer((_request, response) => {
+    setTimeout(() => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("ok");
+    }, 600);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  try {
+    const response = await sdkFetch(`${url}/slow`);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "ok");
+  } finally {
+    server.close();
+  }
+});
 
 test("SDK runtime forwards the gateway and preserves raw model IDs in all model calls", async () => {
   for (const model of ["small-model", "vendor/model-v1"]) {

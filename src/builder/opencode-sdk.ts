@@ -1,4 +1,10 @@
-import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
+import {
+  createOpencodeClient,
+  createOpencodeServer,
+  type createOpencode,
+  type OpencodeClient,
+} from "@opencode-ai/sdk";
+import { fetch as undiciFetch } from "undici";
 import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 
 import { compileBuilderPrompt } from "./prompt.js";
@@ -20,6 +26,50 @@ export interface OpenCodeRuntime {
 export interface OpenCodeSdkBuilderOptions {
   timeoutMs: number;
   promptSettleTimeoutMs?: number;
+}
+
+type CreateOpencodeInstanceOptions = NonNullable<
+  Parameters<typeof createOpencode>[0]
+> & { fetch: typeof fetch };
+
+export type CreateOpencodeInstance = (
+  options: CreateOpencodeInstanceOptions,
+) => Promise<{ client: OpencodeClient; server: { url: string; close(): void } }>;
+
+export const sdkFetch = (async (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => {
+  if (input instanceof globalThis.Request) {
+    const method = input.method;
+    const hasBody = method !== "GET" && method !== "HEAD" && input.body != null;
+    const body = hasBody ? await input.clone().arrayBuffer() : undefined;
+    return undiciFetch(input.url, {
+      method,
+      headers: [...input.headers],
+      body,
+      signal: input.signal ?? undefined,
+    });
+  }
+  return undiciFetch(
+    input as Parameters<typeof undiciFetch>[0],
+    init as Parameters<typeof undiciFetch>[1],
+  );
+}) as unknown as typeof fetch;
+
+async function createProductionInstance(
+  options: CreateOpencodeInstanceOptions,
+): Promise<{ client: OpencodeClient; server: { url: string; close(): void } }> {
+  const server = await createOpencodeServer({
+    port: options.port,
+    config: options.config,
+    timeout: 5_000,
+  });
+  const client = createOpencodeClient({
+    baseUrl: server.url,
+    fetch: options.fetch,
+  });
+  return { client, server };
 }
 
 async function waitForPromptSettlement(
@@ -88,11 +138,21 @@ export class OpenCodeSdkBuilder implements BuilderPort {
       }
       return { sessionId, outcome: "completed", summary: result.summary };
     } catch (error) {
-      return {
-        sessionId,
-        outcome: "failed",
-        summary: error instanceof Error ? error.message : String(error),
-      };
+      const summary = formatErrorSummary(error);
+      const settleTimeoutMs = this.options.promptSettleTimeoutMs ?? 5_000;
+      try {
+        if (!await waitForPromptSettlement(this.runtime.abort(sessionId), settleTimeoutMs)) {
+          throw new Error("abort timed out");
+        }
+      } catch {
+        await this.resetRuntime();
+        return {
+          sessionId,
+          outcome: "failed",
+          summary: `${summary}; OpenCode session abort failed`,
+        };
+      }
+      return { sessionId, outcome: "failed", summary };
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -127,13 +187,14 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
 
   constructor(
     private readonly gateway: GatewayConfig,
-    private readonly create: typeof createOpencode = createOpencode,
+    private readonly create: CreateOpencodeInstance = createProductionInstance,
   ) {}
 
   async start(directory: string): Promise<void> {
     const model = this.gateway.model;
     const instance = await this.create({
       port: await pickFreePort(),
+      fetch: sdkFetch,
       config: {
         model: `shallow-gateway/${model}`,
         small_model: `shallow-gateway/${model}`,
@@ -224,4 +285,16 @@ function formatSdkError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+function formatErrorSummary(error: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth += 1) {
+    parts.push(current.message);
+    current = (current as { cause?: unknown }).cause;
+  }
+  if (typeof current === "string" && current) parts.push(current);
+  const unique = [...new Set(parts.filter((part) => part.length > 0))];
+  return unique.join("; ") || String(error);
 }
