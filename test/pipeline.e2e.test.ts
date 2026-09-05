@@ -70,6 +70,9 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
       ["REQ-PROFILE", "test", "passed"],
     ]);
     assert.deepEqual(arcEvents.commitSignals, ["git_commit"]);
+    assert.deepEqual(arcEvents.builderDiagnostics, [
+      ["packet-req-profile", "completed", "Fake builder completed"],
+    ]);
     assert.deepEqual(Object.keys(arcEvents.requirementRows), ["REQ-PROFILE"]);
     assert.deepEqual(Object.keys(arcEvents.scenarioRows), ["REQ-PROFILE::0"]);
     const events = (await readFile(ledgerFile, "utf8"))
@@ -79,6 +82,7 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
     assert.deepEqual(events, [
       "pipeline_started",
       "packet_selected",
+      "builder_started",
       "builder_finished",
       "probe_planned",
       "probe_finished",
@@ -109,9 +113,14 @@ test("Pipeline E2E repairs the app and reruns the same behavior probes", async (
       },
     );
 
-    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2]);
-    assert.equal(builder.requests[1].requireRootCauseFirst, false);
-    assert.equal(builder.requests[1].shadowReport?.verdict, "fail");
+    assert.deepEqual(
+      builder.requests.map((request) => request.mode),
+      ["implement", "repair"],
+    );
+    const repairRequest = builder.requests[1];
+    assert.equal(repairRequest.mode, "repair");
+    if (repairRequest.mode !== "repair") assert.fail("expected repair request");
+    assert.ok(repairRequest.shadowObservation.failures.length > 0);
     assert.equal(planner.packets.length, 1);
     assert.equal(summary.acceptedSha, "accepted");
     assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
@@ -136,10 +145,9 @@ test("Pipeline E2E stops after two repairs, restores baseline, and blocks the pa
       },
     );
 
-    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2, 3]);
     assert.deepEqual(
-      builder.requests.map((request) => request.requireRootCauseFirst),
-      [false, false, true],
+      builder.requests.map((request) => request.mode),
+      ["implement", "repair", "root_cause_repair"],
     );
     assert.deepEqual(git.restoredShas, ["baseline"]);
     assert.deepEqual(summary.verifiedRequirementIds, []);
@@ -219,9 +227,12 @@ test("Pipeline E2E allows one delivery repair and reruns full final verification
 
     assert.equal(finalVerifier.calls, 2);
     assert.equal(builder.requests.length, 2);
-    assert.equal(builder.requests[1].packet.id, "delivery-repair");
-    assert.equal(builder.requests[1].requireRootCauseFirst, true);
-    assert.equal(builder.requests[1].shadowReport?.failures[0].message, "production build failed");
+    const delivery = builder.requests[1];
+    assert.equal(delivery.mode, "delivery_repair");
+    if (delivery.mode !== "delivery_repair") assert.fail("expected delivery repair");
+    assert.equal(delivery.deliveryFailure.stage, "build");
+    assert.equal(delivery.deliveryFailure.actual, "production build failed");
+    assert.equal("packet" in delivery, false);
     assert.equal(summary.status, "delivered");
     assert.equal(summary.acceptedSha, "delivery-fixed");
     assert.deepEqual(git.captureMessages, [
@@ -282,11 +293,18 @@ test("Pipeline E2E treats an application start failure as a repairable attempt",
       },
     );
 
-    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2]);
+    assert.deepEqual(
+      builder.requests.map((request) => request.mode),
+      ["implement", "repair"],
+    );
+    const repairRequest = builder.requests[1];
+    assert.equal(repairRequest.mode, "repair");
+    if (repairRequest.mode !== "repair") assert.fail("expected repair request");
     assert.equal(
-      builder.requests[1].shadowReport?.failures[0].caseId,
+      repairRequest.shadowObservation.failures[0].caseId,
       "<application>",
     );
+    assert.equal(repairRequest.shadowObservation.applicationStartupFailed, true);
     assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
     assert.equal(summary.status, "delivered");
     const events = (await readFile(ledgerFile, "utf8"))
@@ -314,9 +332,80 @@ test("Pipeline E2E converts a throwing Builder into a failed attempt", async () 
       },
     );
 
-    assert.deepEqual(builder.requests.map((request) => request.packet.attempt), [1, 2]);
-    assert.equal(builder.requests[1].shadowReport?.failures[0].caseId, "<builder>");
+    assert.deepEqual(
+      builder.requests.map((request) => request.mode),
+      ["implement", "repair"],
+    );
+    const repairRequest = builder.requests[1];
+    assert.equal(repairRequest.mode, "repair");
+    if (repairRequest.mode !== "repair") assert.fail("expected repair request");
+    assert.equal(repairRequest.shadowObservation.failures[0].caseId, "<builder>");
     assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
+  });
+});
+
+test("Pipeline E2E accepts a packet regardless of misleading blocking receipt words", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder(
+      ["completed"],
+      ["结果：阻塞\n检查：失败\n风险：无法继续"],
+    );
+
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline", "accepted"]),
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
+      },
+    );
+
+    assert.equal(summary.status, "delivered");
+    assert.equal(summary.acceptedSha, "accepted");
+    const events = (await readFile(ledgerFile, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; detail?: { summary?: string } });
+    const finished = events.find((event) => event.type === "builder_finished");
+    assert.equal(
+      finished?.detail?.summary,
+      "结果：阻塞\n检查：失败\n风险：无法继续",
+    );
+  });
+});
+
+test("Pipeline E2E ignores misleading success receipt words when probes keep failing", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FixtureVariantBuilder(
+      [true, true, true],
+      ["结果：完成\n检查：通过"],
+    );
+    const git = new FakeGitOps(["baseline"]);
+
+    const summary = await runPipeline(
+      options(requirementsFile, outputDir, ledgerFile),
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git,
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier: new RecordingFinalVerifier(),
+      },
+    );
+
+    assert.deepEqual(
+      builder.requests.map((request) => request.mode),
+      ["implement", "repair", "root_cause_repair"],
+    );
+    assert.deepEqual(git.restoredShas, ["baseline"]);
+    assert.deepEqual(summary.verifiedRequirementIds, []);
+    assert.deepEqual(summary.blockedRequirementIds, ["REQ-PROFILE"]);
   });
 });
 
@@ -343,6 +432,7 @@ class RecordingArcEvents implements ArcEventsPort {
   commitSignals: string[] = [];
   requirementRows: Record<string, unknown> = {};
   scenarioRows: Record<string, unknown> = {};
+  builderDiagnostics: Array<[string, string, string]> = [];
 
   async runnerState(state: "running" | "completed" | "failed"): Promise<void> {
     this.runnerStates.push(state);
@@ -367,13 +457,24 @@ class RecordingArcEvents implements ArcEventsPort {
     this.requirementRows = requirementRows;
     this.scenarioRows = scenarioRows;
   }
+
+  async builderDiagnostic(
+    packetId: string,
+    outcome: string,
+    summary: string,
+  ): Promise<void> {
+    this.builderDiagnostics.push([packetId, outcome, summary]);
+  }
 }
 
 class FixtureVariantBuilder implements BuilderPort {
   readonly requests: BuilderRequest[] = [];
   private callIndex = 0;
 
-  constructor(private readonly brokenByCall: boolean[]) {}
+  constructor(
+    private readonly brokenByCall: boolean[],
+    private readonly summaries?: string[],
+  ) {}
 
   async run(request: BuilderRequest): Promise<BuilderResult> {
     this.requests.push(request);
@@ -389,11 +490,15 @@ class FixtureVariantBuilder implements BuilderPort {
         source.replace("status.textContent = 'Saved'", "status.textContent = 'Broken'"),
       );
     }
+    const summary =
+      this.summaries?.[this.callIndex] ??
+      this.summaries?.at(-1) ??
+      "fixture written";
     this.callIndex += 1;
     return {
       sessionId: `variant-${this.callIndex}`,
       outcome: "completed",
-      summary: "fixture written",
+      summary,
     };
   }
 

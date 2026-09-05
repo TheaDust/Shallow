@@ -117,15 +117,24 @@ function requirement(
     uiStrings?: string[];
   } = {},
 ): AtomicRequirement {
+  const folderPath = options.folder ?? ["ROOT", id];
+  const parent = folderPath.at(-1)!;
   return {
     id,
     declarationIndex,
-    folderPath: options.folder ?? ["ROOT", id],
+    folderPath,
     name: id,
     text: `${id} description`,
     dependencyIds: options.dependencies ?? [],
     scenarios: options.scenarios ?? [],
     references: [],
     exactUiStrings: options.uiStrings ?? [],
+    product: {
+      kind: "generic_web",
+      rootId: "ROOT",
+      rootName: "Demo Product",
+      description: "Root description.",
+    },
+    ancestors: [{ id: parent, name: parent, description: `${parent} area` }],
   };
 }

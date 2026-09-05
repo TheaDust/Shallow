@@ -14,6 +14,7 @@ export class FakeBuilder implements BuilderPort {
 
   constructor(
     private readonly outcomes: BuilderResult["outcome"][] = ["completed"],
+    private readonly summaries?: string[],
   ) {}
 
   async run(request: BuilderRequest): Promise<BuilderResult> {
@@ -23,11 +24,15 @@ export class FakeBuilder implements BuilderPort {
       force: true,
     });
     const outcome = this.outcomes[this.callIndex] ?? this.outcomes.at(-1) ?? "completed";
+    const summary =
+      this.summaries?.[this.callIndex] ??
+      this.summaries?.at(-1) ??
+      `Fake builder ${outcome}`;
     this.callIndex += 1;
     return {
       sessionId: `fake-session-${this.callIndex}`,
       outcome,
-      summary: `Fake builder ${outcome}`,
+      summary,
     };
   }
 

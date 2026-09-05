@@ -1,7 +1,12 @@
 import type {
   BuilderPort,
+  BuilderRequest,
   BuilderResult,
 } from "./builder/port.js";
+import type {
+  BuilderProjectContext,
+} from "./builder/prompt-input.js";
+import { toBuilderShadowObservation } from "./builder/shadow-observation.js";
 import {
   buildArcRequirementRows,
   type ArcRequirementRow,
@@ -16,9 +21,14 @@ import type {
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import type { ProbePlan } from "./judge/probe-schema.js";
-import { RunStateStore, decideAfterReport, type LogSink } from "./run-state.js";
+import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
-import type { PlatformContract, ShadowReport, WorkPacket } from "./types.js";
+import type {
+  PlatformContract,
+  RequirementCatalog,
+  ShadowReport,
+  WorkPacket,
+} from "./types.js";
 
 export interface AppLifecycle {
   start(
@@ -45,6 +55,11 @@ export interface ArcEventsPort {
   storeRequirementTree(
     requirementRows: Record<string, ArcRequirementRow>,
     scenarioRows: Record<string, ArcScenarioRow>,
+  ): Promise<void>;
+  builderDiagnostic(
+    packetId: string,
+    outcome: BuilderResult["outcome"],
+    summary: string,
   ): Promise<void>;
 }
 
@@ -104,7 +119,7 @@ export async function runPipeline(
       const packet = selectNextPacket(catalog);
       if (!packet) break;
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id });
-      await executePacket(packet, options, deps, state, catalog.statusById);
+      await executePacket(packet, options, deps, state, catalog);
     }
 
     await state.record({ at: now(), type: "delivery_started" });
@@ -118,16 +133,14 @@ export async function runPipeline(
       let builderResult: BuilderResult;
       try {
         builderResult = await deps.builder.run({
-          packet: {
-            id: "delivery-repair",
-            requirementIds: [],
-            requirements: [],
-            attempt: 3,
-          },
+          mode: "delivery_repair",
           outputDir: options.outputDir,
           platformContract: options.platformContract,
-          shadowReport: deliveryFailureReport(finalReport),
-          requireRootCauseFirst: true,
+          deliveryFailure: {
+            stage: finalReport.stage,
+            expected: expectedByStage[finalReport.stage],
+            actual: finalReport.message,
+          },
         });
       } catch (error) {
         builderResult = {
@@ -141,8 +154,19 @@ export async function runPipeline(
         at: now(),
         type: "builder_finished",
         packetId: "delivery-repair",
-        detail: { outcome: builderResult.outcome, sessionId: builderResult.sessionId },
+        detail: {
+          outcome: builderResult.outcome,
+          sessionId: builderResult.sessionId,
+          summary: sanitizeDiagnosticText(builderResult.summary),
+        },
       });
+      await emitArc(deps, (arc) =>
+        arc.builderDiagnostic(
+          "delivery-repair",
+          builderResult.outcome,
+          builderResult.summary,
+        ),
+      );
       finalReport = await runFinalVerifier(options, deps);
       if (finalReport.ok && builderResult.outcome === "completed") {
         const acceptedSha = await deps.git.captureAccepted(
@@ -198,11 +222,11 @@ async function executePacket(
   options: PipelineOptions,
   deps: PipelineDeps,
   state: RunStateStore,
-  catalogStatus: Record<string, "todo" | "verified" | "blocked">,
+  catalog: RequirementCatalog,
 ): Promise<void> {
+  const catalogStatus = catalog.statusById;
   let attempt: 1 | 2 | 3 = 1;
   let previousReport: ShadowReport | undefined;
-  let requireRootCauseFirst = false;
   let plan: ProbePlan | undefined;
   let refinementUsed = false;
   let iteration = 0;
@@ -228,15 +252,34 @@ async function executePacket(
       );
     }
 
-    let builderResult: BuilderResult;
-    try {
-      builderResult = await deps.builder.run({
+    const mode = packetBuilderMode(attempt);
+    let builderRequest: BuilderRequest;
+    if (mode === "implement") {
+      builderRequest = {
+        mode,
         packet,
+        projectContext: buildBuilderProjectContext(packet, catalog),
         outputDir: options.outputDir,
         platformContract: options.platformContract,
-        ...(previousReport ? { shadowReport: previousReport } : {}),
-        requireRootCauseFirst,
-      });
+      };
+    } else {
+      if (!previousReport) {
+        throw new Error(`Packet ${packet.id} entered ${mode} without a shadow report`);
+      }
+      builderRequest = {
+        mode,
+        packet,
+        projectContext: buildBuilderProjectContext(packet, catalog),
+        shadowObservation: toBuilderShadowObservation(previousReport),
+        outputDir: options.outputDir,
+        platformContract: options.platformContract,
+      };
+    }
+
+    await state.record({ at: now(), type: "builder_started", packetId: packet.id });
+    let builderResult: BuilderResult;
+    try {
+      builderResult = await deps.builder.run(builderRequest);
     } catch (error) {
       builderResult = {
         sessionId: "unavailable",
@@ -248,8 +291,15 @@ async function executePacket(
       at: now(),
       type: "builder_finished",
       packetId: packet.id,
-      detail: { outcome: builderResult.outcome, sessionId: builderResult.sessionId },
+      detail: {
+        outcome: builderResult.outcome,
+        sessionId: builderResult.sessionId,
+        summary: sanitizeDiagnosticText(builderResult.summary),
+      },
     });
+    await emitArc(deps, (arc) =>
+      arc.builderDiagnostic(packet.id, builderResult.outcome, builderResult.summary),
+    );
 
     let report: ShadowReport;
     if (builderResult.outcome !== "completed") {
@@ -261,7 +311,12 @@ async function executePacket(
           await blockPacket(deps, state, packet, catalogStatus, "probe planner failed");
           return;
         }
-        await state.record({ at: now(), type: "probe_planned", packetId: packet.id });
+        await state.record({
+          at: now(),
+          type: "probe_planned",
+          packetId: packet.id,
+          detail: { cases: plan.cases.length },
+        });
       }
       const probeOutcome = await runShadowProbes(
         packet,
@@ -297,7 +352,6 @@ async function executePacket(
     if (decision.kind === "repair") {
       previousReport = report;
       attempt = decision.nextAttempt;
-      requireRootCauseFirst = decision.requireRootCauseFirst;
       continue;
     }
 
@@ -311,6 +365,52 @@ interface ProbeOutcome {
   plan: ProbePlan;
   refinementUsed: boolean;
 }
+
+function packetBuilderMode(attempt: 1 | 2 | 3): "implement" | "repair" | "root_cause_repair" {
+  if (attempt === 1) return "implement";
+  return attempt === 2 ? "repair" : "root_cause_repair";
+}
+
+function buildBuilderProjectContext(
+  packet: WorkPacket,
+  catalog: RequirementCatalog,
+): BuilderProjectContext {
+  const first = packet.requirements[0];
+  if (!first) throw new Error(`Packet ${packet.id} has no requirements`);
+  const dependencyIds = new Set(
+    packet.requirements.flatMap((item) => item.dependencyIds),
+  );
+  return {
+    product: first.product,
+    ancestors: dedupeAncestors(
+      packet.requirements.flatMap((item) => item.ancestors),
+    ),
+    satisfiedDependencies: catalog.requirements
+      .filter((item) => dependencyIds.has(item.id))
+      .map((item) => ({ id: item.id, name: item.name, contract: item.text })),
+  };
+}
+
+function dedupeAncestors(
+  ancestors: WorkPacket["requirements"][number]["ancestors"],
+): WorkPacket["requirements"][number]["ancestors"] {
+  const seen = new Set<string>();
+  const unique: WorkPacket["requirements"][number]["ancestors"] = [];
+  for (const ancestor of ancestors) {
+    if (seen.has(ancestor.id)) continue;
+    seen.add(ancestor.id);
+    unique.push(ancestor);
+  }
+  return unique;
+}
+
+const expectedByStage = {
+  install: "平台安装命令成功退出",
+  build: "平台构建命令成功退出并生成生产构建产物",
+  readiness: "应用使用随机端口启动且健康检查返回成功",
+  browser: "根页面可访问并显示主要内容区域",
+  complete: "完整交付验证成功",
+} satisfies Record<FinalVerificationReport["stage"], string>;
 
 async function runShadowProbes(
   packet: WorkPacket,
@@ -488,22 +588,6 @@ function builderFailureReport(packetId: string, message: string): ShadowReport {
         stepIndex: -1,
         category: "runner",
         message,
-      },
-    ],
-  };
-}
-
-function deliveryFailureReport(report: FinalVerificationReport): ShadowReport {
-  return {
-    packetId: "delivery-repair",
-    verdict: "fail",
-    passedCases: [],
-    failures: [
-      {
-        caseId: "<delivery>",
-        stepIndex: -1,
-        category: "runner",
-        message: report.message,
       },
     ],
   };

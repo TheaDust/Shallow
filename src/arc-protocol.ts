@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { sanitizeDiagnosticText } from "./run-state.js";
 import type { AtomicRequirement } from "./types.js";
 
 const ARC_TABLES = [
@@ -110,6 +111,29 @@ export class ArcEventSink {
         submission: false,
         logs: false,
         commit_history: true,
+        traceability_selected: false,
+        traceability_all: false,
+        preview: false,
+      },
+    });
+  }
+
+  async builderDiagnostic(
+    packetId: string,
+    outcome: "completed" | "failed" | "timed_out",
+    summary: string,
+  ): Promise<void> {
+    await this.appendEvent({
+      type: "signal",
+      reason: "builder_receipt_recorded",
+      packet_id: packetId,
+      outcome,
+      message: sanitizeDiagnosticText(summary),
+      timestamp: arcTimestamp(),
+      refresh: {
+        submission: false,
+        logs: true,
+        commit_history: false,
         traceability_selected: false,
         traceability_all: false,
         preview: false,

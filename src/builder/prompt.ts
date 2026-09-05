@@ -1,53 +1,240 @@
-import type { ProcessCommand } from "../types.js";
-import type { BuilderRequest } from "./port.js";
+import type {
+  AtomicRequirement,
+  PlatformContract,
+  ProcessCommand,
+  WorkPacket,
+} from "../types.js";
+import type {
+  BuilderPromptInput,
+  BuilderProjectContext,
+  BuilderShadowObservation,
+  DeliveryFailureObservation,
+} from "./prompt-input.js";
+import {
+  PROMPT_FRAGMENTS,
+  selectPromptFragments,
+  type PromptFragmentId,
+} from "./prompt-fragments.js";
+import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 
-export function buildBuilderPrompt(request: BuilderRequest): string {
-  const { packet, platformContract } = request;
-  const requirements = packet.requirements
-    .map(
-      (requirement) => [
-        `## ${requirement.id}: ${requirement.name}`,
-        requirement.text,
-        `Dependencies already satisfied: ${requirement.dependencyIds.join(", ") || "none"}`,
-        `Scenarios:\n${requirement.scenarios.join("\n\n") || "none"}`,
-        `References: ${requirement.references.join(", ") || "none"}`,
-        `Exact UI strings: ${requirement.exactUiStrings.join(" | ") || "none"}`,
-      ].join("\n"),
-    )
-    .join("\n\n");
-  const install = platformContract.installCommands.map(renderCommand).join("\n");
-  const build = platformContract.buildCommands.map(renderCommand).join("\n");
-  const repair = request.shadowReport
-    ? `\nObserved black-box report:\n${JSON.stringify(request.shadowReport, null, 2)}\n`
-    : "";
-  const rootCause = request.requireRootCauseFirst
-    ? "\nBefore changing files, identify and state the root cause before editing. Then make the smallest coherent repair.\n"
-    : "";
+export interface CompiledBuilderPrompt {
+  systemPrompt: string;
+  taskPrompt: string;
+  fragmentIds: PromptFragmentId[];
+}
 
+const SYSTEM_PROMPT = loadBuilderPrompt("system", "builder-system");
+
+export function buildBuilderSystemPrompt(): string {
+  return SYSTEM_PROMPT;
+}
+
+export function compileBuilderPrompt(
+  request: BuilderPromptInput,
+): CompiledBuilderPrompt {
+  return {
+    systemPrompt: SYSTEM_PROMPT,
+    taskPrompt: buildBuilderTaskPrompt(request),
+    fragmentIds: selectPromptFragments(request),
+  };
+}
+
+export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
+  const receipt = receiptSection();
+  switch (request.mode) {
+    case "implement": {
+      const task = fillTemplate(
+        loadBuilderPrompt("system", "task-implement"),
+        {
+          PACKET_ID: request.packet.id,
+          PACKET_ATTEMPT: String(request.packet.attempt),
+          OUTPUT_DIR: request.outputDir,
+          ACTION: implementAction(),
+          PROJECT_CONTEXT: projectContextSection(request.projectContext),
+          WORK_PACKET: workPacketSection(request.packet),
+          PLATFORM_CONTRACT: platformContractSection(request.platformContract),
+          FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+        },
+      );
+      return `${task}\n\n${receipt}`.trim();
+    }
+    case "repair":
+    case "root_cause_repair": {
+      const name =
+        request.mode === "repair" ? "task-repair" : "task-root-cause-repair";
+      const task = fillTemplate(loadBuilderPrompt("system", name), {
+        PACKET_ID: request.packet.id,
+        PACKET_ATTEMPT: String(request.packet.attempt),
+        OUTPUT_DIR: request.outputDir,
+        ACTION:
+          request.mode === "repair"
+            ? repairAction(request.shadowObservation)
+            : rootCauseRepairAction(request.shadowObservation),
+        PROJECT_CONTEXT: projectContextSection(request.projectContext),
+        WORK_PACKET: workPacketSection(request.packet),
+        PLATFORM_CONTRACT: platformContractSection(request.platformContract),
+        FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+      });
+      return `${task}\n\n${receipt}`.trim();
+    }
+    case "delivery_repair": {
+      const task = fillTemplate(
+        loadBuilderPrompt("system", "task-delivery-repair"),
+        {
+          OUTPUT_DIR: request.outputDir,
+          ACTION: deliveryRepairAction(
+            request.deliveryFailure,
+            request.platformContract,
+          ),
+          FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+        },
+      );
+      return `${task}\n\n${receipt}`.trim();
+    }
+  }
+}
+
+function implementAction(): string {
+  return loadBuilderPrompt("system", "action-implement");
+}
+
+function repairAction(observation: BuilderShadowObservation): string {
+  return fillTemplate(loadBuilderPrompt("system", "action-repair"), {
+    PASSED_CASE_IDS: observation.passedCaseIds.join("、") || "无",
+    FAILURES: renderFailures(observation),
+  });
+}
+
+function rootCauseRepairAction(observation: BuilderShadowObservation): string {
+  return fillTemplate(loadBuilderPrompt("system", "action-root-cause-repair"), {
+    PASSED_CASE_IDS: observation.passedCaseIds.join("、") || "无",
+    FAILURES: renderFailures(observation),
+  });
+}
+
+function deliveryRepairAction(
+  failure: DeliveryFailureObservation,
+  contract: PlatformContract,
+): string {
+  return fillTemplate(loadBuilderPrompt("system", "action-delivery-repair"), {
+    FAILURE_STAGE: failure.stage,
+    FAILURE_COMMAND: failure.command ?? "未提供",
+    FAILURE_EXPECTED: failure.expected,
+    FAILURE_ACTUAL: failure.actual,
+    PLATFORM_CONTRACT: platformContractSection(contract),
+  });
+}
+
+function projectContextSection(context: BuilderProjectContext): string {
   return [
-    `Implement work packet ${packet.id}, attempt ${packet.attempt}, in ${request.outputDir}.`,
-    "You own the target application's technical choices, file changes, and local developer checks.",
-    "Keep existing verified behavior working. Implement only the requirements in this packet.",
-    requirements,
-    "Platform contract:",
-    `Base URL for local verification: ${platformContract.baseUrl}`,
-    `The backend HTTP server must read the PORT environment variable for its listen port (default ${platformContract.port}).`,
-    "The frontend must call the backend through relative same-origin paths; never hardcode a host or port in the built frontend.",
-    `Install commands:\n${install || "none"}`,
-    `Build commands:\n${build || "none"}`,
-    `Start command: ${renderCommand(platformContract.startCommand)}`,
-    `Health path: ${platformContract.healthPath}`,
-    "UI contract:",
-    'Every scoring-critical input uses type="text".',
-    "Every input field has a visible <label> element associated with it.",
-    "Validation errors are rendered as text by JavaScript; never rely on HTML5 required or pattern attributes.",
-    "Action controls are <button> elements with visible plain text.",
-    repair,
-    rootCause,
-    "Run the relevant local checks before finishing and summarize the result.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    "## 项目上下文",
+    "",
+    "产品目标：",
+    context.product.description,
+    "",
+    "当前功能路径：",
+    context.ancestors.length > 0
+      ? context.ancestors
+          .map(
+            (ancestor) =>
+              `${ancestor.id} ${ancestor.name}：${ancestor.description}`,
+          )
+          .join("\n")
+      : "无",
+    "",
+    "已满足的直接依赖：",
+    context.satisfiedDependencies.length > 0
+      ? context.satisfiedDependencies
+          .map(
+            (dependency) =>
+              `${dependency.id} ${dependency.name}：${dependency.contract}`,
+          )
+          .join("\n")
+      : "无",
+    "",
+    "这些依赖已经被外部控制器接受。可以复用和兼容它们，但不要重新设计或破坏它们。",
+  ].join("\n");
+}
+
+function workPacketSection(packet: WorkPacket): string {
+  return [
+    "## 当前工作包",
+    "",
+    packet.requirements.map(renderRequirement).join("\n\n"),
+  ].join("\n");
+}
+
+function renderRequirement(requirement: AtomicRequirement): string {
+  return [
+    `### ${requirement.id}：${requirement.name}`,
+    "",
+    `父级路径：${requirement.folderPath.join(" / ")}`,
+    "",
+    "需求原文：",
+    requirement.text,
+    "",
+    "验收场景：",
+    requirement.scenarios.join("\n\n") || "无",
+    "",
+    "引用资料：",
+    requirement.references.join("、") || "无",
+    "",
+    "必须保持精确的界面文案：",
+    requirement.exactUiStrings.join(" | ") || "无",
+  ].join("\n");
+}
+
+function renderFailures(observation: BuilderShadowObservation): string {
+  if (observation.failures.length === 0) return "无";
+  return observation.failures
+    .map((failure) => {
+      const lines = [
+        `- 用例 ${failure.caseId}，步骤 ${failure.stepIndex}，类别 ${failure.category}`,
+        `  消息：${failure.message}`,
+      ];
+      if (failure.accessibilityExcerpt) {
+        lines.push(`  可访问性节选：${failure.accessibilityExcerpt}`);
+      }
+      return lines.join("\n");
+    })
+    .join("\n");
+}
+
+function platformContractSection(contract: PlatformContract): string {
+  return [
+    "## 平台运行合同",
+    "",
+    "目标应用由 frontend 和 backend 两个目录组成。",
+    `后端必须读取 PORT 环境变量，未设置时使用 ${contract.port}。`,
+    "前端必须通过同源相对路径调用后端，不得在构建产物中硬编码主机或端口。",
+    "",
+    "安装命令：",
+    contract.installCommands.map(renderCommand).join("\n") || "无",
+    "",
+    "构建命令：",
+    contract.buildCommands.map(renderCommand).join("\n") || "无",
+    "",
+    "启动命令：",
+    renderCommand(contract.startCommand),
+    "",
+    "健康检查路径：",
+    contract.healthPath,
+    "",
+    "用于本地开发验证的基础地址：",
+    contract.baseUrl,
+  ].join("\n");
+}
+
+function fragmentSection(fragmentIds: PromptFragmentId[]): string {
+  return [
+    "## 本次适用的实现规则",
+    "",
+    fragmentIds.map((id) => PROMPT_FRAGMENTS[id]).join("\n\n"),
+  ].join("\n");
+}
+
+function receiptSection(): string {
+  return loadBuilderPrompt("system", "receipt");
 }
 
 function renderCommand(command: ProcessCommand): string {

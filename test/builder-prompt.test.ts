@@ -6,82 +6,115 @@ import { test } from "node:test";
 
 import {
   OpenCodeSdkBuilder,
+  type OpenCodePromptInput,
   type OpenCodeRuntime,
 } from "../src/builder/opencode-sdk.js";
-import { buildBuilderPrompt } from "../src/builder/prompt.js";
+import { compileBuilderPrompt } from "../src/builder/prompt.js";
+import type {
+  BuilderPromptInput,
+  BuilderProjectContext,
+  BuilderShadowObservation,
+} from "../src/builder/prompt-input.js";
 import type { BuilderRequest } from "../src/builder/port.js";
-import type { WorkPacket } from "../src/types.js";
+import type {
+  AtomicRequirement,
+  PlatformContract,
+  WorkPacket,
+} from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
 
-test("Builder prompt exposes the packet and platform contract but not global state", () => {
-  const request = builderRequest(1);
+test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
+  const compiled = compileBuilderPrompt(implementRequest());
 
-  const prompt = buildBuilderPrompt(request);
-
-  assert.match(prompt, /REQ-PROFILE/);
-  assert.match(prompt, /Keep a profile name after refresh/);
-  assert.match(prompt, /Save a profile/);
-  assert.match(prompt, /reference\/profile\.png/);
-  assert.match(prompt, /C:\\candidate-app/);
-  assert.match(prompt, /npm --prefix frontend run build/);
-  assert.match(prompt, /http:\/\/127\.0\.0\.1:3000/);
-  assert.match(prompt, /read the PORT environment variable.*\(default 3000\)/);
-  assert.match(prompt, /relative same-origin paths/);
-  assert.match(prompt, /type="text"/);
-  assert.match(prompt, /visible <label> element/);
-  assert.match(prompt, /never rely on HTML5 required or pattern attributes/);
-  assert.match(prompt, /<button> elements with visible plain text/);
-  assert.doesNotMatch(prompt, /SECRET-OTHER-REQ/);
-  assert.doesNotMatch(prompt, /acceptedSha|global budget|\/workspace\/tests/i);
-  assert.doesNotMatch(prompt, /Capability Kernel|use React|use Vue/i);
+  assert.match(compiled.systemPrompt, /唯一代码实现者/);
+  assert.doesNotMatch(compiled.systemPrompt, /REQ-PROFILE/);
+  assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
+  assert.match(compiled.taskPrompt, /REQ-PROFILE/);
+  assert.match(compiled.taskPrompt, /Root description/);
+  assert.match(compiled.taskPrompt, /Profile area/);
+  assert.match(compiled.taskPrompt, /Keep a profile name after refresh\./);
+  assert.match(compiled.taskPrompt, /The value remains after refresh\./);
+  assert.match(compiled.taskPrompt, /reference\/profile\.png/);
+  assert.match(compiled.taskPrompt, /Profile name \| Save/);
+  assert.match(compiled.taskPrompt, /type="text"/);
+  assert.match(compiled.taskPrompt, /绝不能依赖 HTML5 required 或 pattern/);
+  assert.match(compiled.taskPrompt, /npm --prefix frontend run build/);
+  assert.match(compiled.taskPrompt, /http:\/\/127\.0\.0\.1:3000/);
+  assert.match(compiled.taskPrompt, /PORT/);
+  assert.match(compiled.taskPrompt, /同源相对路径/);
+  assert.doesNotMatch(compiled.taskPrompt, /SECRET-OTHER-REQ/);
+  assert.doesNotMatch(compiled.taskPrompt, /acceptedSha|global budget|\/workspace\/tests/i);
+  assert.doesNotMatch(compiled.taskPrompt, /use React|use Vue/i);
+  assert.deepEqual(compiled.fragmentIds, [
+    "accessible_web_controls",
+    "server_persistence",
+  ]);
+  assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
-test("Builder repair prompt includes only the observed Shadow report", () => {
-  const prompt = buildBuilderPrompt({
-    ...builderRequest(2),
-    shadowReport: {
-      packetId: "packet-req-profile",
-      verdict: "fail",
-      passedCases: [],
+test("Repair prompt carries only the cleaned shadow observation", () => {
+  const compiled = compileBuilderPrompt(repairRequest("repair"));
+
+  assert.match(compiled.taskPrompt, /# 行动：根据外部黑盒观察修复当前工作包/);
+  assert.match(compiled.taskPrompt, /## 已通过的观察/);
+  assert.match(compiled.taskPrompt, /open-page/);
+  assert.match(compiled.taskPrompt, /## 失败观察/);
+  assert.match(compiled.taskPrompt, /save-profile/);
+  assert.match(compiled.taskPrompt, /Expected Saved, received Error/);
+  assert.doesNotMatch(compiled.taskPrompt, /"verdict"|JSON|black-box report/i);
+  assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+});
+
+test("Root-cause repair frames the last allowed attempt", () => {
+  const compiled = compileBuilderPrompt(repairRequest("root_cause_repair"));
+
+  assert.match(compiled.taskPrompt, /# 行动：执行最后一次根因修复/);
+  assert.match(compiled.taskPrompt, /身份认证和权限判断/);
+  assert.match(compiled.taskPrompt, /不超过三句话/);
+  assert.match(compiled.taskPrompt, /根因：/);
+  assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+});
+
+test("Delivery repair renders the failure without any work packet context", () => {
+  const compiled = compileBuilderPrompt(deliveryRequest());
+
+  assert.match(compiled.taskPrompt, /# 行动：修复最终交付故障/);
+  assert.match(compiled.taskPrompt, /失败阶段：\nbuild/);
+  assert.match(compiled.taskPrompt, /失败命令：\n未提供/);
+  assert.match(compiled.taskPrompt, /平台构建命令成功退出并生成生产构建产物/);
+  assert.match(compiled.taskPrompt, /实际观察：\nproduction build failed/);
+  assert.match(compiled.taskPrompt, /【交付合同】/);
+  assert.doesNotMatch(compiled.taskPrompt, /当前工作包|delivery-repair/);
+  assert.doesNotMatch(compiled.taskPrompt, /REQ-PROFILE/);
+  assert.doesNotMatch(
+    compiled.taskPrompt,
+    /【状态与持久化】|【身份与权限】|【仓库协作业务】|【电子表格业务】/,
+  );
+  assert.deepEqual(compiled.fragmentIds, ["delivery_contract"]);
+  assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+});
+
+test("Startup failures append the delivery contract on top of the product base", () => {
+  const compiled = compileBuilderPrompt(
+    repairRequest("repair", {
+      applicationStartupFailed: true,
       failures: [
         {
-          caseId: "save-profile",
-          stepIndex: 3,
-          category: "assertion",
-          message: "Expected Saved, received Error",
+          caseId: "<application>",
+          stepIndex: -1,
+          category: "runner",
+          message: "Application exited before readiness with code 1",
         },
       ],
-    },
-  });
+    }),
+  );
 
-  assert.match(prompt, /Expected Saved, received Error/);
-  assert.doesNotMatch(prompt, /official|hidden test/i);
-  assert.doesNotMatch(prompt, /root cause before/i);
+  assert.match(compiled.taskPrompt, /【交付合同】/);
+  assert.match(compiled.taskPrompt, /【状态与持久化】/);
+  assert.match(compiled.taskPrompt, /Application exited before readiness/);
 });
 
-test("Builder third attempt requires root-cause analysis before editing", () => {
-  const prompt = buildBuilderPrompt({
-    ...builderRequest(3),
-    requireRootCauseFirst: true,
-    shadowReport: {
-      packetId: "packet-req-profile",
-      verdict: "fail",
-      passedCases: [],
-      failures: [
-        {
-          caseId: "save-profile",
-          stepIndex: 3,
-          category: "assertion",
-          message: "Value did not persist",
-        },
-      ],
-    },
-  });
-
-  assert.match(prompt, /identify and state the root cause before editing/i);
-});
-
-test("Builder starts one runtime and creates one short session per call", async () => {
+test("Builder sends the system contract and task prompt through separate runtime channels", async () => {
   const runtime = new RecordingRuntime();
   const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
 
@@ -91,10 +124,14 @@ test("Builder starts one runtime and creates one short session per call", async 
 
   assert.deepEqual(runtime.startedDirectories, ["C:\\candidate-app"]);
   assert.deepEqual(runtime.createdTitles, [
-    "packet-req-profile attempt 1",
-    "packet-req-profile attempt 2",
+    "packet-req-profile implement",
+    "packet-req-profile repair",
   ]);
   assert.equal(runtime.prompts.length, 2);
+  assert.match(runtime.prompts[0].input.systemPrompt, /唯一代码实现者/);
+  assert.match(runtime.prompts[0].input.taskPrompt, /当前工作包/);
+  assert.doesNotMatch(runtime.prompts[0].input.systemPrompt, /REQ-PROFILE/);
+  assert.match(runtime.prompts[1].input.taskPrompt, /根据外部黑盒观察修复/);
   assert.equal(first.sessionId, "session-1");
   assert.equal(second.sessionId, "session-2");
   assert.equal(first.outcome, "completed");
@@ -160,7 +197,7 @@ test("FakeBuilder copies only the test fixture app into output", async () => {
 class RecordingRuntime implements OpenCodeRuntime {
   startedDirectories: string[] = [];
   createdTitles: string[] = [];
-  prompts: Array<{ sessionId: string; text: string }> = [];
+  prompts: Array<{ sessionId: string; input: OpenCodePromptInput }> = [];
   abortedSessions: string[] = [];
   closeCount = 0;
   promptResult: Promise<string> = Promise.resolve("implemented");
@@ -174,8 +211,11 @@ class RecordingRuntime implements OpenCodeRuntime {
     return `session-${this.createdTitles.length}`;
   }
 
-  async prompt(sessionId: string, text: string): Promise<string> {
-    this.prompts.push({ sessionId, text });
+  async prompt(
+    sessionId: string,
+    input: OpenCodePromptInput,
+  ): Promise<string> {
+    this.prompts.push({ sessionId, input });
     return this.promptResult;
   }
 
@@ -221,49 +261,156 @@ class GhostRuntime implements OpenCodeRuntime {
   async close(): Promise<void> {}
 }
 
-function builderRequest(attempt: 1 | 2 | 3): BuilderRequest {
+function implementRequest(): BuilderPromptInput {
   return {
-    packet: packet(attempt),
+    mode: "implement",
+    packet: packetFixture(),
+    projectContext: projectContextFixture(),
     outputDir: "C:\\candidate-app",
-    requireRootCauseFirst: false,
-    platformContract: {
-      baseUrl: "http://127.0.0.1:3000",
-      port: 3000,
-      installCommands: [
-        { executable: "npm", args: ["install"], cwd: "frontend" },
-      ],
-      buildCommands: [
-        { executable: "npm", args: ["run", "build"], cwd: "frontend" },
-      ],
-      startCommand: {
-        executable: "npm",
-        args: ["run", "start"],
-        cwd: "backend",
-      },
-      healthPath: "/health",
-      buildTimeoutMs: 120_000,
-      startTimeoutMs: 30_000,
-    },
+    platformContract: contractFixture(),
   };
 }
 
-function packet(attempt: 1 | 2 | 3): WorkPacket {
+function repairRequest(
+  mode: "repair" | "root_cause_repair",
+  overrides?: Partial<BuilderShadowObservation>,
+): BuilderPromptInput {
+  return {
+    mode,
+    packet: packetFixture(),
+    projectContext: projectContextFixture(),
+    shadowObservation: {
+      packetId: "packet-req-profile",
+      passedCaseIds: ["open-page"],
+      failures: [
+        {
+          caseId: "save-profile",
+          stepIndex: 3,
+          category: "assertion",
+          message: "Expected Saved, received Error",
+        },
+      ],
+      applicationStartupFailed: false,
+      ...overrides,
+    },
+    outputDir: "C:\\candidate-app",
+    platformContract: contractFixture(),
+  };
+}
+
+function deliveryRequest(): BuilderPromptInput {
+  return {
+    mode: "delivery_repair",
+    deliveryFailure: {
+      stage: "build",
+      expected: "平台构建命令成功退出并生成生产构建产物",
+      actual: "production build failed",
+    },
+    outputDir: "C:\\candidate-app",
+    platformContract: contractFixture(),
+  };
+}
+
+function projectContextFixture(): BuilderProjectContext {
+  return {
+    product: {
+      kind: "generic_web",
+      rootId: "ROOT",
+      rootName: "Demo Product",
+      description: "Root description.",
+    },
+    ancestors: [
+      { id: "PROFILE", name: "Profile", description: "Profile area" },
+    ],
+    satisfiedDependencies: [
+      {
+        id: "REQ-BASE",
+        name: "Base profile",
+        contract: "The base profile stores a name.",
+      },
+    ],
+  };
+}
+
+function packetFixture(): WorkPacket {
   return {
     id: "packet-req-profile",
     requirementIds: ["REQ-PROFILE"],
-    attempt,
-    requirements: [
-      {
-        id: "REQ-PROFILE",
-        folderPath: ["ROOT", "PROFILE"],
-        declarationIndex: 0,
-        name: "Profile",
-        text: "Keep a profile name after refresh.",
-        dependencyIds: [],
-        scenarios: ["Save a profile\nTHEN: The value remains after refresh."],
-        references: ["reference/profile.png"],
-        exactUiStrings: ["Profile name", "Save"],
-      },
+    attempt: 1,
+    requirements: [requirementFixture()],
+  };
+}
+
+function requirementFixture(): AtomicRequirement {
+  return {
+    id: "REQ-PROFILE",
+    folderPath: ["ROOT", "PROFILE"],
+    declarationIndex: 0,
+    name: "Profile",
+    text: "Keep a profile name after refresh.",
+    dependencyIds: [],
+    scenarios: ["Save a profile\nTHEN: The value remains after refresh."],
+    references: ["reference/profile.png"],
+    exactUiStrings: ["Profile name", "Save"],
+    product: {
+      kind: "generic_web",
+      rootId: "ROOT",
+      rootName: "Demo Product",
+      description: "Root description.",
+    },
+    ancestors: [
+      { id: "PROFILE", name: "Profile", description: "Profile area" },
     ],
+  };
+}
+
+function contractFixture(): PlatformContract {
+  return {
+    baseUrl: "http://127.0.0.1:3000",
+    port: 3000,
+    installCommands: [
+      { executable: "npm", args: ["install"], cwd: "frontend" },
+    ],
+    buildCommands: [
+      { executable: "npm", args: ["run", "build"], cwd: "frontend" },
+    ],
+    startCommand: {
+      executable: "npm",
+      args: ["run", "start"],
+      cwd: "backend",
+    },
+    healthPath: "/health",
+    buildTimeoutMs: 120_000,
+    startTimeoutMs: 30_000,
+  };
+}
+
+function builderRequest(attempt: 1 | 2 | 3): BuilderRequest {
+  const packet = { ...packetFixture(), attempt };
+  const projectContext = projectContextFixture();
+  const outputDir = "C:\\candidate-app";
+  const platformContract = contractFixture();
+  if (attempt === 1) {
+    return { mode: "implement", packet, projectContext, outputDir, platformContract };
+  }
+  return {
+    mode: attempt === 2 ? "repair" : "root_cause_repair",
+    packet,
+    projectContext,
+    shadowObservation: {
+      packetId: packet.id,
+      passedCaseIds: [],
+      failures: [
+        {
+          caseId: "save-profile",
+          stepIndex: 3,
+          category: "assertion",
+          message: "Value did not persist",
+        },
+      ],
+      applicationStartupFailed: false,
+    },
+    outputDir,
+    platformContract,
   };
 }

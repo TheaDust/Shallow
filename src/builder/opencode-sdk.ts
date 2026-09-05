@@ -1,12 +1,17 @@
 import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
 
-import { buildBuilderPrompt } from "./prompt.js";
+import { compileBuilderPrompt } from "./prompt.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
+
+export interface OpenCodePromptInput {
+  systemPrompt: string;
+  taskPrompt: string;
+}
 
 export interface OpenCodeRuntime {
   start(directory: string): Promise<void>;
   createSession(title: string): Promise<string>;
-  prompt(sessionId: string, text: string): Promise<string>;
+  prompt(sessionId: string, input: OpenCodePromptInput): Promise<string>;
   abort(sessionId: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -44,11 +49,13 @@ export class OpenCodeSdkBuilder implements BuilderPort {
   async run(request: BuilderRequest): Promise<BuilderResult> {
     if (this.closed) throw new Error("OpenCodeSdkBuilder is closed");
     await this.ensureStarted(request.outputDir);
-    const sessionId = await this.runtime.createSession(
-      `${request.packet.id} attempt ${request.packet.attempt}`,
-    );
-    const prompt = buildBuilderPrompt(request);
-    const promptPromise = this.runtime.prompt(sessionId, prompt);
+    const title =
+      request.mode === "delivery_repair"
+        ? "delivery repair"
+        : `${request.packet.id} ${request.mode}`;
+    const sessionId = await this.runtime.createSession(title);
+    const input = compileBuilderPrompt(request);
+    const promptPromise = this.runtime.prompt(sessionId, input);
     let timeout: NodeJS.Timeout | undefined;
 
     try {
@@ -128,7 +135,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     return response.data.id;
   }
 
-  async prompt(sessionId: string, text: string): Promise<string> {
+  async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
     const { client, directory } = this.requireStarted();
     const model = parseModelReference(this.model);
     const response = await client.session.prompt({
@@ -136,7 +143,8 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       query: { directory },
       body: {
         ...(model ? { model } : {}),
-        parts: [{ type: "text", text }],
+        system: input.systemPrompt,
+        parts: [{ type: "text", text: input.taskPrompt }],
       },
     });
     if (response.error || !response.data) {

@@ -40,6 +40,42 @@ test("Catalog preserves atomic requirements and source evidence in declaration o
     "Save a profile\nGIVEN: The profile page is open.\nWHEN: The user fills “Profile name” and clicks `Save`.\nTHEN: The saved name remains visible after refresh.",
     "Reject an empty profile\nWHEN: The user clicks `Save` without a name.\nTHEN: The page displays “Name is required”.",
   ]);
+  assert.deepEqual(first.product, {
+    kind: "generic_web",
+    rootId: "ROOT",
+    rootName: "Demo Product",
+    description: "Root description.",
+  });
+  assert.deepEqual(first.ancestors, [
+    { id: "AREA-A", name: "Account Area", description: "Account features." },
+  ]);
+});
+
+test("Catalog classifies known product roots exactly and unknown roots as generic web", async () => {
+  await withYaml(
+    `id: ROOT\nname: GitHub Collaboration Platform Core Requirements\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.equal(
+        catalog.requirements[0].product.kind,
+        "repository_collaboration",
+      );
+    },
+  );
+  await withYaml(
+    `id: ROOT\nname: Core Requirements for an Online Spreadsheet Data Workspace\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.equal(catalog.requirements[0].product.kind, "spreadsheet");
+    },
+  );
+  await withYaml(
+    `id: ROOT\nname: Something Else\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.equal(catalog.requirements[0].product.kind, "generic_web");
+    },
+  );
 });
 
 test("Catalog rejects duplicate identifiers", async () => {

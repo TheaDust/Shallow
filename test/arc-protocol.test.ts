@@ -141,6 +141,47 @@ test("ARC event sink emits commit history refresh signals", async () => {
   });
 });
 
+test("ARC builder diagnostic signal records the receipt without touching node states", async () => {
+  await withTempDir("shallow-arc-", async (directory) => {
+    const sink = new ArcEventSink(join(directory, "output"));
+    await sink.init();
+
+    await sink.builderDiagnostic(
+      "packet-req-profile",
+      "completed",
+      "结果\u0000：完成\n检查：通过",
+    );
+
+    const lines = await readEvents(directory);
+    const signal = lines[0] as {
+      type: string;
+      reason: string;
+      packet_id: string;
+      outcome: string;
+      message: string;
+      refresh: Record<string, boolean>;
+    };
+    assert.equal(signal.type, "signal");
+    assert.equal(signal.reason, "builder_receipt_recorded");
+    assert.equal(signal.packet_id, "packet-req-profile");
+    assert.equal(signal.outcome, "completed");
+    assert.equal(signal.message, "结果 ：完成\n检查：通过");
+    assert.deepEqual(signal.refresh, {
+      submission: false,
+      logs: true,
+      commit_history: false,
+      traceability_selected: false,
+      traceability_all: false,
+      preview: false,
+    });
+    const nodeStates = await readFile(
+      join(directory, "output", ".arc", "traceability", "node_states.json"),
+      "utf8",
+    );
+    assert.equal(nodeStates, "{}\n");
+  });
+});
+
 test("ARC timestamp renders UTC in platform format", () => {
   const timestamp = arcTimestamp(new Date(Date.UTC(2026, 8, 4, 12, 34, 56)));
   assert.equal(timestamp, "2026-09-04 12:34:56");
@@ -188,5 +229,14 @@ function atomicRequirement(): AtomicRequirement {
     ],
     references: [],
     exactUiStrings: [],
+    product: {
+      kind: "generic_web",
+      rootId: "ROOT",
+      rootName: "Demo Product",
+      description: "Root description.",
+    },
+    ancestors: [
+      { id: "PROFILE", name: "Profile", description: "Profile area" },
+    ],
   };
 }

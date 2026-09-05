@@ -1,12 +1,6 @@
-import type { PlatformContract, ShadowReport, WorkPacket } from "../types.js";
+import type { BuilderPromptInput } from "./prompt-input.js";
 
-export interface BuilderRequest {
-  packet: WorkPacket;
-  outputDir: string;
-  platformContract: PlatformContract;
-  shadowReport?: ShadowReport;
-  requireRootCauseFirst: boolean;
-}
+export type BuilderRequest = BuilderPromptInput;
 
 export interface BuilderResult {
   sessionId: string;

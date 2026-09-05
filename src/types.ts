@@ -1,5 +1,23 @@
 export type RequirementStatus = "todo" | "verified" | "blocked";
 
+export type ProductKind =
+  | "repository_collaboration"
+  | "spreadsheet"
+  | "generic_web";
+
+export interface ProductContext {
+  kind: ProductKind;
+  rootId: string;
+  rootName: string;
+  description: string;
+}
+
+export interface RequirementAncestor {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface AtomicRequirement {
   id: string;
   folderPath: string[];
@@ -10,6 +28,8 @@ export interface AtomicRequirement {
   scenarios: string[];
   references: string[];
   exactUiStrings: string[];
+  product: ProductContext;
+  ancestors: RequirementAncestor[];
 }
 
 export interface RequirementCatalog {

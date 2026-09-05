@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import { parse } from "yaml";
 
-import type { AtomicRequirement, RequirementCatalog } from "./types.js";
+import type {
+  AtomicRequirement,
+  ProductContext,
+  ProductKind,
+  RequirementCatalog,
+} from "./types.js";
 
 type NodeType = "ROOT" | "FOLDER" | "ATOMIC";
 
@@ -31,7 +36,13 @@ export async function loadRequirementCatalog(
   validateDependencies(nodes);
 
   const requirements: AtomicRequirement[] = [];
-  collectAtomics(root, [], requirements);
+  const product: ProductContext = {
+    kind: classifyProduct(root.name),
+    rootId: root.id,
+    rootName: root.name,
+    description: root.description,
+  };
+  collectAtomics(root, [], [], product, requirements);
 
   return {
     requirements,
@@ -39,6 +50,16 @@ export async function loadRequirementCatalog(
       requirements.map((requirement) => [requirement.id, "todo"]),
     ),
   };
+}
+
+function classifyProduct(rootName: string): ProductKind {
+  if (rootName === "GitHub Collaboration Platform Core Requirements") {
+    return "repository_collaboration";
+  }
+  if (rootName === "Core Requirements for an Online Spreadsheet Data Workspace") {
+    return "spreadsheet";
+  }
+  return "generic_web";
 }
 
 function parseNode(value: unknown, location: string): ParsedNode {
@@ -124,6 +145,8 @@ function validateDependencies(nodes: Map<string, ParsedNode>): void {
 function collectAtomics(
   node: ParsedNode,
   folderPath: string[],
+  ancestors: ParsedNode[],
+  product: ProductContext,
   requirements: AtomicRequirement[],
 ): void {
   if (node.type === "ATOMIC") {
@@ -139,13 +162,22 @@ function collectAtomics(
       scenarios,
       references: extractReferences(node.description),
       exactUiStrings: extractUiStrings(evidenceText),
+      product,
+      ancestors: ancestors.map((ancestor) => ({
+        id: ancestor.id,
+        name: ancestor.name,
+        description: ancestor.description,
+      })),
     });
     return;
   }
 
   const nextPath = [...folderPath, node.id];
+  const nextAncestors = folderPath.length === 0
+    ? ancestors
+    : [...ancestors, node];
   for (const child of node.children) {
-    collectAtomics(child, nextPath, requirements);
+    collectAtomics(child, nextPath, nextAncestors, product, requirements);
   }
 }
 

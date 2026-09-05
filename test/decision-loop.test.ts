@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
 import {
   RunStateStore,
   decideAfterReport,
+  sanitizeDiagnosticText,
 } from "../src/run-state.js";
 import type { ShadowReport } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -109,6 +110,38 @@ test("RunState records global transitions and writes a redacted JSONL ledger", a
     assert.match(ledger, /\[redacted\]/);
     assert.ok(ledger.length < 2_500);
   });
+});
+
+test("RunState keeps decisions intact when diagnostic sinks fail", async () => {
+  await withTempDir("shallow-ledger-", async (directory) => {
+    const blocker = join(directory, "blocker.txt");
+    await writeFile(blocker, "not a directory");
+    const blockedLedgerPath = join(blocker, "run-ledger.jsonl");
+    const store = new RunStateStore(
+      {
+        statusByRequirementId: { REQ: "todo" },
+        acceptedSha: "initial",
+        startedAtMs: 0,
+        totalBudgetMs: 10_000,
+      },
+      blockedLedgerPath,
+      {
+        write() {
+          throw new Error("log unavailable");
+        },
+      },
+    );
+
+    await assert.doesNotReject(
+      store.record({ at: "2026-09-04T00:00:00.000Z", type: "builder_finished" }),
+    );
+    assert.equal(store.snapshot.ledger.length, 1);
+  });
+});
+
+test("Diagnostic text is sanitized and capped for logs", () => {
+  assert.equal(sanitizeDiagnosticText("结果\u0000：完成"), "结果 ：完成");
+  assert.equal(sanitizeDiagnosticText("x".repeat(2_000)).length, 1_500);
 });
 
 function report(verdict: ShadowReport["verdict"]): ShadowReport {

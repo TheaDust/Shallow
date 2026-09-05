@@ -36,10 +36,15 @@ test(
       );
       try {
         const built = await builder.run({
+          mode: "implement",
           packet,
+          projectContext: {
+            product: packet.requirements[0].product,
+            ancestors: packet.requirements[0].ancestors,
+            satisfiedDependencies: [],
+          },
           outputDir,
           platformContract: contract,
-          requireRootCauseFirst: false,
         });
         assert.equal(built.outcome, "completed", built.summary);
 
@@ -95,6 +100,15 @@ function smokePacket(): WorkPacket {
         ],
         references: [],
         exactUiStrings: ["Profile name", "Save", "Saved"],
+        product: {
+          kind: "generic_web",
+          rootId: "ROOT",
+          rootName: "Demo Product",
+          description: "Root description.",
+        },
+        ancestors: [
+          { id: "SMOKE", name: "SMOKE", description: "SMOKE area" },
+        ],
       },
     ],
   };

@@ -107,11 +107,30 @@ export class RunStateStore {
   async record(event: RunEvent): Promise<void> {
     const safeEvent = redactEvent(event);
     this.state.ledger.push(safeEvent);
-    this.logSink?.write(`${JSON.stringify(safeEvent)}\n`);
+    try {
+      this.logSink?.write(`${JSON.stringify(safeEvent)}\n`);
+    } catch {
+      // Diagnostic sink failures must never change the decision path.
+    }
     if (!this.ledgerFile) return;
-    await mkdir(dirname(this.ledgerFile), { recursive: true });
-    await appendFile(this.ledgerFile, `${JSON.stringify(safeEvent)}\n`, "utf8");
+    try {
+      await mkdir(dirname(this.ledgerFile), { recursive: true });
+      await appendFile(this.ledgerFile, `${JSON.stringify(safeEvent)}\n`, "utf8");
+    } catch {
+      // Ledger file failures must never change the decision path.
+    }
   }
+}
+
+const DIAGNOSTIC_TEXT_LIMIT = 1_500;
+
+export function sanitizeDiagnosticText(text: string): string {
+  const normalized = text
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/[ \t]{2,}/g, " ");
+  return normalized.length > DIAGNOSTIC_TEXT_LIMIT
+    ? normalized.slice(0, DIAGNOSTIC_TEXT_LIMIT)
+    : normalized;
 }
 
 function redactEvent(event: RunEvent): RunEvent {

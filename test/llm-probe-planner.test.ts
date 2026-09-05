@@ -256,6 +256,15 @@ function packet(): WorkPacket {
         scenarios: ["Save the profile"],
         references: ["reference/profile.png"],
         exactUiStrings: ["Profile name", "Save"],
+        product: {
+          kind: "generic_web",
+          rootId: "ROOT",
+          rootName: "Demo Product",
+          description: "Root description.",
+        },
+        ancestors: [
+          { id: "PROFILE", name: "Profile", description: "Profile area" },
+        ],
       },
     ],
   };
