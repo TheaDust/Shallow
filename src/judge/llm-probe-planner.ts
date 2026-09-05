@@ -49,7 +49,7 @@ export class LlmProbePlanner implements ProbePlanner {
       {
         role: "system",
         content:
-          "Create independent black-box browser probes from only the supplied requirement evidence. Return JSON matching the schema. Cover a happy path and add persistence, negative, or permission cases only when required. Use only the listed operations and accessible locators.",
+          "Create independent black-box browser probes from only the supplied requirement evidence. Return JSON matching the schema. Cover every supplied requirement ID, with at least one assertion in every case. Cover a happy path and add persistence, negative, or permission cases only when required. Each case uses a fresh browser context; establish its own prerequisites. Use only the listed operations and accessible locators.",
       },
       {
         role: "user",

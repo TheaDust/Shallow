@@ -123,6 +123,27 @@ test("Catalog reads only the explicitly selected YAML file", async () => {
   }
 });
 
+test("Catalog expands folder dependencies and inherits ancestor prerequisites", async () => {
+  const catalog = await loadRequirementCatalog(resolve("data/guthub/requirements.yaml"));
+  const atomicIds = new Set(catalog.requirements.map((item) => item.id));
+  for (const item of catalog.requirements) {
+    assert.ok(item.dependencyIds.every((id) => atomicIds.has(id)), item.id);
+  }
+  const folderLeaves = catalog.requirements.filter((item) => item.folderPath.includes("REQ-4-3")).map((item) => item.id);
+  assert.ok(folderLeaves.length > 0);
+  const dependents = catalog.requirements.filter((item) => item.folderPath.includes("REQ-6-2"));
+  assert.ok(dependents.length > 0);
+  for (const dependent of dependents) {
+    assert.ok(folderLeaves.every((id) => dependent.dependencyIds.includes(id)));
+  }
+});
+
+test("Catalog rejects a cycle introduced by a dependency on an enclosing folder", async () => {
+  await withYaml("id: ROOT\nname: Root\ntype: ROOT\nchildren:\n  - id: AREA\n    name: Area\n    type: FOLDER\n    children:\n      - id: X\n        name: One\n        type: ATOMIC\n        dependencies: [AREA]\n", async (file) => {
+    await assert.rejects(loadRequirementCatalog(file), /Dependency cycle/);
+  });
+});
+
 async function withYaml(
   contents: string,
   callback: (file: string) => Promise<void>,

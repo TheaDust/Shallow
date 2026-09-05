@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -85,5 +85,36 @@ test("GitOps rejects a value that is not a commit in the output repository", asy
       git.restoreAccepted("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
       /not a commit in the output repository/,
     );
+  });
+});
+
+test("GitOps rollback retains tracked and untracked ARC audit records while restoring application state", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    const git = await GitCliOps.open(directory);
+    const arc = join(directory, ".arc");
+    await mkdir(arc);
+    const events = join(arc, "runner-events.jsonl");
+    await writeFile(events, "accepted event\n");
+    await writeFile(join(directory, "app.txt"), "accepted");
+    const accepted = await git.captureAccepted("accept");
+    await writeFile(events, "accepted event\nfailed candidate event\n");
+    await writeFile(join(arc, "latest.json"), "{}");
+    await writeFile(join(directory, "app.txt"), "broken");
+    await writeFile(join(directory, "candidate.txt"), "new");
+    await git.captureAccepted("simulated builder commit");
+    await git.restoreAccepted(accepted);
+    assert.equal((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim(), accepted);
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "accepted");
+    assert.equal(await readFile(events, "utf8"), "accepted event\nfailed candidate event\n");
+    await access(join(arc, "latest.json"));
+    await assert.rejects(access(join(directory, "candidate.txt")));
+  });
+});
+
+test("GitOps keeps an existing empty ignore file unchanged", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await writeFile(join(directory, ".gitignore"), "");
+    await GitCliOps.open(directory);
+    assert.equal(await readFile(join(directory, ".gitignore"), "utf8"), "");
   });
 });

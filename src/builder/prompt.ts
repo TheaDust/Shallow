@@ -201,28 +201,14 @@ function renderFailures(observation: BuilderShadowObservation): string {
 }
 
 function platformContractSection(contract: PlatformContract): string {
-  return [
-    "## 平台运行合同",
-    "",
-    "目标应用由 frontend 和 backend 两个目录组成。",
-    `后端必须读取 PORT 环境变量，未设置时使用 ${contract.port}。`,
-    "前端必须通过同源相对路径调用后端，不得在构建产物中硬编码主机或端口。",
-    "",
-    "安装命令：",
-    contract.installCommands.map(renderCommand).join("\n") || "无",
-    "",
-    "构建命令：",
-    contract.buildCommands.map(renderCommand).join("\n") || "无",
-    "",
-    "启动命令：",
-    renderCommand(contract.startCommand),
-    "",
-    "健康检查路径：",
-    contract.healthPath,
-    "",
-    "用于本地开发验证的基础地址：",
-    contract.baseUrl,
-  ].join("\n");
+  return fillTemplate(loadBuilderPrompt("system", "platform-contract"), {
+    PROBE_PORT: String(contract.port),
+    INSTALL_COMMANDS: contract.installCommands.map(renderCommand).join("\n") || "无",
+    BUILD_COMMANDS: contract.buildCommands.map(renderCommand).join("\n") || "无",
+    START_COMMAND: renderCommand(contract.startCommand),
+    HEALTH_PATH: contract.healthPath,
+    BASE_URL: contract.baseUrl,
+  });
 }
 
 function fragmentSection(fragmentIds: PromptFragmentId[]): string {

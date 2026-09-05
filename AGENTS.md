@@ -10,7 +10,7 @@ ShallowCode 是 GOSIM Factory 2026 / ARC-Bench 比赛用的轻量控制器（har
 
 ```powershell
 npm run typecheck        # tsc --noEmit（strict，覆盖 index.ts + src + test）
-npm test                 # 单元测试（无浏览器）：tsx --test test/*.test.ts
+npm test                 # 单元与集成（部分含 Chromium）：tsx --test test/*.test.ts
 npm run test:browser     # 真实 Chromium 浏览器测试：test/browser/*.test.ts
 npm run test:all         # typecheck && npm test && test:browser（交付前必跑）
 npm run smoke:credentials
@@ -35,6 +35,7 @@ prompts/                        Builder prompt 资产（全部中文 Markdown，
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
   system/receipt.md             每次任务附带的完成回执格式
+  system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口）
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
 
 src/
@@ -47,7 +48,7 @@ src/
   run-state.ts                  decideAfterReport（accept/repair/block 梯子）、RunStateStore（ledger+logSink）、
                                 sanitizeDiagnosticText（诊断文本清洗）
   git-ops.ts                    GitCliOps.open（仓库校验 + .gitignore 初始化并提交）、captureAccepted/
-                                restoreAccepted（reset --hard + clean -fd）、runGit（单命令 30s 超时）
+                                restoreAccepted（保留 .arc 的应用回滚）、runGit（单命令 30s 超时）
   final-verifier.ts             FinalVerifier（install→build→启动→/health readiness→浏览器 smoke）与
                                 CommandAppLifecycle（平台合同进程启停）
   arc-protocol.ts               ArcEventSink：.arc/runner-events.jsonl、七张溯源表、builderDiagnostic 回执信号
@@ -89,11 +90,12 @@ data/guthub、data/sheet         比赛需求样例（原文、结构化 YAML）
 
 - `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL`
 - Builder（OpenCode SDK）与 Probe Planner 共用这套 gateway/model 配置。
+- OpenCode 显式注入 `shallow-gateway` provider；`MODEL` 是网关完整模型 ID，含 `/` 也不拆分。SDK 服务用随机端口，运行环境需已安装 `opencode` 可执行程序。
 - 三个变量也支持写入仓库根 `.env`（入口默认加载，真实环境变量优先；`.env` 不入库，模板 `.env.example`）。
 
 可选覆盖：
 
-- `SHALLOW_PROBE_PORT`：显式指定探针/交付验证端口（缺省每次运行挑随机空闲端口；端口 3000 是评测端口，生成期不得占用）。
+- `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 OpenCode/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：仅供 `main.py` 适配入口使用。
 
@@ -109,6 +111,8 @@ ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
 - 运行事件经 `RunStateStore.record` 统一发射；新增阶段观测就新增 `state.record({type: ...})`，需要人类可读时在 `src/human-log.ts` 的 `describe` 里补对应中文文案。
+- `RunSummary.delivered` 要求全部原子需求 verified 且最终验证通过；有 todo 或 blocked 时为 partial。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
+- 回滚先 `reset --mixed <acceptedSha>`，再 `restore --worktree -- . :(top,exclude).arc` 和 `clean -fd -e .arc/`，保留 `.arc` 中包括失败在内的完整审计记录。
 
 ## 架构不变量（改动前必读）
 
@@ -123,9 +127,11 @@ ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-
 5. **交付窗口**：预算耗尽或没有可调度的 ready 需求后才停止领新 packet，只做 FinalVerifier（+ 至多一次交付修复 session）；一旦进入不可退出。
 6. **Builder 不做局部决策之外的事**：选型、文件结构、局部构建修复都归 OpenCode；ShallowCode 不新增第二套源码编辑工具。
 7. **Builder prompt 外置**：所有 Builder 文案在 `prompts/` 中文资产里；`src/builder/` 只做组装。改文案改 `.md`，改结构改 `prompt.ts`/`prompt-fragments.ts`，两者都要同步 `test/builder-prompt.test.ts` 与 `test/prompt-assets.test.ts` 的锚点断言。
-8. **超时自愈**：git 单命令 30s（`runGit`，kill 后等子进程退出再报错）；Builder 超时 abort 后等 prompt 落地（默认 5s，`promptSettleTimeoutMs`）才返回，防止 in-flight 编辑污染回滚基线。
+8. **超时自愈**：git 单命令 30s；Builder 超时后对 abort 与 prompt 落地各给最多 5s（`promptSettleTimeoutMs`）。abort 失败或落地超时则关闭运行时，下一次调用重启。每次 packet 尝试前检查预算；预算不强行中断已开始的调用或最终交付。
 
 调度器（`src/scheduler.ts`）是**无模型**的确定性规则：只选依赖全 verified 的 todo 需求，packet 上限 3 个相邻需求。
+
+Catalog 将目录依赖展开为原子叶子并继承祖先依赖，展开后检查环。ProbePlan 必须覆盖 packet 的所有 ID，每个 case 至少一个断言；空输入及空值断言合法，wire schema 使用 nullable 可选字段。
 
 ## 代码与测试惯例
 

@@ -8,7 +8,7 @@ import {
 import { CommandAppLifecycle, FinalVerifier } from "../src/final-verifier.js";
 import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
-import { createArcPlatformContract, readEnvFile } from "../src/runtime-config.js";
+import { createArcPlatformContract, pickFreePort, readEnvFile, readGatewayConfig } from "../src/runtime-config.js";
 import type { WorkPacket } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
@@ -28,10 +28,10 @@ test(
   { skip: skipReason },
   async () => {
     await withTempDir("shallow-credential-", async (outputDir) => {
-      const contract = createArcPlatformContract();
+      const contract = createArcPlatformContract(process.platform, await pickFreePort());
       const packet = smokePacket();
       const builder = new OpenCodeSdkBuilder(
-        new SdkOpenCodeRuntime(process.env.MODEL),
+        new SdkOpenCodeRuntime(readGatewayConfig(process.env)),
         { timeoutMs: 240_000 },
       );
       try {

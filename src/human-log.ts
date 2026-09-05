@@ -85,6 +85,10 @@ function describe(type: string, event: RunEvent): string | null {
       }`;
     case "delivery_repair_accepted":
       return "交付修复验收通过";
+    case "delivery_repair_restored":
+      return "交付修复未被接受，已恢复最后接受状态";
+    case "pipeline_failed":
+      return `流水线异常退出，已回滚${message ? `：${message}` : ""}`;
     case "delivery_finished": {
       const stage = pickString(detail, "stage");
       const stageSuffix = stage ? `（${stage}）` : "";

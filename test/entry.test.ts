@@ -39,7 +39,7 @@ test("Agent entry validates paths and passes bounded production context", async 
         "--budget-ms",
         "600000",
       ],
-      { ...gatewayEnv(), SHALLOW_PROBE_PORT: "3000" },
+      { ...gatewayEnv(), SHALLOW_PROBE_PORT: "3100" },
       execute,
       null,
     );
@@ -49,7 +49,7 @@ test("Agent entry validates paths and passes bounded production context", async 
     assert.equal(received?.pipelineOptions.requirementsFile, join(requirementsDir, "requirements.yaml"));
     assert.equal(received?.pipelineOptions.outputDir, outputDir);
     assert.equal(received?.pipelineOptions.totalBudgetMs, 600_000);
-    assert.equal(received?.pipelineOptions.platformContract.port, 3000);
+    assert.equal(received?.pipelineOptions.platformContract.port, 3100);
   });
 });
 
@@ -170,6 +170,7 @@ test("Agent entry loads the gateway from an env file with real env winning", asy
         "OPENAI_API_KEY=file-key",
         "OPENAI_BASE_URL=https://file.example/v1",
         'MODEL="file/model"',
+        'SHALLOW_PROBE_PORT=3210',
       ].join("\n"),
     );
     let received: AgentExecutionContext | undefined;
@@ -195,6 +196,7 @@ test("Agent entry loads the gateway from an env file with real env winning", asy
     assert.equal(received?.gateway.apiKey, "file-key");
     assert.equal(received?.gateway.baseUrl, "https://file.example/v1");
     assert.equal(received?.gateway.model, "file/model");
+    assert.equal(received?.pipelineOptions.platformContract.port, 3210);
 
     await main(argv, { MODEL: "env/model" }, execute, join(directory, "gateway.env"));
     assert.equal(received?.gateway.model, "env/model");

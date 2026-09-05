@@ -1,4 +1,5 @@
 import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
+import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 
 import { compileBuilderPrompt } from "./prompt.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
@@ -22,19 +23,20 @@ export interface OpenCodeSdkBuilderOptions {
 }
 
 async function waitForPromptSettlement(
-  promptPromise: Promise<string>,
+  promise: Promise<unknown>,
   timeoutMs: number,
-): Promise<void> {
-  const settled = promptPromise.then(
-    () => undefined,
-    () => undefined,
-  );
-  await Promise.race([
-    settled,
-    new Promise<void>((resolvePromise) => {
-      setTimeout(resolvePromise, timeoutMs);
-    }),
-  ]);
+): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export class OpenCodeSdkBuilder implements BuilderPort {
@@ -69,15 +71,19 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         }),
       ]);
       if (result.kind === "timed_out") {
+        const settleTimeoutMs = this.options.promptSettleTimeoutMs ?? 5_000;
         try {
-          await this.runtime.abort(sessionId);
+          if (!await waitForPromptSettlement(this.runtime.abort(sessionId), settleTimeoutMs)) {
+            throw new Error("abort timed out");
+          }
         } catch {
+          await this.resetRuntime();
           return { sessionId, outcome: "failed", summary: "OpenCode session abort failed" };
         }
-        await waitForPromptSettlement(
-          promptPromise,
-          this.options.promptSettleTimeoutMs ?? 5_000,
+        const settled = await waitForPromptSettlement(
+          promptPromise.then(() => undefined, () => undefined), settleTimeoutMs,
         );
+        if (!settled) await this.resetRuntime();
         return { sessionId, outcome: "timed_out", summary: "OpenCode session timed out" };
       }
       return { sessionId, outcome: "completed", summary: result.summary };
@@ -98,6 +104,11 @@ export class OpenCodeSdkBuilder implements BuilderPort {
     await this.runtime.close();
   }
 
+  private async resetRuntime(): Promise<void> {
+    await this.runtime.close();
+    this.startedDirectory = undefined;
+  }
+
   private async ensureStarted(directory: string): Promise<void> {
     if (this.startedDirectory && this.startedDirectory !== directory) {
       throw new Error("One OpenCodeSdkBuilder cannot switch output directories");
@@ -114,10 +125,33 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private server?: { close(): void };
   private directory?: string;
 
-  constructor(private readonly model?: string) {}
+  constructor(
+    private readonly gateway: GatewayConfig,
+    private readonly create: typeof createOpencode = createOpencode,
+  ) {}
 
   async start(directory: string): Promise<void> {
-    const instance = await createOpencode();
+    const model = this.gateway.model;
+    const instance = await this.create({
+      port: await pickFreePort(),
+      config: {
+        model: `shallow-gateway/${model}`,
+        small_model: `shallow-gateway/${model}`,
+        enabled_providers: ["shallow-gateway"],
+        provider: {
+          "shallow-gateway": {
+            npm: "@ai-sdk/openai-compatible",
+            name: "ShallowCode Gateway",
+            options: {
+              apiKey: this.gateway.apiKey,
+              baseURL: this.gateway.baseUrl,
+              timeout: false,
+            },
+            models: { [model]: { id: model, name: model, tool_call: true } },
+          },
+        },
+      },
+    });
     this.client = instance.client;
     this.server = instance.server;
     this.directory = directory;
@@ -137,18 +171,20 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
 
   async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
     const { client, directory } = this.requireStarted();
-    const model = parseModelReference(this.model);
     const response = await client.session.prompt({
       path: { id: sessionId },
       query: { directory },
       body: {
-        ...(model ? { model } : {}),
+        model: { providerID: "shallow-gateway", modelID: this.gateway.model },
         system: input.systemPrompt,
         parts: [{ type: "text", text: input.taskPrompt }],
       },
     });
     if (response.error || !response.data) {
       throw new Error(`OpenCode prompt failed: ${formatSdkError(response.error)}`);
+    }
+    if (response.data.info.error) {
+      throw new Error(`OpenCode model failed: ${formatSdkError(response.data.info.error)}`);
     }
     return response.data.parts
       .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
@@ -178,18 +214,6 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     if (!this.client || !this.directory) throw new Error("OpenCode runtime is not started");
     return { client: this.client, directory: this.directory };
   }
-}
-
-function parseModelReference(
-  value: string | undefined,
-): { providerID: string; modelID: string } | undefined {
-  if (!value) return undefined;
-  const separator = value.indexOf("/");
-  if (separator <= 0 || separator === value.length - 1) return undefined;
-  return {
-    providerID: value.slice(0, separator),
-    modelID: value.slice(separator + 1),
-  };
 }
 
 function formatSdkError(error: unknown): string {

@@ -18,7 +18,8 @@ export function spawnProcess(
     }
   }
   const command = /\s/.test(executable) ? `"${executable}"` : executable;
-  const line = args.length > 0 ? `${command} ${args.join(" ")}` : command;
+  const quotedArgs = args.map((arg) => `"${arg.replace(/(\\+)$/, "$1$1")}"`);
+  const line = [command, ...quotedArgs].join(" ");
   return spawn("cmd.exe", ["/d", "/s", "/c", `"${line}"`], {
     ...options,
     windowsVerbatimArguments: true,

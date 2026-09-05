@@ -31,7 +31,60 @@ export interface ProbePlan {
 
 export type { ShadowReport } from "../types.js";
 
+const STRING_SCHEMA = { type: "string", maxLength: 2_000 };
+const NONEMPTY_STRING_SCHEMA = { ...STRING_SCHEMA, minLength: 1 };
+const OPTIONAL_STRING_SCHEMA = { type: ["string", "null"], maxLength: 2_000 };
+const OPTIONAL_BOOLEAN_SCHEMA = { type: ["boolean", "null"] };
+
+function objectSchema(properties: Record<string, unknown>) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: Object.keys(properties),
+    properties,
+  };
+}
+
+function literalSchema(value: string) {
+  return { type: "string", enum: [value] };
+}
+
+const LOCATOR_SCHEMA = {
+  anyOf: [
+    objectSchema({
+      by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+    }),
+    ...["label", "text"].map((by) => objectSchema({
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+    })),
+  ],
+};
+const LOCATOR_REF = { $ref: "#/$defs/locator" };
+const STEP_SCHEMA = {
+  anyOf: [
+    objectSchema({ op: literalSchema("goto"), path: NONEMPTY_STRING_SCHEMA }),
+    ...["click", "expectVisible"].map((op) => objectSchema({
+      op: literalSchema(op), locator: LOCATOR_REF,
+    })),
+    ...["fill", "select", "expectValue"].map((op) => objectSchema({
+      op: literalSchema(op), locator: LOCATOR_REF, value: STRING_SCHEMA,
+    })),
+    objectSchema({
+      op: literalSchema("expectText"), locator: LOCATOR_REF,
+      text: STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+    }),
+    objectSchema({
+      op: literalSchema("expectCount"), locator: LOCATOR_REF,
+      count: { type: "integer", minimum: 0 },
+    }),
+    objectSchema({ op: literalSchema("reload") }),
+    objectSchema({ op: literalSchema("newContext"), actor: { ...OPTIONAL_STRING_SCHEMA, minLength: 1 } }),
+  ],
+};
+
 export const PROBE_PLAN_JSON_SCHEMA = {
+  $defs: { locator: LOCATOR_SCHEMA },
   type: "object",
   additionalProperties: false,
   required: ["packetId", "cases"],
@@ -49,6 +102,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
           id: { type: "string" },
           requirementIds: { type: "array", minItems: 1, items: { type: "string" } },
           purpose: {
+            type: "string",
             enum: ["happy_path", "persistence", "negative", "permission"],
           },
           steps: {
@@ -57,7 +111,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             maxItems: 30,
             description:
               "Allowed op values: goto, click, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. Locators use role, label, or text only.",
-            items: { type: "object" },
+            items: STEP_SCHEMA,
           },
         },
       },
@@ -92,6 +146,11 @@ export function parseProbePlan(
     seen.add(parsed.id);
     return parsed;
   });
+  if (packet) {
+    const covered = new Set(cases.flatMap((probeCase) => probeCase.requirementIds));
+    const missing = packet.requirementIds.filter((id) => !covered.has(id));
+    if (missing.length > 0) throw new Error(`ProbePlan does not cover requirements: ${missing.join(", ")}`);
+  }
   return { packetId, cases };
 }
 
@@ -168,6 +227,9 @@ function parseCase(
   const steps = stepValues.map((step, stepIndex) =>
     parseStep(step, `${location}.steps[${stepIndex}]`),
   );
+  if (!steps.some((step) => step.op.startsWith("expect"))) {
+    throw new Error(`${location} requires at least one assertion`);
+  }
   return { id, requirementIds, purpose, steps };
 }
 
@@ -181,6 +243,7 @@ function parseStep(value: unknown, location: string): ProbeStep {
       if (
         !path.startsWith("/") ||
         path.startsWith("//") ||
+        /[\\\u0000-\u0020\u007f]/.test(path) ||
         /(^|\/)\.\.(\/|$)/.test(path) ||
         /^[a-z][a-z0-9+.-]*:/i.test(path)
       ) {
@@ -200,7 +263,7 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return {
         op,
         locator: parseLocator(step.locator, `${location}.locator`),
-        value: text(step.value, `${location}.value`),
+        value: dataText(step.value, `${location}.value`),
       };
     }
     case "expectText": {
@@ -208,8 +271,8 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return {
         op,
         locator: parseLocator(step.locator, `${location}.locator`),
-        text: text(step.text, `${location}.text`),
-        ...(step.exact === undefined ? {} : { exact: boolean(step.exact, `${location}.exact`) }),
+        text: dataText(step.text, `${location}.text`),
+        ...(step.exact == null ? {} : { exact: boolean(step.exact, `${location}.exact`) }),
       };
     }
     case "expectCount": {
@@ -231,7 +294,7 @@ function parseStep(value: unknown, location: string): ProbeStep {
       keys(step, ["op", "actor"], location);
       return {
         op,
-        ...(step.actor === undefined ? {} : { actor: text(step.actor, `${location}.actor`) }),
+        ...(step.actor == null ? {} : { actor: text(step.actor, `${location}.actor`) }),
       };
     default:
       throw new Error(`${location} ProbePlan operation is not allowed: ${op}`);
@@ -246,8 +309,8 @@ function parseLocator(value: unknown, location: string): ProbeLocator {
     return {
       by,
       role: text(locator.role, `${location}.role`),
-      ...(locator.name === undefined ? {} : { name: text(locator.name, `${location}.name`) }),
-      ...(locator.exact === undefined
+      ...(locator.name == null ? {} : { name: dataText(locator.name, `${location}.name`) }),
+      ...(locator.exact == null
         ? {}
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
@@ -257,7 +320,7 @@ function parseLocator(value: unknown, location: string): ProbeLocator {
     return {
       by,
       text: text(locator.text, `${location}.text`),
-      ...(locator.exact === undefined
+      ...(locator.exact == null
         ? {}
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
@@ -280,6 +343,13 @@ function array(value: unknown, location: string): unknown[] {
 function text(value: unknown, location: string): string {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_STRING) {
     throw new Error(`${location} must be a non-empty string up to ${MAX_STRING} characters`);
+  }
+  return value;
+}
+
+function dataText(value: unknown, location: string): string {
+  if (typeof value !== "string" || value.length > MAX_STRING) {
+    throw new Error(`${location} must be a string up to ${MAX_STRING} characters`);
   }
   return value;
 }

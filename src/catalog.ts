@@ -43,6 +43,18 @@ export async function loadRequirementCatalog(
     description: root.description,
   };
   collectAtomics(root, [], [], product, requirements);
+  // Folder dependencies are completion barriers over their atomic descendants.
+  // Ancestor dependencies also apply to every atomic requirement underneath them.
+  for (const requirement of requirements) {
+    const scope = [...requirement.folderPath, requirement.id];
+    requirement.dependencyIds = [...new Set(scope.flatMap((id) =>
+      nodes.get(id)!.dependencies.flatMap((dependency) => atomicIds(nodes.get(dependency)!)),
+    ))];
+  }
+  validateDependencies(new Map(requirements.map((requirement) => [
+    requirement.id,
+    { id: requirement.id, dependencies: requirement.dependencyIds },
+  ])));
 
   return {
     requirements,
@@ -113,7 +125,11 @@ function collectNodes(node: ParsedNode, nodes: Map<string, ParsedNode>): void {
   }
 }
 
-function validateDependencies(nodes: Map<string, ParsedNode>): void {
+function atomicIds(node: ParsedNode): string[] {
+  return node.type === "ATOMIC" ? [node.id] : node.children.flatMap(atomicIds);
+}
+
+function validateDependencies(nodes: Map<string, Pick<ParsedNode, "id" | "dependencies">>): void {
   for (const node of nodes.values()) {
     for (const dependency of node.dependencies) {
       if (!nodes.has(dependency)) {

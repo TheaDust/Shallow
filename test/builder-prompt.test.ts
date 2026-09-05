@@ -150,6 +150,37 @@ test("Builder aborts the active session when its prompt times out", async () => 
   assert.deepEqual(runtime.abortedSessions, ["session-1"]);
 });
 
+test("Builder terminates an unsettled runtime before returning and restarts it for repair", async () => {
+  const runtime = new RecordingRuntime();
+  runtime.promptResult = new Promise(() => undefined);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
+  assert.equal((await builder.run(builderRequest(1))).outcome, "timed_out");
+  assert.equal(runtime.closeCount, 1);
+  runtime.promptResult = Promise.resolve("repaired");
+  assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
+  assert.equal(runtime.startedDirectories.length, 2);
+  await builder.close();
+});
+
+test("Builder forcibly closes its runtime when the abort endpoint hangs", async () => {
+  const runtime = new RecordingRuntime();
+  runtime.promptResult = new Promise(() => undefined);
+  runtime.abort = () => new Promise(() => undefined);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
+  assert.equal((await builder.run(builderRequest(1))).outcome, "failed");
+  assert.equal(runtime.closeCount, 1);
+  await builder.close();
+});
+
+test("Builder distinguishes the evaluation default from the probe port", () => {
+  const request = implementRequest();
+  request.platformContract.port = 3210;
+  request.platformContract.baseUrl = "http://127.0.0.1:3210";
+  const compiled = compileBuilderPrompt(request);
+  assert.match(compiled.taskPrompt, /未设置时使用 3000/);
+  assert.match(compiled.taskPrompt, /PORT=3210/);
+});
+
 test("Builder waits for the prompt to settle after abort before returning timed_out", async () => {
   const runtime = new GhostRuntime();
   const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });

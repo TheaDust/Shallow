@@ -94,11 +94,19 @@ export class CommandAppLifecycle implements AppLifecycle {
       ...process.env,
       PORT: String(contract.port),
     });
+    let spawnError: Error | undefined;
+    let stderr = "";
+    child.on("error", (error) => { spawnError = error; });
+    // Drain both pipes: a verbose server can otherwise block before readiness.
+    child.stdout?.resume();
+    child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8_000); });
     try {
       await waitForReadiness(
         `${contract.baseUrl}${contract.healthPath}`,
-        child,
         contract.startTimeoutMs,
+        () => spawnError?.message ?? (child.exitCode !== null || child.signalCode !== null
+          ? `Application exited before readiness: ${stderr || child.exitCode || child.signalCode}`
+          : undefined),
       );
     } catch (error) {
       await stopProcess(child);
@@ -122,10 +130,10 @@ async function runCommand(
   child.stdout?.setEncoding("utf8");
   child.stderr?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
-    stdout += chunk;
+    stdout = (stdout + chunk).slice(-8_000);
   });
   child.stderr?.on("data", (chunk: string) => {
-    stderr += chunk;
+    stderr = (stderr + chunk).slice(-8_000);
   });
 
   let timeout: NodeJS.Timeout | undefined;
@@ -166,6 +174,7 @@ function spawnCommand(
     env,
     shell: false,
     windowsHide: true,
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
@@ -180,17 +189,16 @@ function commandCwd(
 
 async function waitForReadiness(
   url: string,
-  child: ChildProcess,
   timeoutMs: number,
+  failure: () => string | undefined,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`Application exited before readiness with code ${child.exitCode}`);
-    }
+    const message = failure();
+    if (message) throw new Error(message);
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(500) });
-      if (response.ok) return;
+      if (response.ok && !failure()) return;
     } catch {}
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
   }
@@ -198,8 +206,9 @@ async function waitForReadiness(
 }
 
 async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.pid === undefined) return;
+  if (child.pid === undefined) return;
   if (process.platform === "win32") {
+    if (child.exitCode !== null || child.signalCode !== null) return;
     await new Promise<void>((resolvePromise) => {
       const killer = spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], {
         shell: false,
@@ -210,13 +219,33 @@ async function stopProcess(child: ChildProcess): Promise<void> {
       killer.once("close", () => resolvePromise());
     });
   } else {
-    child.kill("SIGTERM");
+    signalProcessGroup(child.pid, "SIGTERM");
   }
-  await Promise.race([
-    new Promise<void>((resolvePromise) => child.once("exit", () => resolvePromise())),
-    new Promise<void>((resolvePromise) => setTimeout(resolvePromise, 2_000)),
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
+  let timer: NodeJS.Timeout | undefined;
+  let onExit: () => void = () => {};
+  try {
+    await Promise.race([
+      new Promise<void>((resolvePromise) => {
+        onExit = resolvePromise;
+        if (child.exitCode !== null || child.signalCode !== null) resolvePromise();
+        else child.once("exit", onExit);
+      }),
+      new Promise<void>((resolvePromise) => { timer = setTimeout(resolvePromise, 2_000); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    child.off("exit", onExit);
+  }
+  if (process.platform !== "win32") signalProcessGroup(child.pid, "SIGKILL");
+  else if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+}
+
+function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+  }
 }
 
 function renderCommand(command: ProcessCommand): string {

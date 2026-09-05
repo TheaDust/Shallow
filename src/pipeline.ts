@@ -20,7 +20,7 @@ import type {
 } from "./final-verifier.js";
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
-import type { ProbePlan } from "./judge/probe-schema.js";
+import { parseProbePlan, type ProbePlan } from "./judge/probe-schema.js";
 import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
 import type {
@@ -95,6 +95,12 @@ export async function runPipeline(
   options: PipelineOptions,
   deps: PipelineDeps,
 ): Promise<RunSummary> {
+  let builderClosed = false;
+  const closeBuilder = async () => {
+    if (builderClosed) return;
+    builderClosed = true;
+    await deps.builder.close();
+  };
   const catalog = await loadRequirementCatalog(options.requirementsFile);
   const baselineSha = await deps.git.captureAccepted("shallow: initial state");
   const state = new RunStateStore(
@@ -184,6 +190,16 @@ export async function runPipeline(
           packetId: "delivery-repair",
         });
         await emitArc(deps, (arc) => arc.commitHistorySignal("git_commit"));
+      } else {
+        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+        if (finalReport.ok) {
+          finalReport = {
+            ok: false,
+            stage: "complete",
+            message: `Delivery repair was not completed (${builderResult.outcome}); restored accepted state`,
+          };
+        }
+        await state.record({ at: now(), type: "delivery_repair_restored" });
       }
     }
     await state.record({
@@ -201,7 +217,7 @@ export async function runPipeline(
     const blockedRequirementIds = idsWithStatus(snapshot.statusByRequirementId, "blocked");
     const summary: RunSummary = {
       status: finalReport.ok
-        ? blockedRequirementIds.length > 0
+        ? verifiedRequirementIds.length < catalog.requirements.length
           ? "partial"
           : "delivered"
         : "failed",
@@ -215,10 +231,24 @@ export async function runPipeline(
         `summary ${summary.status}`,
       ),
     );
-    await state.record({ at: now(), type: "pipeline_finished" });
+    await state.record({ at: now(), type: "pipeline_finished", detail: {
+      ...summary,
+      pendingRequirementIds: Object.entries(snapshot.statusByRequirementId)
+        .filter(([, status]) => status === "todo").map(([id]) => id),
+    } });
     return summary;
+  } catch (error) {
+    // Unexpected runner/process failures must not leave an unaccepted candidate.
+    try {
+      await closeBuilder();
+    } finally {
+      await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+    }
+    await state.record({ at: now(), type: "pipeline_failed", detail: { message: errorMessage(error) } });
+    await emitArc(deps, (arc) => arc.runnerState("failed", "pipeline failed"));
+    throw error;
   } finally {
-    await deps.builder.close();
+    await closeBuilder();
   }
 }
 
@@ -250,6 +280,10 @@ async function executePacket(
     }
 
     const packet: WorkPacket = { ...selected, attempt };
+    if (state.shouldEnterDelivery(deps.clock.nowMs())) {
+      await blockPacket(deps, state, packet, catalogStatus, "packet budget exhausted");
+      return;
+    }
     state.setPacketAttempt(packet.id, attempt);
     for (const requirementId of packet.requirementIds) {
       await emitArc(deps, (arc) =>
@@ -501,7 +535,7 @@ async function planProbe(
   state: RunStateStore,
 ): Promise<ProbePlan | undefined> {
   try {
-    return await deps.planner.plan(packet);
+    return parseProbePlan(await deps.planner.plan(packet), packet);
   } catch (error) {
     await state.record({
       at: now(),
@@ -515,7 +549,7 @@ async function planProbe(
     await new Promise((resolvePromise) => setTimeout(resolvePromise, retryDelayMs));
   }
   try {
-    return await deps.planner.plan(packet);
+    return parseProbePlan(await deps.planner.plan(packet), packet);
   } catch (error) {
     await state.record({
       at: now(),

@@ -8,6 +8,7 @@ import {
 import {
   assertLocatorOnlyRefinement,
   parseProbePlan,
+  PROBE_PLAN_JSON_SCHEMA,
   type ProbePlan,
 } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
@@ -22,6 +23,45 @@ test("Probe Planner accepts a bounded declarative plan", () => {
     locator: { by: "label", text: "Profile name", exact: true },
     value: "Ada",
   });
+});
+
+test("Probe plans require an assertion per case and coverage of every packet requirement", () => {
+  const withoutAssertion = validPlan();
+  withoutAssertion.cases[0].steps = [{ op: "goto", path: "/" }];
+  assert.throws(() => parseProbePlan(withoutAssertion, packet()), /assertion/);
+  assert.throws(() => parseProbePlan(validPlan(), { id: packet().id, requirementIds: ["REQ-PROFILE", "REQ-OMITTED"] }), /REQ-OMITTED/);
+});
+
+test("Probe plans support empty inputs and empty-value assertions with strict-schema null optionals", () => {
+  const candidate = validPlan();
+  candidate.cases[0].steps = [
+    { op: "goto", path: "/" },
+    { op: "fill", locator: { by: "role", role: "textbox", name: null, exact: null }, value: "" },
+    { op: "expectValue", locator: { by: "label", text: "Profile name", exact: null }, value: "" },
+    { op: "expectText", locator: { by: "role", role: "status", name: null, exact: null }, text: "", exact: null },
+  ];
+  const parsed = parseProbePlan(candidate, packet());
+  assert.deepEqual(parsed.cases[0].steps[1], { op: "fill", locator: { by: "role", role: "textbox" }, value: "" });
+});
+
+test("Wire schema fully describes the DSL and closes every structured-output object", () => {
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    const item = value as Record<string, unknown>;
+    if (item.type === "object") {
+      assert.equal(item.additionalProperties, false);
+      assert.deepEqual(item.required, Object.keys(item.properties as object));
+      for (const property of Object.values(item.properties as Record<string, Record<string, unknown>>)) {
+        assert.ok(property.type || property.$ref || property.anyOf, "each property needs a declared type or union/reference");
+      }
+    }
+    Object.values(item).forEach(visit);
+  };
+  visit(PROBE_PLAN_JSON_SCHEMA);
+  const wire = JSON.stringify(PROBE_PLAN_JSON_SCHEMA);
+  assert.match(wire, /"locator"/);
+  assert.match(wire, /"expectValue"/);
 });
 
 test("Probe Planner rejects executable, selector, and cross-origin operations", () => {
@@ -180,7 +220,9 @@ test("Probe Planner allows one sanitized locator refinement per packet", async (
 
   assert.equal(bodies.length, 1);
   assert.doesNotMatch(bodies[0], /super-secret|abc123/);
-  assert.ok(bodies[0].length < 10_000);
+  const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
+  const refinement = JSON.parse(request.messages[1].content) as { accessibilitySnapshot: string };
+  assert.ok(refinement.accessibilitySnapshot.length <= 4_000);
   await assert.rejects(
     planner.refineLocators(original, "second snapshot"),
     (error: unknown) =>

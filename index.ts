@@ -51,7 +51,8 @@ export async function main(
   envFile: string | null = ".env",
 ): Promise<number> {
   const cli = parseCliArgs(argv);
-  const gateway = readGatewayConfig(await mergeGatewayEnv(env, envFile));
+  const mergedEnv = await mergeGatewayEnv(env, envFile);
+  const gateway = readGatewayConfig(mergedEnv);
   const requirementsFile = join(cli.requirementsDir, "requirements.yaml");
   try {
     await access(requirementsFile);
@@ -60,7 +61,7 @@ export async function main(
   }
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
-  const probePort = parseProbePortOverride(env) ?? (await pickFreePort());
+  const probePort = parseProbePortOverride(mergedEnv) ?? (await pickFreePort());
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
@@ -96,7 +97,7 @@ async function executeProduction(
   const { gateway, pipelineOptions, modelTimeouts } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
-  const runtime = new SdkOpenCodeRuntime(gateway.model);
+  const runtime = new SdkOpenCodeRuntime(gateway);
   const builder = new OpenCodeSdkBuilder(runtime, {
     timeoutMs: modelTimeouts.builderTimeoutMs,
   });

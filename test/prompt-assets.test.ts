@@ -86,6 +86,11 @@ test("each prompt fragment id maps to exactly one file and there are no orphans"
 });
 
 test("fixed system assets keep their Chinese anchors", () => {
+  const platform = loadBuilderPrompt("system", "platform-contract");
+  assert.match(platform, /未设置时使用 3000/);
+  for (const key of ["PROBE_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {
+    assert.ok(platform.includes(`{{${key}}}`));
+  }
   assert.ok(
     loadBuilderPrompt("system", "builder-system").includes("唯一代码实现者"),
   );

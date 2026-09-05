@@ -409,6 +409,81 @@ test("Pipeline E2E ignores misleading success receipt words when probes keep fai
   });
 });
 
+test("Pipeline reports partial when the budget expires with untouched requirements", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    let ticks = 0;
+    const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+      builder, planner: new FakeProbePlanner([]), runner: new PlaywrightProbeRunner(),
+      git: new FakeGitOps(), appLifecycle: new RecordingLifecycle(),
+      clock: { nowMs: () => ticks++ === 0 ? 0 : 60_000 },
+      finalVerifier: new RecordingFinalVerifier(),
+    });
+    assert.equal(summary.status, "partial");
+    assert.deepEqual(summary.verifiedRequirementIds, []);
+    assert.equal(builder.requests.length, 0);
+  });
+});
+
+test("Pipeline stops starting packet repairs once the budget is exhausted", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const git = new FakeGitOps();
+    let time = 0;
+    const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+      builder, planner: new FakeProbePlanner([workingPlan()]), git,
+      runner: { async run(plan) {
+        time = 60_000;
+        return { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [{ caseId: "save", stepIndex: 1, category: "assertion", message: "wrong value" }] };
+      } },
+      appLifecycle: new RecordingLifecycle(), clock: { nowMs: () => time },
+      finalVerifier: new RecordingFinalVerifier(),
+    });
+    assert.equal(builder.requests.length, 1);
+    assert.deepEqual(git.restoredShas, ["baseline"]);
+    assert.equal(summary.status, "partial");
+  });
+});
+
+test("Pipeline restores every unaccepted delivery repair and never reports it as delivered", async () => {
+  for (const outcome of ["completed", "failed", "timed_out"] as const) {
+    await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+      const builder = new FakeBuilder(["completed", outcome]);
+      const git = new FakeGitOps();
+      const finalVerifier = new SequencedFinalVerifier([
+        { ok: false, stage: "build", message: "broken build" },
+        { ok: outcome !== "completed", stage: "browser", message: "repair verification" },
+      ]);
+      const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+        builder, planner: new FakeProbePlanner([workingPlan()]), git, finalVerifier,
+        runner: { async run(plan) { return { packetId: plan.packetId, verdict: "pass", passedCases: plan.cases.map((item) => item.id), failures: [] }; } },
+        appLifecycle: new RecordingLifecycle(), clock: fixedClock(),
+      });
+      assert.equal(summary.status, "failed", outcome);
+      assert.equal(summary.acceptedSha, "accepted");
+      assert.deepEqual(git.restoredShas, ["accepted"]);
+      assert.equal(git.captureMessages.length, 2);
+    });
+  }
+});
+
+test("Pipeline restores the baseline and emits failure when the runner unexpectedly throws", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const git = new FakeGitOps();
+    const arcEvents = new RecordingArcEvents();
+    const lifecycle = new RecordingLifecycle();
+    await assert.rejects(runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+      builder, planner: new FakeProbePlanner([workingPlan()]), git, arcEvents,
+      runner: { async run() { throw new Error("unexpected runner failure"); } },
+      appLifecycle: lifecycle, clock: fixedClock(), finalVerifier: new RecordingFinalVerifier(),
+    }), /unexpected runner failure/);
+    assert.deepEqual(git.restoredShas, ["baseline"]);
+    assert.deepEqual(arcEvents.runnerStates, ["running", "failed"]);
+    assert.equal(lifecycle.stopCount, 1);
+  });
+});
+
 class RecordingLifecycle implements AppLifecycle {
   startCount = 0;
   stopCount = 0;

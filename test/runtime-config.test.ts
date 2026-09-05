@@ -93,6 +93,7 @@ test("Runtime config keeps port 3000 as the default contract port", () => {
 });
 
 test("Runtime config reads the probe port override from the environment", () => {
+  assert.throws(() => parseProbePortOverride({ SHALLOW_PROBE_PORT: "3000" }), /reserved evaluation port/);
   assert.equal(parseProbePortOverride({}), null);
   assert.equal(parseProbePortOverride({ SHALLOW_PROBE_PORT: "3100" }), 3100);
   assert.equal(parseProbePortOverride({ SHALLOW_PROBE_PORT: "  3100  " }), 3100);

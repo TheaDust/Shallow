@@ -16,11 +16,13 @@ npm ci
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `OPENAI_API_KEY` | 网关 API key，只进请求头，不写日志 |
+| `OPENAI_API_KEY` | 网关 API key，交给 Planner 请求头与 OpenCode provider 配置 |
 | `OPENAI_BASE_URL` | OpenAI-compatible 网关地址 |
-| `MODEL` | 模型名称 |
+| `MODEL` | 网关接受的完整模型 ID（含 `/` 时原样传递） |
 
 三个变量可以写入仓库根目录的 `.env` 文件（模板见 `.env.example`，`.env` 不会入库），真实环境变量优先于文件值；credential smoke 同样读取 `.env`。
+
+OpenCode 使用控制器显式配置的 `shallow-gateway` provider，主模型和辅助模型均走上述网关；SDK 服务使用随机空闲端口。运行环境须提供 `opencode` 可执行程序。
 
 启动一次完整运行：
 
@@ -35,6 +37,8 @@ npm start -- --requirements-dir <需求目录> --output-dir <输出目录> --bud
 | `--budget-ms` | 可选，总 wall-clock 预算（非负整数毫秒）；缺省或 `0` 表示不限时 |
 
 运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
+
+`delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
 ## 运行流程总览
 
@@ -60,13 +64,15 @@ flowchart LR
     F --> SM["RunSummary"]
 ```
 
-1. **Catalog**（`src/catalog.ts`）：无损解析需求树，按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；拒绝重复 ID、未知依赖与依赖环。所有 ATOMIC 需求初始为 `todo`。
-2. **Scheduler**（`src/scheduler.ts`）：确定性规则选择 1–3 个依赖全部 `verified` 的 ATOMIC 需求组成 WorkPacket；排序信号依次为具名场景数、直接依赖者数、显式 UI 文本数、声明顺序；packet id 由排序后 ID 的稳定哈希生成，重复调用结果字节级一致。
+1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
+2. **Scheduler**（`src/scheduler.ts`）：确定性规则选择 1–3 个依赖全部 `verified` 的 ATOMIC 需求组成 WorkPacket；排序信号依次为具名场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序；packet id 由选中 ID 的 slug 拼接生成，重复调用结果一致。
 3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 目录的中文资产编译：固定的系统合同 + 按模式填充的任务模板（实现 / 修复 / 根因修复 / 交付修复），并按产品类型与需求关键词挑选实现规则碎片；每次任务附带统一的完成回执（receipt）。修复上下文只包含白名单化的 `ShadowReport` 观测（清洗、截断）；第三次修复要求先给出根因判断再改代码。超时自动 abort 并等待会话落地，返回 `completed / failed / timed_out`。
 4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
 5. **Probe Runner**（`src/judge/playwright-probe-runner.ts`）：真实 Chromium 按白名单执行探针，locator 只映射 `getByRole / getByLabel / getByText`，`goto` 绑定受控 baseUrl，每个 case 使用隔离 context；单步超时 2s、单 case 超时 15s，输出带失败分类（`assertion / locator / navigation / timeout / runner`）的结构化 `ShadowReport`。
 6. **DecisionLoop**（`src/run-state.ts`）与 **GitOps**（`src/git-ops.ts`）：见下两节。
 7. **FinalVerifier**（`src/final-verifier.ts`）：见交付阶段。
+
+ProbePlan 的 JSON Schema 完整描述步骤与 locator 字段；每个 case 必须有断言，计划必须覆盖 packet 中每个需求 ID。空输入与空值断言均合法。每个 case 独立建立其所需前提。
 
 管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件的去向见[运行产物与日志](#运行产物与日志)。
 
@@ -96,6 +102,7 @@ flowchart TD
 - **fail**：存在 locator 之外的失败（断言、导航、超时、runner），或 locator 失败没有任何 aria snapshot。按 attempt 递进——第一次失败进入 attempt 2 修复；第二次失败进入 attempt 3 修复（prompt 要求先做根因分析）；第三次失败调用 `restoreAccepted` 回滚到 accepted SHA 并将该 packet 标记 `blocked`。每个 packet 最多三次 Builder 调用。
 - **inconclusive**：仅当全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，把清洗后的快照交给 Planner 做一次 locator-only refinement（不得改变输入值、断言或步骤数），重跑探针；refinement 不消耗 Builder 修复次数。
 - 判定循环另有迭代上限（6）作为止损保险：超出即回滚并阻塞该 packet。
+- 每次 Builder 尝试前检查预算；预算耗尽时不再开启 packet 修复，回滚未接受的候选并进入交付。
 - 修复 prompt 只包含白名单化的观测结果，Planner 的隐藏推理与目标应用源码不进入修复上下文。
 
 ## 交付阶段
@@ -109,7 +116,7 @@ flowchart TD
     P -->|"是"| FIN["记录 delivery_finished"]
     P -->|"否"| RP["唯一一次交付修复 session（root-cause-first，携带验证失败报告）"]
     RP --> V2["完整重跑 FinalVerifier"]
-    V2 --> P2{"复验通过？"}
+    V2 --> P2{"Builder completed 且复验通过？"}
     P2 -->|"是"| ACC["captureAccepted 接受交付修复"]
     P2 -->|"否"| FAIL["summary = failed，退出码 1"]
     FIN --> SUM["输出 RunSummary"]
@@ -119,7 +126,8 @@ flowchart TD
 
 - FinalVerifier 按固定平台合同执行 install → build → 启动（注入 `PORT`）→ 轮询 `/health` readiness → 用真实浏览器打开根页面做最小 smoke；无论结果如何都终止本次验证启动的进程。
 - 验证失败时启动恰好一次交付修复 session：Builder 收到 root-cause-first 指令与由验证报告转换的失败证据；随后**完整重跑**全部验证步骤，只接受复验通过的修复（`captureAccepted`）。
-- 交付修复恰有一次：复验结束后交付阶段即终止，结果只有接受（`captureAccepted`）或 `failed` 退出。
+- 交付修复最多一次：只有 Builder 返回 `completed` 且复验通过才接受；其余情况恢复 accepted SHA 并以 `failed` 退出。异常 runner 故障同样会停止 Builder、回滚并记录失败。
+- 启动日志持续读取，避免管道塞满；启动命令不存在时返回 readiness 失败。Windows 清理进程树，Linux 使用独立进程组停止启动器及其后代。
 
 ## 运行产物与日志
 
@@ -133,8 +141,8 @@ flowchart TD
 GitOps（`src/git-ops.ts`）细节：
 
 - 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
-- 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**（保证回滚 `reset --hard` + `clean -fd` 后忽略规则仍然生效）；已有 `.gitignore` 保持原样。
-- 回滚 = `reset --hard <acceptedSha>` + `clean -fd`，把输出目录恢复到最后 accepted 状态。
+- 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**；已有文件（包括空文件）保持原样，读取错误直接报告。
+- 回滚先 `reset --mixed <acceptedSha>`，再恢复除 `.arc` 外的已跟踪文件，并 `clean -fd -e .arc/`。应用回到 accepted 状态，`.arc` 保留完整运行事件和当前溯源记录，不加入忽略规则。
 - 单条 git 命令默认 30s 超时，超时杀死子进程并等其退出后报错，避免悬挂与目录句柄泄漏。
 
 ## 预算与超时
@@ -149,6 +157,8 @@ GitOps（`src/git-ops.ts`）细节：
 | 探针单步 / 单 case | 2s / 15s | pipeline 固定 |
 | 构建 / 启动就绪 | 180s / 30s | 平台合同 |
 
+预算控制新 packet 与后续修复的启动，进行中的调用仍受各自超时控制；最终交付独立执行，因此 `--budget-ms` 不是整个进程的强制终止时刻。Builder abort 也有 5s 等待上限；abort 失败或 prompt 在等待结束后仍未落地时关闭运行时，后续修复重启服务。
+
 ## ARC 平台合同
 
 `src/runtime-config.ts` 固定目标应用的平台合同（不来自 LLM 输出）：
@@ -159,7 +169,7 @@ GitOps（`src/git-ops.ts`）细节：
 - `backend/` 执行 `npm run start`，必须读取 `PORT` 环境变量（缺省 3000）
 - 前端通过同源相对路径访问后端，构建产物中不写死主机或端口
 
-端口 3000 是评测端口：平台在评测阶段用它访问网站，生成期占用会被 SIGTERM。因此 ShallowCode 在生成与验证阶段使用独立探针端口——每次运行随机挑选空闲端口，可用 `SHALLOW_PROBE_PORT` 显式指定；Builder prompt 中会写明这两个端口语义。
+端口 3000 是评测端口：平台在评测阶段用它访问网站，生成期占用会被 SIGTERM。因此 ShallowCode 在生成与验证阶段使用独立探针端口——每次运行随机挑选空闲端口，可用环境变量或 `.env` 中的 `SHALLOW_PROBE_PORT` 显式指定（拒绝 3000）；Builder prompt 中会写明这两个端口语义。
 
 无论 OpenCode 选择什么框架，Builder 按此形态产出，判定与交付按此形态验证，保证跨 WorkPacket 的可复现判定。
 

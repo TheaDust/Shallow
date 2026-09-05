@@ -87,8 +87,13 @@ export class GitCliOps implements GitOps {
     if (ancestor.code !== 0) {
       throw new Error(`${sha} is not an accepted ancestor of the output repository`);
     }
-    await requireGit(this.repositoryRoot, ["reset", "--hard", sha]);
-    await requireGit(this.repositoryRoot, ["clean", "-fd"]);
+    // Audit events describe the whole run, including rejected candidates. Keep
+    // them in the worktree while restoring application files and moving HEAD.
+    await requireGit(this.repositoryRoot, ["reset", "--mixed", sha]);
+    await requireGit(this.repositoryRoot, [
+      "restore", "--worktree", "--", ".", ":(top,exclude).arc",
+    ]);
+    await requireGit(this.repositoryRoot, ["clean", "-fd", "-e", ".arc/"]);
   }
 
   private async validateRoot(): Promise<void> {
@@ -172,13 +177,12 @@ export function runGit(
 
 async function ensureIgnoreRules(root: string): Promise<void> {
   const gitignorePath = join(root, ".gitignore");
-  let existing = "";
   try {
-    existing = await readFile(gitignorePath, "utf8");
-  } catch {
-    existing = "";
+    await readFile(gitignorePath, "utf8");
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  if (existing.trim().length > 0) return;
   await writeFile(gitignorePath, GITIGNORE_CONTENT, "utf8");
   await requireGit(root, ["add", ".gitignore"]);
   await requireGit(root, [

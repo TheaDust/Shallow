@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { test } from "node:test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { withTempDir } from "./helpers/temp-dir.js";
 
 import { spawnProcess } from "../src/process-spawn.js";
 
@@ -62,4 +65,17 @@ test("spawnProcess spawns regular executables directly", async () => {
   );
   assert.equal(result.code, 0);
   assert.equal(result.stdout, "ok");
+});
+
+test("spawnProcess preserves Windows batch arguments containing spaces, empty strings and trailing backslashes", { skip: process.platform !== "win32" }, async () => {
+  await withTempDir("shallow-spawn-", async (directory) => {
+    const script = join(directory, "echo args.cmd");
+    const echo = join(directory, "echo.cjs");
+    await writeFile(echo, "process.stdout.write(JSON.stringify(process.argv.slice(2)));");
+    await writeFile(script, `@echo off\r\n"${process.execPath}" "${echo}" %*\r\n`);
+    const args = ["a path with spaces", "", "C:\\path with spaces\\", "argument(with)parentheses"];
+    const result = await collect(spawnProcess(script, args, { shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }));
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), args);
+  });
 });
