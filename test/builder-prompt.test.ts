@@ -181,6 +181,49 @@ test("Builder distinguishes the evaluation default from the probe port", () => {
   assert.match(compiled.taskPrompt, /PORT=3210/);
 });
 
+test("Builder aborts the orphan session when the prompt call fails", async () => {
+  const runtime = new GhostRuntime();
+  runtime.failPrompt = new TypeError("fetch failed");
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.match(result.summary, /fetch failed/);
+  assert.deepEqual(runtime.events, ["prompt-start", "abort"]);
+});
+
+test("Builder keeps the root cause in the failure summary", async () => {
+  const runtime = new GhostRuntime();
+  runtime.failPrompt = Object.assign(new TypeError("fetch failed"), {
+    cause: new Error("Headers Timeout Error (headers timeout: 300000ms)"),
+  });
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.match(result.summary, /fetch failed/);
+  assert.match(result.summary, /Headers Timeout Error/);
+});
+
+test("Builder reports the original failure when the orphan abort also fails", async () => {
+  const runtime = new GhostRuntime();
+  runtime.failPrompt = new TypeError("fetch failed");
+  runtime.failAbort = true;
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.match(result.summary, /fetch failed/);
+  assert.match(result.summary, /OpenCode session abort failed/);
+  assert.deepEqual(runtime.events, ["prompt-start", "abort"]);
+});
+
 test("Builder waits for the prompt to settle after abort before returning timed_out", async () => {
   const runtime = new GhostRuntime();
   const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });
@@ -262,6 +305,7 @@ class RecordingRuntime implements OpenCodeRuntime {
 class GhostRuntime implements OpenCodeRuntime {
   events: string[] = [];
   failAbort = false;
+  failPrompt?: Error;
   private rejectPrompt?: (error: Error) => void;
 
   async start(): Promise<void> {}
@@ -272,6 +316,9 @@ class GhostRuntime implements OpenCodeRuntime {
 
   async prompt(): Promise<string> {
     this.events.push("prompt-start");
+    if (this.failPrompt) {
+      return Promise.reject(this.failPrompt);
+    }
     return new Promise((_resolve, reject) => {
       this.rejectPrompt = reject;
     });
@@ -349,6 +396,7 @@ function projectContextFixture(): BuilderProjectContext {
       rootId: "ROOT",
       rootName: "Demo Product",
       description: "Root description.",
+      seedData: [],
     },
     ancestors: [
       { id: "PROFILE", name: "Profile", description: "Profile area" },
@@ -388,6 +436,7 @@ function requirementFixture(): AtomicRequirement {
       rootId: "ROOT",
       rootName: "Demo Product",
       description: "Root description.",
+      seedData: [],
     },
     ancestors: [
       { id: "PROFILE", name: "Profile", description: "Profile area" },
