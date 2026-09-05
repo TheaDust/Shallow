@@ -4,7 +4,7 @@ ShallowCode 是 OpenCode 之外的一层轻量比赛控制器，面向 GOSIM Fac
 
 > 只实现 OpenCode 因为不知道整场比赛的全局状态而无法可靠实现的部分。
 
-OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、调度 WorkPacket、用独立 LLM 生成黑盒探针、用真实浏览器确定性判定、维护唯一的 accepted SHA，并完成最终交付验证。详细设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`。
+OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、调度 WorkPacket、用独立 LLM 生成黑盒探针、用真实浏览器确定性判定、维护唯一的 accepted SHA，并完成最终交付验证。详细设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`（主设计）、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
 
 ## 快速开始
 
@@ -62,13 +62,13 @@ flowchart LR
 
 1. **Catalog**（`src/catalog.ts`）：无损解析需求树，按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；拒绝重复 ID、未知依赖与依赖环。所有 ATOMIC 需求初始为 `todo`。
 2. **Scheduler**（`src/scheduler.ts`）：确定性规则选择 1–3 个依赖全部 `verified` 的 ATOMIC 需求组成 WorkPacket；排序信号依次为具名场景数、直接依赖者数、显式 UI 文本数、声明顺序；packet id 由排序后 ID 的稳定哈希生成，重复调用结果字节级一致。
-3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。prompt 包含当前 packet 原文、场景、引用与平台合同；第二次修复追加结构化 `ShadowReport`，第三次修复要求先给出根因判断再改代码。超时自动 abort，返回 `completed / failed / timed_out`。
-4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航。
+3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 目录的中文资产编译：固定的系统合同 + 按模式填充的任务模板（实现 / 修复 / 根因修复 / 交付修复），并按产品类型与需求关键词挑选实现规则碎片；每次任务附带统一的完成回执（receipt）。修复上下文只包含白名单化的 `ShadowReport` 观测（清洗、截断）；第三次修复要求先给出根因判断再改代码。超时自动 abort 并等待会话落地，返回 `completed / failed / timed_out`。
+4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
 5. **Probe Runner**（`src/judge/playwright-probe-runner.ts`）：真实 Chromium 按白名单执行探针，locator 只映射 `getByRole / getByLabel / getByText`，`goto` 绑定受控 baseUrl，每个 case 使用隔离 context；单步超时 2s、单 case 超时 15s，输出带失败分类（`assertion / locator / navigation / timeout / runner`）的结构化 `ShadowReport`。
 6. **DecisionLoop**（`src/run-state.ts`）与 **GitOps**（`src/git-ops.ts`）：见下两节。
 7. **FinalVerifier**（`src/final-verifier.ts`）：见交付阶段。
 
-管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件写入追加式 JSONL ledger（系统临时目录 `shallowcode-runs/<运行ID>/run-ledger.jsonl`），写入前自动脱敏 key/token 并截断超长文本。
+管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件的去向见[运行产物与日志](#运行产物与日志)。
 
 ## 单个 WorkPacket 的判定循环
 
@@ -90,12 +90,13 @@ flowchart TD
     A3 --> A
 ```
 
-判定规则：
+判定规则（`deriveProbeVerdict`）：
 
-- **pass**：`captureAccepted` 更新 accepted SHA，packet 需求标记 `verified`，继续调度。
-- **fail**：按 attempt 递进——第一次失败进入 attempt 2 修复；第二次失败进入 attempt 3 修复（prompt 要求先做根因分析）；第三次失败调用 `restoreAccepted` 回滚到 accepted SHA 并将该 packet 标记 `blocked`。每个 packet 最多三次 Builder 调用。
-- **inconclusive**：仅当失败分类为 `locator` 且携带 aria snapshot 时，把清洗后的快照交给 Planner 做一次 locator-only refinement（不得改变输入值、断言或步骤数），重跑探针；refinement 不消耗 Builder 修复次数。
-- 修复 prompt 只包含观测到的 `ShadowReport`，Planner 的隐藏推理与目标应用源码不进入修复上下文。
+- **pass**：没有任何失败。`captureAccepted` 更新 accepted SHA，packet 需求标记 `verified`，继续调度。
+- **fail**：存在 locator 之外的失败（断言、导航、超时、runner），或 locator 失败没有任何 aria snapshot。按 attempt 递进——第一次失败进入 attempt 2 修复；第二次失败进入 attempt 3 修复（prompt 要求先做根因分析）；第三次失败调用 `restoreAccepted` 回滚到 accepted SHA 并将该 packet 标记 `blocked`。每个 packet 最多三次 Builder 调用。
+- **inconclusive**：仅当全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，把清洗后的快照交给 Planner 做一次 locator-only refinement（不得改变输入值、断言或步骤数），重跑探针；refinement 不消耗 Builder 修复次数。
+- 判定循环另有迭代上限（6）作为止损保险：超出即回滚并阻塞该 packet。
+- 修复 prompt 只包含白名单化的观测结果，Planner 的隐藏推理与目标应用源码不进入修复上下文。
 
 ## 交付阶段
 
@@ -120,13 +121,31 @@ flowchart TD
 - 验证失败时启动恰好一次交付修复 session：Builder 收到 root-cause-first 指令与由验证报告转换的失败证据；随后**完整重跑**全部验证步骤，只接受复验通过的修复（`captureAccepted`）。
 - 交付修复恰有一次：复验结束后交付阶段即终止，结果只有接受（`captureAccepted`）或 `failed` 退出。
 
+## 运行产物与日志
+
+每次运行产生四类可观测产物：
+
+- **stderr**：每个运行事件一行脱敏 JSON（`key/token/password/secret/cookie` 字段替换为 `[redacted]`，超长文本截断到 1500 字符），覆盖 `pipeline_started / packet_selected / builder_started / builder_finished / probe_planned / probe_finished / probe_refined / packet_accepted / packet_blocked / delivery_* / pipeline_finished` 等全部阶段。
+- **run-log.txt（人类可读）**：与 ledger 同目录的中文运行日志，每个事件一行 `[本地时间 +耗时] 描述`（如 `[14:02:13 +2m13s] Builder 完成（auth-login）`）；启动时会把该文件的绝对路径打印到 stderr。
+- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<运行ID>/run-ledger.jsonl`，与 stderr 同源同脱敏，仅审计用。
+- **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
+
+GitOps（`src/git-ops.ts`）细节：
+
+- 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
+- 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**（保证回滚 `reset --hard` + `clean -fd` 后忽略规则仍然生效）；已有 `.gitignore` 保持原样。
+- 回滚 = `reset --hard <acceptedSha>` + `clean -fd`，把输出目录恢复到最后 accepted 状态。
+- 单条 git 命令默认 30s 超时，超时杀死子进程并等其退出后报错，避免悬挂与目录句柄泄漏。
+
 ## 预算与超时
 
 | 超时 | 值 | 来源 |
 | --- | --- | --- |
 | 总预算 | `--budget-ms`，缺省或 `0` 为不限时 | CLI |
-| Builder 单次调用 | 预算的 40%，下限 30s、上限 240s；不限时取 240s | `deriveModelTimeouts` |
-| Planner 单次调用 | 预算的 10%，下限 10s、上限 60s；不限时取 60s | `deriveModelTimeouts` |
+| Builder 单次调用 | 预算的 40%，下限 30s、上限 1200s；不限时取 1200s | `deriveModelTimeouts` |
+| Planner 单次调用 | 预算的 10%，下限 10s、上限 720s；不限时取 720s | `deriveModelTimeouts` |
+| Builder 超时后落地等待 | 5s（可经 `promptSettleTimeoutMs` 配置） | `OpenCodeSdkBuilder` |
+| git 单命令 | 30s | `runGit` |
 | 探针单步 / 单 case | 2s / 15s | pipeline 固定 |
 | 构建 / 启动就绪 | 180s / 30s | 平台合同 |
 
@@ -166,11 +185,12 @@ python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 - `<交付目录>/.arc/runner-events.jsonl`：`runner_state` / `requirement_state` / `signal` 事件流（`src/arc-protocol.ts`，时间戳为 UTC `YYYY-MM-DD HH:MM:SS`）
 - `<交付目录>/.arc/traceability/*.json`：七张溯源表——requirements、scenarios（从需求树生成）、node_states（随 accept/block 更新），其余表保留空对象
+- `signal` 事件：`git_commit`（每次 accept 刷新提交历史）、`builder_receipt_recorded`（Builder 完成回执的脱敏摘要）、`requirement_tree_stored`
 - 交付仓库的 git 提交历史（`captureAccepted` 每次 accept 自动产生）
 
 工程要点：
 
-- 关键运行事件同时镜像到 stderr（平台会截断长 stdout）
+- 运行事件以脱敏 JSON 行镜像到 stderr，人类可读中文日志见 run-log.txt（启动时打印路径）
 - 上传上限约 50MB：本仓库不含 node_modules 与浏览器二进制，Playwright Chromium 在评测机运行时下载
 - 评测机是共享的：探针端口随机化、每个 case 隔离 context、不依赖本地残留状态
 - UI 契约（写入 Builder prompt）：关键输入用 `type="text"`、每个字段配可见 `<label>`、校验错误用 JS 输出文字而不用 HTML5 `required`、按钮用带纯文本的 `<button>`
@@ -192,7 +212,7 @@ npm run test:browser     # 真实 Chromium 浏览器测试
 npm run test:all         # 以上全部
 ```
 
-无凭证测试使用 `FakeBuilder` / `FakeProbePlanner`（仅存在于 `test/`）加真实 Playwright 跑通 `schedule → build → plan → judge → accept/repair/restore → final verify` 全链路，覆盖 accept、修复后通过、三次失败后 restore/block、locator refinement 与交付修复 + 完整复验。
+无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`（仅存在于 `test/fakes/`）加真实 Playwright 跑通 `schedule → build → plan → judge → accept/repair/restore → final verify` 全链路，覆盖 accept、修复后通过、三次失败后 restore/block、locator refinement、builder 超时落地等待、git 超时与忽略规则、交付修复 + 完整复验。
 
 真实 OpenCode / LLM 集成由 credential smoke 覆盖：
 
@@ -205,29 +225,47 @@ npm run smoke:credentials
 ## 目录结构
 
 ```text
-main.py                     ARC-Bench 适配包入口：参数解析、Node 运行时准备、驱动管线
-index.ts                    生产入口：参数解析、.env 加载、凭证装配、退出码
+main.py                        ARC-Bench 适配包入口：参数解析、Node 运行时准备、驱动管线
+index.ts                       生产入口：CLI、.env 加载、凭证装配、依赖注入、退出码
+prompts/
+  system/                      Builder 系统合同、四类任务模板（实现/修复/根因修复/交付修复）、action 与 receipt 资产
+  fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
 src/
-  cli.ts                    纯函数 CLI 参数解析
-  catalog.ts / scheduler.ts 需求解析与确定性调度
-  builder/                  OpenCode SDK Builder（窄端口 + prompt + 适配器）
-  judge/                    ProbePlan schema、LLM Planner、Playwright Runner
-  run-state.ts              DecisionLoop、RunState、追加式 ledger
-  arc-protocol.ts           平台 .arc/ 事件流与溯源表写入
-  git-ops.ts                captureAccepted / restoreAccepted
-  pipeline.ts               依赖注入式编排
-  final-verifier.ts         交付验证 + 交付修复
-  runtime-config.ts         网关配置、预算派生、平台合同、探针端口
+  types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
+  cli.ts                       严格 CLI 参数解析
+  catalog.ts                   requirements.yaml → 需求树（重复/依赖/环校验）
+  scheduler.ts                 无模型确定性调度（1–3 个依赖全 verified 的需求）
+  pipeline.ts                  依赖注入编排：packet 循环、修复梯子、交付窗口、事件记录
+  run-state.ts                 判定决策、运行状态、脱敏 ledger 与 logSink
+  git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
+  final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke）与 CommandAppLifecycle
+  arc-protocol.ts              .arc/ 事件流、七张溯源表、builder 回执信号
+  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口
+  process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
+  human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
+  builder/
+    port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
+    opencode-sdk.ts            OpenCode SDK 适配：短会话、超时 abort + 落地等待
+    prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
+    prompt-assets.ts           prompts/ 资产加载与 {{占位符}} 模板填充
+    prompt-fragments.ts        产品词典 → fragments 选择
+    shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
+  judge/
+    probe-schema.ts            ProbePlan 白名单 schema 与 locator-only refinement 校验
+    llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、一次 locator refinement）
+    playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
 test/
-  fakes/ fixtures/ helpers/ 测试专用 fake 与 fixture（不属于生产架构）
-data/
-  guthub/                   比赛需求样例：原文、结构化 YAML、中文 YAML
-  sheet/                    同上
+  *.test.ts                    单元/集成测试（含无凭证全链路 e2e）
+  browser/                     真实 Chromium 测试
+  fakes/ fixtures/ helpers/    测试专用 fake、fixture app 与工具（不属于生产架构）
+docs/superpowers/              设计文档（specs/）与实施计划（plans/）
+data/guthub、data/sheet        比赛需求样例
 ```
 
 ## 设计边界
 
-- 生产路径只有一个业务代码 Builder：OpenCode SDK。
-- Probe Planner 看不到目标应用源码、diff 与 OpenCode 对话；Builder 看不到官方测试与评分反馈。
+- 生产路径只有一个业务代码 Builder：OpenCode SDK；ShallowCode 不新增第二套源码编辑工具。
+- Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），代码只负责组装与填充。
+- Probe Planner 看不到目标应用源码、diff 与 OpenCode 对话；Builder 只看到白名单化的观测（清洗 + 截断），看不到官方测试与评分反馈。
 - Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
-- 失败次数有硬上限（每个 packet 最多两次修复，交付阶段最多一次修复），失败总能回到最后 accepted SHA。
+- 失败次数有硬上限（每个 packet 最多两次修复、判定循环 6 次迭代上限，交付阶段最多一次修复），失败总能回到最后 accepted SHA。
