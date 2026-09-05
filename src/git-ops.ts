@@ -1,4 +1,4 @@
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { spawnProcess } from "./process-spawn.js";
@@ -26,13 +26,18 @@ export class GitCliOps implements GitOps {
     await mkdir(requested, { recursive: true });
     const canonical = await realpath(requested);
     let rootResult = await runGit(canonical, ["rev-parse", "--show-toplevel"], true);
-    if (rootResult.code !== 0) {
+    const hadRepository = rootResult.code === 0;
+    if (!hadRepository) {
+      await requireEmptyOutputDirectory(canonical);
       await requireGit(canonical, ["init"]);
       rootResult = await requireGit(canonical, ["rev-parse", "--show-toplevel"]);
     }
     const actualRoot = await realpath(rootResult.stdout.trim());
     if (!samePath(actualRoot, canonical)) {
       throw new Error(`Output directory must be a Git repository root: ${canonical}`);
+    }
+    if (hadRepository) {
+      await discardPreviousRunResidue(canonical);
     }
     await ensureIgnoreRules(canonical);
     return new GitCliOps(canonical);
@@ -195,6 +200,62 @@ async function ensureIgnoreRules(root: string): Promise<void> {
     "-m",
     "chore: add ShallowCode ignore rules",
   ]);
+}
+
+const SHALLOW_ROOT_COMMIT_SUBJECTS = new Set([
+  "shallow: initial state",
+  "chore: add ShallowCode ignore rules",
+]);
+
+async function requireEmptyOutputDirectory(root: string): Promise<void> {
+  const entries = await readdir(root);
+  const unexpected = entries.filter((name) => name !== ".gitignore");
+  if (unexpected.length > 0) {
+    throw new Error(
+      `Output directory must be empty before the first run: ${root} (found: ${unexpected.slice(0, 5).join(", ")})`,
+    );
+  }
+}
+
+async function discardPreviousRunResidue(root: string): Promise<void> {
+  const rootCommit = await runGit(root, ["rev-list", "--max-parents=0", "HEAD"], true);
+  const dirt = await uncommittedEntries(root);
+  const ours =
+    rootCommit.code === 0 &&
+    SHALLOW_ROOT_COMMIT_SUBJECTS.has(
+      (await requireGit(root, ["log", "-1", "--format=%s", rootCommit.stdout.trim()]))
+        .stdout.trim(),
+    );
+  if (!ours) {
+    if (dirt.length > 0) {
+      throw new Error(
+        `Output directory has uncommitted changes from outside ShallowCode: ${root} (${dirt.length} entries: ${dirt
+          .slice(0, 3)
+          .map((entry) => entry.slice(3))
+          .join(", ")})`,
+      );
+    }
+    return;
+  }
+  if (dirt.length > 0) {
+    await requireGit(root, ["reset", "--hard", "HEAD"]);
+    await requireGit(root, ["clean", "-fd", "-e", ".arc/"]);
+  }
+  await rm(join(root, ".arc", "runner-events.jsonl"), { force: true });
+}
+
+async function uncommittedEntries(root: string): Promise<string[]> {
+  const status = await requireGit(root, [
+    "status",
+    "--porcelain",
+    "--",
+    ".",
+    ":(top,exclude).arc",
+  ]);
+  return status.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
 }
 
 function samePath(left: string, right: string): boolean {

@@ -118,3 +118,77 @@ test("GitOps keeps an existing empty ignore file unchanged", async () => {
     assert.equal(await readFile(join(directory, ".gitignore"), "utf8"), "");
   });
 });
+
+async function initRepoWithRootCommit(
+  directory: string,
+  rootMessage: string,
+): Promise<void> {
+  await execFileAsync("git", ["init"], { cwd: directory });
+  await writeFile(join(directory, ".gitignore"), "node_modules/\n", "utf8");
+  await writeFile(join(directory, "app.txt"), "committed", "utf8");
+  await execFileAsync("git", ["add", "-A"], { cwd: directory });
+  await execFileAsync(
+    "git",
+    ["-c", "user.name=setup", "-c", "user.email=setup@local.invalid", "commit", "-m", rootMessage],
+    { cwd: directory },
+  );
+}
+
+test("GitOps open cleans crash residue left by an interrupted ShallowCode run", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await initRepoWithRootCommit(directory, "shallow: initial state");
+    await writeFile(join(directory, "app.txt"), "half-written orphan", "utf8");
+    await mkdir(join(directory, "backend"));
+    await writeFile(join(directory, "backend", "leftover.js"), "orphan", "utf8");
+    await mkdir(join(directory, ".arc"));
+    const events = join(directory, ".arc", "runner-events.jsonl");
+    await writeFile(events, "stale event\n", "utf8");
+
+    await GitCliOps.open(directory);
+
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "committed");
+    await assert.rejects(access(join(directory, "backend", "leftover.js")));
+    await assert.rejects(access(events));
+  });
+});
+
+test("GitOps open removes the stale runner event stream from a clean ShallowCode repository", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await initRepoWithRootCommit(directory, "shallow: initial state");
+    await mkdir(join(directory, ".arc"));
+    const events = join(directory, ".arc", "runner-events.jsonl");
+    await writeFile(events, "stale event\n", "utf8");
+
+    await GitCliOps.open(directory);
+
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "committed");
+    await assert.rejects(access(events));
+  });
+});
+
+test("GitOps open refuses to clean a dirty repository it did not create", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await initRepoWithRootCommit(directory, "user's own baseline");
+    const scratch = join(directory, "scratch.txt");
+    await writeFile(scratch, "user scratch", "utf8");
+
+    await assert.rejects(
+      GitCliOps.open(directory),
+      /uncommitted changes from outside ShallowCode/,
+    );
+    assert.equal(await readFile(scratch, "utf8"), "user scratch");
+  });
+});
+
+test("GitOps open refuses a fresh directory that is not empty", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    const stray = join(directory, "stray.txt");
+    await writeFile(stray, "stray", "utf8");
+
+    await assert.rejects(
+      GitCliOps.open(directory),
+      /must be empty before the first run/,
+    );
+    assert.equal(await readFile(stray, "utf8"), "stray");
+  });
+});
