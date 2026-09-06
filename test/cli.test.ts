@@ -21,15 +21,33 @@ test("CLI resolves required paths and parses a positive budget", () => {
   });
 });
 
-test("CLI rejects a missing required path", () => {
+test("CLI applies the configured default output directory when --output-dir is omitted", () => {
+  const parsed = parseCliArgs(
+    ["--requirements-dir", "C:/fixture/requirements", "--budget-ms", "600000"],
+    { defaultOutputDir: "C:/fixture/default-output" },
+  );
+
+  assert.equal(parsed.outputDir, resolve("C:/fixture/default-output"));
+});
+
+test("CLI prefers an explicit --output-dir over the configured default", () => {
+  const parsed = parseCliArgs(
+    [
+      "--requirements-dir",
+      "C:/fixture/requirements",
+      "--output-dir",
+      "C:/fixture/output",
+    ],
+    { defaultOutputDir: "C:/fixture/default-output" },
+  );
+
+  assert.equal(parsed.outputDir, resolve("C:/fixture/output"));
+});
+
+test("CLI rejects a missing --output-dir when no default is configured", () => {
   assert.throws(
     () =>
-      parseCliArgs([
-        "--requirements-dir",
-        "C:/fixture/requirements",
-        "--budget-ms",
-        "600000",
-      ]),
+      parseCliArgs(["--requirements-dir", "C:/fixture/requirements", "--budget-ms", "600000"]),
     /--output-dir/,
   );
 });

@@ -1,9 +1,18 @@
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 export interface CliOptions {
   requirementsDir: string;
   outputDir: string;
   budgetMs: number;
+}
+
+export interface CliParseOptions {
+  defaultOutputDir?: string;
+}
+
+export function localDefaultOutputDir(entry: "main" | "baseline"): string {
+  return join(tmpdir(), "shallowcode-local", entry);
 }
 
 const KNOWN_OPTIONS = new Set([
@@ -12,7 +21,10 @@ const KNOWN_OPTIONS = new Set([
   "--budget-ms",
 ]);
 
-export function parseCliArgs(argv: string[]): CliOptions {
+export function parseCliArgs(
+  argv: string[],
+  options: CliParseOptions = {},
+): CliOptions {
   const values = new Map<string, string>();
 
   for (let index = 0; index < argv.length; index += 2) {
@@ -29,7 +41,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
   }
 
   const requirementsDir = required(values, "--requirements-dir");
-  const outputDir = required(values, "--output-dir");
+  const outputDir = values.get("--output-dir") ?? options.defaultOutputDir;
+  if (outputDir === undefined) {
+    throw new Error("Missing required argument: --output-dir");
+  }
   const budgetText = values.get("--budget-ms") ?? "0";
   const budgetMs = Number(budgetText);
   if (!Number.isSafeInteger(budgetMs) || budgetMs < 0) {

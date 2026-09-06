@@ -9,7 +9,7 @@ import {
   SdkOpenCodeRuntime,
 } from "./src/builder/opencode-sdk.js";
 import { ArcEventSink } from "./src/arc-protocol.js";
-import { parseCliArgs } from "./src/cli.js";
+import { localDefaultOutputDir, parseCliArgs } from "./src/cli.js";
 import { CommandAppLifecycle, FinalVerifier } from "./src/final-verifier.js";
 import { GitCliOps } from "./src/git-ops.js";
 import { HumanRunFormatter } from "./src/human-log.js";
@@ -51,7 +51,7 @@ export async function main(
   execute: AgentExecution = executeProduction,
   envFile: string | null = ".env",
 ): Promise<number> {
-  const cli = parseCliArgs(argv);
+  const cli = parseCliArgs(argv, { defaultOutputDir: localDefaultOutputDir("main") });
   const mergedEnv = await mergeGatewayEnv(env, envFile);
   const gateway = readGatewayConfig(mergedEnv);
   const requirementsFile = join(cli.requirementsDir, "requirements.yaml");

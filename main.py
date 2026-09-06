@@ -6,7 +6,8 @@ Contract (see https://github.com/octos-org/arc-adapter):
     python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 - requirement_path: argv[1] or env ARCBENCH_TASK_DIR
-- output dir:       --output-dir or env ARCBENCH_TEMPLATE_DIR
+- output dir:       --output-dir or env ARCBENCH_TEMPLATE_DIR; when both are
+                    absent the TS entry defaults to <system tmp>/shallowcode-local/main
 - model channel:    OPENAI_API_KEY / OPENAI_BASE_URL / MODEL (injected by the platform,
                     optionally merged from a local .env by the TS pipeline)
 
@@ -20,9 +21,11 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ARC_EVAL_PORT = 3000
+DEFAULT_OUTPUT_SUBDIR = "shallowcode-local/main"
 
 
 def npm_cmd() -> str:
@@ -104,13 +107,13 @@ def main() -> int:
     if not args.requirement_path:
         log("missing requirement directory: pass argv[1] or set ARCBENCH_TASK_DIR")
         return 2
-    if not args.output_dir:
-        log("missing output directory: pass --output-dir or set ARCBENCH_TEMPLATE_DIR")
-        return 2
 
     root = Path(__file__).resolve().parent
     requirement_dir = Path(args.requirement_path).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+    output_dir = Path(args.output_dir or (Path(tempfile.gettempdir()) / DEFAULT_OUTPUT_SUBDIR))
+    if not args.output_dir:
+        log(f"no --output-dir given; using default {output_dir}")
+    output_dir = output_dir.expanduser().resolve()
 
     if not (requirement_dir / "requirements.yaml").is_file():
         log(f"requirements.yaml not found under {requirement_dir}")

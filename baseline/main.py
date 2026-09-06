@@ -10,6 +10,9 @@ The Python layer resolves paths, prepares the Node runtime, and drives
 `baseline/index.ts`, which feeds one ROOT-child subtree at a time to OpenCode in
 a single session (mirroring the official codex reference implementation). No
 probes, no judge, no repair loop, no git checkpoints.
+
+When neither --output-dir nor ARCBENCH_TEMPLATE_DIR is given, the TS entry
+defaults the delivery directory to <system tmp>/shallowcode-local/baseline.
 """
 
 from __future__ import annotations
@@ -18,7 +21,10 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+DEFAULT_OUTPUT_SUBDIR = "shallowcode-local/baseline"
 
 
 def npm_cmd() -> str:
@@ -92,14 +98,14 @@ def main() -> int:
     if not args.requirement_path:
         log("missing requirement directory: pass argv[1] or set ARCBENCH_TASK_DIR")
         return 2
-    if not args.output_dir:
-        log("missing output directory: pass --output-dir or set ARCBENCH_TEMPLATE_DIR")
-        return 2
 
     root = Path(__file__).resolve().parent
     repo_root = root.parent
     requirement_dir = Path(args.requirement_path).expanduser().resolve()
-    output_dir = Path(args.output_dir).expanduser().resolve()
+    output_dir = Path(args.output_dir or (Path(tempfile.gettempdir()) / DEFAULT_OUTPUT_SUBDIR))
+    if not args.output_dir:
+        log(f"no --output-dir given; using default {output_dir}")
+    output_dir = output_dir.expanduser().resolve()
 
     if not (requirement_dir / "requirements.yaml").is_file():
         log(f"requirements.yaml not found under {requirement_dir}")

@@ -6,7 +6,7 @@ import { parse } from "yaml";
 import { SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
 import type { OpenCodePromptInput } from "../src/builder/opencode-sdk.js";
 import { ArcEventSink } from "../src/arc-protocol.js";
-import { parseCliArgs } from "../src/cli.js";
+import { localDefaultOutputDir, parseCliArgs } from "../src/cli.js";
 import {
   deriveModelTimeouts,
   readEnvFile,
@@ -27,7 +27,7 @@ export async function baselineMain(
   env: Record<string, string | undefined> = process.env,
   envFile: string | null = resolve(fileURLToPath(new URL("../.env", import.meta.url))),
 ): Promise<number> {
-  const cli = parseCliArgs(argv);
+  const cli = parseCliArgs(argv, { defaultOutputDir: localDefaultOutputDir("baseline") });
   const mergedEnv = await mergeGatewayEnv(env, envFile);
   const gateway = readGatewayConfig(mergedEnv);
   const requirementsFile = join(cli.requirementsDir, "requirements.yaml");

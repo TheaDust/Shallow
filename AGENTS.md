@@ -46,7 +46,7 @@ prompts/                        Builder prompt 资产（全部中文 Markdown，
 
 src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
-  cli.ts                        parseCliArgs：严格解析 --requirements-dir/--output-dir/--budget-ms
+  cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树与 ProductContext.seedData；校验 ID 和依赖
   scheduler.ts                  selectNextPacket：无模型确定性调度，1–3 个依赖全 verified 的需求
   pipeline.ts                   编排核心：packet 循环、runShadowProbes、修复梯子、交付窗口、
@@ -111,25 +111,25 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 
 ## CLI 与运行契约
 
-`npm start -- --requirements-dir <dir> --output-dir <dir> [--budget-ms <ms>]`（严格解析：只认这三个 flag，且必须 `--key value` 成对出现，未知/缺值直接抛错；`--budget-ms` 可选，缺省或 `0` 表示不限时，管线在没有 ready 需求后进入交付）。
+`npm start -- --requirements-dir <dir> [--output-dir <dir>] [--budget-ms <ms>]`（严格解析：只认这三个 flag，且必须 `--key value` 成对出现，未知/缺值直接抛错；`--output-dir` 可选，缺省 `<系统临时目录>/shallowcode-local/<main|baseline>`——主线与 baseline 各用各的，绝不共用；`--budget-ms` 可选，缺省或 `0` 表示不限时，管线在没有 ready 需求后进入交付）。
 
 ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]`（契约见 `octos-org/arc-adapter`）。`main.py` 只做参数解析、Node 运行时准备与驱动 TS 管线，不写业务逻辑。
 
-本地固定用 `tmp/main`（主线）与 `tmp/baseline`（baseline）两个输出目录（已 gitignore，每次运行前需手动清空：`Remove-Item -Recurse -Force tmp/main, tmp/baseline`；两个入口绝不共用 output-dir，否则 `.arc` 会混写）。完整命令（在仓库根执行）：
+本地运行缺省把产物写到**项目外**的系统临时目录：主线 `%TEMP%\shallowcode-local\main`、baseline `%TEMP%\shallowcode-local\baseline`（两个入口各用各的，绝不共用 output-dir，否则 `.arc` 会混写）。目录在仓库外，`GitCliOps.open` 会自动 `git init`，无需任何预置；重跑同一目录时残留清理会复位到上次接受状态（保留已接受提交），想全新开始就整个删掉目录（含 `.git` 也可直接删）。评测/固定目录用显式 `--output-dir` 或 `ARCBENCH_TEMPLATE_DIR`。完整命令（在仓库根执行）：
 
 ```powershell
-# 主线（ShallowCode 管线）：以 sheet 题目为例
-npm start -- --requirements-dir data/sheet --output-dir tmp/main
+# 主线（ShallowCode 管线）：以 sheet 题目为例，产物缺省到 %TEMP%\shallowcode-local\main
+npm start -- --requirements-dir data/sheet
 # 或走评测同款适配入口
-python main.py data/sheet --output-dir tmp/main --type web
+python main.py data/sheet --type web
 
-# baseline（raw OpenCode 对照）
-python baseline/main.py data/sheet --output-dir tmp/baseline --type web
+# baseline（raw OpenCode 对照），产物缺省到 %TEMP%\shallowcode-local\baseline
+python baseline/main.py data/sheet --type web
 # 或直接驱动 TS
-npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baseline
+npx tsx baseline/index.ts --requirements-dir data/sheet
 ```
 
-题目换成 `data/github` 即跑另一道题。网关三变量在 `.env`；注意 `ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），所以本地命令一律显式传 `--output-dir`。
+题目换成 `data/github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000），暴露 `/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。
