@@ -61,6 +61,7 @@ src/
   runtime-config.ts             readGatewayConfig、readEnvFile（.env）、createArcPlatformContract、
                                 deriveModelTimeouts（预算→Builder/Planner 超时）、SHALLOW_PROBE_PORT、pickFreePort
   process-spawn.ts              spawnProcess：Windows .cmd/bat 经 cmd.exe 启动并拒绝 shell 元字符；其余直接 spawn
+  execution-fault.ts            ExecutionFault：浏览器执行故障、Builder 运行时启动故障；与 Shadow 判词分离
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
@@ -155,6 +156,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 6. **Builder 不做局部决策之外的事**：选型、文件结构、局部构建修复都归 OpenCode；ShallowCode 不新增第二套源码编辑工具。
 7. **Builder prompt 外置**：所有 Builder 文案在 `prompts/` 中文资产里；`src/builder/` 只做组装。改文案改 `.md`，改结构改 `prompt.ts`/`prompt-fragments.ts`，两者都要同步 `test/builder-prompt.test.ts` 与 `test/prompt-assets.test.ts` 的锚点断言。
 8. **超时自愈**：git 单命令 30s；Builder 超时后对 abort 与 prompt 落地各给最多 5s（`promptSettleTimeoutMs`）。abort 失败或落地超时则关闭运行时，下一次调用重启。每次 packet 尝试前检查预算；预算不强行中断已开始的调用或最终交付。
+9. **故障分配**：按 `ExecutionFault` 与 `ProbePlannerError` 的结构化来源处理基础设施故障。浏览器每 packet 至多重试一次（含精化后执行），保持候选和计划、检查总预算；业务失败继续使用三次 Builder 上限。locator-only 经一次精化仍无有效证据、无效计划修正耗尽时阻塞 packet。Planner 鉴权/协议及运行时启动故障终止本轮；最终验证另有一次浏览器基础设施重试。具体规则与数据恢复限制见 README“故障来源与修复机会”；改动时验证 `test/probe-infrastructure.test.ts`、`test/pipeline.e2e.test.ts`、`test/llm-probe-planner.test.ts` 和 `test/human-log.test.ts`。
 
 调度器（`src/scheduler.ts`）是确定性规则：只选依赖全 verified 的 todo 需求；先选种子，再加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求。修改排序或关联规则时验证 `test/scheduler.test.ts`。
 

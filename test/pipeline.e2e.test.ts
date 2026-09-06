@@ -10,6 +10,7 @@ import type {
 } from "../src/builder/port.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
+import { ExecutionFault } from "../src/execution-fault.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
 import type {
   FinalVerificationReport,
@@ -358,6 +359,117 @@ test(`Pipeline recovers from planner ${failure} failure with scoped retry feedba
     assert.equal(builder.requests.length, 1);
   });
 });
+}
+
+for (const scenario of ["recover", "exhausted", "product", "budget", "third-attempt", "shared-quota"] as const) {
+  test(`Pipeline allocates browser recovery separately from Builder attempts: ${scenario}`, async () => {
+    await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+      const builder = new FakeBuilder();
+      const planner = new FakeProbePlanner([workingPlan()]);
+      const plans: ProbePlan[] = [];
+      let time = 1000;
+      const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+        builder, planner, git: new FakeGitOps(["baseline", "accepted"]),
+        appLifecycle: new RecordingLifecycle(), clock: { nowMs: () => time },
+        finalVerifier: new RecordingFinalVerifier(), runner: { run: async (plan) => {
+          plans.push(structuredClone(plan));
+          if (scenario === "budget") time = 1_000_000;
+          if ((scenario !== "product" && scenario !== "third-attempt" && (plans.length === 1 || scenario === "exhausted")) ||
+            ((scenario === "third-attempt" || scenario === "shared-quota") && plans.length === 3)) {
+            throw new ExecutionFault("browser", "browser_disconnected", true);
+          }
+          return scenario === "product" || scenario === "third-attempt" || scenario === "shared-quota"
+            ? { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [
+              { caseId: "save-profile", stepIndex: 1, category: "assertion", message: "application HTTP 500, wrong product result" },
+            ] }
+            : { packetId: plan.packetId, verdict: "pass", passedCases: ["save-profile"], failures: [] };
+        } },
+      });
+      const expectedBuilders = scenario === "shared-quota" ? 2 : scenario === "product" || scenario === "third-attempt" ? 3 : 1;
+      assert.equal(builder.requests.length, expectedBuilders);
+      assert.equal(plans.length, scenario === "third-attempt" ? 4 : scenario === "product" || scenario === "shared-quota" ? 3 : scenario === "budget" ? 1 : 2);
+      assert.equal(planner.packets.length, 1);
+      for (const plan of plans) assert.deepEqual(plan, plans[0]);
+      assert.equal(summary.status, scenario === "recover" ? "delivered" : "partial");
+      const events = (await readFile(ledgerFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as RunEvent);
+      assert.deepEqual(events.filter((event) => event.type === "builder_started").map((event) => event.detail?.attempt),
+        Array.from({ length: expectedBuilders }, (_, index) => index + 1));
+      if (scenario === "product") assert.equal(events.filter((event) => event.type === "execution_fault").length, 0);
+    });
+  });
+}
+
+for (const status of [400, 401, 403, 404]) {
+  test(`Pipeline stops on Planner HTTP ${status} without repairing the app`, async () => {
+    await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+      let calls = 0;
+      const builder = new FakeBuilder();
+      const git = new FakeGitOps(["baseline"]);
+      const finalVerifier = new RecordingFinalVerifier();
+      const planner = new LlmProbePlanner({ baseUrl: "https://gateway.example/v1", apiKey: "test", model: "test", timeoutMs: 1000 },
+        async () => { calls += 1; return new Response("error", { status }); });
+      await assert.rejects(runPipeline({ ...options(requirementsFile, outputDir, ledgerFile), plannerRetryDelayMs: 0 }, {
+        builder, planner, git, finalVerifier, runner: new PlaywrightProbeRunner(),
+        appLifecycle: new RecordingLifecycle(), clock: fixedClock(),
+      }), new RegExp(`HTTP ${status}`));
+      assert.equal(calls, 1);
+      assert.equal(builder.requests.length, 1);
+      assert.equal(finalVerifier.calls, 0);
+      assert.deepEqual(git.restoredShas, ["baseline"]);
+    });
+  });
+}
+
+for (const crash of [false, true]) {
+  test(`Locator refinement stays Judge-owned when it ${crash ? "is followed by a browser crash" : "cannot resolve the locator"}`, async () => {
+    await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+      const builder = new FakeBuilder();
+      const planner = new FakeProbePlanner([workingPlan()]);
+      const plans: ProbePlan[] = [];
+      const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+        builder, planner, git: new FakeGitOps(["baseline", "accepted"]), appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(), finalVerifier: new RecordingFinalVerifier(),
+        runner: { run: async (plan) => {
+          plans.push(structuredClone(plan));
+          if (crash && plans.length === 2) throw new ExecutionFault("browser", "browser_disconnected", true);
+          return crash && plans.length === 3
+            ? { packetId: plan.packetId, verdict: "pass", failures: [], passedCases: ["save-profile"] }
+            : { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [
+              { caseId: "save-profile", stepIndex: 1, category: "locator", message: "missing", locatorSnapshot: "- main" },
+            ] };
+        } },
+      });
+      assert.equal(builder.requests.length, 1);
+      assert.equal(planner.refinements.length, 1);
+      assert.equal(plans.length, crash ? 3 : 2);
+      if (crash) assert.deepEqual(plans[1], plans[2]);
+      assert.equal(summary.status, crash ? "delivered" : "partial");
+    });
+  });
+}
+
+for (const recover of [true, false]) {
+  test(`Delivery browser infrastructure ${recover ? "recovers" : "exhausts retries"} without a Builder repair`, async () => {
+    await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+      let ticks = 0;
+      let calls = 0;
+      const builder = new FakeBuilder();
+      const run = runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+        builder, planner: new FakeProbePlanner([]), runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline"]), appLifecycle: new RecordingLifecycle(),
+        clock: { nowMs: () => ticks++ === 0 ? 0 : 1_000_000 },
+        finalVerifier: { verify: async () => {
+          calls += 1;
+          if (calls === 1 || !recover) throw new ExecutionFault("browser", "browser_disconnected", true);
+          return { ok: true, stage: "complete", message: "ready" };
+        } },
+      });
+      if (recover) assert.equal((await run).status, "partial");
+      else await assert.rejects(run, ExecutionFault);
+      assert.equal(calls, 2);
+      assert.equal(builder.requests.length, 0);
+    });
+  });
 }
 
 test("Pipeline E2E treats an application start failure as a repairable attempt", async () => {

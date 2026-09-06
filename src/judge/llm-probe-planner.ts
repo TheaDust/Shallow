@@ -32,22 +32,33 @@ export type ProbePlannerErrorCategory =
   | "refinement";
 
 export class ProbePlannerError extends Error {
+  readonly retryable: boolean;
+  readonly fatal: boolean;
   readonly diagnostics: {
     category: ProbePlannerErrorCategory;
     message: string;
     validationError?: string;
     contentPreview?: string;
+    retryable: boolean;
+    fatal: boolean;
+    httpStatus?: number;
   };
 
   constructor(
     readonly category: ProbePlannerErrorCategory,
     message: string,
-    options?: ErrorOptions & { content?: string; apiKey?: string },
+    options?: ErrorOptions & { content?: string; apiKey?: string; httpStatus?: number },
   ) {
     super(message, options);
     this.name = "ProbePlannerError";
+    const status = options?.httpStatus;
+    this.retryable = category === "transport" && (status === undefined || status === 408 || status === 429 || status >= 500);
+    this.fatal = category === "response" || (category === "transport" && !this.retryable);
     this.diagnostics = {
       category,
+      retryable: this.retryable,
+      fatal: this.fatal,
+      ...(status === undefined ? {} : { httpStatus: status }),
       message: sanitizePlannerDiagnostic(message, options?.apiKey),
       ...(options?.cause instanceof Error ? {
         validationError: sanitizePlannerDiagnostic(options.cause.message, options.apiKey),
@@ -178,6 +189,7 @@ export class LlmProbePlanner implements ProbePlanner {
       throw new ProbePlannerError(
         "transport",
         `Probe planner returned HTTP ${response.status}`,
+        { httpStatus: response.status },
       );
     }
 
@@ -185,7 +197,7 @@ export class LlmProbePlanner implements ProbePlanner {
     try {
       payload = await response.json();
     } catch (error) {
-      throw new ProbePlannerError("response", "Probe planner returned invalid response JSON", {
+      throw new ProbePlannerError(error instanceof SyntaxError ? "response" : "transport", "Probe planner response body failed", {
         cause: error,
         apiKey: this.config.apiKey,
       });

@@ -90,6 +90,10 @@ function describe(type: string, event: RunEvent): string | null {
       return `探针规划失败，将重试（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_failed":
       return `探针规划失败（${packetId}）${plannerFailureText(detail)}`;
+    case "execution_fault":
+      return `执行基础设施故障（${packetId}，${pickString(detail, "source")} / ${pickString(detail, "code")}），${
+        detail?.retry === true ? "保持候选和计划，重试一次" : "停止当前执行"
+      }；Builder 尝试 ${pickNumber(detail, "attempt") ?? 0}`;
     case "packet_accepted":
       return `需求包验收通过（${packetId}）`;
     case "packet_blocked":

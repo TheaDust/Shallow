@@ -196,6 +196,20 @@ test("Probe Planner reports stable transport, JSON, and schema categories", asyn
   }
 });
 
+test("Planner classifies gateway retryability from HTTP status, not response text", async () => {
+  for (const status of [408, 429, 500, 503, 400, 401, 403, 404]) {
+    const planner = new LlmProbePlanner(config(), async () => new Response("transient network timeout", { status }));
+    await assert.rejects(planner.plan(packet()), (error: unknown) => {
+      assert.ok(error instanceof ProbePlannerError);
+      const retryable = [408, 429, 500, 503].includes(status);
+      assert.equal(error.retryable, retryable);
+      assert.equal(error.fatal, !retryable);
+      assert.equal(error.diagnostics.httpStatus, status);
+      return true;
+    });
+  }
+});
+
 test("Probe Planner preserves bounded, redacted validation diagnostics", async () => {
   const content = JSON.stringify({
     packetId: packet().id, cases: [], password: "private-value",

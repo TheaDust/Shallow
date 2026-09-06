@@ -23,6 +23,21 @@ import type {
 } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
 import { withTempDir } from "./helpers/temp-dir.js";
+import { ExecutionFault } from "../src/execution-fault.js";
+
+test("Builder exposes runtime startup failure as terminal infrastructure", async () => {
+  const runtime = new RecordingRuntime();
+  runtime.start = async () => { throw Object.assign(new Error("missing opencode"), { code: "ENOENT" }); };
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1000 });
+  try {
+    await assert.rejects(builder.run(builderRequest(1)), (error: unknown) => {
+      assert.ok(error instanceof ExecutionFault);
+      assert.equal(error.code, "builder_start");
+      assert.equal(error.retryable, false);
+      return true;
+    });
+  } finally { await builder.close(); }
+});
 
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());

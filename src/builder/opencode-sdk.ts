@@ -11,6 +11,7 @@ import { compileBuilderPrompt } from "./prompt.js";
 import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
+import { ExecutionFault } from "../execution-fault.js";
 
 export interface OpenCodePromptInput {
   systemPrompt: string;
@@ -113,7 +114,11 @@ export class OpenCodeSdkBuilder implements BuilderPort {
 
   async run(request: BuilderRequest): Promise<BuilderResult> {
     if (this.closed) throw new Error("OpenCodeSdkBuilder is closed");
-    await this.ensureStarted(request.outputDir);
+    try {
+      await this.ensureStarted(request.outputDir);
+    } catch (error) {
+      throw new ExecutionFault("builder", "builder_start", false, { cause: error });
+    }
     const title =
       request.mode === "delivery_repair"
         ? "delivery repair"

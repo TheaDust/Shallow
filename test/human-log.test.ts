@@ -28,6 +28,18 @@ test("HumanRunFormatter reports reference image use and text fallback", () => {
   }
 });
 
+test("HumanRunFormatter distinguishes bounded infrastructure recovery from Builder repair", () => {
+  const formatter = new HumanRunFormatter();
+  for (const retry of [true, false]) {
+    const line = formatLine(formatter, eventLine("2026-09-06T06:00:00.000Z", "execution_fault", {
+      packetId: "profile", detail: { source: "browser", code: "browser_disconnected", retry, attempt: 3 },
+    }));
+    assert.match(line, /browser_disconnected/);
+    assert.match(line, retry ? /保持候选和计划/ : /停止当前执行/);
+    assert.match(line, /Builder 尝试 3/);
+  }
+});
+
 test("HumanRunFormatter shows planner validation reasons while keeping response previews in the ledger", () => {
   const formatter = new HumanRunFormatter();
   for (const type of ["probe_planner_retry", "probe_planner_failed", "probe_refinement_failed"]) {

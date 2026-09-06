@@ -9,6 +9,7 @@ import {
 
 import type { ProbeCase, ProbeLocator, ProbePlan, ProbeStep } from "./probe-schema.js";
 import type { ProbeFailure, ShadowReport } from "../types.js";
+import { ExecutionFault } from "../execution-fault.js";
 
 export interface ProbeRunOptions {
   baseUrl: string;
@@ -19,6 +20,7 @@ export interface ProbeRunOptions {
 interface BrowserSession {
   context: BrowserContext;
   page: Page;
+  crashed: boolean;
 }
 
 class ProbeExecutionError extends Error {
@@ -44,19 +46,31 @@ export function deriveProbeVerdict(
 }
 
 export class PlaywrightProbeRunner {
+  constructor(private readonly launchBrowser: () => Promise<Browser> = () => chromium.launch({ headless: true })) {}
+
   async run(plan: ProbePlan, options: ProbeRunOptions): Promise<ShadowReport> {
     let browser: Browser | undefined;
     const passedCases: string[] = [];
     const failures: ProbeFailure[] = [];
 
     try {
-      browser = await chromium.launch({ headless: true });
+      try {
+        browser = await this.launchBrowser();
+      } catch (error) {
+        throw new ExecutionFault("browser", "browser_launch", false, { cause: error });
+      }
       for (const probeCase of plan.cases) {
         const failure = await this.runCase(browser, probeCase, options);
         if (failure) failures.push(failure);
         else passedCases.push(probeCase.id);
       }
     } catch (error) {
+      const fault = error instanceof ExecutionFault ? error
+        : browser && !browser.isConnected()
+        ? new ExecutionFault("browser", "browser_disconnected", true, { cause: error }) : undefined;
+      // Earlier deterministic product failures must not be erased by a later crash/retry.
+      if (fault && !failures.some((failure) =>
+        ["assertion", "navigation", "timeout"].includes(failure.category))) throw fault;
       failures.push({
         caseId: "<runner>",
         stepIndex: -1,
@@ -103,6 +117,9 @@ export class PlaywrightProbeRunner {
             timeoutMs,
           );
         } catch (error) {
+          if (session.crashed || !browser.isConnected()) {
+            throw new ExecutionFault("browser", session.crashed ? "page_crashed" : "browser_disconnected", true, { cause: error });
+          }
           const executionError =
             error instanceof ProbeExecutionError
               ? error
@@ -211,7 +228,14 @@ async function executeStep(
 
 async function createSession(browser: Browser): Promise<BrowserSession> {
   const context = await browser.newContext();
-  return { context, page: await context.newPage() };
+  try {
+    const session: BrowserSession = { context, page: await context.newPage(), crashed: false };
+    session.page.on("crash", () => { session.crashed = true; });
+    return session;
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 function locate(page: Page, locator: ProbeLocator): Locator {

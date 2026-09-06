@@ -23,6 +23,7 @@ import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { parseProbePlan, type ProbePlan } from "./judge/probe-schema.js";
 import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
+import { ExecutionFault } from "./execution-fault.js";
 import type {
   PlatformContract,
   RequirementCatalog,
@@ -129,7 +130,7 @@ export async function runPipeline(
     }
 
     await state.record({ at: now(), type: "delivery_started" });
-    let finalReport = await runFinalVerifier(options, deps);
+    let finalReport = await runFinalVerifier(options, deps, state);
     if (!finalReport.ok) {
       await state.record({
         at: now(),
@@ -154,6 +155,7 @@ export async function runPipeline(
           },
         });
       } catch (error) {
+        if (error instanceof ExecutionFault) throw error;
         builderResult = {
           sessionId: "unavailable",
           outcome: "failed",
@@ -178,7 +180,7 @@ export async function runPipeline(
           builderResult.summary,
         ),
       );
-      finalReport = await runFinalVerifier(options, deps);
+      finalReport = await runFinalVerifier(options, deps, state);
       if (finalReport.ok && builderResult.outcome === "completed") {
         const acceptedSha = await deps.git.captureAccepted(
           "shallow: accept delivery repair",
@@ -244,7 +246,9 @@ export async function runPipeline(
     } finally {
       await deps.git.restoreAccepted(state.snapshot.acceptedSha);
     }
-    await state.record({ at: now(), type: "pipeline_failed", detail: { message: errorMessage(error) } });
+    await state.record({ at: now(), type: "pipeline_failed", detail: error instanceof ExecutionFault
+      ? { message: error.message, source: error.source, code: error.code, retryable: error.retryable }
+      : plannerFailureDetail(error) });
     await emitArc(deps, (arc) => arc.runnerState("failed", "pipeline failed"));
     throw error;
   } finally {
@@ -265,6 +269,7 @@ async function executePacket(
   let plan: ProbePlan | undefined;
   let refinementUsed = false;
   let iteration = 0;
+  const infrastructure = { browserRetries: 0 };
 
   while (true) {
     iteration += 1;
@@ -315,11 +320,12 @@ async function executePacket(
       };
     }
 
-    await state.record({ at: now(), type: "builder_started", packetId: packet.id });
+    await state.record({ at: now(), type: "builder_started", packetId: packet.id, detail: { attempt } });
     let builderResult: BuilderResult;
     try {
       builderResult = await deps.builder.run(builderRequest);
     } catch (error) {
+      if (error instanceof ExecutionFault) throw error;
       builderResult = {
         sessionId: "unavailable",
         outcome: "failed",
@@ -334,6 +340,7 @@ async function executePacket(
         outcome: builderResult.outcome,
         sessionId: builderResult.sessionId,
         summary: sanitizeDiagnosticText(builderResult.summary),
+        attempt,
       },
     });
     await emitArc(deps, (arc) =>
@@ -363,17 +370,22 @@ async function executePacket(
           detail: { cases: plan.cases.length },
         });
       }
-      const probeOutcome = await runShadowProbes(
-        packet,
-        plan,
-        options,
-        deps,
-        state,
-        refinementUsed,
-      );
+      let probeOutcome: ProbeOutcome;
+      try {
+        probeOutcome = await runShadowProbes(packet, plan, options, deps, state, refinementUsed, infrastructure);
+      } catch (error) {
+        if (!(error instanceof ExecutionFault) || !error.retryable) throw error;
+        await blockPacket(deps, state, packet, catalogStatus, "browser infrastructure retries exhausted or budget exhausted");
+        return;
+      }
       plan = probeOutcome.plan;
       refinementUsed = probeOutcome.refinementUsed;
       report = probeOutcome.report;
+      if (probeOutcome.source === "probe" && report.verdict !== "pass" &&
+        report.failures.every((failure) => failure.category === "locator" || failure.category === "runner")) {
+        await blockPacket(deps, state, packet, catalogStatus, "judge could not establish valid behavior evidence");
+        return;
+      }
     }
 
     const decision = decideAfterReport(report, attempt);
@@ -406,6 +418,7 @@ async function executePacket(
 }
 
 interface ProbeOutcome {
+  source: "application" | "probe";
   report: ShadowReport;
   plan: ProbePlan;
   refinementUsed: boolean;
@@ -464,6 +477,7 @@ async function runShadowProbes(
   deps: PipelineDeps,
   state: RunStateStore,
   refinementUsed: boolean,
+  infrastructure: { browserRetries: number },
 ): Promise<ProbeOutcome> {
   let application: Awaited<ReturnType<AppLifecycle["start"]>>;
   try {
@@ -478,17 +492,30 @@ async function runShadowProbes(
       packetId: packet.id,
       detail: { message: errorMessage(error) },
     });
-    return { report: applicationFailureReport(packet.id, error), plan, refinementUsed };
+    return { source: "application", report: applicationFailureReport(packet.id, error), plan, refinementUsed };
   }
 
   try {
     let currentPlan = plan;
     let used = refinementUsed;
     const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
-    let report = await deps.runner.run(currentPlan, {
-      baseUrl: application.baseUrl,
-      ...runOptions,
-    });
+    const run = async (): Promise<ShadowReport> => {
+      while (true) {
+        try {
+          return await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
+        } catch (error) {
+          if (!(error instanceof ExecutionFault)) throw error;
+          const retry = error.retryable && infrastructure.browserRetries < 1 &&
+            !state.shouldEnterDelivery(deps.clock.nowMs());
+          await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
+            detail: { source: error.source, code: error.code, retryable: error.retryable,
+              retry, attempt: packet.attempt, retryCount: infrastructure.browserRetries } });
+          if (!retry) throw error;
+          infrastructure.browserRetries += 1;
+        }
+      }
+    };
+    let report = await run();
     await state.record({
       at: now(),
       type: "probe_finished",
@@ -505,10 +532,7 @@ async function runShadowProbes(
           currentPlan = await deps.planner.refineLocators(currentPlan, snapshot);
           used = true;
           await state.record({ at: now(), type: "probe_refined", packetId: packet.id });
-          report = await deps.runner.run(currentPlan, {
-            baseUrl: application.baseUrl,
-            ...runOptions,
-          });
+          report = await run();
           await state.record({
             at: now(),
             type: "probe_finished",
@@ -516,6 +540,7 @@ async function runShadowProbes(
             detail: { verdict: report.verdict, refined: true },
           });
         } catch (error) {
+          if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
           used = true;
           await state.record({
             at: now(),
@@ -526,7 +551,7 @@ async function runShadowProbes(
         }
       }
     }
-    return { report, plan: currentPlan, refinementUsed: used };
+    return { source: "probe", report, plan: currentPlan, refinementUsed: used };
   } finally {
     await application.stop();
   }
@@ -552,15 +577,18 @@ async function planProbe(
     }
     await state.record({
       at: now(),
-      type: "probe_planner_retry",
+      type: error instanceof ProbePlannerError && error.fatal ? "probe_planner_failed" : "probe_planner_retry",
       packetId: packet.id,
-      detail: plannerFailureDetail(error),
+      detail: { ...plannerFailureDetail(error), attempt: packet.attempt, retryCount: 0 },
     });
+    if (error instanceof ProbePlannerError && error.fatal) throw error;
   }
+  if (state.shouldEnterDelivery(deps.clock.nowMs())) return undefined;
   const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;
   if (retryDelayMs > 0) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, retryDelayMs));
   }
+  if (state.shouldEnterDelivery(deps.clock.nowMs())) return undefined;
   try {
     return parseProbePlan(await deps.planner.plan(packet, feedback), packet);
   } catch (error) {
@@ -570,13 +598,14 @@ async function planProbe(
       packetId: packet.id,
       detail: plannerFailureDetail(error),
     });
+    if (error instanceof ProbePlannerError && error.fatal) throw error;
     return undefined;
   }
 }
 
 function plannerFailureDetail(error: unknown): Record<string, unknown> {
   return error instanceof ProbePlannerError
-    ? error.diagnostics
+    ? { source: "planner", ...error.diagnostics }
     : { message: sanitizeDiagnosticText(errorMessage(error)) };
 }
 
@@ -654,18 +683,21 @@ function builderFailureReport(packetId: string, message: string): ShadowReport {
 async function runFinalVerifier(
   options: PipelineOptions,
   deps: PipelineDeps,
+  state: RunStateStore,
 ): Promise<FinalVerificationReport> {
-  try {
-    return await deps.finalVerifier.verify(
-      options.outputDir,
-      options.platformContract,
-    );
-  } catch (error) {
-    return {
-      ok: false,
-      stage: "readiness",
-      message: errorMessage(error),
-    };
+  for (let retryCount = 0; ; retryCount += 1) {
+    try {
+      return await deps.finalVerifier.verify(options.outputDir, options.platformContract);
+    } catch (error) {
+      if (error instanceof ExecutionFault) {
+        const retry = error.retryable && retryCount < 1;
+        await state.record({ at: now(), type: "execution_fault", packetId: "final-verification",
+          detail: { source: error.source, code: error.code, retryable: error.retryable, retry, retryCount } });
+        if (retry) continue;
+        throw error;
+      }
+      return { ok: false, stage: "readiness", message: errorMessage(error) };
+    }
   }
 }
 
