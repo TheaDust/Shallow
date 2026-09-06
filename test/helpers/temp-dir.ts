@@ -10,6 +10,6 @@ export async function withTempDir<T>(
   try {
     return await callback(directory);
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 }
