@@ -4,7 +4,7 @@ import {
   type createOpencode,
   type OpencodeClient,
 } from "@opencode-ai/sdk";
-import { fetch as undiciFetch } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 
 import { compileBuilderPrompt } from "./prompt.js";
@@ -42,6 +42,11 @@ export type CreateOpencodeInstance = (
   options: CreateOpencodeInstanceOptions,
 ) => Promise<{ client: OpencodeClient; server: { url: string; close(): void } }>;
 
+// opencode only answers session.prompt after the whole model session completes,
+// so the default 300s undici headers timeout would kill every long build; the
+// builder-level timeoutMs race plus the abort path remain the real bound.
+const longPollAgent = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
+
 export const sdkFetch = (async (
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -55,6 +60,7 @@ export const sdkFetch = (async (
       headers: [...input.headers],
       body,
       signal: input.signal ?? undefined,
+      dispatcher: longPollAgent,
     });
   }
   return undiciFetch(
