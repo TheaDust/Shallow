@@ -94,6 +94,28 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
   });
 });
 
+test("Pipeline records image fallback diagnostics without image payloads", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    class ImageFallbackBuilder extends FakeBuilder {
+      override async run(request: BuilderRequest): Promise<BuilderResult> {
+        return { ...await super.run(request), referenceImages: {
+          mode: "text_fallback", attachedCount: 0,
+          skipped: [{ reference: "reference/missing.png", reason: "unreadable_image" }],
+        } };
+      }
+    }
+    await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+      builder: new ImageFallbackBuilder(), planner: new FakeProbePlanner([workingPlan()]),
+      runner: new PlaywrightProbeRunner(), git: new FakeGitOps(["baseline", "accepted"]),
+      appLifecycle: new RecordingLifecycle(), clock: fixedClock(), finalVerifier: new RecordingFinalVerifier(),
+    });
+    const ledger = await readFile(ledgerFile, "utf8");
+    const events = ledger.trim().split("\n").map((line) => JSON.parse(line) as { type: string; detail?: Record<string, unknown> });
+    assert.equal(events.find((event) => event.type === "builder_reference_images")?.detail?.mode, "text_fallback");
+    assert.doesNotMatch(ledger, /data:image|base64/);
+  });
+});
+
 test("Pipeline E2E repairs the app and reruns the same behavior probes", async () => {
   await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
     const builder = new FixtureVariantBuilder([true, false]);

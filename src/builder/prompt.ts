@@ -131,6 +131,14 @@ function projectContextSection(context: BuilderProjectContext): string {
     "",
     "产品目标：",
     context.product.description,
+    ...(context.product.seedData.length > 0 ? [
+      "",
+      fillTemplate(loadBuilderPrompt("system", "seed-data"), {
+        SEED_DATA: context.product.seedData.map(({ category, items }) =>
+          [`### ${category}`, ...items.map((item) => `- ${item}`)].join("\n"),
+        ).join("\n\n"),
+      }),
+    ] : []),
     "",
     "当前功能路径：",
     context.ancestors.length > 0

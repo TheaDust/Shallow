@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -22,6 +22,7 @@ import type {
   WorkPacket,
 } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
+import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
@@ -50,6 +51,21 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
     "server_persistence",
   ]);
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+});
+
+test("Builder includes all seed data in implementation and both packet repair modes", () => {
+  const item = `固定验证码 123456；${"完整预置值。".repeat(400)}末尾标记`;
+  for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
+    if (request.mode === "delivery_repair") throw new Error("unexpected mode");
+    request.projectContext.product.seedData = [{ category: "账户预置", items: [item] }];
+    const { taskPrompt } = compileBuilderPrompt(request);
+    assert.match(taskPrompt, /## 种子数据/);
+    assert.match(taskPrompt, /账户预置/);
+    assert.ok(taskPrompt.includes(item));
+    assert.match(taskPrompt, /内置或可复现/);
+  }
+  assert.doesNotMatch(compileBuilderPrompt(implementRequest()).taskPrompt, /## 种子数据/);
+  assert.doesNotMatch(compileBuilderPrompt(deliveryRequest()).taskPrompt, /## 种子数据/);
 });
 
 test("Repair prompt carries only the cleaned shadow observation", () => {
@@ -136,6 +152,23 @@ test("Builder sends the system contract and task prompt through separate runtime
   assert.equal(second.sessionId, "session-2");
   assert.equal(first.outcome, "completed");
   assert.equal(runtime.closeCount, 1);
+});
+
+test("Builder attaches only the current packet's readable requirement images", async () => {
+  await withTempDir("shallow-builder-images-", async (directory) => {
+    await mkdir(join(directory, "reference"));
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
+    await writeFile(join(directory, "reference", "profile.png"), png);
+    const runtime = new RecordingRuntime();
+    const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000, requirementsDir: directory });
+    const result = await builder.run(builderRequest(1));
+    await builder.close();
+    assert.equal(result.outcome, "completed");
+    assert.equal(runtime.prompts[0].input.images?.length, 1);
+    assert.equal(runtime.prompts[0].input.images?.[0].dataUrl, `data:image/png;base64,${png.toString("base64")}`);
+    assert.match(runtime.prompts[0].input.taskPrompt, /已附加图片/);
+    assert.doesNotMatch(JSON.stringify(result), /data:image|base64/);
+  });
 });
 
 test("Builder aborts the active session when its prompt times out", async () => {

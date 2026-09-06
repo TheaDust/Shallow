@@ -13,6 +13,21 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("HumanRunFormatter reports reference image use and text fallback", () => {
+  const formatter = new HumanRunFormatter();
+  for (const [mode, expected] of [
+    ["attached", /发送 2 张参考图片/],
+    ["text_fallback", /图片输入不受支持，已回退纯文本/],
+    ["unavailable", /参考图片不可用，按文字继续/],
+  ] as const) {
+    const line = formatLine(formatter, eventLine("2026-09-05T06:00:00.000Z", "builder_reference_images", {
+      packetId: "profile", detail: { mode, attachedCount: 2, skipped: [{ reference: "missing.png", reason: "unreadable_image" }] },
+    }));
+    assert.match(line, expected);
+    assert.match(line, /跳过 1 项/);
+  }
+});
+
 test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () => {
   const formatter = new HumanRunFormatter();
   const lines = [

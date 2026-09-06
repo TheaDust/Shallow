@@ -64,7 +64,7 @@ flowchart LR
     F --> SM["RunSummary"]
 ```
 
-1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
+1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；顶层 `data` 解析为产品种子数据。拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
 2. **Scheduler**（`src/scheduler.ts`）：确定性规则选择 1–3 个依赖全部 `verified` 的 ATOMIC 需求组成 WorkPacket；排序信号依次为具名场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序；packet id 由选中 ID 的 slug 拼接生成，重复调用结果一致。
 3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 目录的中文资产编译：固定的系统合同 + 按模式填充的任务模板（实现 / 修复 / 根因修复 / 交付修复），并按产品类型与需求关键词挑选实现规则碎片；每次任务附带统一的完成回执（receipt）。修复上下文只包含白名单化的 `ShadowReport` 观测（清洗、截断）；第三次修复要求先给出根因判断再改代码。超时自动 abort 并等待会话落地，返回 `completed / failed / timed_out`。
 4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
@@ -73,6 +73,12 @@ flowchart LR
 7. **FinalVerifier**（`src/final-verifier.ts`）：见交付阶段。
 
 ProbePlan 的 JSON Schema 完整描述步骤与 locator 字段；每个 case 必须有断言，计划必须覆盖 packet 中每个需求 ID。空输入与空值断言均合法。每个 case 独立建立其所需前提。
+
+种子数据按分类全量进入实现、修复和根因修复提示词，不截断；空数据不产生段落。Planner 和交付修复暂不接收种子数据。
+
+Builder 会读取当前 packet 引用的需求图片，通过 SDK 文件附件发送，不复制到目标项目。只允许需求目录内的本地 PNG、JPEG、WebP、GIF；校验真实路径与文件签名，去重，单图不超过 10 MiB、每包合计不超过 30 MiB。缺失、越界、不支持的格式或超限图片会跳过并按文字继续，不访问远程引用。图片只补充视觉需求，不替代业务文字及验收场景。
+
+网关明确拒绝图片输入且没有已执行工具步骤的证据时，停止原会话，在同一次 Builder 尝试的剩余超时额度内新建纯文本会话，最多回退一次；后续 packet 复用该文本模式。不通过换会话增加业务修复次数，普通网关错误和超时仍按原失败路径处理。`builder_reference_images` 事件记录附件数量、跳过原因和文本回退状态，经统一台账及中文日志输出，不存储图片载荷。此能力针对 ShallowCode 主 pipeline；raw baseline 保持原有输入方式。
 
 管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件的去向见[运行产物与日志](#运行产物与日志)。
 
@@ -243,7 +249,7 @@ prompts/
 src/
   types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
   cli.ts                       严格 CLI 参数解析
-  catalog.ts                   requirements.yaml → 需求树（重复/依赖/环校验）
+  catalog.ts                   requirements.yaml → 需求树与种子数据（重复/依赖/环校验）
   scheduler.ts                 无模型确定性调度（1–3 个依赖全 verified 的需求）
   pipeline.ts                  依赖注入编排：packet 循环、修复梯子、交付窗口、事件记录
   run-state.ts                 判定决策、运行状态、脱敏 ledger 与 logSink

@@ -339,6 +339,12 @@ async function executePacket(
     await emitArc(deps, (arc) =>
       arc.builderDiagnostic(packet.id, builderResult.outcome, builderResult.summary),
     );
+    if (builderResult.referenceImages) {
+      await state.record({
+        at: now(), type: "builder_reference_images", packetId: packet.id,
+        detail: builderResult.referenceImages,
+      });
+    }
 
     let report: ShadowReport;
     if (builderResult.outcome !== "completed") {

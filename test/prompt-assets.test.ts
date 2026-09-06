@@ -86,6 +86,14 @@ test("each prompt fragment id maps to exactly one file and there are no orphans"
 });
 
 test("fixed system assets keep their Chinese anchors", () => {
+  const seedData = loadBuilderPrompt("system", "seed-data");
+  assert.match(seedData, /内置或可复现/);
+  assert.ok(seedData.includes("{{SEED_DATA}}"));
+  const images = loadBuilderPrompt("system", "reference-images");
+  assert.match(images, /已附加图片/);
+  assert.ok(images.includes("{{ATTACHED_REFERENCES}}"));
+  assert.ok(images.includes("{{UNAVAILABLE_REFERENCES}}"));
+  assert.match(loadBuilderPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
   const platform = loadBuilderPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   for (const key of ["PROBE_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {

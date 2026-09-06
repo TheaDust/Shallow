@@ -8,11 +8,14 @@ import { fetch as undiciFetch } from "undici";
 import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 
 import { compileBuilderPrompt } from "./prompt.js";
+import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
+import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
 
 export interface OpenCodePromptInput {
   systemPrompt: string;
   taskPrompt: string;
+  images?: ReferenceImage[];
 }
 
 export interface OpenCodeRuntime {
@@ -26,7 +29,10 @@ export interface OpenCodeRuntime {
 export interface OpenCodeSdkBuilderOptions {
   timeoutMs: number;
   promptSettleTimeoutMs?: number;
+  requirementsDir?: string;
 }
+
+class ImageInputUnsupportedError extends Error {}
 
 type CreateOpencodeInstanceOptions = NonNullable<
   Parameters<typeof createOpencode>[0]
@@ -92,6 +98,7 @@ async function waitForPromptSettlement(
 export class OpenCodeSdkBuilder implements BuilderPort {
   private startedDirectory?: string;
   private closed = false;
+  private imageInputUnsupported = false;
 
   constructor(
     private readonly runtime: OpenCodeRuntime,
@@ -105,9 +112,58 @@ export class OpenCodeSdkBuilder implements BuilderPort {
       request.mode === "delivery_repair"
         ? "delivery repair"
         : `${request.packet.id} ${request.mode}`;
-    const sessionId = await this.runtime.createSession(title);
-    const input = compileBuilderPrompt(request);
-    const promptPromise = this.runtime.prompt(sessionId, input);
+    const baseInput = compileBuilderPrompt(request);
+    const input: OpenCodePromptInput = { ...baseInput };
+    let referenceImages: BuilderResult["referenceImages"];
+    if (request.mode !== "delivery_repair") {
+      const references = request.packet.requirements.flatMap((item) => item.references);
+      if (references.length > 0) {
+        const loaded = this.imageInputUnsupported
+          ? { images: [], skipped: [] }
+          : this.options.requirementsDir
+          ? await loadReferenceImages(this.options.requirementsDir, references)
+          : { images: [], skipped: references.map((reference) => ({ reference, reason: "requirements_unavailable" })) };
+        referenceImages = {
+          mode: this.imageInputUnsupported ? "text_fallback" : loaded.images.length > 0 ? "attached" : "unavailable",
+          attachedCount: loaded.images.length,
+          skipped: loaded.skipped,
+        };
+        input.images = loaded.images;
+        input.taskPrompt += `\n\n${this.imageInputUnsupported
+          ? loadBuilderPrompt("system", "reference-images-text-fallback")
+          : fillTemplate(loadBuilderPrompt("system", "reference-images"), {
+          ATTACHED_REFERENCES: loaded.images.map((item) => item.reference).join("\n") || "无",
+          UNAVAILABLE_REFERENCES: loaded.skipped.map((item) => `${item.reference}: ${item.reason}`).join("\n") || "无",
+        })}`;
+      }
+    }
+    let sessionId = await this.runtime.createSession(title);
+    let cancelled = false;
+    const finish = (outcome: BuilderResult["outcome"], summary: string): BuilderResult => ({
+      sessionId, outcome, summary, ...(referenceImages ? { referenceImages } : {}),
+    });
+    const promptPromise = (async () => {
+      try {
+        return await this.runtime.prompt(sessionId, input);
+      } catch (error) {
+        if (cancelled || !(error instanceof ImageInputUnsupportedError) || !input.images?.length) throw error;
+        this.imageInputUnsupported = true;
+        const stopped = await waitForPromptSettlement(this.runtime.abort(sessionId), this.options.promptSettleTimeoutMs ?? 5_000);
+        if (!stopped) throw new Error("Image fallback session abort timed out");
+        if (cancelled) throw error;
+        // A rejected attachment stays in the old history. Never retry in that session.
+        sessionId = await this.runtime.createSession(title);
+        if (cancelled) {
+          await this.runtime.abort(sessionId);
+          throw error;
+        }
+        referenceImages = { ...referenceImages!, mode: "text_fallback", attachedCount: 0 };
+        return this.runtime.prompt(sessionId, {
+          systemPrompt: baseInput.systemPrompt,
+          taskPrompt: `${baseInput.taskPrompt}\n\n${loadBuilderPrompt("system", "reference-images-text-fallback")}`,
+        });
+      }
+    })();
     let timeout: NodeJS.Timeout | undefined;
 
     try {
@@ -121,6 +177,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         }),
       ]);
       if (result.kind === "timed_out") {
+        cancelled = true;
         const settleTimeoutMs = this.options.promptSettleTimeoutMs ?? 5_000;
         try {
           if (!await waitForPromptSettlement(this.runtime.abort(sessionId), settleTimeoutMs)) {
@@ -128,16 +185,17 @@ export class OpenCodeSdkBuilder implements BuilderPort {
           }
         } catch {
           await this.resetRuntime();
-          return { sessionId, outcome: "failed", summary: "OpenCode session abort failed" };
+          return finish("failed", "OpenCode session abort failed");
         }
         const settled = await waitForPromptSettlement(
           promptPromise.then(() => undefined, () => undefined), settleTimeoutMs,
         );
         if (!settled) await this.resetRuntime();
-        return { sessionId, outcome: "timed_out", summary: "OpenCode session timed out" };
+        return finish("timed_out", "OpenCode session timed out");
       }
-      return { sessionId, outcome: "completed", summary: result.summary };
+      return finish("completed", result.summary);
     } catch (error) {
+      cancelled = true;
       const summary = formatErrorSummary(error);
       const settleTimeoutMs = this.options.promptSettleTimeoutMs ?? 5_000;
       try {
@@ -146,13 +204,9 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         }
       } catch {
         await this.resetRuntime();
-        return {
-          sessionId,
-          outcome: "failed",
-          summary: `${summary}; OpenCode session abort failed`,
-        };
+        return finish("failed", `${summary}; OpenCode session abort failed`);
       }
-      return { sessionId, outcome: "failed", summary };
+      return finish("failed", summary);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -208,7 +262,11 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
               baseURL: this.gateway.baseUrl,
               timeout: false,
             },
-            models: { [model]: { id: model, name: model, tool_call: true } },
+            models: { [model]: {
+              id: model, name: model, tool_call: true, attachment: true,
+              // Permit forwarding; the gateway may still reject image input.
+              modalities: { input: ["text", "image"], output: ["text"] },
+            } },
           },
         },
       },
@@ -238,14 +296,25 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       body: {
         model: { providerID: "shallow-gateway", modelID: this.gateway.model },
         system: input.systemPrompt,
-        parts: [{ type: "text", text: input.taskPrompt }],
+        parts: [
+          { type: "text", text: input.taskPrompt },
+          ...(input.images ?? []).map((image) => ({
+            type: "file" as const, mime: image.mime, filename: image.reference, url: image.dataUrl,
+          })),
+        ],
       },
     });
     if (response.error || !response.data) {
-      throw new Error(`OpenCode prompt failed: ${formatSdkError(response.error)}`);
+      const message = `OpenCode prompt failed: ${formatSdkError(response.error)}`;
+      if (input.images?.length && isImageInputUnsupported(message)) throw new ImageInputUnsupportedError(message);
+      throw new Error(message);
     }
     if (response.data.info.error) {
-      throw new Error(`OpenCode model failed: ${formatSdkError(response.data.info.error)}`);
+      const message = `OpenCode model failed: ${formatSdkError(response.data.info.error)}`;
+      // Once tools ran, this is a real Builder attempt, not a rejected input.
+      const executed = response.data.parts.some((part) => part.type === "tool" || part.type === "step-finish");
+      if (input.images?.length && !executed && isImageInputUnsupported(message)) throw new ImageInputUnsupportedError(message);
+      throw new Error(message);
     }
     return response.data.parts
       .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
@@ -285,6 +354,13 @@ function formatSdkError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+function isImageInputUnsupported(message: string): boolean {
+  return /(?:does not support|do not support|doesn't support|cannot (?:accept|process))\s+(?:(?:the|this|any|input|inline|base64)\s+){0,3}(?:images?|image_url|vision|multimodal)\b/i.test(message)
+    || /(?:images?(?:_url)?(?:\s+(?:input|content|messages?))?|vision|multimodal)\s+(?:(?:is|are)\s+)?(?:not supported|unsupported|only supported)\b/i.test(message)
+    || /unsupported\s+(?:(?:content|input|media)\s+type[:\s"']*)?(?:images?|image_url|vision|multimodal)\b/i.test(message)
+    || /不支持.{0,8}(?:图片|图像|视觉|多模态)/.test(message);
 }
 
 function formatErrorSummary(error: unknown): string {

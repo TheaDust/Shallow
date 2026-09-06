@@ -118,7 +118,7 @@ ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-
 - `RunSummary.delivered` 要求全部原子需求 verified 且最终验证通过；有 todo 或 blocked 时为 partial。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
 - 回滚先 `reset --mixed <acceptedSha>`，再 `restore --worktree -- . :(top,exclude).arc` 和 `clean -fd -e .arc/`，保留 `.arc` 中包括失败在内的完整审计记录。
 
-## 架构不变量（改动前必读）
+## 架构不变量
 
 管线：`catalog → scheduler → WorkPacket → OpenCodeSdkBuilder → LlmProbePlanner → PlaywrightProbeRunner → DecisionLoop → GitOps`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
@@ -146,3 +146,9 @@ Catalog 将目录依赖展开为原子叶子并继承祖先依赖，展开后检
 - LLM 调用只用 Node 内建 `fetch` + OpenAI-compatible gateway，不引入第二个模型 SDK。
 - 生产代码不直接 `console.*`：观测输出只有 `state.record → logSink` 一条通道（stderr JSON + run-log.txt + ledger）。
 - prompt 资产是 UTF-8 无 CR 的 Markdown，`{{占位符}}` 必须被填满（`fillTemplate` 残留即抛错）；新增 fragment 需同步 `prompt-fragments.ts` 的词典与对应测试。
+
+
+## 工作原则
+
+保持改动聚焦于当前任务，优先选择满足需求的最小且结构良好的方案。不要为假设中的未来需求增加抽象、扩展点、防御性 fallback 或无关重构；当前需求、现有架构、真实失败模式或明显简化实现能够证明其必要性时，可以增加复杂度。
+对于安全、局部、可逆的仓库操作自行继续，包括读取代码、编辑、运行相关测试和修复由当前改动导致的失败。不要在首个可行实现后提前停止；完成相关验证后再结束任务。

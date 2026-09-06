@@ -102,6 +102,7 @@ async function executeProduction(
   const runtime = new SdkOpenCodeRuntime(gateway);
   const builder = new OpenCodeSdkBuilder(runtime, {
     timeoutMs: modelTimeouts.builderTimeoutMs,
+    requirementsDir: dirname(pipelineOptions.requirementsFile),
   });
   const planner = new LlmProbePlanner({
     ...gateway,

@@ -53,6 +53,14 @@ function describe(type: string, event: RunEvent): string | null {
       return `Builder 开始编写代码（${packetId}）`;
     case "builder_finished":
       return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）`;
+    case "builder_reference_images": {
+      const mode = pickString(detail, "mode");
+      const skipped = Array.isArray(detail?.skipped) ? detail.skipped.length : 0;
+      const description = mode === "text_fallback" ? "图片输入不受支持，已回退纯文本"
+        : mode === "attached" ? `发送 ${pickNumber(detail, "attachedCount") ?? 0} 张参考图片`
+        : "参考图片不可用，按文字继续";
+      return `${description}（${packetId}）；跳过 ${skipped} 项`;
+    }
     case "probe_planned": {
       const cases = pickNumber(detail, "cases");
       return cases === null

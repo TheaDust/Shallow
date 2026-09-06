@@ -122,3 +122,28 @@ test("SDK runtime treats an assistant error in an HTTP success response as failu
   await assert.rejects(runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task" }), /upstream unavailable/);
   await runtime.close();
 });
+
+test("SDK runtime submits reference images as file parts with image-capable provider metadata", async () => {
+  let sent: Record<string, unknown> | undefined;
+  let config: Parameters<typeof createOpencode>[0];
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    config = options;
+    return {
+      server: { url: "http://127.0.0.1:1", close() {} },
+      client: createOpencodeClient({ baseUrl: "http://127.0.0.1:1", fetch: async (request) => {
+        sent = await (request as Request).json();
+        return Response.json({ info: {}, parts: [{ type: "text", text: "done" }] });
+      } }),
+    };
+  });
+  await runtime.start("candidate");
+  await runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task", images: [
+    { reference: "reference/ui.png", mime: "image/png", dataUrl: "data:image/png;base64,aW1hZ2U=" },
+  ] });
+  await runtime.close();
+  assert.deepEqual(sent?.parts, [
+    { type: "text", text: "task" },
+    { type: "file", mime: "image/png", filename: "reference/ui.png", url: "data:image/png;base64,aW1hZ2U=" },
+  ]);
+  assert.deepEqual(config?.config?.provider?.["shallow-gateway"].models?.model.modalities?.input, ["text", "image"]);
+});
