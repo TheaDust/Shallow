@@ -127,12 +127,12 @@ export function deriveModelTimeouts(totalBudgetMs: number): {
 } {
   if (totalBudgetMs <= 0) {
     return {
-      builderTimeoutMs: 1200_000,
+      builderTimeoutMs: 2400_000,
       plannerTimeoutMs: 720_000,
     };
   }
   return {
-    builderTimeoutMs: Math.max(30_000, Math.min(1200_000, totalBudgetMs * 0.4)),
+    builderTimeoutMs: Math.max(30_000, Math.min(2400_000, totalBudgetMs * 0.4)),
     plannerTimeoutMs: Math.max(10_000, Math.min(720_000, totalBudgetMs * 0.1)),
   };
 }
