@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { parse } from "yaml";
 
 import { SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
-import type { OpenCodePromptInput } from "../src/builder/opencode-sdk.js";
+import type { OpenCodePromptInput, OpenCodeRuntime } from "../src/builder/opencode-sdk.js";
 import { ArcEventSink } from "../src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "../src/cli.js";
 import {
@@ -47,7 +47,7 @@ export async function baselineMain(
   ).replace(/\r\n/g, "\n");
 
   const startedAt = Date.now();
-  const perPromptTimeoutMs = deriveModelTimeouts(cli.budgetMs).builderTimeoutMs;
+  const perPromptTimeoutMs = deriveBaselinePromptTimeoutMs(cli.budgetMs);
   const runtime = new SdkOpenCodeRuntime(gateway);
   const arcEvents = new ArcEventSink(cli.outputDir);
   await arcEvents.init();
@@ -104,35 +104,57 @@ export async function baselineMain(
 
 type PromptOutcome = "completed" | "timed_out" | "failed";
 
-async function promptWithTimeout(
-  runtime: SdkOpenCodeRuntime,
+export function deriveBaselinePromptTimeoutMs(budgetMs: number): number {
+  // A ROOT subtree contains many atomic requirements; main packets contain at most three.
+  return deriveModelTimeouts(budgetMs).builderTimeoutMs * 2;
+}
+
+export async function promptWithTimeout(
+  runtime: Pick<OpenCodeRuntime, "prompt" | "abort">,
   sessionId: string,
   input: OpenCodePromptInput,
   timeoutMs: number,
+  settleTimeoutMs = 5_000,
 ): Promise<PromptOutcome> {
   let timer: NodeJS.Timeout | undefined;
+  let timedOut = false;
   try {
     const promptPromise = runtime.prompt(sessionId, input);
     const outcome = await Promise.race([
       promptPromise.then(
         () => "completed" as const,
         (error: unknown) => {
-          log(`OpenCode 调用失败：${formatError(error)}`);
+          if (!timedOut) log(`OpenCode 调用失败：${formatError(error)}`);
           return "failed" as const;
         },
       ),
       new Promise<"timed_out">((resolveTimeout) => {
-        timer = setTimeout(() => resolveTimeout("timed_out"), timeoutMs);
+        timer = setTimeout(() => {
+          timedOut = true;
+          resolveTimeout("timed_out");
+        }, timeoutMs);
       }),
     ]);
     if (outcome === "timed_out") {
-      try {
-        await runtime.abort(sessionId);
-      } catch (error) {
-        log(`abort 失败：${formatError(error)}`);
-      }
+      log(`OpenCode 调用达到 ${Math.round(timeoutMs / 1000)}s 上限，正在终止并等待请求结束`);
+      await settleCleanup(runtime.abort(sessionId), settleTimeoutMs, "abort");
+      await settleCleanup(promptPromise.then(() => undefined, () => undefined), settleTimeoutMs, "prompt");
     }
     return outcome;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function settleCleanup(promise: Promise<void>, timeoutMs: number, phase: string): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`baseline ${phase} cleanup timed out; stopping run`)), timeoutMs);
+      }),
+    ]);
   } finally {
     if (timer) clearTimeout(timer);
   }

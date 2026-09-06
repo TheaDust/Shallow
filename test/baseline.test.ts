@@ -4,9 +4,33 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
-import { loadRootModules } from "../baseline/index.js";
+import { deriveBaselinePromptTimeoutMs, loadRootModules, promptWithTimeout } from "../baseline/index.js";
+import { deriveModelTimeouts } from "../src/runtime-config.js";
 
 const fixture = resolve("test/fixtures/requirements.yaml");
+
+test("baseline gives ROOT subtrees twice the main packet timeout while retaining budget scaling", () => {
+  assert.equal(deriveBaselinePromptTimeoutMs(0), 2_400_000);
+  assert.equal(deriveBaselinePromptTimeoutMs(600_000), 480_000);
+  assert.equal(deriveBaselinePromptTimeoutMs(10_000_000), 2_400_000);
+  assert.equal(deriveModelTimeouts(0).builderTimeoutMs, 1_200_000);
+});
+
+test("baseline waits for the aborted prompt to settle before returning a timeout", async () => {
+  let settled = false;
+  let rejectPrompt!: (error: Error) => void;
+  const outcome = await promptWithTimeout({
+    prompt: async () => new Promise<string>((_resolve, reject) => { rejectPrompt = reject; }),
+    abort: async () => {
+      setTimeout(() => {
+        settled = true;
+        rejectPrompt(new Error("MessageAbortedError"));
+      }, 20);
+    },
+  }, "session", { systemPrompt: "system", taskPrompt: "module" }, 5, 200);
+  assert.equal(outcome, "timed_out");
+  assert.equal(settled, true);
+});
 
 test("loadRootModules splits ROOT direct children in declaration order", async () => {
   const document = parse(await readFile(fixture, "utf8"));
@@ -67,6 +91,32 @@ test("loadRootModules splits ROOT direct children in declaration order", async (
       ],
     },
   ]);
+});
+
+test("baseline stops when abort or prompt cleanup cannot finish", async () => {
+  for (const phase of ["abort", "prompt"] as const) {
+    await assert.rejects(promptWithTimeout({
+      prompt: async () => new Promise<string>(() => {}),
+      abort: async () => phase === "abort" ? new Promise<void>(() => {}) : undefined,
+    }, "session", { systemPrompt: "system", taskPrompt: "module" }, 5, 10),
+    new RegExp(`${phase} cleanup timed out`));
+  }
+  await assert.rejects(promptWithTimeout({
+    prompt: async () => new Promise<string>(() => {}),
+    abort: async () => { throw new Error("abort unavailable"); },
+  }, "session", { systemPrompt: "system", taskPrompt: "module" }, 5, 10), /abort unavailable/);
+});
+
+test("baseline returns ordinary completion and model failure without aborting", async () => {
+  for (const outcome of ["completed", "failed"] as const) {
+    assert.equal(await promptWithTimeout({
+      prompt: async () => {
+        if (outcome === "failed") throw new Error("model unavailable");
+        return "done";
+      },
+      abort: async () => { assert.fail("settled request must not be aborted"); },
+    }, "session", { systemPrompt: "system", taskPrompt: "module" }, 100), outcome);
+  }
 });
 
 test("loadRootModules rejects documents without a ROOT mapping", () => {

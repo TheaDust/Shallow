@@ -71,6 +71,8 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 
 baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。
 
+baseline 单模块调用上限为主线 packet 的两倍：不限总预算时为 40 分钟，显式预算时按预算缩放（见“预算与超时”）。超时后先 abort，再等待旧请求结束，两阶段各最多 5 秒；清理失败会终止本轮运行并关闭运行时，清理成功后继续处理下一模块。
+
 ## 运行流程总览
 
 以下流程与判定规则适用于 ShallowCode 主线。
@@ -187,6 +189,8 @@ flowchart TD
 - **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<运行ID>/run-ledger.jsonl`，与 stderr 同源同脱敏，仅审计用；可用 `SHALLOW_RUN_DIR` 换到自定义目录（仍按运行 ID 分子目录）。
 - **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
 
+Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、可用的底层错误信息与模型内容片段。诊断文本先脱敏，再清理控制字符并限制到 1500 字符；中文日志展示类别和原因，模型片段保留在结构化日志中。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。反馈仅在 Judge 侧使用，验收白名单和定位器精化上限保持不变。
+
 GitOps（`src/git-ops.ts`）细节：
 
 - 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
@@ -201,6 +205,7 @@ GitOps（`src/git-ops.ts`）细节：
 | --- | --- | --- |
 | 总预算 | `--budget-ms`，缺省或 `0` 为不限时 | CLI |
 | Builder 单次调用 | 预算的 40%，下限 30s、上限 1200s；不限时取 1200s | `deriveModelTimeouts` |
+| baseline 单模块调用 | 预算的 80%，下限 60s、上限 2400s；不限时取 2400s | `deriveBaselinePromptTimeoutMs` |
 | Planner 单次调用 | 预算的 10%，下限 10s、上限 720s；不限时取 720s | `deriveModelTimeouts` |
 | Builder 超时后落地等待 | 5s（可经 `promptSettleTimeoutMs` 配置） | `OpenCodeSdkBuilder` |
 | git 单命令 | 30s | `runGit` |
