@@ -22,25 +22,58 @@ npm ci
 
 三个变量可以写入仓库根目录的 `.env` 文件（模板见 `.env.example`，`.env` 不会入库），真实环境变量优先于文件值；credential smoke 同样读取 `.env`。
 
-OpenCode 使用控制器显式配置的 `shallow-gateway` provider，主模型和辅助模型均走上述网关；SDK 服务使用随机空闲端口。运行环境须提供 `opencode` 可执行程序。
+OpenCode 使用控制器显式配置的 `shallow-gateway` provider，主模型和辅助模型均走上述网关；SDK 服务使用随机空闲端口。运行环境须提供 Node.js/npm、Git、`opencode` 可执行程序与 Playwright Chromium（可用 `npx playwright install chromium` 安装）。
 
 启动一次完整运行：
 
 ```powershell
-npm start -- --requirements-dir <需求目录> --output-dir <输出目录> --budget-ms 600000
+npm start -- --requirements-dir data/sheet --output-dir tmp/main --budget-ms 600000
 ```
 
 | 参数 | 说明 |
 | --- | --- |
 | `--requirements-dir` | 包含 `requirements.yaml` 的目录 |
 | `--output-dir` | 目标应用输出目录（会作为独立 Git 仓库维护 accepted 状态） |
-| `--budget-ms` | 可选，总 wall-clock 预算（非负整数毫秒）；缺省或 `0` 表示不限时 |
+| `--budget-ms` | 可选，开发调度预算（非负整数毫秒）；缺省或 `0` 表示不限时，阶段调用与交付的边界见“预算与超时” |
+
+初赛需求位于 `data/github`（仓库协作）与 `data/sheet`（电子表格），更换 `--requirements-dir` 即可切换题目。本地约定主线使用 `tmp/main`，baseline 使用 `tmp/baseline`；两者分别维护输出与 `.arc`。每次新实验前先保存需要保留的结果，再手动清空对应实验目录。
+
+通过 Python 适配入口运行主线，使用：
+
+```powershell
+python main.py data/sheet --output-dir tmp/main --type web
+```
+
+Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
+
+主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录。
 
 运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
 
 `delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
+## Raw OpenCode baseline
+
+baseline 通过 `baseline/main.py` 或 `baseline/index.ts` 运行，用于比较直接驱动 OpenCode 的效果：
+
+```powershell
+python baseline/main.py data/sheet --output-dir tmp/baseline --type web
+npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baseline
+```
+
+| 维度 | ShallowCode 主线 | baseline |
+| --- | --- | --- |
+| 工作单元 | 依赖就绪的 1–3 个原子需求 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
+| 会话 | 每次实现或修复创建短会话 | 一次运行复用同一个会话 |
+| 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
+| 完成依据 | 独立黑盒探针、接受点与最终交付验证 | OpenCode 调用结果；Python 入口另检查 frontend/backend 目录 |
+| 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |
+
+baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。
+
 ## 运行流程总览
+
+以下流程与判定规则适用于 ShallowCode 主线。
 
 ```mermaid
 flowchart LR
@@ -65,8 +98,8 @@ flowchart LR
 ```
 
 1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；顶层 `data` 解析为产品种子数据。拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
-2. **Scheduler**（`src/scheduler.ts`）：确定性规则选择 1–3 个依赖全部 `verified` 的 ATOMIC 需求组成 WorkPacket；排序信号依次为具名场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序；packet id 由选中 ID 的 slug 拼接生成，重复调用结果一致。
-3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 目录的中文资产编译：固定的系统合同 + 按模式填充的任务模板（实现 / 修复 / 根因修复 / 交付修复），并按产品类型与需求关键词挑选实现规则碎片；每次任务附带统一的完成回执（receipt）。修复上下文只包含白名单化的 `ShadowReport` 观测（清洗、截断）；第三次修复要求先给出根因判断再改代码。超时自动 abort 并等待会话落地，返回 `completed / failed / timed_out`。
+2. **Scheduler**（`src/scheduler.ts`）：从依赖全部 `verified` 的 todo 需求中选种子，依次比较场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序，前项相同才比较后一项。再按声明顺序加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求；packet id 由选中 ID 的 slug 拼接生成。
+3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 中文资产编译为固定系统合同与模式任务模板，并按产品类型和需求关键词挑选规则碎片，附带完成回执。实现和修复均保留当前需求与产品上下文；修复额外接收白名单化的 `ShadowReport` 观测。第 3 次尝试（第 2 次修复）要求先给出根因判断再改代码。调用返回 `completed / failed / timed_out`。
 4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
 5. **Probe Runner**（`src/judge/playwright-probe-runner.ts`）：真实 Chromium 按白名单执行探针，locator 只映射 `getByRole / getByLabel / getByText`，`goto` 绑定受控 baseUrl，每个 case 使用隔离 context；单步超时 2s、单 case 超时 15s，输出带失败分类（`assertion / locator / navigation / timeout / runner`）的结构化 `ShadowReport`。
 6. **DecisionLoop**（`src/run-state.ts`）与 **GitOps**（`src/git-ops.ts`）：见下两节。
@@ -74,13 +107,23 @@ flowchart LR
 
 ProbePlan 的 JSON Schema 完整描述步骤与 locator 字段；每个 case 必须有断言，计划必须覆盖 packet 中每个需求 ID。空输入与空值断言均合法。每个 case 独立建立其所需前提。
 
-种子数据按分类全量进入实现、修复和根因修复提示词，不截断；空数据不产生段落。Planner 和交付修复暂不接收种子数据。
-
-Builder 会读取当前 packet 引用的需求图片，通过 SDK 文件附件发送，不复制到目标项目。只允许需求目录内的本地 PNG、JPEG、WebP、GIF；校验真实路径与文件签名，去重，单图不超过 10 MiB、每包合计不超过 30 MiB。缺失、越界、不支持的格式或超限图片会跳过并按文字继续，不访问远程引用。图片只补充视觉需求，不替代业务文字及验收场景。
-
-网关明确拒绝图片输入且没有已执行工具步骤的证据时，停止原会话，在同一次 Builder 尝试的剩余超时额度内新建纯文本会话，最多回退一次；后续 packet 复用该文本模式。不通过换会话增加业务修复次数，普通网关错误和超时仍按原失败路径处理。`builder_reference_images` 事件记录附件数量、跳过原因和文本回退状态，经统一台账及中文日志输出，不存储图片载荷。此能力针对 ShallowCode 主 pipeline；raw baseline 保持原有输入方式。
-
 管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件的去向见[运行产物与日志](#运行产物与日志)。
+
+## 需求证据与模型输入
+
+主线从选定目录的 `requirements.yaml` 读取需求。Builder 的实现、修复和根因修复输入包含当前 packet、产品目标、祖先说明与已满足的直接依赖合同。
+
+顶层 `data` 按分类全量渲染为种子数据段，保留预置账号、名称、数值和场景约定；空数组省略该段。交付修复的输入聚焦最终验证失败与平台运行合同。Planner 接收当前需求的 ID、名称、原文、场景、引用路径和精确 UI 文案，使用这些文字证据生成探针。
+
+### 参考图片
+
+`src/builder/reference-images.ts` 读取当前 packet 引用的本地 PNG、JPEG、WebP、GIF，校验需求目录归属、真实路径及文件签名，去重后以 SDK 文件附件发送。每张图片上限 10 MiB，每包合计上限 30 MiB。附件由控制器传入，引用路径相对于需求目录；图片用于补充布局和视觉关系，业务规则仍以文字和场景为准。
+
+缺失、越界、格式不支持或超限的引用会记录跳过原因，Builder 依据文字继续。读取范围仅限需求目录内的本地文件。
+
+当携图请求返回明确的图片输入不支持错误，且响应中没有工具或已完成步骤的执行证据时，Builder 停止原会话，在同一次尝试的剩余超时额度内新建纯文本会话，最多回退一次。后续 packet 沿用该模型的文本模式；普通调用错误仍进入失败处理。SDK 的图片模态配置用于允许附件传输，实际模型能力由网关响应确认。
+
+`builder_reference_images` 事件记录 `attached / text_fallback / unavailable` 模式、附件数量及跳过原因，写入台账和中文日志。诊断仅保存图片使用状态，图片载荷经模型输入通道传递。
 
 ## 单个 WorkPacket 的判定循环
 
@@ -109,7 +152,7 @@ flowchart TD
 - **inconclusive**：仅当全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，把清洗后的快照交给 Planner 做一次 locator-only refinement（不得改变输入值、断言或步骤数），重跑探针；refinement 不消耗 Builder 修复次数。
 - 判定循环另有迭代上限（6）作为止损保险：超出即回滚并阻塞该 packet。
 - 每次 Builder 尝试前检查预算；预算耗尽时不再开启 packet 修复，回滚未接受的候选并进入交付。
-- 修复 prompt 只包含白名单化的观测结果，Planner 的隐藏推理与目标应用源码不进入修复上下文。
+- 修复 prompt 保留需求证据，并追加白名单化观测；Planner 的隐藏推理与完整探针计划保持在 Judge 一侧。
 
 ## 交付阶段
 
@@ -148,6 +191,7 @@ GitOps（`src/git-ops.ts`）细节：
 
 - 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**；已有文件（包括空文件）保持原样，读取错误直接报告。
+- 首次初始化要求目录为空或仅含 `.gitignore`。重新打开既有仓库时，GitOps 按根提交标题识别 ShallowCode 仓库：匹配 `shallow: initial state` 或 `chore: add ShallowCode ignore rules` 后，自动清理应用的未提交改动并删除旧 `runner-events.jsonl`；其他仓库有未提交应用改动时会拒绝打开。复用输出目录前应备份人工修改及需要保留的运行记录。
 - 回滚先 `reset --mixed <acceptedSha>`，再恢复除 `.arc` 外的已跟踪文件，并 `clean -fd -e .arc/`。应用回到 accepted 状态，`.arc` 保留完整运行事件和当前溯源记录，不加入忽略规则。
 - 单条 git 命令默认 30s 超时，超时杀死子进程并等其退出后报错，避免悬挂与目录句柄泄漏。
 
@@ -230,6 +274,8 @@ npm run test:all         # 以上全部
 
 无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`（仅存在于 `test/fakes/`）加真实 Playwright 跑通 `schedule → build → plan → judge → accept/repair/restore → final verify` 全链路，覆盖 accept、修复后通过、三次失败后 restore/block、locator refinement、builder 超时落地等待、git 超时与忽略规则、交付修复 + 完整复验。
 
+种子数据与图片链路另覆盖：全量提示词注入、目录越界及链接检查、SDK 附件序列化、拒图后纯文本回退、回退次数与超时限制、诊断落盘。请求格式通过真实 SDK 配合模拟响应验证；真实网关的图片消费能力需单独实测。
+
 真实 OpenCode / LLM 集成由 credential smoke 覆盖：
 
 ```powershell
@@ -243,8 +289,13 @@ npm run smoke:credentials
 ```text
 main.py                        ARC-Bench 适配包入口：参数解析、Node 运行时准备、驱动管线
 index.ts                       生产入口：CLI、.env 加载、凭证装配、依赖注入、退出码
+baseline/
+  main.py                      baseline 的 Python 适配入口与输出目录检查
+  index.ts                     ROOT 子树顺序调度、单会话运行、模块状态记录
+  system.md                    baseline 系统提示词与平台合同
 prompts/
   system/                      Builder 系统合同、四类任务模板（实现/修复/根因修复/交付修复）、action 与 receipt 资产
+                               seed-data 与 reference-images* 输入说明资产
   fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
 src/
   types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
@@ -262,6 +313,7 @@ src/
   builder/
     port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
     opencode-sdk.ts            OpenCode SDK 适配：短会话、超时 abort + 落地等待
+    reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
     prompt-assets.ts           prompts/ 资产加载与 {{占位符}} 模板填充
     prompt-fragments.ts        产品词典 → fragments 选择
@@ -275,13 +327,13 @@ test/
   browser/                     真实 Chromium 测试
   fakes/ fixtures/ helpers/    测试专用 fake、fixture app 与工具（不属于生产架构）
 docs/superpowers/              设计文档（specs/）与实施计划（plans/）
-data/github、data/sheet        比赛需求样例
+data/github、data/sheet        初赛需求树、种子数据及参考图片
 ```
 
 ## 设计边界
 
 - 生产路径只有一个业务代码 Builder：OpenCode SDK；ShallowCode 不新增第二套源码编辑工具。
 - Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），代码只负责组装与填充。
-- Probe Planner 看不到目标应用源码、diff 与 OpenCode 对话；Builder 只看到白名单化的观测（清洗 + 截断），看不到官方测试与评分反馈。
+- Probe Planner 依据需求证据工作，与目标应用源码、diff 及 OpenCode 对话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
 - Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
-- 失败次数有硬上限（每个 packet 最多两次修复、判定循环 6 次迭代上限，交付阶段最多一次修复），失败总能回到最后 accepted SHA。
+- 失败次数有硬上限（每个 packet 最多两次修复、判定循环 6 次迭代上限，交付阶段最多一次修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。

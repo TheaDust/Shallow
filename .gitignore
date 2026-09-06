@@ -11,3 +11,4 @@ Thumbs.db
 .superpowers/
 runs/
 __pycache__/
+tmp/
