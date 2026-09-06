@@ -196,6 +196,45 @@ test("Probe Planner reports stable transport, JSON, and schema categories", asyn
   }
 });
 
+test("Probe Planner preserves bounded, redacted validation diagnostics", async () => {
+  const content = JSON.stringify({
+    packetId: packet().id, cases: [], password: "private-value",
+    note: `secret-key\u0001 Bearer private-bearer ${"x".repeat(2000)}`,
+  });
+  const planner = new LlmProbePlanner(config(), async () =>
+    jsonResponse({ choices: [{ message: { content } }] }),
+  );
+  await assert.rejects(planner.plan(packet()), (error: unknown) => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.diagnostics.category, "schema");
+    assert.match(error.diagnostics.validationError ?? "", /unsupported ProbePlan field: password/);
+    assert.match(error.diagnostics.contentPreview ?? "", /packet-profile/);
+    assert.ok((error.diagnostics.contentPreview?.length ?? 0) <= 1500);
+    assert.doesNotMatch(JSON.stringify(error.diagnostics), /private-value|secret-key|private-bearer/);
+    return true;
+  });
+});
+
+test("Probe Planner reports rejected refinement details and keeps the one-refinement limit", async () => {
+  const changed = validPlan();
+  changed.cases[0].steps[1].value = "different-input";
+  let calls = 0;
+  const planner = new LlmProbePlanner(config(), async () => {
+    calls += 1;
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(changed) } }] });
+  });
+  const original = parseProbePlan(validPlan(), packet());
+  await assert.rejects(planner.refineLocators(original, "- textbox Profile"), (error: unknown) => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.category, "refinement");
+    assert.match(error.diagnostics.validationError ?? "", /only locator fields/);
+    assert.match(error.diagnostics.contentPreview ?? "", /different-input/);
+    return true;
+  });
+  await assert.rejects(planner.refineLocators(original, "- textbox Profile"), /already used/);
+  assert.equal(calls, 1);
+});
+
 test("Probe Planner allows one sanitized locator refinement per packet", async () => {
   const bodies: string[] = [];
   const fetchFn: typeof fetch = async (_input, init) => {

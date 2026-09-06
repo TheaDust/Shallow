@@ -24,6 +24,15 @@ export class HumanRunFormatter {
   }
 }
 
+function plannerFailureText(detail: RunEvent["detail"]): string {
+  const message = pickString(detail, "message");
+  const category = pickString(detail, "category");
+  const validationError = pickString(detail, "validationError");
+  return `${category ? ` [${category}]` : ""}${message ? `：${message}` : ""}${
+    validationError ? `；原因：${validationError}` : ""
+  }`;
+}
+
 function parseEvent(rawLine: string): RunEvent | null {
   const trimmed = rawLine.trim();
   if (!trimmed) return null;
@@ -76,11 +85,11 @@ function describe(type: string, event: RunEvent): string | null {
     case "probe_refined":
       return `定位器已精化，重跑探针（${packetId}）`;
     case "probe_refinement_failed":
-      return `定位器精化失败（${packetId}）${message ? `：${message}` : ""}`;
+      return `定位器精化失败（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_retry":
-      return `探针规划失败，将重试（${packetId}）${message ? `：${message}` : ""}`;
+      return `探针规划失败，将重试（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_failed":
-      return `探针规划失败（${packetId}）${message ? `：${message}` : ""}`;
+      return `探针规划失败（${packetId}）${plannerFailureText(detail)}`;
     case "packet_accepted":
       return `需求包验收通过（${packetId}）`;
     case "packet_blocked":

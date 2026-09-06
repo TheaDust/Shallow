@@ -28,6 +28,22 @@ test("HumanRunFormatter reports reference image use and text fallback", () => {
   }
 });
 
+test("HumanRunFormatter shows planner validation reasons while keeping response previews in the ledger", () => {
+  const formatter = new HumanRunFormatter();
+  for (const type of ["probe_planner_retry", "probe_planner_failed", "probe_refinement_failed"]) {
+    const line = formatLine(formatter, eventLine("2026-09-06T06:00:00.000Z", type, {
+      packetId: "profile", detail: {
+        message: "Probe planner content violates ProbePlan", category: "schema",
+        validationError: "ProbePlan.cases[0] requires at least one assertion",
+        contentPreview: "PRIVATE-PLAN-PREVIEW",
+      },
+    }));
+    assert.match(line, /schema/);
+    assert.match(line, /requires at least one assertion/);
+    assert.doesNotMatch(line, /PRIVATE-PLAN-PREVIEW/);
+  }
+});
+
 test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () => {
   const formatter = new HumanRunFormatter();
   const lines = [

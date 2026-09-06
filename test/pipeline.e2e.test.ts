@@ -9,6 +9,7 @@ import type {
   BuilderResult,
 } from "../src/builder/port.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
+import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
 import type {
   FinalVerificationReport,
@@ -20,7 +21,7 @@ import {
   type ArcEventsPort,
   type Clock,
 } from "../src/pipeline.js";
-import type { PlatformContract } from "../src/types.js";
+import type { PlatformContract, RunEvent } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
 import { FakeGitOps } from "./fakes/fake-git-ops.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
@@ -269,12 +270,21 @@ test("Pipeline E2E blocks a packet when the probe planner keeps failing", async 
   await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
     const builder = new FakeBuilder();
     const git = new FakeGitOps(["baseline"]);
+    let calls = 0;
+    const planner = new LlmProbePlanner({
+      baseUrl: "https://gateway.example/v1", apiKey: "test-secret", model: "test", timeoutMs: 1000,
+    }, async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: {
+        content: JSON.stringify({ packetId: "packet-req-profile", cases: [], token: "private-token" }),
+      } }] }));
+    });
 
     const summary = await runPipeline(
       { ...options(requirementsFile, outputDir, ledgerFile), plannerRetryDelayMs: 0 },
       {
         builder,
-        planner: new FakeProbePlanner([]),
+        planner,
         runner: new PlaywrightProbeRunner(),
         git,
         appLifecycle: new RecordingLifecycle(),
@@ -294,8 +304,61 @@ test("Pipeline E2E blocks a packet when the probe planner keeps failing", async 
     assert.ok(events.includes("probe_planner_retry"));
     assert.ok(events.includes("probe_planner_failed"));
     assert.ok(events.includes("packet_blocked"));
+    assert.equal(calls, 2);
+    const ledger = await readFile(ledgerFile, "utf8");
+    assert.doesNotMatch(ledger, /private-token/);
+    const failures = ledger.trim().split("\n").map((line) => JSON.parse(line) as RunEvent)
+      .filter((event) => ["probe_planner_retry", "probe_planner_failed"].includes(event.type));
+    assert.equal(failures.length, 2);
+    for (const failure of failures) {
+      assert.equal(failure.detail?.category, "schema");
+      assert.match(String(failure.detail?.validationError), /unsupported ProbePlan field: token/);
+      assert.match(String(failure.detail?.contentPreview), /packet-req-profile/);
+    }
   });
 });
+
+for (const failure of ["schema", "json", "transport"] as const) {
+test(`Pipeline recovers from planner ${failure} failure with scoped retry feedback`, async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    const builder = new FakeBuilder();
+    const planner = new LlmProbePlanner({
+      baseUrl: "https://gateway.example/v1", apiKey: "test-secret", model: "test", timeoutMs: 1000,
+    }, async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      if (bodies.length === 1 && failure === "transport") return new Response("unavailable", { status: 500 });
+      const content = bodies.length === 1
+        ? failure === "json" ? "not JSON token=private-token"
+          : JSON.stringify({ packetId: "packet-req-profile", cases: [], token: "private-token" })
+        : JSON.stringify(workingPlan());
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }));
+    });
+    const summary = await runPipeline(
+      { ...options(requirementsFile, outputDir, ledgerFile), plannerRetryDelayMs: 0 },
+      { builder, planner, runner: new PlaywrightProbeRunner(),
+        git: new FakeGitOps(["baseline", "accepted"]), appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(), finalVerifier: new RecordingFinalVerifier() },
+    );
+    assert.equal(summary.status, "delivered");
+    assert.equal(bodies.length, 2);
+    if (failure === "transport") {
+      assert.deepEqual(bodies[1].messages, bodies[0].messages);
+    } else {
+      assert.equal(bodies[1].messages.length, 3);
+      const feedback = JSON.parse(bodies[1].messages[2].content);
+      assert.ok(feedback.validationError);
+      assert.ok(feedback.schema);
+      if (failure === "schema") assert.match(feedback.validationError, /unsupported ProbePlan field: token/);
+    }
+    assert.doesNotMatch(JSON.stringify(bodies), /private-token|test-secret/);
+    assert.deepEqual(bodies[1].messages.slice(0, 2), bodies[0].messages);
+    assert.doesNotMatch(JSON.stringify(builder.requests), /contentPreview|unsupported ProbePlan|private-token/);
+    assert.equal(builder.requests.length, 1);
+  });
+});
+}
 
 test("Pipeline E2E treats an application start failure as a repairable attempt", async () => {
   await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {

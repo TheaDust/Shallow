@@ -18,7 +18,7 @@ import type {
   FinalVerificationReport,
   FinalVerifierPort,
 } from "./final-verifier.js";
-import type { ProbePlanner } from "./judge/llm-probe-planner.js";
+import { ProbePlannerError, type ProbePlanner, type ProbePlannerFeedback } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { parseProbePlan, type ProbePlan } from "./judge/probe-schema.js";
 import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
@@ -521,7 +521,7 @@ async function runShadowProbes(
             at: now(),
             type: "probe_refinement_failed",
             packetId: packet.id,
-            detail: { message: errorMessage(error) },
+            detail: plannerFailureDetail(error),
           });
         }
       }
@@ -540,14 +540,21 @@ async function planProbe(
   deps: PipelineDeps,
   state: RunStateStore,
 ): Promise<ProbePlan | undefined> {
+  let feedback: ProbePlannerFeedback | undefined;
   try {
     return parseProbePlan(await deps.planner.plan(packet), packet);
   } catch (error) {
+    if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema")) {
+      feedback = {
+        validationError: error.diagnostics.validationError ?? error.diagnostics.message,
+        contentPreview: error.diagnostics.contentPreview,
+      };
+    }
     await state.record({
       at: now(),
       type: "probe_planner_retry",
       packetId: packet.id,
-      detail: { message: errorMessage(error) },
+      detail: plannerFailureDetail(error),
     });
   }
   const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;
@@ -555,16 +562,22 @@ async function planProbe(
     await new Promise((resolvePromise) => setTimeout(resolvePromise, retryDelayMs));
   }
   try {
-    return parseProbePlan(await deps.planner.plan(packet), packet);
+    return parseProbePlan(await deps.planner.plan(packet, feedback), packet);
   } catch (error) {
     await state.record({
       at: now(),
       type: "probe_planner_failed",
       packetId: packet.id,
-      detail: { message: errorMessage(error) },
+      detail: plannerFailureDetail(error),
     });
     return undefined;
   }
+}
+
+function plannerFailureDetail(error: unknown): Record<string, unknown> {
+  return error instanceof ProbePlannerError
+    ? error.diagnostics
+    : { message: sanitizeDiagnosticText(errorMessage(error)) };
 }
 
 async function blockPacket(
