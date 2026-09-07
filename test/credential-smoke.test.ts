@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { join } from "node:path";
 
 import {
   OpenCodeSdkBuilder,
@@ -31,7 +32,9 @@ test(
       const contract = createArcPlatformContract(process.platform, await pickFreePort());
       const packet = smokePacket();
       const builder = new OpenCodeSdkBuilder(
-        new SdkOpenCodeRuntime(readGatewayConfig(process.env)),
+        new SdkOpenCodeRuntime(readGatewayConfig(process.env), undefined, {
+          baseUrl: contract.baseUrl, artifactsDir: join(outputDir, ".builder-self-test"),
+        }),
         { timeoutMs: 240_000 },
       );
       try {

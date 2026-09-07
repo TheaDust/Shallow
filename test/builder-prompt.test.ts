@@ -43,6 +43,12 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   const compiled = compileBuilderPrompt(implementRequest());
 
   assert.match(compiled.systemPrompt, /唯一代码实现者/);
+  assert.match(compiled.systemPrompt, /Builder 浏览器自测/);
+  assert.match(compiled.systemPrompt, /browser_snapshot/);
+  assert.match(compiled.systemPrompt, /服务端数据隔离/);
+  assert.match(compiled.systemPrompt, /停止自己启动的应用/);
+  assert.match(compiled.taskPrompt, /浏览器自测：/);
+  assert.match(compiled.taskPrompt, /通过 \| 失败 \| 未执行/);
   assert.doesNotMatch(compiled.systemPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
   assert.match(compiled.taskPrompt, /REQ-PROFILE/);

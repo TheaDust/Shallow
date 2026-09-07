@@ -4,6 +4,77 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { createOpencodeClient, type createOpencode } from "@opencode-ai/sdk";
 import { sdkFetch, SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
+import { ExecutionFault } from "../src/execution-fault.js";
+
+for (const outcome of ["completed", "model-error", "connect-error", "disconnect-error"] as const) {
+  test(`SDK scopes the Builder browser to one prompt: ${outcome}`, async () => {
+    let configured: Parameters<typeof createOpencode>[0];
+    const calls: string[] = [];
+    const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+      configured = options;
+      return { server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://localhost:1",
+        fetch: async (input) => {
+          const path = new URL((input as Request).url).pathname;
+          calls.push(path);
+          if (path.endsWith("/connect")) return Response.json(true);
+          if (path.endsWith("/disconnect")) return Response.json(outcome !== "disconnect-error");
+          if (path === "/mcp") return Response.json({ playwright: { status: outcome === "connect-error" ? "failed" : "connected" } });
+          return Response.json({ info: outcome === "model-error" ? { error: { name: "APIError", data: { message: "gateway unavailable" } } } : {},
+            parts: [{ type: "text", text: "done" }] });
+        },
+      }) };
+    }, { baseUrl: "http://127.0.0.1:45678", artifactsDir: "artifacts" });
+    await runtime.start("candidate");
+    try {
+      assert.equal(configured?.config?.mcp?.playwright.enabled, false);
+      const prompt = runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task" });
+      if (outcome === "completed") assert.equal(await prompt, "done");
+      else if (outcome === "model-error") await assert.rejects(prompt, /gateway unavailable/);
+      else await assert.rejects(prompt, ExecutionFault);
+      assert.deepEqual(calls.slice(0, 2), ["/mcp/playwright/connect", "/mcp"]);
+      assert.equal(calls.at(-1), "/mcp/playwright/disconnect");
+      assert.equal(calls.some((path) => path.startsWith("/session/")), outcome !== "connect-error");
+    } finally {
+      if (outcome === "disconnect-error") await assert.rejects(runtime.close(), ExecutionFault);
+      else await runtime.close();
+    }
+  });
+}
+
+test("SDK cannot dispatch a model request after cancellation during browser connection", async () => {
+  let connect!: () => void;
+  const connected = new Promise<void>((resolve) => { connect = resolve; });
+  const paths: string[] = [];
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async () => ({
+    server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://localhost:1", fetch: async (input) => {
+      const path = new URL((input as Request).url).pathname;
+      paths.push(path);
+      if (path.endsWith("/connect")) await connected;
+      return Response.json(path === "/mcp" ? { playwright: { status: "connected" } } : true);
+    } }),
+  }), { baseUrl: "http://127.0.0.1:45678", artifactsDir: "artifacts" });
+  await runtime.start("candidate");
+  const prompt = runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task" });
+  await runtime.abort("session");
+  connect();
+  await assert.rejects(prompt, /cancelled before dispatch/);
+  assert.equal(paths.some((path) => path.endsWith("/message")), false);
+  await runtime.close();
+});
+
+test("Baseline runtime can reuse its session after an aborted call", async () => {
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async () => ({
+    server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://localhost:1", fetch: async (input) =>
+      Response.json(new URL((input as Request).url).pathname.endsWith("/abort")
+        ? true : { info: {}, parts: [{ type: "text", text: "next module done" }] }),
+    }),
+  }));
+  await runtime.start("candidate");
+  try {
+    await runtime.abort("baseline-session");
+    assert.equal(await runtime.prompt("baseline-session", { systemPrompt: "system", taskPrompt: "next module" }), "next module done");
+  } finally { await runtime.close(); }
+});
 
 test("SDK runtime does not use the Node global fetch that enforces the 300s headers timeout", async () => {
   let options: (Parameters<typeof createOpencode>[0] & { fetch?: typeof fetch }) | undefined;
@@ -22,6 +93,7 @@ test("SDK runtime does not use the Node global fetch that enforces the 300s head
 
   assert.equal(typeof options?.fetch, "function");
   assert.notEqual(options?.fetch, globalThis.fetch);
+  assert.equal(options?.config?.mcp, undefined, "shared runtime stays unchanged unless self-test is explicitly enabled");
 });
 
 test("sdkFetch adapts the SDK's Node Request objects", async () => {

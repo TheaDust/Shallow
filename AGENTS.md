@@ -39,6 +39,7 @@ prompts/                        Builder prompt 资产（全部中文 Markdown，
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
   system/receipt.md             每次任务附带的完成回执格式
+  system/self-test.md           Builder 浏览器自测流程、清理责任与结果报告
   system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口）
   system/seed-data.md           顶层 data 的种子数据段模板
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
@@ -67,6 +68,7 @@ src/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
     opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理）、SdkOpenCodeRuntime / sdkFetch
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
+    self-test.ts                builderSelfTestConfig：本地 Playwright MCP 入口、Chromium 路径、来源与输出目录
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
     prompt.ts                   compileBuilderPrompt / buildBuilderTaskPrompt：系统合同 + 模板填充 + fragments 拼装
     prompt-assets.ts            loadBuilderPrompt（读 prompts/ 资产，LF 归一+缓存）、fillTemplate（{{占位符}} 校验）
@@ -163,6 +165,8 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 Catalog 将目录依赖展开为原子叶子并继承祖先依赖，展开后检查环。ProbePlan 必须覆盖 packet 的所有 ID，每个 case 至少一个断言；空输入及空值断言合法，wire schema 使用 nullable 可选字段。
 
 ## Builder 需求输入
+
+- 自测工具：主线入口显式配置 `SdkOpenCodeRuntime` 的 selfTest；baseline 默认不注入。`self-test.ts` 配置固定依赖的本地 MCP，`prompt` 内连接与检查状态、结束时断开；迟到连接受取消保护，故障使用 `ExecutionFault` 的 `builder_self_test`。自测流程在 `prompts/system/self-test.md`，回执仅为诊断，Judge 独立验收。修改时验证 `test/builder-self-test.test.ts`、`test/opencode-runtime.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 浏览器自测”。
 
 - 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。
 - 图片：生产入口把需求目录传给 `OpenCodeSdkBuilder.options.requirementsDir`；`loadReferenceImages` 仅加载当前 packet 的引用，校验解码路径、真实路径、文件签名并去重。支持本地 PNG/JPEG/WebP/GIF，单图 10 MiB、每包 30 MiB；不可用引用写入 `skipped` 并依据文字继续。SDK 使用 `file` part 的 data URL 传递附件。

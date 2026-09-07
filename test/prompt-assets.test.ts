@@ -111,6 +111,11 @@ test("fixed system assets keep their Chinese anchors", () => {
 });
 
 test("action assets carry their placeholders", () => {
+  const selfTest = loadBuilderPrompt("system", "self-test");
+  assert.match(selfTest, /当前工作包的一条关键用户路径/);
+  assert.match(selfTest, /不替代独立 Judge 验收/);
+  assert.match(selfTest, /交付修复只检查健康状态/);
+  assert.match(selfTest, /临时业务对象/);
   const repair = loadBuilderPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
   assert.ok(repair.includes("{{FAILURES}}"));

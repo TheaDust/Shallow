@@ -23,7 +23,7 @@ export interface CompiledBuilderPrompt {
   fragmentIds: PromptFragmentId[];
 }
 
-const SYSTEM_PROMPT = loadBuilderPrompt("system", "builder-system");
+const SYSTEM_PROMPT = [loadBuilderPrompt("system", "builder-system"), loadBuilderPrompt("system", "self-test")].join("\n\n");
 
 export function buildBuilderSystemPrompt(): string {
   return SYSTEM_PROMPT;

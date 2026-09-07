@@ -99,7 +99,10 @@ async function executeProduction(
   const { gateway, pipelineOptions, modelTimeouts } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
-  const runtime = new SdkOpenCodeRuntime(gateway);
+  const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
+    baseUrl: pipelineOptions.platformContract.baseUrl,
+    artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
+  });
   const builder = new OpenCodeSdkBuilder(runtime, {
     timeoutMs: modelTimeouts.builderTimeoutMs,
     requirementsDir: dirname(pipelineOptions.requirementsFile),

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.18.27",
+    "@playwright/mcp": "0.0.80",
     "@playwright/test": "1.54.0",
     "undici": "^8.10.2",
     "yaml": "2.9.0"

@@ -2,7 +2,7 @@
 export class ExecutionFault extends Error {
   constructor(
     readonly source: "browser" | "builder",
-    readonly code: "browser_launch" | "browser_disconnected" | "page_crashed" | "builder_start",
+    readonly code: "browser_launch" | "browser_disconnected" | "page_crashed" | "builder_start" | "builder_self_test",
     readonly retryable: boolean,
     options?: ErrorOptions,
   ) {

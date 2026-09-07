@@ -12,6 +12,7 @@ import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
 import { ExecutionFault } from "../execution-fault.js";
+import { builderSelfTestConfig, SELF_TEST_MCP_NAME, type BuilderSelfTestOptions } from "./self-test.js";
 
 export interface OpenCodePromptInput {
   systemPrompt: string;
@@ -215,8 +216,10 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         }
       } catch {
         await this.resetRuntime();
+        if (error instanceof ExecutionFault) throw error;
         return finish("failed", `${summary}; OpenCode session abort failed`);
       }
+      if (error instanceof ExecutionFault) throw error;
       return finish("failed", summary);
     } finally {
       if (timeout) clearTimeout(timeout);
@@ -249,10 +252,12 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private client?: OpencodeClient;
   private server?: { close(): void };
   private directory?: string;
+  private readonly abortedSessions = new Set<string>();
 
   constructor(
     private readonly gateway: GatewayConfig,
     private readonly create: CreateOpencodeInstance = createProductionInstance,
+    private readonly selfTest?: BuilderSelfTestOptions,
   ) {}
 
   async start(directory: string): Promise<void> {
@@ -261,6 +266,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       port: await pickFreePort(),
       fetch: sdkFetch,
       config: {
+        ...(this.selfTest ? { mcp: { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } } : {}),
         model: `shallow-gateway/${model}`,
         small_model: `shallow-gateway/${model}`,
         enabled_providers: ["shallow-gateway"],
@@ -301,6 +307,35 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
 
   async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
     const { client, directory } = this.requireStarted();
+    try {
+      if (this.selfTest) {
+        try {
+          const connected = await client.mcp.connect({ path: { name: SELF_TEST_MCP_NAME }, query: { directory }, signal: AbortSignal.timeout(15_000) });
+          const status = await client.mcp.status({ query: { directory }, signal: AbortSignal.timeout(5_000) });
+          if (connected.error || connected.data !== true || status.error || status.data?.[SELF_TEST_MCP_NAME]?.status !== "connected") {
+            throw new Error("Playwright MCP is not connected");
+          }
+        } catch (error) {
+          throw new ExecutionFault("builder", "builder_self_test", false, { cause: error });
+        }
+      }
+      if (this.client !== client || this.abortedSessions.has(sessionId)) throw new Error("OpenCode prompt cancelled before dispatch");
+      return await this.sendPrompt(client, directory, sessionId, input);
+    } finally {
+      if (this.selfTest && this.client === client) await this.disconnectSelfTest(client, directory);
+    }
+  }
+
+  private async disconnectSelfTest(client: OpencodeClient, directory: string): Promise<void> {
+    try {
+      const response = await client.mcp.disconnect({ path: { name: SELF_TEST_MCP_NAME }, query: { directory }, signal: AbortSignal.timeout(5_000) });
+      if (response.error || response.data !== true) throw new Error("MCP disconnect failed");
+    } catch (error) {
+      throw new ExecutionFault("builder", "builder_self_test", false, { cause: error });
+    }
+  }
+
+  private async sendPrompt(client: OpencodeClient, directory: string, sessionId: string, input: OpenCodePromptInput): Promise<string> {
     const response = await client.session.prompt({
       path: { id: sessionId },
       query: { directory },
@@ -334,6 +369,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   }
 
   async abort(sessionId: string): Promise<void> {
+    if (this.selfTest) this.abortedSessions.add(sessionId);
     const { client, directory } = this.requireStarted();
     const response = await client.session.abort({
       path: { id: sessionId },
@@ -345,10 +381,18 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   }
 
   async close(): Promise<void> {
-    this.server?.close();
+    const client = this.client;
+    const directory = this.directory;
+    // Invalidate pending connects before awaiting cleanup; they must never dispatch a late model call.
     this.client = undefined;
-    this.server = undefined;
-    this.directory = undefined;
+    try {
+      if (this.selfTest && client && directory) await this.disconnectSelfTest(client, directory);
+    } finally {
+      this.server?.close();
+      this.server = undefined;
+      this.directory = undefined;
+      this.abortedSessions.clear();
+    }
   }
 
   private requireStarted(): { client: OpencodeClient; directory: string } {
