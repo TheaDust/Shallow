@@ -9,13 +9,15 @@
     "test:browser": "tsx --test test/browser/*.test.ts",
     "test:all": "npm run typecheck && npm test && npm run test:browser",
     "smoke:credentials": "tsx --test --test-name-pattern=\"credential smoke\" test/credential-smoke.test.ts",
+    "package:baseline": "node scripts/package-baseline.mjs",
     "start": "tsx index.ts"
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.18.27",
     "@playwright/mcp": "0.0.80",
     "@playwright/test": "1.54.0",
-    "undici": "^8.10.2",
+    "opencode-ai": "^1.18.27",
+    "undici": "^7.29.1",
     "yaml": "2.9.0"
   },
   "devDependencies": {
@@ -24,6 +26,7 @@
     "typescript": "7.0.2"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "opencode-ai@1.18.27": true
   }
 }

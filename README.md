@@ -301,7 +301,7 @@ python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 ```sh
 sh arc.sh pack   https://github.com/<org>/<repo>   # 验证打包
-sh arc.sh submit <题目> <模型> https://github.com/<org>/<repo>
+sh arc.sh submit <题目> <模型> https://github.com/<org>/<repo>  #官方示例：sh arc.sh submit ticketbooking gpt-5.5 https://github.com/octos-org/arc-adapter
 sh arc.sh check
 ```
 
