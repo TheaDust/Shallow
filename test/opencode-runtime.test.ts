@@ -182,6 +182,28 @@ test("SDK runtime forwards the gateway and preserves raw model IDs in all model 
   }
 });
 
+test("SDK runtime denies Builder tool access to .arc and external paths", async () => {
+  const arcPathDenies = {
+    "**/.arc/**": "deny",
+    ".arc/**": "deny",
+    "**\\.arc\\**": "deny",
+    ".arc\\**": "deny",
+  };
+  let config: Parameters<typeof createOpencode>[0];
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    config = options;
+    return { server: { url: "http://127.0.0.1:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://127.0.0.1:1" }) };
+  });
+  await runtime.start("candidate");
+  await runtime.close();
+
+  const permission = config?.config?.permission as Record<string, unknown> | undefined;
+  assert.deepEqual(permission?.read, arcPathDenies);
+  assert.deepEqual(permission?.edit, arcPathDenies);
+  assert.deepEqual(permission?.bash, { "*.arc*": "deny" });
+  assert.equal(permission?.external_directory, "deny");
+});
+
 test("SDK runtime treats an assistant error in an HTTP success response as failure", async () => {
   const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async () => ({
     server: { url: "http://127.0.0.1:1", close() {} },

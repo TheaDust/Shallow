@@ -34,6 +34,31 @@ export interface OpenCodeSdkBuilderOptions {
   requirementsDir?: string;
 }
 
+type RuntimeConfigPermission = NonNullable<
+  CreateOpencodeInstanceOptions["config"]
+>["permission"];
+
+// The SDK Config typing predates granular permission rules; the opencode runtime
+// schema (https://opencode.ai/config.json) accepts path-scoped read/edit denies.
+const BUILDER_TOOL_PERMISSION = {
+  read: {
+    "**/.arc/**": "deny",
+    ".arc/**": "deny",
+    "**\\.arc\\**": "deny",
+    ".arc\\**": "deny",
+  },
+  edit: {
+    "**/.arc/**": "deny",
+    ".arc/**": "deny",
+    "**\\.arc\\**": "deny",
+    ".arc\\**": "deny",
+  },
+  bash: { "*.arc*": "deny" },
+  external_directory: "deny",
+} as const;
+
+const BUILDER_PERMISSION_CONFIG = BUILDER_TOOL_PERMISSION as unknown as RuntimeConfigPermission;
+
 class ImageInputUnsupportedError extends Error {}
 
 type CreateOpencodeInstanceOptions = NonNullable<
@@ -270,6 +295,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
         model: `shallow-gateway/${model}`,
         small_model: `shallow-gateway/${model}`,
         enabled_providers: ["shallow-gateway"],
+        permission: BUILDER_PERMISSION_CONFIG,
         provider: {
           "shallow-gateway": {
             npm: "@ai-sdk/openai-compatible",
