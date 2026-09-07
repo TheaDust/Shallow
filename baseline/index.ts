@@ -106,7 +106,8 @@ type PromptOutcome = "completed" | "timed_out" | "failed";
 
 export function deriveBaselinePromptTimeoutMs(budgetMs: number): number {
   // A ROOT subtree contains many atomic requirements; main packets contain at most three.
-  return deriveModelTimeouts(budgetMs).builderTimeoutMs * 2;
+  // Budgeted runs stay within 80% of the budget; unlimited runs cap a module at 3h.
+  return deriveModelTimeouts(budgetMs).builderTimeoutMs * (budgetMs > 0 ? 2 : 3);
 }
 
 export async function promptWithTimeout(
