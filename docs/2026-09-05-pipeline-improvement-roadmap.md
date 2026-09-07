@@ -355,6 +355,12 @@ packet 仍限定 1–3 个原子需求，但在 dispatch 前自适应选择：�
 
 ## 13. P1：观测、安全边界与 ARC 投影
 
+### 2026-09-07 实施进展
+
+已落地内部事件判别联合和关联字段、中文阶段/修复/交付日志、共享自由文本脱敏、有界私有失败证据，以及完整需求树的 ARC 投影与独立 journal 重建。`.arc` 字段对齐官方 `octos-org/arc-adapter` 的 `b0999c95f7875c8d4ff3e58e733fb2c5abc8caf7`，内部事件 ID 和 Builder 回执保留在控制器日志中。
+
+本轮完成的是平台投影重放，尚未建立可恢复全部执行状态的 canonical RunStore。真实 usage 采集、证据自动过期清理、完整候选标识和 OS 级文件隔离仍待后续实施。当前能力、测试和字段映射见 [观测与 ARC 投影说明](2026-09-07-observability-arc-projection.md)。以下保留目标设计与最终验收标准。
+
 建议统一事件 envelope：`runId`、`eventId`、递增序号、阶段、packet/attempt、候选标识、耗时、结果分类和证据引用。事件类型采用判别联合，避免 `type: string` 加任意 detail 导致字段漂移。
 
 记录模型 usage 时，优先使用 SDK/网关返回的真实字段；无法获得时标记 unavailable。字符数估计可用于调度，但不能作为真实计费 token 报告。固定记录模型、prompt 资产摘要、DSL 版本和关键超时，支持比较实验。

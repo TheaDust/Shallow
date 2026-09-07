@@ -72,10 +72,8 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
       ["REQ-PROFILE", "test", "passed"],
     ]);
     assert.deepEqual(arcEvents.commitSignals, ["git_commit"]);
-    assert.deepEqual(arcEvents.builderDiagnostics, [
-      ["packet-req-profile", "completed", "Fake builder completed"],
-    ]);
-    assert.deepEqual(Object.keys(arcEvents.requirementRows), ["REQ-PROFILE"]);
+    assert.deepEqual(arcEvents.builderDiagnostics, []);
+    assert.deepEqual(Object.keys(arcEvents.requirementRows), ["ROOT", "PROFILE", "REQ-PROFILE"]);
     assert.deepEqual(Object.keys(arcEvents.scenarioRows), ["REQ-PROFILE::0"]);
     const events = (await readFile(ledgerFile, "utf8"))
       .trim()
@@ -86,10 +84,17 @@ test("Pipeline E2E schedules, builds, probes in Chromium, and accepts", async ()
       "packet_selected",
       "builder_started",
       "builder_finished",
+      "probe_planning",
       "probe_planned",
+      "application_starting",
+      "application_ready",
+      "probe_started",
       "probe_finished",
+      "application_stopped",
       "packet_accepted",
       "delivery_started",
+      "verification_started",
+      "verification_finished",
       "delivery_finished",
       "pipeline_finished",
     ]);
@@ -312,6 +317,7 @@ test("Pipeline E2E blocks a packet when the probe planner keeps failing", async 
       .filter((event) => ["probe_planner_retry", "probe_planner_failed"].includes(event.type));
     assert.equal(failures.length, 2);
     for (const failure of failures) {
+      assert.ok(failure.type === "probe_planner_retry" || failure.type === "probe_planner_failed");
       assert.equal(failure.detail?.category, "schema");
       assert.match(String(failure.detail?.validationError), /unsupported ProbePlan field: token/);
       assert.match(String(failure.detail?.contentPreview), /packet-req-profile/);
@@ -697,6 +703,27 @@ class RecordingLifecycle implements AppLifecycle {
     };
   }
 }
+
+test("ARC and log sink failures do not alter a committed acceptance", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const fail = async (): Promise<never> => { throw new Error("projection unavailable"); };
+    const git = new FakeGitOps(["baseline", "accepted"]);
+    const result = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
+      builder: new FakeBuilder(), planner: new FakeProbePlanner([workingPlan()]), git,
+      runner: { run: async () => ({ packetId: "packet-req-profile", verdict: "pass", passedCases: ["case"], failures: [] }) },
+      appLifecycle: { start: async () => ({ baseUrl: "http://127.0.0.1:45678", stop: async () => {} }) },
+      clock: fixedClock(), finalVerifier: new RecordingFinalVerifier(),
+      arcEvents: { runnerState: fail, requirementState: fail, commitHistorySignal: fail, storeRequirementTree: fail },
+      logSink: { write: () => { throw new Error("log unavailable"); } },
+    });
+    assert.equal(result.status, "delivered");
+    assert.equal(result.acceptedSha, "accepted");
+    const ledger = await readFile(ledgerFile, "utf8");
+    assert.match(ledger, /arc_projection_failed/);
+    assert.match(ledger, /packet_accepted/);
+    assert.doesNotMatch(ledger, /pipeline_failed/);
+  });
+});
 
 class RecordingArcEvents implements ArcEventsPort {
   runnerStates: string[] = [];

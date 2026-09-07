@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -8,7 +8,7 @@ import {
   arcTimestamp,
   buildArcRequirementRows,
 } from "../src/arc-protocol.js";
-import type { AtomicRequirement } from "../src/types.js";
+import type { RequirementNode } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("ARC event sink initializes the .arc protocol tables", async () => {
@@ -92,7 +92,7 @@ test("ARC event sink stores requirement and scenario rows atomically", async () 
     const sink = new ArcEventSink(join(directory, "output"));
     await sink.init();
 
-    const rows = buildArcRequirementRows([atomicRequirement()]);
+    const rows = buildArcRequirementRows(requirementTree());
     await sink.storeRequirementTree(rows.requirementRows, rows.scenarioRows);
 
     const requirements = JSON.parse(
@@ -101,7 +101,7 @@ test("ARC event sink stores requirement and scenario rows atomically", async () 
         "utf8",
       ),
     ) as Record<string, { req_id: string; name: string; parent_id: string | null }>;
-    assert.deepEqual(Object.keys(requirements), ["REQ-PROFILE"]);
+    assert.deepEqual(Object.keys(requirements), ["ROOT", "PROFILE", "REQ-PROFILE"]);
     assert.equal(requirements["REQ-PROFILE"].name, "Save a profile");
     assert.equal(requirements["REQ-PROFILE"].parent_id, "PROFILE");
 
@@ -141,56 +141,62 @@ test("ARC event sink emits commit history refresh signals", async () => {
   });
 });
 
-test("ARC builder diagnostic signal records the receipt without touching node states", async () => {
-  await withTempDir("shallow-arc-", async (directory) => {
-    const sink = new ArcEventSink(join(directory, "output"));
-    await sink.init();
-
-    await sink.builderDiagnostic(
-      "packet-req-profile",
-      "completed",
-      "结果\u0000：完成\n检查：通过",
-    );
-
-    const lines = await readEvents(directory);
-    const signal = lines[0] as {
-      type: string;
-      reason: string;
-      packet_id: string;
-      outcome: string;
-      message: string;
-      refresh: Record<string, boolean>;
-    };
-    assert.equal(signal.type, "signal");
-    assert.equal(signal.reason, "builder_receipt_recorded");
-    assert.equal(signal.packet_id, "packet-req-profile");
-    assert.equal(signal.outcome, "completed");
-    assert.equal(signal.message, "结果 ：完成\n检查：通过");
-    assert.deepEqual(signal.refresh, {
-      submission: false,
-      logs: true,
-      commit_history: false,
-      traceability_selected: false,
-      traceability_all: false,
-      preview: false,
-    });
-    const nodeStates = await readFile(
-      join(directory, "output", ".arc", "traceability", "node_states.json"),
-      "utf8",
-    );
-    assert.equal(nodeStates, "{}\n");
-  });
-});
-
 test("ARC timestamp renders UTC in platform format", () => {
   const timestamp = arcTimestamp(new Date(Date.UTC(2026, 8, 4, 12, 34, 56)));
   assert.equal(timestamp, "2026-09-04 12:34:56");
 });
 
-test("ARC requirement rows reconstruct steps from flattened scenarios", () => {
-  const rows = buildArcRequirementRows([atomicRequirement()]);
+test("ARC replay repairs a failed projection, deduplicates IDs, and keeps official wire fields", async () => {
+  await withTempDir("shallow-arc-replay-", async (directory) => {
+    const output = join(directory, "output");
+    const journalFile = join(directory, "private", "arc-projection.jsonl");
+    const sink = new ArcEventSink(output, { journalFile });
+    await sink.init();
+    const rows = buildArcRequirementRows(requirementTree());
+    await sink.storeRequirementTree(rows.requirementRows, rows.scenarioRows);
+    await sink.requirementState("REQ-PROFILE", "implement", "failed");
+    const eventsPath = join(output, ".arc", "runner-events.jsonl");
+    // Replace only this test's generated file with an unwritable projection target.
+    await rm(eventsPath);
+    await mkdir(eventsPath);
+    await assert.rejects(sink.requirementState("REQ-PROFILE", "test", "passed"));
+    const journal = await readFile(journalFile, "utf8");
+    await appendFile(journalFile, journal.trim().split("\n").at(-1)! + "\n");
+    await rm(eventsPath, { recursive: true });
+    await sink.rebuild();
+    const first = await readFile(eventsPath, "utf8");
+    await sink.rebuild();
+    assert.equal(await readFile(eventsPath, "utf8"), first);
+    const events = first.trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(events.length, 3);
+    assert.deepEqual(events.slice(1).map((event) => event.status), ["failed", "passed"]);
+    assert.deepEqual(Object.keys(events[0]).sort(), ["reason", "refresh", "timestamp", "type"]);
+    assert.deepEqual(Object.keys(events[1]).sort(), ["message", "node_id", "phase", "status", "timestamp", "type"]);
+    assert.doesNotMatch(first, /packet_id|outcome|eventId|probePlan|builder_receipt/);
+    const state = JSON.parse(await readFile(join(output, ".arc", "traceability", "node_states.json"), "utf8"));
+    assert.equal(state["REQ-PROFILE"].state, "PASSED");
+    assert.equal(state["REQ-PROFILE"].updated_at, events[2].timestamp);
+    const tree = JSON.parse(await readFile(join(output, ".arc", "traceability", "requirements.json"), "utf8"));
+    assert.equal(tree.ROOT.parent_id, null);
+    assert.deepEqual(tree.ROOT.children_ids, ["PROFILE"]);
+    assert.deepEqual(tree.PROFILE.children_ids, ["REQ-PROFILE"]);
+  });
+});
 
-  assert.deepEqual(Object.keys(rows.requirementRows), ["REQ-PROFILE"]);
+test("ARC serializes simultaneous state updates without dropping rows", async () => {
+  await withTempDir("shallow-arc-serial-", async (directory) => {
+    const sink = new ArcEventSink(directory);
+    await sink.init();
+    await Promise.all(["A", "B", "C"].map((id) => sink.requirementState(id, "implement", "running")));
+    const state = JSON.parse(await readFile(join(directory, ".arc", "traceability", "node_states.json"), "utf8"));
+    assert.deepEqual(Object.keys(state).sort(), ["A", "B", "C"]);
+  });
+});
+
+test("ARC requirement rows preserve the complete source tree and structured scenarios", () => {
+  const rows = buildArcRequirementRows(requirementTree());
+
+  assert.deepEqual(Object.keys(rows.requirementRows), ["ROOT", "PROFILE", "REQ-PROFILE"]);
   const row = rows.requirementRows["REQ-PROFILE"];
   assert.equal(row.description, "Keep a profile name after refresh.");
   assert.deepEqual(row.dependencies, []);
@@ -216,28 +222,21 @@ async function readEvents(
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-function atomicRequirement(): AtomicRequirement {
+function requirementTree(): RequirementNode {
   return {
-    id: "REQ-PROFILE",
-    folderPath: ["ROOT", "PROFILE"],
-    declarationIndex: 0,
-    name: "Save a profile",
-    text: "Keep a profile name after refresh.",
-    dependencyIds: [],
-    scenarios: [
-      "Save and refresh\nWHEN: The user enters a profile name and saves.\nTHEN: The same name remains after refresh.",
-    ],
-    references: [],
-    exactUiStrings: [],
-    product: {
-      kind: "generic_web",
-      rootId: "ROOT",
-      rootName: "Demo Product",
-      description: "Root description.",
-      seedData: [],
-    },
-    ancestors: [
-      { id: "PROFILE", name: "Profile", description: "Profile area" },
-    ],
+    id: "ROOT", name: "Demo Product", type: "ROOT", description: "Root description.",
+    dependencies: [], visual_reference: [], scenarios: [], children: [{
+      id: "PROFILE", name: "Profile", type: "FOLDER", description: "Profile area",
+      dependencies: [], visual_reference: [], scenarios: [], children: [{
+        id: "REQ-PROFILE", name: "Save a profile", type: "ATOMIC",
+        description: "Keep a profile name after refresh.",
+        dependencies: [], visual_reference: [], children: [], scenarios: [{
+          id: "REQ-PROFILE::0", name: "Save and refresh", steps: [
+            { keyword: "WHEN", content: "The user enters a profile name and saves." },
+            { keyword: "THEN", content: "The same name remains after refresh." },
+          ],
+        }],
+      }],
+    }],
   };
 }

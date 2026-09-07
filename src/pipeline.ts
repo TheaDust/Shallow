@@ -57,11 +57,6 @@ export interface ArcEventsPort {
     requirementRows: Record<string, ArcRequirementRow>,
     scenarioRows: Record<string, ArcScenarioRow>,
   ): Promise<void>;
-  builderDiagnostic(
-    packetId: string,
-    outcome: BuilderResult["outcome"],
-    summary: string,
-  ): Promise<void>;
 }
 
 export interface PipelineDeps {
@@ -74,6 +69,8 @@ export interface PipelineDeps {
   finalVerifier: FinalVerifierPort;
   arcEvents?: ArcEventsPort;
   logSink?: LogSink;
+  diagnosticSecrets?: readonly string[];
+  runMetadata?: Record<string, unknown>;
 }
 
 export interface PipelineOptions {
@@ -113,19 +110,24 @@ export async function runPipeline(
     },
     options.ledgerFile,
     deps.logSink ?? null,
+    deps.diagnosticSecrets,
   );
 
-  await state.record({ at: now(), type: "pipeline_started" });
-  await emitArc(deps, (arc) => arc.runnerState("running", "pipeline started"));
-  const arcRows = buildArcRequirementRows(catalog.requirements);
-  await emitArc(deps, (arc) =>
+  await state.record({ at: now(), type: "pipeline_started", detail: {
+    requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs,
+    port: options.platformContract.port, ...deps.runMetadata,
+  } });
+  await emitArc(deps, state, (arc) => arc.runnerState("running", "pipeline started"));
+  const arcRows = buildArcRequirementRows(catalog.tree);
+  await emitArc(deps, state, (arc) =>
     arc.storeRequirementTree(arcRows.requirementRows, arcRows.scenarioRows),
   );
   try {
     while (!state.shouldEnterDelivery(deps.clock.nowMs())) {
       const packet = selectNextPacket(catalog);
       if (!packet) break;
-      await state.record({ at: now(), type: "packet_selected", packetId: packet.id });
+      await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
+        detail: { requirementIds: packet.requirementIds, names: packet.requirements.map((item) => item.name) } });
       await executePacket(packet, options, deps, state, catalog);
     }
 
@@ -151,7 +153,7 @@ export async function runPipeline(
           deliveryFailure: {
             stage: finalReport.stage,
             expected: expectedByStage[finalReport.stage],
-            actual: finalReport.message,
+            actual: sanitizeDiagnosticText(finalReport.message, deps.diagnosticSecrets),
           },
         });
       } catch (error) {
@@ -170,16 +172,9 @@ export async function runPipeline(
         detail: {
           outcome: builderResult.outcome,
           sessionId: builderResult.sessionId,
-          summary: sanitizeDiagnosticText(builderResult.summary),
+          summary: builderResult.summary,
         },
       });
-      await emitArc(deps, (arc) =>
-        arc.builderDiagnostic(
-          "delivery-repair",
-          builderResult.outcome,
-          builderResult.summary,
-        ),
-      );
       finalReport = await runFinalVerifier(options, deps, state);
       if (finalReport.ok && builderResult.outcome === "completed") {
         const acceptedSha = await deps.git.captureAccepted(
@@ -191,7 +186,7 @@ export async function runPipeline(
           type: "delivery_repair_accepted",
           packetId: "delivery-repair",
         });
-        await emitArc(deps, (arc) => arc.commitHistorySignal("git_commit"));
+        await emitArc(deps, state, (arc) => arc.commitHistorySignal("git_commit"));
       } else {
         await deps.git.restoreAccepted(state.snapshot.acceptedSha);
         if (finalReport.ok) {
@@ -227,7 +222,7 @@ export async function runPipeline(
       blockedRequirementIds,
       acceptedSha: snapshot.acceptedSha,
     };
-    await emitArc(deps, (arc) =>
+    await emitArc(deps, state, (arc) =>
       arc.runnerState(
         finalReport.ok ? "completed" : "failed",
         `summary ${summary.status}`,
@@ -249,7 +244,7 @@ export async function runPipeline(
     await state.record({ at: now(), type: "pipeline_failed", detail: error instanceof ExecutionFault
       ? { message: error.message, source: error.source, code: error.code, retryable: error.retryable }
       : plannerFailureDetail(error) });
-    await emitArc(deps, (arc) => arc.runnerState("failed", "pipeline failed"));
+    await emitArc(deps, state, (arc) => arc.runnerState("failed", "pipeline failed"));
     throw error;
   } finally {
     await closeBuilder();
@@ -291,7 +286,7 @@ async function executePacket(
     }
     state.setPacketAttempt(packet.id, attempt);
     for (const requirementId of packet.requirementIds) {
-      await emitArc(deps, (arc) =>
+      await emitArc(deps, state, (arc) =>
         arc.requirementState(requirementId, "implement", "running"),
       );
     }
@@ -314,13 +309,14 @@ async function executePacket(
         mode,
         packet,
         projectContext: buildBuilderProjectContext(packet, catalog),
-        shadowObservation: toBuilderShadowObservation(previousReport),
+        shadowObservation: toBuilderShadowObservation(previousReport, deps.diagnosticSecrets),
         outputDir: options.outputDir,
         platformContract: options.platformContract,
       };
     }
 
-    await state.record({ at: now(), type: "builder_started", packetId: packet.id, detail: { attempt } });
+    await state.record({ at: now(), type: "builder_started", packetId: packet.id, detail: { attempt, mode } });
+    const builderStartedAt = deps.clock.nowMs();
     let builderResult: BuilderResult;
     try {
       builderResult = await deps.builder.run(builderRequest);
@@ -339,13 +335,11 @@ async function executePacket(
       detail: {
         outcome: builderResult.outcome,
         sessionId: builderResult.sessionId,
-        summary: sanitizeDiagnosticText(builderResult.summary),
+        summary: builderResult.summary,
         attempt,
+        durationMs: Math.max(0, deps.clock.nowMs() - builderStartedAt),
       },
     });
-    await emitArc(deps, (arc) =>
-      arc.builderDiagnostic(packet.id, builderResult.outcome, builderResult.summary),
-    );
     if (builderResult.referenceImages) {
       await state.record({
         at: now(), type: "builder_reference_images", packetId: packet.id,
@@ -396,17 +390,20 @@ async function executePacket(
       setCatalogStatus(catalogStatus, packet.requirementIds, "verified");
       await state.record({ at: now(), type: "packet_accepted", packetId: packet.id });
       for (const requirementId of packet.requirementIds) {
-        await emitArc(deps, (arc) =>
+        await emitArc(deps, state, (arc) =>
           arc.requirementState(requirementId, "implement", "completed"),
         );
-        await emitArc(deps, (arc) =>
+        await emitArc(deps, state, (arc) =>
           arc.requirementState(requirementId, "test", "passed"),
         );
       }
-      await emitArc(deps, (arc) => arc.commitHistorySignal("git_commit"));
+      await emitArc(deps, state, (arc) => arc.commitHistorySignal("git_commit"));
       return;
     }
     if (decision.kind === "repair") {
+      await state.record({ at: now(), type: "repair_scheduled", packetId: packet.id,
+        detail: { nextAttempt: decision.nextAttempt, rootCauseFirst: decision.requireRootCauseFirst,
+          verdict: report.verdict, failures: report.failures.map((failure) => failure.category) } });
       previousReport = report;
       attempt = decision.nextAttempt;
       continue;
@@ -479,6 +476,7 @@ async function runShadowProbes(
   refinementUsed: boolean,
   infrastructure: { browserRetries: number },
 ): Promise<ProbeOutcome> {
+  await state.record({ at: now(), type: "application_starting", packetId: packet.id });
   let application: Awaited<ReturnType<AppLifecycle["start"]>>;
   try {
     application = await deps.appLifecycle.start(
@@ -496,13 +494,24 @@ async function runShadowProbes(
   }
 
   try {
+    await state.record({ at: now(), type: "application_ready", packetId: packet.id,
+      detail: { baseUrl: application.baseUrl } });
     let currentPlan = plan;
     let used = refinementUsed;
     const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
     const run = async (): Promise<ShadowReport> => {
       while (true) {
+        const startedAt = deps.clock.nowMs();
+        await state.record({ at: now(), type: "probe_started", packetId: packet.id,
+          detail: { cases: currentPlan.cases.length, retryCount: infrastructure.browserRetries } });
         try {
-          return await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
+          const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
+          const evidenceId = await state.saveEvidence(report);
+          await state.record({ at: now(), type: "probe_finished", packetId: packet.id,
+            detail: { verdict: report.verdict, refined: used, passed: report.passedCases.length,
+              failed: report.failures.length, durationMs: Math.max(0, deps.clock.nowMs() - startedAt),
+              categories: report.failures.map((failure) => failure.category), evidenceId } });
+          return report;
         } catch (error) {
           if (!(error instanceof ExecutionFault)) throw error;
           const retry = error.retryable && infrastructure.browserRetries < 1 &&
@@ -516,12 +525,6 @@ async function runShadowProbes(
       }
     };
     let report = await run();
-    await state.record({
-      at: now(),
-      type: "probe_finished",
-      packetId: packet.id,
-      detail: { verdict: report.verdict },
-    });
 
     if (report.verdict === "inconclusive" && !used) {
       const snapshot = report.failures.find(
@@ -533,12 +536,6 @@ async function runShadowProbes(
           used = true;
           await state.record({ at: now(), type: "probe_refined", packetId: packet.id });
           report = await run();
-          await state.record({
-            at: now(),
-            type: "probe_finished",
-            packetId: packet.id,
-            detail: { verdict: report.verdict, refined: true },
-          });
         } catch (error) {
           if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
           used = true;
@@ -554,6 +551,7 @@ async function runShadowProbes(
     return { source: "probe", report, plan: currentPlan, refinementUsed: used };
   } finally {
     await application.stop();
+    await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
   }
 }
 
@@ -565,6 +563,7 @@ async function planProbe(
   deps: PipelineDeps,
   state: RunStateStore,
 ): Promise<ProbePlan | undefined> {
+  await state.record({ at: now(), type: "probe_planning", packetId: packet.id });
   let feedback: ProbePlannerFeedback | undefined;
   try {
     return parseProbePlan(await deps.planner.plan(packet), packet);
@@ -606,7 +605,7 @@ async function planProbe(
 function plannerFailureDetail(error: unknown): Record<string, unknown> {
   return error instanceof ProbePlannerError
     ? { source: "planner", ...error.diagnostics }
-    : { message: sanitizeDiagnosticText(errorMessage(error)) };
+    : { message: errorMessage(error) };
 }
 
 async function blockPacket(
@@ -626,7 +625,7 @@ async function blockPacket(
     detail: { reason },
   });
   for (const requirementId of packet.requirementIds) {
-    await emitArc(deps, (arc) =>
+    await emitArc(deps, state, (arc) =>
       arc.requirementState(requirementId, "implement", "failed"),
     );
   }
@@ -654,13 +653,14 @@ function errorMessage(error: unknown): string {
 
 async function emitArc(
   deps: PipelineDeps,
+  state: RunStateStore,
   emit: (arc: ArcEventsPort) => Promise<void> | void,
 ): Promise<void> {
   if (!deps.arcEvents) return;
   try {
     await emit(deps.arcEvents);
-  } catch {
-    return;
+  } catch (error) {
+    await state.record({ at: now(), type: "arc_projection_failed", detail: { message: errorMessage(error) } });
   }
 }
 
@@ -686,8 +686,13 @@ async function runFinalVerifier(
   state: RunStateStore,
 ): Promise<FinalVerificationReport> {
   for (let retryCount = 0; ; retryCount += 1) {
+    const startedAt = deps.clock.nowMs();
+    await state.record({ at: now(), type: "verification_started", detail: { retryCount } });
     try {
-      return await deps.finalVerifier.verify(options.outputDir, options.platformContract);
+      const report = await deps.finalVerifier.verify(options.outputDir, options.platformContract);
+      await state.record({ at: now(), type: "verification_finished",
+        detail: { ...report, durationMs: Math.max(0, deps.clock.nowMs() - startedAt), retryCount } });
+      return report;
     } catch (error) {
       if (error instanceof ExecutionFault) {
         const retry = error.retryable && retryCount < 1;

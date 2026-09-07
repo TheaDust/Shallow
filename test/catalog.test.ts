@@ -124,6 +124,27 @@ test("Catalog reads only the explicitly selected YAML file", async () => {
   }
 });
 
+test("Catalog keeps original folder dependencies, explicit scenario IDs and empty folders for ARC", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "shallow-catalog-tree-"));
+  try {
+    const path = join(directory, "requirements.yaml");
+    await writeFile(path, JSON.stringify({ id: "ROOT", name: "Root", type: "ROOT", children: [
+      { id: "EMPTY", name: "Empty", type: "FOLDER", scenarios: [{ id: "S-EMPTY", name: "Folder scenario", steps: [] }] },
+      { id: "BASE", name: "Base", type: "FOLDER", children: [{ id: "A", name: "A", type: "ATOMIC" }] },
+      { id: "FOLLOW", name: "Follow", type: "FOLDER", dependencies: ["BASE"], visual_reference: ["reference/folder.png"],
+        children: [{ id: "B", name: "B", type: "ATOMIC", scenarios: [{ id: "S-B", name: "Custom", steps: [] }] }] },
+    ] }));
+    const catalog = await loadRequirementCatalog(path);
+    assert.deepEqual(catalog.tree.children.map((node) => node.id), ["EMPTY", "BASE", "FOLLOW"]);
+    assert.deepEqual(catalog.tree.children[2].dependencies, ["BASE"]);
+    assert.deepEqual(catalog.tree.children[2].visual_reference, ["reference/folder.png"]);
+    assert.equal(catalog.tree.children[2].children[0].scenarios[0].id, "S-B");
+    assert.deepEqual(catalog.requirements.find((node) => node.id === "B")?.dependencyIds, ["A"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("Catalog expands folder dependencies and inherits ancestor prerequisites", async () => {
   const catalog = await loadRequirementCatalog(resolve("data/github/requirements.yaml"));
   const atomicIds = new Set(catalog.requirements.map((item) => item.id));

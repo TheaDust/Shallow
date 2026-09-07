@@ -1,4 +1,5 @@
 import type { RunEvent } from "./types.js";
+import { sanitizeDiagnosticText } from "./diagnostics.js";
 
 export class HumanRunFormatter {
   private firstAtMs: number | null = null;
@@ -11,7 +12,10 @@ export class HumanRunFormatter {
     const message = describe(event.type, event);
     if (message === null) return null;
     const elapsedSuffix = elapsed === null ? "" : ` +${elapsed}`;
-    return `[${renderClock(at)}${elapsedSuffix}] ${message}`;
+    const context = event.sequence ? ` [#${event.sequence}${event.attempt ? ` 尝试 ${event.attempt}` : ""}]` : "";
+    const duration = pickNumber(event.detail, "durationMs");
+    const durationText = duration === null ? "" : `；本阶段耗时 ${renderDuration(duration)}`;
+    return `[${renderClock(at)}${elapsedSuffix}] ${message.replace(/[\r\n]+/g, " ↵ ")}${durationText}${context}`;
   }
 
   private trackElapsed(atMs: number): string | null {
@@ -49,19 +53,39 @@ function parseEvent(rawLine: string): RunEvent | null {
 }
 
 function describe(type: string, event: RunEvent): string | null {
-  const detail = event.detail;
+  const detail: Record<string, unknown> | undefined = event.detail;
   const packetId = event.packetId ?? "";
   const message = pickString(detail, "message");
   const reason = pickString(detail, "reason");
   switch (type) {
     case "pipeline_started":
-      return "流水线启动";
+      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}` : ""}`;
     case "packet_selected":
-      return `选定需求包 ${packetId}`;
+      return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
     case "builder_finished":
-      return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）`;
+      return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）${pickString(detail, "summary") ? `；自述回执（非验收）：${pickString(detail, "summary")}` : ""}`;
+    case "probe_planning":
+      return `开始规划黑盒探针（${packetId}）`;
+    case "application_starting":
+      return `开始启动候选应用（${packetId}）`;
+    case "application_ready":
+      return `候选应用已就绪（${packetId}）：${pickString(detail, "baseUrl") ?? ""}`;
+    case "application_stopped":
+      return `候选应用已停止（${packetId}）`;
+    case "probe_started":
+      return `开始执行 ${pickNumber(detail, "cases") ?? 0} 个黑盒探针（${packetId}）；基础设施重试 ${pickNumber(detail, "retryCount") ?? 0}`;
+    case "repair_scheduled":
+      return `安排第 ${pickNumber(detail, "nextAttempt")} 次 Builder 尝试（${packetId}），${detail?.rootCauseFirst ? "先分析根因再修复" : "依据失败观测修复"}；失败分类：${strings(detail?.failures).join("、")}`;
+    case "verification_started":
+      return `开始交付验证（安装→构建→启动→健康检查→浏览器冒烟）；基础设施重试 ${pickNumber(detail, "retryCount") ?? 0}`;
+    case "verification_finished":
+      return `交付验证${detail?.ok ? "通过" : "失败"}；阶段 ${pickString(detail, "stage")}${message ? `：${message}` : ""}`;
+    case "arc_projection_failed":
+      return `ARC 平台投影写入失败，内部判定保持不变${message ? `：${message}` : ""}`;
+    case "evidence_write_failed":
+      return `失败证据保存失败（${packetId}），继续依据现有判词决策`;
     case "builder_reference_images": {
       const mode = pickString(detail, "mode");
       const skipped = Array.isArray(detail?.skipped) ? detail.skipped.length : 0;
@@ -81,7 +105,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "probe_finished":
       return `探针${verdictText(pickString(detail, "verdict"))}${
         detail?.refined === true ? "（精化后重跑）" : ""
-      }（${packetId}）`;
+      }（${packetId}）${typeof detail?.passed === "number" ? `；通过 ${detail.passed} / 失败 ${detail.failed}；失败分类 ${strings(detail.categories).join("、") || "无"}` : ""}${pickString(detail, "evidenceId") ? `；私有证据 ${pickString(detail, "evidenceId")}` : ""}`;
     case "probe_refined":
       return `定位器已精化，重跑探针（${packetId}）`;
     case "probe_refinement_failed":
@@ -95,7 +119,7 @@ function describe(type: string, event: RunEvent): string | null {
         detail?.retry === true ? "保持候选和计划，重试一次" : "停止当前执行"
       }；Builder 尝试 ${pickNumber(detail, "attempt") ?? 0}`;
     case "packet_accepted":
-      return `需求包验收通过（${packetId}）`;
+      return `需求包验收通过（${packetId}）${event.acceptedSha ? `；接受 SHA ${event.acceptedSha}` : ""}`;
     case "packet_blocked":
       return `需求包已阻塞并回滚（${packetId}）${reason ? `：${reason}` : ""}`;
     case "delivery_started":
@@ -118,7 +142,7 @@ function describe(type: string, event: RunEvent): string | null {
         : `交付失败${stageSuffix}${message ? `：${message}` : ""}`;
     }
     case "pipeline_finished":
-      return "流水线结束";
+      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已验证 ${strings(detail.verifiedRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
     default:
       return null;
   }
@@ -140,7 +164,11 @@ function verdictText(verdict: string | null): string {
 
 function pickString(detail: Record<string, unknown> | undefined, key: string): string | null {
   const value = detail?.[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? sanitizeDiagnosticText(value) : null;
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => sanitizeDiagnosticText(item)) : [];
 }
 
 function pickNumber(detail: Record<string, unknown> | undefined, key: string): number | null {

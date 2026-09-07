@@ -134,7 +134,7 @@ export class LlmProbePlanner implements ProbePlanner {
         role: "user",
         content: JSON.stringify({
           original,
-          accessibilitySnapshot: sanitizeSnapshot(snapshot),
+          accessibilitySnapshot: sanitizeDiagnosticText(snapshot, [this.config.apiKey], 4_000),
         }),
       },
     ]);
@@ -236,11 +236,7 @@ export class LlmProbePlanner implements ProbePlanner {
 }
 
 function sanitizePlannerDiagnostic(text: string, apiKey?: string): string {
-  const redacted = (apiKey ? text.replaceAll(apiKey, "[redacted]") : text)
-    .replace(/("(?:password|token|api[_-]?key|secret|cookie|authorization)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[redacted]"')
-    .replace(/\bBearer\s+[^\s"',}]+/gi, "Bearer [redacted]")
-    .replace(/\b(password|token|api[_-]?key|secret|cookie|authorization)\s*[:=]\s*[^\s"',}]+/gi, "$1=[redacted]");
-  return sanitizeDiagnosticText(redacted);
+  return sanitizeDiagnosticText(text, apiKey ? [apiKey] : []);
 }
 
 function extractJsonPayload(content: string): string {
@@ -314,10 +310,4 @@ function extractContent(value: unknown): string | undefined {
   if (typeof message !== "object" || message === null) return undefined;
   const content = (message as { content?: unknown }).content;
   return typeof content === "string" ? content : undefined;
-}
-
-function sanitizeSnapshot(snapshot: string): string {
-  return snapshot
-    .replace(/\b(password|token|api[_-]?key|cookie)\s*[:=]\s*\S+/gi, "$1=[redacted]")
-    .slice(0, 4_000);
 }

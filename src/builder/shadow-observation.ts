@@ -1,10 +1,10 @@
 import type { ShadowReport } from "../types.js";
 import type { BuilderShadowObservation } from "./prompt-input.js";
-
-const FREE_TEXT_LIMIT = 1_500;
+import { sanitizeDiagnosticText } from "../diagnostics.js";
 
 export function toBuilderShadowObservation(
   report: ShadowReport,
+  secrets: readonly string[] = [],
 ): BuilderShadowObservation {
   return {
     packetId: report.packetId,
@@ -13,11 +13,11 @@ export function toBuilderShadowObservation(
       caseId: failure.caseId,
       stepIndex: failure.stepIndex,
       category: failure.category,
-      message: sanitizeObservationText(failure.message),
+      message: sanitizeDiagnosticText(failure.message, secrets),
       ...(failure.locatorSnapshot
         ? {
-            accessibilityExcerpt: sanitizeObservationText(
-              failure.locatorSnapshot,
+            accessibilityExcerpt: sanitizeDiagnosticText(
+              failure.locatorSnapshot, secrets,
             ),
           }
         : {}),
@@ -26,11 +26,4 @@ export function toBuilderShadowObservation(
       (failure) => failure.caseId === "<application>",
     ),
   };
-}
-
-function sanitizeObservationText(text: string): string {
-  const normalized = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ");
-  return normalized.length <= FREE_TEXT_LIMIT
-    ? normalized
-    : normalized.slice(0, FREE_TEXT_LIMIT);
 }

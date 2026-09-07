@@ -8,7 +8,7 @@ import {
   decideAfterReport,
   sanitizeDiagnosticText,
 } from "../src/run-state.js";
-import type { ShadowReport } from "../src/types.js";
+import type { ShadowReport, RunEvent } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Decision Loop accepts a passing Shadow report", () => {
@@ -94,13 +94,13 @@ test("RunState records global transitions and writes a redacted JSONL ledger", a
     state.setPacketAttempt("packet-req", 2);
     await state.record({
       at: "2026-09-04T00:00:00.000Z",
-      type: "accepted",
+      type: "builder_finished",
       packetId: "packet-req",
       detail: {
         apiKey: "secret-value",
         message: "x".repeat(3_000),
       },
-    });
+    } as unknown as RunEvent);
 
     assert.equal(state.snapshot.statusByRequirementId.REQ, "verified");
     assert.equal(state.snapshot.acceptedSha, "accepted");

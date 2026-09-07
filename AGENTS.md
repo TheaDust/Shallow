@@ -58,7 +58,8 @@ src/
                                 restoreAccepted（保留 .arc 的应用回滚）、runGit（单命令 30s 超时）
   final-verifier.ts             FinalVerifier（install→build→启动→/health readiness→浏览器 smoke）与
                                 CommandAppLifecycle（平台合同进程启停）
-  arc-protocol.ts               ArcEventSink：.arc/runner-events.jsonl、七张溯源表、builderDiagnostic 回执信号
+  arc-protocol.ts               ArcEventSink：官方 .arc 事件、完整需求树、投影 journal 与幂等重建
+  diagnostics.ts               sanitizeDiagnosticText：已知密钥及常见凭证脱敏、控制字符清理、截断
   runtime-config.ts             readGatewayConfig、readEnvFile（.env）、createArcPlatformContract、
                                 deriveModelTimeouts（预算→Builder/Planner 超时）、SHALLOW_PROBE_PORT、pickFreePort
   process-spawn.ts              spawnProcess：Windows .cmd/bat 经 cmd.exe 启动并拒绝 shell 元字符；其余直接 spawn
@@ -66,7 +67,7 @@ src/
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
-    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理）、SdkOpenCodeRuntime / sdkFetch
+    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     self-test.ts                builderSelfTestConfig：本地 Playwright MCP 入口、Chromium 路径、来源与输出目录
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
@@ -140,7 +141,8 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
 - `GitCliOps.open` 首次初始化要求目录为空或仅有 `.gitignore`。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
-- 运行事件经 `RunStateStore.record` 统一发射；新增阶段观测就新增 `state.record({type: ...})`，需要人类可读时在 `src/human-log.ts` 的 `describe` 里补对应中文文案。
+- 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。
+- 修改脱敏、证据或 ARC 投影时，先读 `docs/2026-09-07-observability-arc-projection.md`：官方固定提交与字段、投影重建范围和安全限制均在此。验证 `test/observability.test.ts`、`test/arc-protocol.test.ts`、`test/human-log.test.ts`、`test/pipeline.e2e.test.ts`；目录链接检查不代表 OS 隔离。
 - `RunSummary.delivered` 要求全部原子需求 verified 且最终验证通过；有 todo 或 blocked 时为 partial。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
 - 回滚先 `reset --mixed <acceptedSha>`，再 `restore --worktree -- . :(top,exclude).arc` 和 `clean -fd -e .arc/`，保留 `.arc` 中包括失败在内的完整审计记录。
 

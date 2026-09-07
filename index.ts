@@ -1,7 +1,8 @@
-import { access, mkdir } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -21,6 +22,8 @@ import {
   type RunSummary,
 } from "./src/pipeline.js";
 import type { LogSink } from "./src/run-state.js";
+import { sanitizeDiagnosticText } from "./src/diagnostics.js";
+import { PROBE_PLAN_JSON_SCHEMA } from "./src/judge/probe-schema.js";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
@@ -75,6 +78,8 @@ export async function main(
     gateway,
     pipelineOptions,
     modelTimeouts: deriveModelTimeouts(cli.budgetMs),
+  }).catch((error: unknown) => {
+    throw new Error(sanitizeDiagnosticText(error instanceof Error ? error.message : String(error), [gateway.apiKey]));
   });
   return summary.status === "failed" ? 1 : 0;
 }
@@ -98,6 +103,7 @@ async function executeProduction(
 ): Promise<RunSummary> {
   const { gateway, pipelineOptions, modelTimeouts } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
+  await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
   const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
     baseUrl: pipelineOptions.platformContract.baseUrl,
@@ -115,30 +121,63 @@ async function executeProduction(
   const lifecycle = new CommandAppLifecycle();
   const git = await GitCliOps.open(pipelineOptions.outputDir);
   const finalVerifier = new FinalVerifier(runner, lifecycle);
-  const arcEvents = new ArcEventSink(pipelineOptions.outputDir);
-  await arcEvents.init();
-  return runPipeline(pipelineOptions, {
-    builder,
-    planner,
-    runner,
-    git,
-    appLifecycle: lifecycle,
-    clock: { nowMs: () => Date.now() },
-    finalVerifier,
-    arcEvents,
-    logSink: createRunLogSink(runLogFile),
+  const logSink = createRunLogSink(runLogFile);
+  const projectionWarning = (error: unknown): void => {
+    try { logSink.write(`${JSON.stringify({ at: new Date().toISOString(), type: "arc_projection_failed",
+      detail: { message: sanitizeDiagnosticText(String(error), [gateway.apiKey]) } })}\n`); } catch { /* Diagnostic only. */ }
+  };
+  const arcEvents = new ArcEventSink(pipelineOptions.outputDir, {
+    journalFile: join(dirname(runLogFile), "arc-projection.jsonl"),
   });
+  await arcEvents.init().catch(projectionWarning);
+  const promptDir = new URL("./prompts/", import.meta.url);
+  const promptHash = createHash("sha256");
+  for (const name of (await readdir(promptDir, { recursive: true })).filter((name) => name.endsWith(".md")).sort()) {
+    const path = name.replaceAll("\\", "/");
+    promptHash.update(path).update("\0").update((await readFile(new URL(path, promptDir), "utf8")).replace(/\r\n/g, "\n"));
+  }
+  try {
+    return await runPipeline(pipelineOptions, {
+      builder,
+      planner,
+      runner,
+      git,
+      appLifecycle: lifecycle,
+      clock: { nowMs: () => Date.now() },
+      finalVerifier,
+      arcEvents,
+      logSink,
+      diagnosticSecrets: [gateway.apiKey],
+      runMetadata: { model: gateway.model, ...modelTimeouts,
+        promptSha256: promptHash.digest("hex"),
+        probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
+        usage: { status: "unavailable" },
+      },
+    });
+  } finally {
+    await arcEvents.rebuild().catch(projectionWarning);
+  }
+}
+
+export async function assertPrivateRunDirectory(outputDir: string, runDir: string): Promise<void> {
+  const contained = (candidate: string, controller: string): boolean => {
+    const path = relative(candidate, controller);
+    return path === "" || (!isAbsolute(path) && path !== ".." && !path.startsWith("..\\") && !path.startsWith("../"));
+  };
+  if (contained(resolve(outputDir), resolve(runDir))) throw new Error("Run diagnostics directory must be outside the candidate output directory");
+  await mkdir(runDir, { recursive: true, mode: 0o700 });
+  if (contained(await realpath(outputDir), await realpath(runDir))) throw new Error("Run diagnostics directory resolves inside the candidate output directory");
 }
 
 function createRunLogSink(runLogFile: string): LogSink {
   const runLogDir = dirname(runLogFile);
-  mkdirSync(runLogDir, { recursive: true });
   const formatter = new HumanRunFormatter();
   return {
     write: (chunk) => {
       process.stderr.write(chunk);
       const line = formatter.format(chunk);
       if (line === null) return;
+      mkdirSync(runLogDir, { recursive: true });
       appendFileSync(runLogFile, `${line}\n`, "utf8");
     },
   };
@@ -153,7 +192,7 @@ if (invokedPath === import.meta.url) {
       process.exitCode = exitCode;
     })
     .catch((error: unknown) => {
-      console.error(error instanceof Error ? error.message : String(error));
+      console.error(sanitizeDiagnosticText(error instanceof Error ? error.message : String(error)));
       process.exitCode = 1;
     });
 }

@@ -1,8 +1,20 @@
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { sanitizeDiagnosticText } from "./run-state.js";
-import type { AtomicRequirement } from "./types.js";
+import type { RequirementNode } from "./types.js";
+
+type ProjectionRecord = {
+  id: string;
+  event: Record<string, unknown>;
+  tree?: { requirementRows: Record<string, ArcRequirementRow>; scenarioRows: Record<string, ArcScenarioRow> };
+};
+
+export interface ArcProjectionOptions {
+  /** Controller-owned path outside the candidate. Contains only public projection data. */
+  journalFile: string;
+}
 
 const ARC_TABLES = [
   "requirements",
@@ -53,8 +65,9 @@ export interface ArcScenarioStep {
 export class ArcEventSink {
   private readonly eventsFile: string;
   private readonly traceDir: string;
+  private queue: Promise<void> = Promise.resolve();
 
-  constructor(outputDir: string) {
+  constructor(outputDir: string, private readonly projection?: ArcProjectionOptions) {
     const arcDir = join(outputDir, ".arc");
     this.eventsFile = join(arcDir, "runner-events.jsonl");
     this.traceDir = join(arcDir, "traceability");
@@ -80,7 +93,7 @@ export class ArcEventSink {
       type: "runner_state",
       state,
       timestamp: arcTimestamp(),
-      message: message ?? null,
+      message: message === undefined ? null : sanitizeDiagnosticText(message),
     });
   }
 
@@ -97,9 +110,6 @@ export class ArcEventSink {
       timestamp: arcTimestamp(),
       message: null,
     });
-    const nodeState = NODE_STATE_BY_PHASE_STATUS[`${phase}:${status}`];
-    if (!nodeState) return;
-    await this.upsertNodeState(reqId, nodeState, phase);
   }
 
   async commitHistorySignal(reason: string): Promise<void> {
@@ -118,35 +128,10 @@ export class ArcEventSink {
     });
   }
 
-  async builderDiagnostic(
-    packetId: string,
-    outcome: "completed" | "failed" | "timed_out",
-    summary: string,
-  ): Promise<void> {
-    await this.appendEvent({
-      type: "signal",
-      reason: "builder_receipt_recorded",
-      packet_id: packetId,
-      outcome,
-      message: sanitizeDiagnosticText(summary),
-      timestamp: arcTimestamp(),
-      refresh: {
-        submission: false,
-        logs: true,
-        commit_history: false,
-        traceability_selected: false,
-        traceability_all: false,
-        preview: false,
-      },
-    });
-  }
-
   async storeRequirementTree(
     requirementRows: Record<string, ArcRequirementRow>,
     scenarioRows: Record<string, ArcScenarioRow>,
   ): Promise<void> {
-    await writeJsonAtomic(this.tablePath("requirements"), requirementRows);
-    await writeJsonAtomic(this.tablePath("scenarios"), scenarioRows);
     await this.appendEvent({
       type: "signal",
       reason: "requirement_tree_stored",
@@ -159,13 +144,14 @@ export class ArcEventSink {
         traceability_all: true,
         preview: false,
       },
-    });
+    }, { requirementRows, scenarioRows });
   }
 
   private async upsertNodeState(
     reqId: string,
     state: string,
     phase: string,
+    timestamp: string,
   ): Promise<void> {
     const path = this.tablePath("node_states");
     const rows = await readJsonObject(path);
@@ -173,14 +159,73 @@ export class ArcEventSink {
       req_id: reqId,
       state,
       phase,
-      updated_at: arcTimestamp(),
+      updated_at: timestamp,
     };
     await writeJsonAtomic(path, rows);
   }
 
-  private async appendEvent(record: Record<string, unknown>): Promise<void> {
+  private appendEvent(event: Record<string, unknown>, tree?: ProjectionRecord["tree"]): Promise<void> {
+    const record: ProjectionRecord = structuredClone({ id: randomUUID(), event, ...(tree ? { tree } : {}) });
+    return this.serial(async () => {
+      if (this.projection) {
+        await mkdir(join(this.projection.journalFile, ".."), { recursive: true });
+        await appendFile(this.projection.journalFile, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
+      }
+      await this.apply(record);
+    });
+  }
+
+  private async apply(record: ProjectionRecord): Promise<void> {
+    if (record.tree) {
+      await writeJsonAtomic(this.tablePath("requirements"), record.tree.requirementRows);
+      await writeJsonAtomic(this.tablePath("scenarios"), record.tree.scenarioRows);
+    }
     await mkdir(join(this.eventsFile, ".."), { recursive: true });
-    await appendFile(this.eventsFile, `${JSON.stringify(record)}\n`, "utf8");
+    await appendFile(this.eventsFile, `${JSON.stringify(record.event)}\n`, "utf8");
+    const { node_id, phase, status, timestamp } = record.event;
+    const nodeState = NODE_STATE_BY_PHASE_STATUS[`${phase}:${status}`];
+    if (record.event.type === "requirement_state" && nodeState) {
+      await this.upsertNodeState(String(node_id), nodeState, String(phase), String(timestamp));
+    }
+  }
+
+  /** Rebuild this run's owned projection. Repeated replay preserves history exactly once. */
+  rebuild(): Promise<void> {
+    return this.serial(async () => {
+      if (!this.projection) throw new Error("ARC rebuild requires a projection journal");
+      const source = await readFile(this.projection.journalFile, "utf8");
+      const records = source.split("\n").filter(Boolean).map((line) => JSON.parse(line) as ProjectionRecord);
+      const unique = new Map<string, ProjectionRecord>();
+      for (const record of records) {
+        if (!record.id || !record.event) throw new Error("Invalid ARC projection record");
+        const previous = unique.get(record.id);
+        if (previous && JSON.stringify(previous) !== JSON.stringify(record)) throw new Error("Conflicting ARC projection ID");
+        unique.set(record.id, record);
+      }
+      const tables = Object.fromEntries(ARC_TABLES.map((table) => [table, {}])) as Record<(typeof ARC_TABLES)[number], Record<string, unknown>>;
+      for (const record of unique.values()) {
+        if (record.tree) {
+          tables.requirements = record.tree.requirementRows;
+          tables.scenarios = record.tree.scenarioRows;
+        }
+        const { node_id, phase, status, timestamp } = record.event;
+        const state = NODE_STATE_BY_PHASE_STATUS[`${phase}:${status}`];
+        if (record.event.type === "requirement_state" && state) {
+          tables.node_states[String(node_id)] = { req_id: node_id, state, phase, updated_at: timestamp };
+        }
+      }
+      await this.init();
+      for (const table of ARC_TABLES) await writeJsonAtomic(this.tablePath(table), tables[table]);
+      const tmp = `${this.eventsFile}.tmp`;
+      await writeFile(tmp, [...unique.values()].map((record) => `${JSON.stringify(record.event)}\n`).join(""), "utf8");
+      await rename(tmp, this.eventsFile);
+    });
+  }
+
+  private serial(work: () => Promise<void>): Promise<void> {
+    const next = this.queue.then(work);
+    this.queue = next.catch(() => {});
+    return next;
   }
 
   private tablePath(table: (typeof ARC_TABLES)[number]): string {
@@ -188,16 +233,17 @@ export class ArcEventSink {
   }
 }
 
-export function buildArcRequirementRows(requirements: AtomicRequirement[]): {
+export function buildArcRequirementRows(root: RequirementNode): {
   requirementRows: Record<string, ArcRequirementRow>;
   scenarioRows: Record<string, ArcScenarioRow>;
 } {
   const requirementRows: Record<string, ArcRequirementRow> = {};
   const scenarioRows: Record<string, ArcScenarioRow> = {};
-  for (const requirement of requirements) {
+  const walk = (requirement: RequirementNode, parentId: string | null): void => {
     const scenarios: ArcRequirementRow["scenarios"] = [];
-    for (const [index, text] of requirement.scenarios.entries()) {
-      const row = parseScenarioRow(requirement.id, index, text);
+    for (const scenario of requirement.scenarios) {
+      const row: ArcScenarioRow = { scenario_id: scenario.id, id: scenario.id,
+        name: scenario.name, req_id: requirement.id, steps: scenario.steps };
       scenarios.push({
         id: row.scenario_id,
         name: row.name,
@@ -209,47 +255,21 @@ export function buildArcRequirementRows(requirements: AtomicRequirement[]): {
       req_id: requirement.id,
       id: requirement.id,
       name: requirement.name,
-      description: requirement.text,
-      visual_reference: [...requirement.references],
+      description: requirement.description,
+      visual_reference: [...requirement.visual_reference],
       scenarios,
-      parent_id: requirement.folderPath.at(-1) ?? null,
-      children_ids: [],
-      dependencies: [...requirement.dependencyIds],
+      parent_id: parentId,
+      children_ids: requirement.children.map((child) => child.id),
+      dependencies: [...requirement.dependencies],
     };
-  }
+    for (const child of requirement.children) walk(child, requirement.id);
+  };
+  walk(root, null);
   return { requirementRows, scenarioRows };
 }
 
 export function arcTimestamp(date: Date = new Date()): string {
   return date.toISOString().replace("T", " ").slice(0, 19);
-}
-
-function parseScenarioRow(
-  reqId: string,
-  index: number,
-  text: string,
-): ArcScenarioRow {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  const name = lines[0] ?? `scenario ${index}`;
-  const steps = lines.slice(1).map((line) => {
-    const separator = line.indexOf(":");
-    if (separator <= 0) return { keyword: "THEN", content: line };
-    return {
-      keyword: line.slice(0, separator).trim(),
-      content: line.slice(separator + 1).trim(),
-    };
-  });
-  const scenarioId = `${reqId}::${index}`;
-  return {
-    scenario_id: scenarioId,
-    id: scenarioId,
-    name,
-    req_id: reqId,
-    steps,
-  };
 }
 
 async function readJsonObject(path: string): Promise<Record<string, unknown>> {

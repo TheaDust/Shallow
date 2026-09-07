@@ -196,14 +196,20 @@ flowchart TD
 
 ## 运行产物与日志
 
-每次运行产生四类可观测产物：
+主线每次运行产生以下可观测产物：
 
-- **stderr**：每个运行事件一行脱敏 JSON（`key/token/password/secret/cookie` 字段替换为 `[redacted]`，超长文本截断到 1500 字符），覆盖 `pipeline_started / packet_selected / builder_started / builder_finished / probe_planned / probe_finished / probe_refined / packet_accepted / packet_blocked / delivery_* / pipeline_finished` 等全部阶段。
-- **run-log.txt（人类可读）**：与 ledger 同目录的中文运行日志，每个事件一行 `[本地时间 +耗时] 描述`（如 `[14:02:13 +2m13s] Builder 完成（auth-login）`）；启动时会把该文件的绝对路径打印到 stderr。
-- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<运行ID>/run-ledger.jsonl`，与 stderr 同源同脱敏，仅审计用；可用 `SHALLOW_RUN_DIR` 换到自定义目录（仍按运行 ID 分子目录）。
+- **stderr**：运行事件的脱敏 JSON；包含规划、应用启停、探针、修复安排和交付验证等阶段。Planner 原始响应片段只进入私有台账。
+- **run-log.txt（人类可读）**：与 ledger 同目录，显示本地时间、累计耗时、事件序号、尝试次数，以及可用的阶段耗时、需求名称、失败分类、证据 ID、接受 SHA 和最终 verified/blocked/todo 数量及未完成 ID。Builder 回执标为“自述回执（非验收）”，换行转换为可见分隔，保持每事件一行。启动时打印文件绝对路径。
+- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<目录运行ID>/run-ledger.jsonl`。内部事件采用判别联合，由 `RunStateStore` 注入运行 UUID、唯一事件 ID、递增序号、累计耗时、最后接受 SHA 和已登记的 packet 尝试次数；SHA 表示接受基线，不是当前未提交候选的摘要。生产启动事件记录模型、Builder/Planner 超时、prompt 资产与 Probe schema 的 SHA-256；当前 usage 标记 `unavailable`，不报告估算计费 token。
+- **evidence/**：与 ledger 同目录，只保存失败报告的白名单文本：每运行最多 128 份、每份最多 8 个失败、各文本字段最多 1500 字符，单文件硬上限 128 KiB；包含总失败数、尝试次数和接受基线。日志通过 ID 引用，正文保留在控制器目录。
+- **arc-projection.jsonl**：与 ledger 同目录，保存官方格式的平台事件及完整需求树投影意图，内部记录带唯一 ID。主线结束时从它重建本轮 `.arc`，重复 ID 只投影一次；写入失败记录告警，不改变已提交的验收决定。
 - **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
 
-Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、可用的底层错误信息与模型内容片段。诊断文本先脱敏，再清理控制字符并限制到 1500 字符；中文日志展示类别和原因，模型片段保留在结构化日志中。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。反馈仅在 Judge 侧使用，验收白名单和定位器精化上限保持不变。
+Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。反馈仅在 Judge 侧使用。
+
+`diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
+
+`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。OpenCode runtime 通过内联 config（优先级高于 Builder 可写的项目 `opencode.json`）注入工具级 deny：`read`/`edit` 拒绝 `.arc` 路径、bash 命令文本含 `.arc` 被拒、外部目录访问一律拒绝（同时消除 SDK 无头模式下 `external_directory` 默认 ask 的挂起风险）。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
 
 GitOps（`src/git-ops.ts`）细节：
 
@@ -235,8 +241,8 @@ GitOps（`src/git-ops.ts`）细节：
 | 超时 | 值 | 来源 |
 | --- | --- | --- |
 | 总预算 | `--budget-ms`，缺省或 `0` 为不限时 | CLI |
-| Builder 单次调用 | 预算的 40%，下限 30s、上限 2400s；不限时取 2400s | `deriveModelTimeouts` |
-| baseline 单模块调用 | 预算的 80%，下限 60s、上限 4800s；不限时取 4800s | `deriveBaselinePromptTimeoutMs` |
+| Builder 单次调用 | 预算的 40%，下限 30s、上限 3600s；不限时取 3600s（1h） | `deriveModelTimeouts` |
+| baseline 单模块调用 | 预算的 80%，下限 60s、上限 7200s；不限时取 10800s（3h） | `deriveBaselinePromptTimeoutMs` |
 | Planner 单次调用 | 预算的 10%，下限 10s、上限 720s；不限时取 720s | `deriveModelTimeouts` |
 | Builder 超时后落地等待 | 5s（可经 `promptSettleTimeoutMs` 配置） | `OpenCodeSdkBuilder` |
 | git 单命令 | 30s | `runGit` |
@@ -281,7 +287,7 @@ python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 - `<交付目录>/.arc/runner-events.jsonl`：`runner_state` / `requirement_state` / `signal` 事件流（`src/arc-protocol.ts`，时间戳为 UTC `YYYY-MM-DD HH:MM:SS`）
 - `<交付目录>/.arc/traceability/*.json`：七张溯源表——requirements、scenarios（从需求树生成）、node_states（随 accept/block 更新），其余表保留空对象
-- `signal` 事件：`git_commit`（每次 accept 刷新提交历史）、`builder_receipt_recorded`（Builder 完成回执的脱敏摘要）、`requirement_tree_stored`
+- `signal` 事件：`git_commit`（每次 accept 刷新提交历史）、`requirement_tree_stored`（需求树刷新），使用官方六项 `refresh` 字段；Builder 回执归内部日志。
 - 交付仓库的 git 提交历史（`captureAccepted` 每次 accept 自动产生）
 
 工程要点：
@@ -342,7 +348,8 @@ src/
   run-state.ts                 判定决策、运行状态、脱敏 ledger 与 logSink
   git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
   final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke）与 CommandAppLifecycle
-  arc-protocol.ts              .arc/ 事件流、七张溯源表、builder 回执信号
+  arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
+  diagnostics.ts              自由文本凭证脱敏、控制字符清理及长度限制
   runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口
   process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）

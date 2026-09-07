@@ -7,12 +7,13 @@ import type {
   ProductContext,
   ProductKind,
   RequirementCatalog,
+  RequirementNode,
   SeedDataCategory,
 } from "./types.js";
 
 type NodeType = "ROOT" | "FOLDER" | "ATOMIC";
 
-interface ParsedNode {
+interface ParsedNode extends RequirementNode {
   id: string;
   name: string;
   type: NodeType;
@@ -23,13 +24,14 @@ interface ParsedNode {
 }
 
 interface ParsedScenario {
+  id: string;
   name: string;
   steps: Array<{ keyword: string; content: string }>;
 }
 
 export async function loadRequirementCatalog(
   requirementsFile: string,
-): Promise<RequirementCatalog> {
+): Promise<RequirementCatalog & { tree: RequirementNode }> {
   const source = await readFile(requirementsFile, "utf8");
   const record = requireRecord(parse(source), "root");
   const root = parseNode(record, "root");
@@ -60,6 +62,7 @@ export async function loadRequirementCatalog(
   ])));
 
   return {
+    tree: root,
     requirements,
     statusById: Object.fromEntries(
       requirements.map((requirement) => [requirement.id, "todo"]),
@@ -102,13 +105,14 @@ function parseNode(value: unknown, location: string): ParsedNode {
     (child, index) => parseNode(child, `${location}.children[${index}]`),
   );
   const scenarios = requireArray(record.scenarios ?? [], `${location}.scenarios`).map(
-    (scenario, index) => parseScenario(scenario, `${location}.scenarios[${index}]`),
+    (scenario, index) => parseScenario(scenario, `${location}.scenarios[${index}]`, `${id}::${index}`),
   );
 
-  return { id, name, type, description, dependencies, children, scenarios };
+  const visual_reference = requireStringArray(record.visual_reference ?? [], `${location}.visual_reference`);
+  return { id, name, type, description, dependencies, children, scenarios, visual_reference };
 }
 
-function parseScenario(value: unknown, location: string): ParsedScenario {
+function parseScenario(value: unknown, location: string, defaultId: string): ParsedScenario {
   const record = requireRecord(value, location);
   const name = requireString(record.name, `${location}.name`);
   const steps = requireArray(record.steps ?? [], `${location}.steps`).map(
@@ -126,7 +130,7 @@ function parseScenario(value: unknown, location: string): ParsedScenario {
       };
     },
   );
-  return { name, steps };
+  return { id: requireString(record.id ?? record.scenario_id ?? defaultId, `${location}.id`), name, steps };
 }
 
 function collectNodes(node: ParsedNode, nodes: Map<string, ParsedNode>): void {
