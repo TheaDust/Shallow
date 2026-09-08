@@ -25,6 +25,72 @@ test("Playwright Probe Runner executes fill, click, reload, and assertions in Ch
   }
 });
 
+test("Playwright Probe Runner executes press, doubleClick, and hover actions in Chromium", async () => {
+  const server = await startFixtureServer();
+  try {
+    const plan: ProbePlan = {
+      packetId: "packet-actions",
+      cases: [
+        {
+          id: "keyboard-and-pointer",
+          requirementIds: ["REQ-ACTIONS"],
+          purpose: "happy_path",
+          steps: [
+            { op: "goto", path: "/" },
+            {
+              op: "fill",
+              locator: { by: "label", text: "Profile name" },
+              value: "Kim",
+            },
+            {
+              op: "press",
+              locator: { by: "label", text: "Profile name" },
+              key: "Enter",
+            },
+            {
+              op: "expectText",
+              locator: { by: "role", role: "status" },
+              text: "Saved",
+              exact: true,
+            },
+            {
+              op: "doubleClick",
+              locator: { by: "role", role: "button", name: "Rename" },
+            },
+            {
+              op: "expectText",
+              locator: { by: "role", role: "status" },
+              text: "Renamed",
+              exact: true,
+            },
+            {
+              op: "hover",
+              locator: { by: "role", role: "button", name: "Hint" },
+            },
+            {
+              op: "expectText",
+              locator: { by: "role", role: "status" },
+              text: "Hovered",
+              exact: true,
+            },
+          ],
+        },
+      ],
+    };
+
+    const report = await new PlaywrightProbeRunner().run(plan, {
+      baseUrl: server.baseUrl,
+      stepTimeoutMs: 2_000,
+      caseTimeoutMs: 10_000,
+    });
+
+    assert.equal(report.verdict, "pass");
+    assert.deepEqual(report.passedCases, ["keyboard-and-pointer"]);
+  } finally {
+    await server.stop();
+  }
+});
+
 test("Playwright Probe Runner creates a fresh browser context for newContext", async () => {
   const server = await startFixtureServer();
   try {

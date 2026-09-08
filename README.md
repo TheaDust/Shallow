@@ -102,7 +102,7 @@ flowchart LR
 1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；顶层 `data` 解析为产品种子数据。拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
 2. **Scheduler**（`src/scheduler.ts`）：从依赖全部 `verified` 的 todo 需求中选种子，依次比较场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序，前项相同才比较后一项。再按声明顺序加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求；packet id 由选中 ID 的 slug 拼接生成。
 3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 中文资产编译为固定系统合同与模式任务模板，并按产品类型和需求关键词挑选规则碎片，附带完成回执。实现和修复均保留当前需求与产品上下文；修复额外接收白名单化的 `ShadowReport` 观测。第 3 次尝试（第 2 次修复）要求先给出根因判断再改代码。调用返回 `completed / failed / timed_out`。
-4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
+4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/doubleClick/hover/press/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`，`press` 的 key 限枚举键），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
 5. **Probe Runner**（`src/judge/playwright-probe-runner.ts`）：真实 Chromium 按白名单执行探针，locator 只映射 `getByRole / getByLabel / getByText`，`goto` 绑定受控 baseUrl，每个 case 使用隔离 context；单步超时 2s、单 case 超时 15s，输出带失败分类（`assertion / locator / navigation / timeout / runner`）的结构化 `ShadowReport`。
 6. **DecisionLoop**（`src/run-state.ts`）与 **GitOps**（`src/git-ops.ts`）：见下两节。
 7. **FinalVerifier**（`src/final-verifier.ts`）：见交付阶段。

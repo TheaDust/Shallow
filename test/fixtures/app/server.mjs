@@ -10,6 +10,8 @@ const html = `<!doctype html>
       <label for="profile-name">Profile name</label>
       <input id="profile-name" name="profile-name">
       <button type="button" id="save">Save</button>
+      <button type="button" id="rename" aria-label="Rename">Rename</button>
+      <button type="button" id="hint" aria-label="Hint">Hint</button>
       <p role="status" id="status"></p>
     </main>
     <script type="module">
@@ -17,7 +19,7 @@ const html = `<!doctype html>
       const status = document.querySelector('#status');
       const current = await fetch('/api/profile').then((response) => response.json());
       input.value = current.name;
-      document.querySelector('#save').addEventListener('click', async () => {
+      const save = async () => {
         const saved = await fetch('/api/profile', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -25,6 +27,16 @@ const html = `<!doctype html>
         }).then((response) => response.json());
         input.value = saved.name;
         status.textContent = 'Saved';
+      };
+      document.querySelector('#save').addEventListener('click', save);
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') void save();
+      });
+      document.querySelector('#rename').addEventListener('dblclick', () => {
+        status.textContent = 'Renamed';
+      });
+      document.querySelector('#hint').addEventListener('mouseenter', () => {
+        status.textContent = 'Hovered';
       });
     </script>
   </body>

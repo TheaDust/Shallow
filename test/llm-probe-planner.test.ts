@@ -64,6 +64,37 @@ test("Wire schema fully describes the DSL and closes every structured-output obj
   assert.match(wire, /"expectValue"/);
 });
 
+test("Probe plans accept bounded keyboard and pointer actions with enumerated keys", () => {
+  const candidate = validPlan();
+  candidate.cases[0].steps = [
+    { op: "goto", path: "/" },
+    { op: "doubleClick", locator: { by: "label", text: "Profile name" } },
+    { op: "hover", locator: { by: "role", role: "button", name: "Hint" } },
+    { op: "fill", locator: { by: "label", text: "Profile name" }, value: "Ada" },
+    { op: "press", locator: { by: "label", text: "Profile name" }, key: "Enter" },
+    { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+  ];
+  const parsed = parseProbePlan(candidate, packet());
+  assert.deepEqual(parsed.cases[0].steps[4], {
+    op: "press",
+    locator: { by: "label", text: "Profile name" },
+    key: "Enter",
+  });
+
+  const badKey = validPlan();
+  badKey.cases[0].steps = JSON.parse(`[
+    {"op": "goto", "path": "/"},
+    {"op": "press", "locator": {"by": "label", "text": "Profile name"}, "key": "Control+a"},
+    {"op": "expectVisible", "locator": {"by": "role", "role": "status"}}
+  ]`);
+  assert.throws(() => parseProbePlan(badKey, packet()), /key must be one of/);
+
+  const wire = JSON.stringify(PROBE_PLAN_JSON_SCHEMA);
+  assert.match(wire, /"doubleClick"/);
+  assert.match(wire, /"hover"/);
+  assert.match(wire, /"Enter"/);
+});
+
 test("Probe Planner rejects executable, selector, and cross-origin operations", () => {
   const invalidSteps = [
     { op: "evaluate", code: "document.cookie" },

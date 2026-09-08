@@ -521,7 +521,8 @@ async function runShadowProbes(
       while (true) {
         const startedAt = deps.clock.nowMs();
         await state.record({ at: now(), type: "probe_started", packetId: packet.id,
-          detail: { cases: currentPlan.cases.length, retryCount: infrastructure.browserRetries } });
+          detail: { cases: currentPlan.cases.length, retryCount: infrastructure.browserRetries,
+            plan: currentPlan } });
         try {
           const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
           await application.assertUnchanged?.();
@@ -555,7 +556,8 @@ async function runShadowProbes(
         try {
           currentPlan = await deps.planner.refineLocators(currentPlan, snapshot);
           used = true;
-          await state.record({ at: now(), type: "probe_refined", packetId: packet.id });
+          await state.record({ at: now(), type: "probe_refined", packetId: packet.id,
+            detail: { plan: currentPlan } });
           report = await run();
         } catch (error) {
           if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;

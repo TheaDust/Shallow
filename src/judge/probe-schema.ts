@@ -5,9 +5,28 @@ export type ProbeLocator =
   | { by: "label"; text: string; exact?: boolean }
   | { by: "text"; text: string; exact?: boolean };
 
+export const PRESS_KEYS = [
+  "Enter",
+  "Tab",
+  "Escape",
+  "Backspace",
+  "Delete",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "Home",
+  "End",
+] as const;
+
+export type ProbePressKey = (typeof PRESS_KEYS)[number];
+
 export type ProbeStep =
   | { op: "goto"; path: string }
   | { op: "click"; locator: ProbeLocator }
+  | { op: "doubleClick"; locator: ProbeLocator }
+  | { op: "hover"; locator: ProbeLocator }
+  | { op: "press"; locator: ProbeLocator; key: ProbePressKey }
   | { op: "fill"; locator: ProbeLocator; value: string }
   | { op: "select"; locator: ProbeLocator; value: string }
   | { op: "expectVisible"; locator: ProbeLocator }
@@ -64,12 +83,16 @@ const LOCATOR_REF = { $ref: "#/$defs/locator" };
 const STEP_SCHEMA = {
   anyOf: [
     objectSchema({ op: literalSchema("goto"), path: NONEMPTY_STRING_SCHEMA }),
-    ...["click", "expectVisible"].map((op) => objectSchema({
+    ...["click", "expectVisible", "doubleClick", "hover"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF,
     })),
     ...["fill", "select", "expectValue"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF, value: STRING_SCHEMA,
     })),
+    objectSchema({
+      op: literalSchema("press"), locator: LOCATOR_REF,
+      key: { type: "string", enum: [...PRESS_KEYS] },
+    }),
     objectSchema({
       op: literalSchema("expectText"), locator: LOCATOR_REF,
       text: STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
@@ -110,7 +133,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             minItems: 1,
             maxItems: 30,
             description:
-              "Allowed op values: goto, click, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. Locators use role, label, or text only.",
+              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only.",
             items: STEP_SCHEMA,
           },
         },
@@ -252,9 +275,23 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return { op, path };
     }
     case "click":
+    case "doubleClick":
+    case "hover":
     case "expectVisible": {
       keys(step, ["op", "locator"], location);
       return { op, locator: parseLocator(step.locator, `${location}.locator`) };
+    }
+    case "press": {
+      keys(step, ["op", "locator", "key"], location);
+      const key = step.key;
+      if (typeof key !== "string" || !PRESS_KEYS.includes(key as ProbePressKey)) {
+        throw new Error(`${location}.key must be one of: ${PRESS_KEYS.join(", ")}`);
+      }
+      return {
+        op,
+        locator: parseLocator(step.locator, `${location}.locator`),
+        key: key as ProbePressKey,
+      };
     }
     case "fill":
     case "select":

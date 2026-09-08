@@ -1,3 +1,5 @@
+import type { ProbePlan } from "./judge/probe-schema.js";
+
 export type RequirementStatus = "todo" | "verified" | "blocked";
 
 export type ProductKind =
@@ -111,10 +113,10 @@ interface RunEventDetails {
   candidate_prepare_failed: { stage: string; message: string; durationMs: number };
   probe_planning: Record<string, never>;
   probe_planned: { cases: number };
-  probe_started: { cases: number; retryCount: number };
+  probe_started: { cases: number; retryCount: number; plan?: ProbePlan };
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;
     durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
-  probe_refined: Record<string, never>;
+  probe_refined: { plan?: ProbePlan };
   probe_refinement_failed: DiagnosticDetail;
   probe_planner_retry: DiagnosticDetail;
   probe_planner_failed: DiagnosticDetail;

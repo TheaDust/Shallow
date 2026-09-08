@@ -196,6 +196,15 @@ async function executeStep(
       case "click":
         await locator.click({ timeout: timeoutMs });
         break;
+      case "doubleClick":
+        await locator.dblclick({ timeout: timeoutMs });
+        break;
+      case "hover":
+        await locator.hover({ timeout: timeoutMs });
+        break;
+      case "press":
+        await locator.press(step.key, { timeout: timeoutMs });
+        break;
       case "fill":
         await locator.fill(step.value, { timeout: timeoutMs });
         break;
