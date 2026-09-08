@@ -31,7 +31,7 @@ export interface BuilderShadowObservation {
 }
 
 export interface DeliveryFailureObservation {
-  stage: "install" | "build" | "readiness" | "browser" | "complete";
+  stage: "install" | "build" | "readiness" | "browser" | "candidate" | "complete";
   command?: string;
   expected: string;
   actual: string;

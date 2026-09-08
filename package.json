@@ -13,6 +13,7 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@opencode-ai/sdk": "1.18.27",
     "@playwright/mcp": "0.0.80",
     "@playwright/test": "1.54.0",

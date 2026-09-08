@@ -24,6 +24,8 @@ import { parseProbePlan, type ProbePlan } from "./judge/probe-schema.js";
 import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
 import { ExecutionFault } from "./execution-fault.js";
+import type { CandidateRuntime } from "./candidate-runtime.js";
+import type { CandidateEvidence } from "./types.js";
 import type {
   PlatformContract,
   RequirementCatalog,
@@ -35,7 +37,7 @@ export interface AppLifecycle {
   start(
     outputDir: string,
     contract: PlatformContract,
-  ): Promise<{ baseUrl: string; stop(): Promise<void> }>;
+  ): Promise<{ baseUrl: string; candidate?: CandidateEvidence; assertUnchanged?(): Promise<void>; stop(): Promise<void> }>;
 }
 
 export interface Clock {
@@ -65,6 +67,7 @@ export interface PipelineDeps {
   runner: Pick<PlaywrightProbeRunner, "run">;
   git: GitOps;
   appLifecycle: AppLifecycle;
+  candidate?: CandidateRuntime;
   clock: Clock;
   finalVerifier: FinalVerifierPort;
   arcEvents?: ArcEventsPort;
@@ -113,6 +116,7 @@ export async function runPipeline(
     deps.diagnosticSecrets,
   );
 
+  deps.candidate?.setRecorder((event) => state.record(event));
   await state.record({ at: now(), type: "pipeline_started", detail: {
     requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs,
     port: options.platformContract.port, ...deps.runMetadata,
@@ -132,6 +136,7 @@ export async function runPipeline(
     }
 
     await state.record({ at: now(), type: "delivery_started" });
+    await deps.candidate?.assertAcceptedInput();
     let finalReport = await runFinalVerifier(options, deps, state);
     if (!finalReport.ok) {
       await state.record({
@@ -177,14 +182,18 @@ export async function runPipeline(
       });
       finalReport = await runFinalVerifier(options, deps, state);
       if (finalReport.ok && builderResult.outcome === "completed") {
+        if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
         const acceptedSha = await deps.git.captureAccepted(
           "shallow: accept delivery repair",
         );
+        if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
         state.setAcceptedSha(acceptedSha);
+        if (finalReport.candidate) deps.candidate?.recordAccepted(finalReport.candidate);
         await state.record({
           at: now(),
           type: "delivery_repair_accepted",
           packetId: "delivery-repair",
+          ...(finalReport.candidate ? { detail: { candidate: finalReport.candidate } } : {}),
         });
         await emitArc(deps, state, (arc) => arc.commitHistorySignal("git_commit"));
       } else {
@@ -198,6 +207,10 @@ export async function runPipeline(
         }
         await state.record({ at: now(), type: "delivery_repair_restored" });
       }
+    }
+    if (finalReport.ok) {
+      if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
+      await deps.candidate?.assertAcceptedInput();
     }
     await state.record({
       at: now(),
@@ -384,11 +397,15 @@ async function executePacket(
 
     const decision = decideAfterReport(report, attempt);
     if (decision.kind === "accept") {
+      if (report.candidate) await deps.candidate?.assertCurrent(report.candidate);
       const acceptedSha = await deps.git.captureAccepted(`shallow: accept ${packet.id}`);
+      if (report.candidate) await deps.candidate?.assertCurrent(report.candidate);
       state.setAcceptedSha(acceptedSha);
+      if (report.candidate) deps.candidate?.recordAccepted(report.candidate);
       state.markRequirements(packet.requirementIds, "verified");
       setCatalogStatus(catalogStatus, packet.requirementIds, "verified");
-      await state.record({ at: now(), type: "packet_accepted", packetId: packet.id });
+      await state.record({ at: now(), type: "packet_accepted", packetId: packet.id,
+        ...(report.candidate ? { detail: { candidate: report.candidate } } : {}) });
       for (const requirementId of packet.requirementIds) {
         await emitArc(deps, state, (arc) =>
           arc.requirementState(requirementId, "implement", "completed"),
@@ -460,6 +477,7 @@ function dedupeAncestors(
 }
 
 const expectedByStage = {
+  candidate: "验收与接受对应同一份未变化的候选文件和构建产物",
   install: "平台安装命令成功退出",
   build: "平台构建命令成功退出并生成生产构建产物",
   readiness: "应用使用随机端口启动且健康检查返回成功",
@@ -495,7 +513,7 @@ async function runShadowProbes(
 
   try {
     await state.record({ at: now(), type: "application_ready", packetId: packet.id,
-      detail: { baseUrl: application.baseUrl } });
+      detail: { baseUrl: application.baseUrl, ...(application.candidate ? { candidate: application.candidate } : {}) } });
     let currentPlan = plan;
     let used = refinementUsed;
     const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
@@ -506,11 +524,14 @@ async function runShadowProbes(
           detail: { cases: currentPlan.cases.length, retryCount: infrastructure.browserRetries } });
         try {
           const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
+          await application.assertUnchanged?.();
+          if (application.candidate) report.candidate = application.candidate;
           const evidenceId = await state.saveEvidence(report);
           await state.record({ at: now(), type: "probe_finished", packetId: packet.id,
             detail: { verdict: report.verdict, refined: used, passed: report.passedCases.length,
               failed: report.failures.length, durationMs: Math.max(0, deps.clock.nowMs() - startedAt),
-              categories: report.failures.map((failure) => failure.category), evidenceId } });
+              categories: report.failures.map((failure) => failure.category), evidenceId,
+              ...(report.candidate ? { candidate: report.candidate } : {}) } });
           return report;
         } catch (error) {
           if (!(error instanceof ExecutionFault)) throw error;

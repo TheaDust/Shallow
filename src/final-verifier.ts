@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
+import { createServer } from "node:net";
+import type { CandidateRuntime } from "./candidate-runtime.js";
+import type { CandidateEvidence } from "./types.js";
 
 import type { AppLifecycle } from "./pipeline.js";
 import { spawnProcess } from "./process-spawn.js";
@@ -8,8 +11,13 @@ import type { PlatformContract, ProcessCommand } from "./types.js";
 
 export interface FinalVerificationReport {
   ok: boolean;
-  stage: "install" | "build" | "readiness" | "browser" | "complete";
+  stage: "install" | "build" | "readiness" | "browser" | "candidate" | "complete";
   message: string;
+  candidate?: CandidateEvidence;
+}
+
+export class CandidatePreparationError extends Error {
+  constructor(readonly stage: "install" | "build" | "candidate", message: string) { super(message); }
 }
 
 export interface FinalVerifierPort {
@@ -20,33 +28,35 @@ export class FinalVerifier implements FinalVerifierPort {
   constructor(
     private readonly runner: Pick<PlaywrightProbeRunner, "run"> = new PlaywrightProbeRunner(),
     private readonly lifecycle: AppLifecycle = new CommandAppLifecycle(),
+    private readonly candidate?: CandidateRuntime,
   ) {}
 
   async verify(
     outputDir: string,
     contract: PlatformContract,
   ): Promise<FinalVerificationReport> {
-    try {
-      for (const command of contract.installCommands) {
-        await runCommand(outputDir, command, contract.buildTimeoutMs);
+    if (!this.candidate) {
+      try {
+        for (const command of contract.installCommands) {
+          await runCommand(outputDir, command, contract.buildTimeoutMs);
+        }
+      } catch (error) {
+        return { ok: false, stage: "install", message: compactError(error) };
       }
-    } catch (error) {
-      return { ok: false, stage: "install", message: compactError(error) };
-    }
 
-    try {
-      for (const command of contract.buildCommands) {
-        await runCommand(outputDir, command, contract.buildTimeoutMs);
+      try {
+        for (const command of contract.buildCommands) {
+          await runCommand(outputDir, command, contract.buildTimeoutMs);
+        }
+      } catch (error) {
+        return { ok: false, stage: "build", message: compactError(error) };
       }
-    } catch (error) {
-      return { ok: false, stage: "build", message: compactError(error) };
     }
-
     let application: Awaited<ReturnType<AppLifecycle["start"]>>;
     try {
       application = await this.lifecycle.start(outputDir, contract);
     } catch (error) {
-      return { ok: false, stage: "readiness", message: compactError(error) };
+      return { ok: false, stage: error instanceof CandidatePreparationError ? error.stage : "readiness", message: compactError(error) };
     }
 
     try {
@@ -81,7 +91,17 @@ export class FinalVerifier implements FinalVerifierPort {
           message: report.failures.map((failure) => failure.message).join("; "),
         };
       }
-      return { ok: true, stage: "complete", message: "Final verification passed" };
+      await application.assertUnchanged?.();
+      // Stop before the final identity check, since shutdown hooks may write files.
+      if (application.candidate) {
+        await application.stop();
+        await application.assertUnchanged?.();
+      }
+      return { ok: true, stage: "complete", message: "Final verification passed",
+        ...(application.candidate ? { candidate: application.candidate } : {}) };
+    } catch (error) {
+      if (!(error instanceof CandidatePreparationError)) throw error;
+      return { ok: false, stage: "candidate", message: compactError(error) };
     } finally {
       await application.stop();
     }
@@ -90,9 +110,11 @@ export class FinalVerifier implements FinalVerifierPort {
 
 export class CommandAppLifecycle implements AppLifecycle {
   async start(outputDir: string, contract: PlatformContract) {
+    await assertPortFree(contract);
     const child = spawnCommand(outputDir, contract.startCommand, {
       ...process.env,
       PORT: String(contract.port),
+      ...(contract.dataDirectory ? { SHALLOW_DATA_DIR: contract.dataDirectory } : {}),
     });
     let spawnError: Error | undefined;
     let stderr = "";
@@ -112,19 +134,31 @@ export class CommandAppLifecycle implements AppLifecycle {
       await stopProcess(child);
       throw error;
     }
+    let stopped = false;
     return {
       baseUrl: contract.baseUrl,
-      stop: () => stopProcess(child),
+      assertUnchanged: async () => {
+        if (!stopped && (spawnError || child.exitCode !== null || child.signalCode !== null)) throw new CandidatePreparationError("candidate", "Owned application process exited during verification");
+      },
+      stop: async () => { if (stopped) return; await stopProcess(child); await assertPortFree(contract); stopped = true; },
     };
   }
 }
 
-async function runCommand(
+export async function runCommand(
   outputDir: string,
   command: ProcessCommand,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const child = spawnCommand(outputDir, command, process.env);
+  let abortCleanup: Promise<void> | undefined;
+  const onAbort = () => {
+    abortCleanup = stopProcess(child);
+    void abortCleanup.catch(() => {});
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
   let stdout = "";
   let stderr = "";
   child.stdout?.setEncoding("utf8");
@@ -152,7 +186,10 @@ async function runCommand(
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+    signal?.removeEventListener("abort", onAbort);
   }
+  if (abortCleanup) await abortCleanup;
+  signal?.throwIfAborted();
   if (result.kind === "timeout") {
     await stopProcess(child);
     throw new Error(`${renderCommand(command)} timed out after ${timeoutMs}ms`);
@@ -256,4 +293,13 @@ function compactError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error))
     .replace(/\s+/g, " ")
     .slice(0, 1_500);
+}
+
+async function assertPortFree(contract: PlatformContract): Promise<void> {
+  const server = createServer();
+  const host = new URL(contract.baseUrl).hostname.replace(/^\[|\]$/g, "");
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", () => reject(new Error(`Application port ${contract.port} is already occupied`)));
+    server.listen(contract.port, host, () => server.close((error) => error ? reject(error) : resolvePromise()));
+  });
 }

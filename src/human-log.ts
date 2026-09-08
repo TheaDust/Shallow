@@ -70,6 +70,10 @@ function describe(type: string, event: RunEvent): string | null {
       return `开始规划黑盒探针（${packetId}）`;
     case "application_starting":
       return `开始启动候选应用（${packetId}）`;
+    case "candidate_prepared":
+      return `候选构建${detail?.reused ? "已复用" : "已完成"}；候选 ${pickString(detail, "candidateId")}；${detail?.installed ? "已安装依赖" : "复用依赖"}；安装 ${renderDuration(pickNumber(detail, "installMs") ?? 0)}，构建 ${renderDuration(pickNumber(detail, "buildMs") ?? 0)}`;
+    case "candidate_prepare_failed":
+      return `候选准备失败；阶段 ${pickString(detail, "stage")}${message ? `：${message}` : ""}`;
     case "application_ready":
       return `候选应用已就绪（${packetId}）：${pickString(detail, "baseUrl") ?? ""}`;
     case "application_stopped":

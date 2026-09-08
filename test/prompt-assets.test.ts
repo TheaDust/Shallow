@@ -116,6 +116,10 @@ test("action assets carry their placeholders", () => {
   assert.match(selfTest, /不替代独立 Judge 验收/);
   assert.match(selfTest, /交付修复只检查健康状态/);
   assert.match(selfTest, /临时业务对象/);
+  assert.match(selfTest, /`candidate` MCP 的 `prepare`/);
+  assert.match(selfTest, /SHALLOW_DATA_DIR/);
+  assert.match(loadBuilderPrompt("system", "candidate-prepare"), /本工具不执行 Judge 验收/);
+  assert.match(loadBuilderPrompt("system", "candidate-stop"), /释放端口/);
   const repair = loadBuilderPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
   assert.ok(repair.includes("{{FAILURES}}"));

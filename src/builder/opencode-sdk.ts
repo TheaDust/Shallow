@@ -12,7 +12,9 @@ import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
 import { ExecutionFault } from "../execution-fault.js";
-import { builderSelfTestConfig, SELF_TEST_MCP_NAME, type BuilderSelfTestOptions } from "./self-test.js";
+import { builderSelfTestConfig, SELF_TEST_MCP_NAME, CANDIDATE_MCP_NAME, type BuilderSelfTestOptions } from "./self-test.js";
+import type { CandidateRuntime } from "../candidate-runtime.js";
+import type { McpRemoteConfig } from "@opencode-ai/sdk";
 
 export interface OpenCodePromptInput {
   systemPrompt: string;
@@ -274,6 +276,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
 }
 
 export class SdkOpenCodeRuntime implements OpenCodeRuntime {
+  private candidateSession?: { id: string; epoch: number };
   private client?: OpencodeClient;
   private server?: { close(): void };
   private directory?: string;
@@ -283,6 +286,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     private readonly gateway: GatewayConfig,
     private readonly create: CreateOpencodeInstance = createProductionInstance,
     private readonly selfTest?: BuilderSelfTestOptions,
+    private readonly candidateTools?: { runtime: CandidateRuntime; config: McpRemoteConfig },
   ) {}
 
   async start(directory: string): Promise<void> {
@@ -291,7 +295,10 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       port: await pickFreePort(),
       fetch: sdkFetch,
       config: {
-        ...(this.selfTest ? { mcp: { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } } : {}),
+        ...(this.selfTest || this.candidateTools ? { mcp: {
+          ...(this.selfTest ? { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } : {}),
+          ...(this.candidateTools ? { [CANDIDATE_MCP_NAME]: this.candidateTools.config } : {}),
+        } } : {}),
         model: `shallow-gateway/${model}`,
         small_model: `shallow-gateway/${model}`,
         enabled_providers: ["shallow-gateway"],
@@ -333,13 +340,15 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
 
   async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
     const { client, directory } = this.requireStarted();
+    const epoch = this.candidateTools?.runtime.beginBuilder();
+    if (epoch !== undefined) this.candidateSession = { id: sessionId, epoch };
     try {
-      if (this.selfTest) {
+      for (const name of this.mcpNames()) {
         try {
-          const connected = await client.mcp.connect({ path: { name: SELF_TEST_MCP_NAME }, query: { directory }, signal: AbortSignal.timeout(15_000) });
+          const connected = await client.mcp.connect({ path: { name }, query: { directory }, signal: AbortSignal.timeout(15_000) });
           const status = await client.mcp.status({ query: { directory }, signal: AbortSignal.timeout(5_000) });
-          if (connected.error || connected.data !== true || status.error || status.data?.[SELF_TEST_MCP_NAME]?.status !== "connected") {
-            throw new Error("Playwright MCP is not connected");
+          if (connected.error || connected.data !== true || status.error || status.data?.[name]?.status !== "connected") {
+            throw new Error(`${name} MCP is not connected`);
           }
         } catch (error) {
           throw new ExecutionFault("builder", "builder_self_test", false, { cause: error });
@@ -348,17 +357,22 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       if (this.client !== client || this.abortedSessions.has(sessionId)) throw new Error("OpenCode prompt cancelled before dispatch");
       return await this.sendPrompt(client, directory, sessionId, input);
     } finally {
-      if (this.selfTest && this.client === client) await this.disconnectSelfTest(client, directory);
+      try { if (epoch !== undefined) await this.candidateTools?.runtime.endBuilder(epoch); }
+      finally { if (this.client === client) await this.disconnectSelfTest(client, directory); }
     }
   }
 
+  private mcpNames(): string[] {
+    return [...(this.selfTest ? [SELF_TEST_MCP_NAME] : []), ...(this.candidateTools ? [CANDIDATE_MCP_NAME] : [])];
+  }
+
   private async disconnectSelfTest(client: OpencodeClient, directory: string): Promise<void> {
-    try {
-      const response = await client.mcp.disconnect({ path: { name: SELF_TEST_MCP_NAME }, query: { directory }, signal: AbortSignal.timeout(5_000) });
+    const results = await Promise.allSettled(this.mcpNames().map(async (name) => {
+      const response = await client.mcp.disconnect({ path: { name }, query: { directory }, signal: AbortSignal.timeout(5_000) });
       if (response.error || response.data !== true) throw new Error("MCP disconnect failed");
-    } catch (error) {
-      throw new ExecutionFault("builder", "builder_self_test", false, { cause: error });
-    }
+    }));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw new ExecutionFault("builder", "builder_self_test", false, { cause: failure.reason });
   }
 
   private async sendPrompt(client: OpencodeClient, directory: string, sessionId: string, input: OpenCodePromptInput): Promise<string> {
@@ -395,7 +409,8 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   }
 
   async abort(sessionId: string): Promise<void> {
-    if (this.selfTest) this.abortedSessions.add(sessionId);
+    if (this.selfTest || this.candidateTools) this.abortedSessions.add(sessionId);
+    if (this.candidateSession?.id === sessionId) await this.candidateTools?.runtime.endBuilder(this.candidateSession.epoch);
     const { client, directory } = this.requireStarted();
     const response = await client.session.abort({
       path: { id: sessionId },
@@ -412,12 +427,16 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     // Invalidate pending connects before awaiting cleanup; they must never dispatch a late model call.
     this.client = undefined;
     try {
-      if (this.selfTest && client && directory) await this.disconnectSelfTest(client, directory);
+      if (client && directory) await this.disconnectSelfTest(client, directory);
     } finally {
-      this.server?.close();
-      this.server = undefined;
-      this.directory = undefined;
-      this.abortedSessions.clear();
+      try { await this.candidateTools?.runtime.endBuilder(); }
+      finally {
+        this.server?.close();
+        this.server = undefined;
+        this.directory = undefined;
+        this.abortedSessions.clear();
+        this.candidateSession = undefined;
+      }
     }
   }
 

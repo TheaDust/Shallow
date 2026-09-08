@@ -118,6 +118,7 @@ export class RunStateStore {
     const evidence = {
       id, packetId: sanitizeDiagnosticText(report.packetId, this.secrets), verdict: report.verdict,
       acceptedSha: this.state.acceptedSha, attempt: this.state.attemptsByPacketId[report.packetId],
+      ...(report.candidate ? { candidate: report.candidate } : {}),
       failureCount: report.failures.length,
       failures: report.failures.slice(0, 8).map((failure) => ({
         caseId: sanitizeDiagnosticText(failure.caseId, this.secrets), stepIndex: failure.stepIndex,
@@ -179,6 +180,7 @@ function eventPhase(event: RunEvent): RunEvent["phase"] {
   if (event.type.startsWith("evidence_")) return "evidence";
   if (event.type.startsWith("builder_")) return "builder";
   if (event.type.startsWith("application_")) return "application";
+  if (event.type.startsWith("candidate_")) return "application";
   if (event.type.startsWith("delivery_") || event.type.startsWith("verification_")) return "delivery";
   if (event.type.startsWith("probe_plan") || event.type.startsWith("probe_refin")) return "planner";
   if (event.type.startsWith("probe_")) return "probe";

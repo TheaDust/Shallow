@@ -11,7 +11,9 @@ import {
 } from "./src/builder/opencode-sdk.js";
 import { ArcEventSink } from "./src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "./src/cli.js";
-import { CommandAppLifecycle, FinalVerifier } from "./src/final-verifier.js";
+import { FinalVerifier } from "./src/final-verifier.js";
+import { CandidateRuntime } from "./src/candidate-runtime.js";
+import { startCandidateMcp } from "./src/builder/candidate-mcp.js";
 import { GitCliOps } from "./src/git-ops.js";
 import { HumanRunFormatter } from "./src/human-log.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
@@ -105,57 +107,65 @@ async function executeProduction(
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
-  const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
-    baseUrl: pipelineOptions.platformContract.baseUrl,
-    artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
-  });
-  const builder = new OpenCodeSdkBuilder(runtime, {
-    timeoutMs: modelTimeouts.builderTimeoutMs,
-    requirementsDir: dirname(pipelineOptions.requirementsFile),
-  });
-  const planner = new LlmProbePlanner({
-    ...gateway,
-    timeoutMs: modelTimeouts.plannerTimeoutMs,
-  });
-  const runner = new PlaywrightProbeRunner();
-  const lifecycle = new CommandAppLifecycle();
-  const git = await GitCliOps.open(pipelineOptions.outputDir);
-  const finalVerifier = new FinalVerifier(runner, lifecycle);
-  const logSink = createRunLogSink(runLogFile);
-  const projectionWarning = (error: unknown): void => {
-    try { logSink.write(`${JSON.stringify({ at: new Date().toISOString(), type: "arc_projection_failed",
-      detail: { message: sanitizeDiagnosticText(String(error), [gateway.apiKey]) } })}\n`); } catch { /* Diagnostic only. */ }
-  };
-  const arcEvents = new ArcEventSink(pipelineOptions.outputDir, {
-    journalFile: join(dirname(runLogFile), "arc-projection.jsonl"),
-  });
-  await arcEvents.init().catch(projectionWarning);
-  const promptDir = new URL("./prompts/", import.meta.url);
-  const promptHash = createHash("sha256");
-  for (const name of (await readdir(promptDir, { recursive: true })).filter((name) => name.endsWith(".md")).sort()) {
-    const path = name.replaceAll("\\", "/");
-    promptHash.update(path).update("\0").update((await readFile(new URL(path, promptDir), "utf8")).replace(/\r\n/g, "\n"));
-  }
+  const candidate = new CandidateRuntime(pipelineOptions.outputDir,
+    join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
+  const candidateMcp = await startCandidateMcp(candidate, [gateway.apiKey]);
   try {
-    return await runPipeline(pipelineOptions, {
-      builder,
-      planner,
-      runner,
-      git,
-      appLifecycle: lifecycle,
-      clock: { nowMs: () => Date.now() },
-      finalVerifier,
-      arcEvents,
-      logSink,
-      diagnosticSecrets: [gateway.apiKey],
-      runMetadata: { model: gateway.model, ...modelTimeouts,
-        promptSha256: promptHash.digest("hex"),
-        probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
-        usage: { status: "unavailable" },
-      },
+    const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
+      baseUrl: pipelineOptions.platformContract.baseUrl,
+      artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
+    }, { runtime: candidate, config: candidateMcp.config });
+    const builder = new OpenCodeSdkBuilder(runtime, {
+      timeoutMs: modelTimeouts.builderTimeoutMs,
+      requirementsDir: dirname(pipelineOptions.requirementsFile),
     });
+    const planner = new LlmProbePlanner({
+      ...gateway,
+      timeoutMs: modelTimeouts.plannerTimeoutMs,
+    });
+    const runner = new PlaywrightProbeRunner();
+    const lifecycle = candidate;
+    const git = await GitCliOps.open(pipelineOptions.outputDir);
+    const finalVerifier = new FinalVerifier(runner, lifecycle, candidate);
+    const logSink = createRunLogSink(runLogFile);
+    const projectionWarning = (error: unknown): void => {
+      try { logSink.write(`${JSON.stringify({ at: new Date().toISOString(), type: "arc_projection_failed",
+        detail: { message: sanitizeDiagnosticText(String(error), [gateway.apiKey]) } })}\n`); } catch { /* Diagnostic only. */ }
+    };
+    const arcEvents = new ArcEventSink(pipelineOptions.outputDir, {
+      journalFile: join(dirname(runLogFile), "arc-projection.jsonl"),
+    });
+    await arcEvents.init().catch(projectionWarning);
+    const promptDir = new URL("./prompts/", import.meta.url);
+    const promptHash = createHash("sha256");
+    for (const name of (await readdir(promptDir, { recursive: true })).filter((name) => name.endsWith(".md")).sort()) {
+      const path = name.replaceAll("\\", "/");
+      promptHash.update(path).update("\0").update((await readFile(new URL(path, promptDir), "utf8")).replace(/\r\n/g, "\n"));
+    }
+    try {
+      return await runPipeline(pipelineOptions, {
+        builder,
+        planner,
+        runner,
+        git,
+        appLifecycle: lifecycle,
+        candidate,
+        clock: { nowMs: () => Date.now() },
+        finalVerifier,
+        arcEvents,
+        logSink,
+        diagnosticSecrets: [gateway.apiKey],
+        runMetadata: { model: gateway.model, ...modelTimeouts,
+          promptSha256: promptHash.digest("hex"),
+          probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
+          usage: { status: "unavailable" },
+        },
+      });
+    } finally {
+      await arcEvents.rebuild().catch(projectionWarning);
+    }
   } finally {
-    await arcEvents.rebuild().catch(projectionWarning);
+    await candidateMcp.close();
   }
 }
 

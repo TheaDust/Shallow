@@ -69,6 +69,8 @@ export interface ProcessCommand {
 }
 
 export interface PlatformContract {
+  /** Controller-owned runtime data, outside the frozen application tree. */
+  dataDirectory?: string;
   baseUrl: string;
   port: number;
   installCommands: ProcessCommand[];
@@ -104,30 +106,33 @@ interface RunEventDetails {
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;
     attempt?: number; durationMs?: number };
   builder_reference_images: { mode: string; attachedCount: number; skipped: Array<{ reference: string; reason: string }> };
+  candidate_prepared: Omit<CandidateEvidence, "runtimeId"> & { reused: boolean; installed: boolean;
+    durationMs: number; installMs: number; buildMs: number };
+  candidate_prepare_failed: { stage: string; message: string; durationMs: number };
   probe_planning: Record<string, never>;
   probe_planned: { cases: number };
   probe_started: { cases: number; retryCount: number };
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;
-    durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string };
+    durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
   probe_refined: Record<string, never>;
   probe_refinement_failed: DiagnosticDetail;
   probe_planner_retry: DiagnosticDetail;
   probe_planner_failed: DiagnosticDetail;
   application_starting: Record<string, never>;
-  application_ready: { baseUrl: string };
+  application_ready: { baseUrl: string; candidate?: CandidateEvidence };
   application_start_failed: DiagnosticDetail;
   application_stopped: Record<string, never>;
   execution_fault: DiagnosticDetail;
   repair_scheduled: { nextAttempt: number; rootCauseFirst: boolean; verdict: ShadowReport["verdict"]; failures: ProbeFailure["category"][] };
-  packet_accepted: Record<string, never>;
+  packet_accepted: { candidate?: CandidateEvidence };
   packet_blocked: { reason: string };
   delivery_started: Record<string, never>;
   delivery_repair_started: { stage: string; message: string };
-  delivery_repair_accepted: Record<string, never>;
+  delivery_repair_accepted: { candidate?: CandidateEvidence };
   delivery_repair_restored: Record<string, never>;
   delivery_finished: { ok: boolean; stage: string; message: string };
   verification_started: { retryCount: number };
-  verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number };
+  verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];
     blockedRequirementIds: string[]; pendingRequirementIds: string[]; acceptedSha: string };
   pipeline_failed: DiagnosticDetail;
@@ -148,8 +153,17 @@ export interface ProbeFailure {
 }
 
 export interface ShadowReport {
+  candidate?: CandidateEvidence;
   packetId: string;
   verdict: "pass" | "fail" | "inconclusive";
   passedCases: string[];
   failures: ProbeFailure[];
+}
+
+export interface CandidateEvidence {
+  candidateId: string;
+  inputDigest: string;
+  applicationDigest: string;
+  buildId: string;
+  runtimeId: string;
 }

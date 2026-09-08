@@ -9,6 +9,7 @@ export interface BuilderSelfTestOptions {
 }
 
 export const SELF_TEST_MCP_NAME = "playwright";
+export const CANDIDATE_MCP_NAME = "candidate";
 
 export function builderSelfTestConfig(options: BuilderSelfTestOptions): McpLocalConfig {
   const origin = new URL(options.baseUrl);

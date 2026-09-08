@@ -13,6 +13,21 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
+  const formatter = new HumanRunFormatter();
+  const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {
+    detail: { candidateId: "candidate-1", reused: false, installed: true, installMs: 2000, buildMs: 3000, durationMs: 5000 },
+  }));
+  assert.match(built, /候选构建已完成.*candidate-1.*已安装依赖.*安装 2s，构建 3s/);
+  const reused = formatLine(formatter, eventLine("2026-09-08T00:00:06Z", "candidate_prepared", {
+    detail: { candidateId: "candidate-1", reused: true, installed: false, installMs: 0, buildMs: 0, durationMs: 100 },
+  }));
+  assert.match(reused, /候选构建已复用.*复用依赖/);
+  assert.match(formatLine(formatter, eventLine("2026-09-08T00:00:07Z", "candidate_prepare_failed", {
+    detail: { stage: "build", message: "build failed", durationMs: 1000 },
+  })), /候选准备失败.*build failed/);
+});
+
 test("HumanRunFormatter reports reference image use and text fallback", () => {
   const formatter = new HumanRunFormatter();
   for (const [mode, expected] of [
