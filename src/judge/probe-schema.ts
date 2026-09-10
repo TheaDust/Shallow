@@ -133,7 +133,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             minItems: 1,
             maxItems: 30,
             description:
-              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only.",
+              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only. Locator strings and expectText text are literal, not regular expressions; expectText matches the full text unless exact: false; expectCount count 0 asserts absence.",
             items: STEP_SCHEMA,
           },
         },

@@ -183,6 +183,28 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   );
 });
 
+test("Probe Planner instructs literal locators and absence, persistence, and deep-link probes", async () => {
+  const bodies: string[] = [];
+  const fetchFn: typeof fetch = async (_input, init) => {
+    bodies.push(String(init?.body));
+    return jsonResponse({
+      choices: [{ message: { content: JSON.stringify(validPlan()) } }],
+    });
+  };
+  const planner = new LlmProbePlanner(config(), fetchFn);
+
+  await planner.plan(packet());
+
+  const body = bodies[0];
+  assert.match(body, /exactUiStrings/);
+  assert.match(body, /regular expression/i);
+  assert.match(body, /deep link/i);
+  assert.match(body, /exact: false/);
+  assert.match(body, /count 0/);
+  assert.match(body, /reload to verify/);
+  assert.match(body, /newContext/);
+});
+
 test("Probe Planner extracts JSON from fenced and annotated responses", async () => {
   const raw = JSON.stringify(validPlan());
   const contents = [
