@@ -110,6 +110,25 @@ export class ArcEventSink {
       timestamp: arcTimestamp(),
       message: null,
     });
+    // Reference parity: EventClient.set_requirement_state_writer updates node_states
+    // and emits a traceability refresh signal after every requirement state event.
+    await this.appendTraceabilitySignal("node_state_updated");
+  }
+
+  private appendTraceabilitySignal(reason: string): Promise<void> {
+    return this.appendEvent({
+      type: "signal",
+      reason,
+      timestamp: arcTimestamp(),
+      refresh: {
+        submission: true,
+        logs: false,
+        commit_history: false,
+        traceability_selected: true,
+        traceability_all: true,
+        preview: false,
+      },
+    });
   }
 
   async commitHistorySignal(reason: string): Promise<void> {

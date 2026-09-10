@@ -53,13 +53,15 @@ SHA 表示最后接受的基线，不代表 Builder 正在编辑的候选内容�
 
 七张表为 requirements、scenarios、interfaces、tests、call_edges、node_states、node_contracts。当前 Shallow 维护需求、场景和节点状态，其余表为空；不会根据隐藏探针虚构平台 tests/interfaces 记录。时间戳采用官方 UTC `YYYY-MM-DD HH:mm:ss`。
 
+已对照课程实验材料 `code-philia/agentic-software-engineering-hackathon` Lab04 的 `.arc` 清单复核：`.arc/requirement`、`.arc/node_sessions`、`.arc/processing_queue.json`、`.arc/validation` 属于 ARC Visualizer/编译器自身的工作区数据，适配包契约不读取；评测端只读 `runner-events.jsonl`、`.arc/traceability/*.json` 与 git 提交（`arc-adapter` README 与 `context.py` 中的固定路径）。
+
 Catalog 同时保留原始完整树与调度用原子需求。投影包含 ROOT/FOLDER/ATOMIC（包括空目录和目录场景），依赖来自原始树，不使用调度器展开后的依赖覆盖源结构。显式场景 ID 优先保留；无 ID 的场景使用本项目稳定的 `<reqId>::<index>`。官方表没有节点 `type` 列，通过父子关系保留树结构。
 
 Builder 回执只写内部日志。内部 envelope、证据附件和投影幂等 ID 不进入官方事件字段。
 
 ## 5. 投影重建与故障语义
 
-主线 `ArcEventSink` 每次先把带 ID 的投影记录写入运行目录的 journal，再更新 `.arc`。写入按实例串行化，避免 node_states 读改写竞争。传入的树在入队时复制，后续调用方修改不影响已记录的意图。
+主线 `ArcEventSink` 每次先把带 ID 的投影记录写入运行目录的 journal，再更新 `.arc`。写入按实例串行化，避免 node_states 读改写竞争。传入的树在入队时复制，后续调用方修改不影响已记录的意图。每次 `requirementState` 在 `requirement_state` 事件之后追加一条 `signal`（reason `node_state_updated`，refresh 同时置 submission、traceability_selected 与 traceability_all），与参考实现中节点状态写入附带 traceability 刷新的行为对齐。
 
 `rebuild()` 读取完整 journal、校验可解析性与重复 ID 冲突，再按记录顺序折叠当前表并重写事件历史。同 ID 重复记录只输出一次；不同 ID 的真实失败/重试历史均保留。主线结束时自动重建一次，投影中断后也可用相同输出目录与 journal 创建 `ArcEventSink` 并调用该方法。
 

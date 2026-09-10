@@ -67,14 +67,25 @@ test("ARC event sink records requirement states and node_states table", async ()
     await sink.requirementState("REQ-PROFILE", "test", "passed");
 
     const lines = await readEvents(directory);
+    const states = lines.filter((line) => line.type === "requirement_state");
     assert.deepEqual(
-      lines.map((line) => [line.phase, line.status]),
+      states.map((line) => [line.phase, line.status]),
       [
         ["implement", "running"],
         ["implement", "completed"],
         ["test", "passed"],
       ],
     );
+    const signals = lines.filter((line) => line.type === "signal") as Array<{
+      reason: string;
+      refresh: Record<string, boolean>;
+    }>;
+    assert.equal(signals.length, 3);
+    assert.ok(signals.every((signal) => signal.reason === "node_state_updated"));
+    assert.equal(signals[0].refresh.submission, true);
+    assert.equal(signals[0].refresh.traceability_selected, true);
+    assert.equal(signals[0].refresh.traceability_all, true);
+    assert.equal(signals[0].refresh.commit_history, false);
     const nodeStates = JSON.parse(
       await readFile(
         join(directory, "output", ".arc", "traceability", "node_states.json"),
@@ -168,14 +179,20 @@ test("ARC replay repairs a failed projection, deduplicates IDs, and keeps offici
     await sink.rebuild();
     assert.equal(await readFile(eventsPath, "utf8"), first);
     const events = first.trim().split("\n").map((line) => JSON.parse(line));
-    assert.equal(events.length, 3);
-    assert.deepEqual(events.slice(1).map((event) => event.status), ["failed", "passed"]);
+    assert.equal(events.length, 4);
+    const stateEvents = events.filter((event) => event.type === "requirement_state");
+    assert.deepEqual(stateEvents.map((event) => event.status), ["failed", "passed"]);
+    const signals = events.filter((event) => event.type === "signal");
+    assert.deepEqual(signals.map((event) => event.reason), [
+      "requirement_tree_stored",
+      "node_state_updated",
+    ]);
     assert.deepEqual(Object.keys(events[0]).sort(), ["reason", "refresh", "timestamp", "type"]);
-    assert.deepEqual(Object.keys(events[1]).sort(), ["message", "node_id", "phase", "status", "timestamp", "type"]);
+    assert.deepEqual(Object.keys(stateEvents[0]).sort(), ["message", "node_id", "phase", "status", "timestamp", "type"]);
     assert.doesNotMatch(first, /packet_id|outcome|eventId|probePlan|builder_receipt/);
     const state = JSON.parse(await readFile(join(output, ".arc", "traceability", "node_states.json"), "utf8"));
     assert.equal(state["REQ-PROFILE"].state, "PASSED");
-    assert.equal(state["REQ-PROFILE"].updated_at, events[2].timestamp);
+    assert.equal(state["REQ-PROFILE"].updated_at, stateEvents[1].timestamp);
     const tree = JSON.parse(await readFile(join(output, ".arc", "traceability", "requirements.json"), "utf8"));
     assert.equal(tree.ROOT.parent_id, null);
     assert.deepEqual(tree.ROOT.children_ids, ["PROFILE"]);
