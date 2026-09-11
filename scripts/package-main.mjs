@@ -10,11 +10,13 @@
 // __pycache__, runs/, tmp/) are excluded.
 //
 // Usage: node scripts/package-main.mjs [output-dir]
-// Default output: dist/shallowcode-main
+// Default output: dist/shallowcode-main (directory plus main.zip inside it)
 
 import { cp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { zipDirectory } from "./zip-directory.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const outputDir = resolve(process.argv[2] ?? join(repoRoot, "dist", "shallowcode-main"));
@@ -41,7 +43,10 @@ async function main() {
   for (const file of INCLUDED_FILES) {
     await cp(join(repoRoot, file), join(outputDir, file));
   }
+  const zipPath = join(outputDir, "main.zip");
+  await zipDirectory(outputDir, zipPath);
   console.log(`main package exported to ${outputDir}`);
+  console.log(`main package zip: ${zipPath}`);
 }
 
 main().catch((error) => {

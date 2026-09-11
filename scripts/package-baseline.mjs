@@ -9,11 +9,13 @@
 // .git, .env, __pycache__, runs/, tmp/) are excluded.
 //
 // Usage: node scripts/package-baseline.mjs [output-dir]
-// Default output: dist/shallowcode-baseline
+// Default output: dist/shallowcode-baseline (directory plus baseline.zip inside it)
 
 import { cp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { zipDirectory } from "./zip-directory.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const outputDir = resolve(process.argv[2] ?? join(repoRoot, "dist", "shallowcode-baseline"));
@@ -53,7 +55,10 @@ async function main() {
     await cp(join(repoRoot, file), join(outputDir, file));
   }
   await writeFile(join(outputDir, "main.py"), ROOT_MAIN_PY, "utf8");
+  const zipPath = join(outputDir, "baseline.zip");
+  await zipDirectory(outputDir, zipPath);
   console.log(`baseline package exported to ${outputDir}`);
+  console.log(`baseline package zip: ${zipPath}`);
 }
 
 main().catch((error) => {
