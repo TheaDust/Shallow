@@ -10,6 +10,7 @@
     "test:all": "npm run typecheck && npm test && npm run test:browser",
     "smoke:credentials": "tsx --test --test-name-pattern=\"credential smoke\" test/credential-smoke.test.ts",
     "package:baseline": "node scripts/package-baseline.mjs",
+    "package:main": "node scripts/package-main.mjs",
     "start": "tsx index.ts"
   },
   "dependencies": {
