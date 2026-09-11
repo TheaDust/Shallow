@@ -57,6 +57,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
   assert.match(compiled.taskPrompt, /可观察验收判据/);
   assert.match(compiled.taskPrompt, /不猜测外部测试/);
+  assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
   assert.match(compiled.taskPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /Root description/);
   assert.match(compiled.taskPrompt, /Profile area/);
@@ -78,6 +79,22 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
     "server_persistence",
   ]);
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+});
+
+test("Builder memory guidance precedes final preparation in every packet mode", () => {
+  for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
+    const { systemPrompt, taskPrompt } = compileBuilderPrompt(request);
+    assert.match(taskPrompt, /需求与平台合同优先/);
+    assert.match(taskPrompt, /没有变化时保持文件不动/);
+    assert.match(taskPrompt, /通常控制在约 60 行/);
+    assert.match(taskPrompt, /保留必要约定时可适当超出/);
+    assert.match(taskPrompt, /## 模块与入口/);
+    assert.match(taskPrompt, /空小节可省略/);
+    const memory = taskPrompt.indexOf("按需更新项目根");
+    const preparation = taskPrompt.indexOf("调用 `candidate.prepare`");
+    assert.ok(memory >= 0 && preparation > memory);
+    assert.match(systemPrompt, /项目文档（包括 `ARCHITECTURE.md`）修改都会使之前的构建凭据失效/);
+  }
 });
 
 test("Builder includes all seed data in implementation and both packet repair modes", () => {
@@ -105,6 +122,7 @@ test("Repair prompt carries only the cleaned shadow observation", () => {
   assert.match(compiled.taskPrompt, /save-profile/);
   assert.match(compiled.taskPrompt, /Expected Saved, received Error/);
   assert.doesNotMatch(compiled.taskPrompt, /"verdict"|JSON|black-box report/i);
+  assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
