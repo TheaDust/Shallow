@@ -49,10 +49,14 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /由控制器停止自测应用/);
   assert.match(compiled.systemPrompt, /`candidate` MCP 的 `prepare`/);
   assert.match(compiled.systemPrompt, /SHALLOW_DATA_DIR/);
+  assert.match(compiled.systemPrompt, /持续增量扩展/);
+  assert.match(compiled.systemPrompt, /至少检查一个边界输入/);
   assert.match(compiled.taskPrompt, /浏览器自测：/);
   assert.match(compiled.taskPrompt, /通过 \| 失败 \| 未执行/);
   assert.doesNotMatch(compiled.systemPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
+  assert.match(compiled.taskPrompt, /可观察验收判据/);
+  assert.match(compiled.taskPrompt, /不猜测外部测试/);
   assert.match(compiled.taskPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /Root description/);
   assert.match(compiled.taskPrompt, /Profile area/);

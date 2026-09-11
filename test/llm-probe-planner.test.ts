@@ -203,6 +203,9 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /count 0/);
   assert.match(body, /reload to verify/);
   assert.match(body, /newContext/);
+  assert.match(body, /boundary cases/);
+  assert.match(body, /empty, oversized, or invalid inputs/);
+  assert.match(body, /never assert feedback the evidence does not state/i);
 });
 
 test("Probe Planner extracts JSON from fenced and annotated responses", async () => {

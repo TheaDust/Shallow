@@ -102,6 +102,8 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.ok(
     loadBuilderPrompt("system", "builder-system").includes("唯一代码实现者"),
   );
+  assert.match(loadBuilderPrompt("system", "builder-system"), /持续增量扩展/);
+  assert.match(loadBuilderPrompt("system", "builder-system"), /不为通过当前检查引入一次性变通/);
   assert.ok(
     loadBuilderPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -118,6 +120,7 @@ test("action assets carry their placeholders", () => {
   assert.match(selfTest, /临时业务对象/);
   assert.match(selfTest, /`candidate` MCP 的 `prepare`/);
   assert.match(selfTest, /SHALLOW_DATA_DIR/);
+  assert.match(selfTest, /至少检查一个边界输入（空值或非法输入）/);
   assert.match(loadBuilderPrompt("system", "candidate-prepare"), /本工具不执行 Judge 验收/);
   assert.match(loadBuilderPrompt("system", "candidate-stop"), /释放端口/);
   const repair = loadBuilderPrompt("system", "action-repair");
@@ -139,11 +142,11 @@ test("action assets carry their placeholders", () => {
     assert.ok(delivery.includes(placeholder), `missing ${placeholder}`);
   }
 
-  assert.ok(
-    loadBuilderPrompt("system", "action-implement").includes(
-      "# 行动：实现当前工作包",
-    ),
-  );
+  const implement = loadBuilderPrompt("system", "action-implement");
+  assert.ok(implement.includes("# 行动：实现当前工作包"));
+  assert.match(implement, /可观察验收判据/);
+  assert.match(implement, /空值、超长或非法输入/);
+  assert.match(implement, /不猜测外部测试/);
 });
 
 test("task templates carry their placeholders", () => {
