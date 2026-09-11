@@ -207,9 +207,11 @@ const SHALLOW_ROOT_COMMIT_SUBJECTS = new Set([
   "chore: add ShallowCode ignore rules",
 ]);
 
+const FIRST_RUN_ALLOWED_ENTRIES = new Set([".gitignore", ".arc", "requirements"]);
+
 async function requireEmptyOutputDirectory(root: string): Promise<void> {
   const entries = await readdir(root);
-  const unexpected = entries.filter((name) => name !== ".gitignore");
+  const unexpected = entries.filter((name) => !FIRST_RUN_ALLOWED_ENTRIES.has(name));
   if (unexpected.length > 0) {
     throw new Error(
       `Output directory must be empty before the first run: ${root} (found: ${unexpected.slice(0, 5).join(", ")})`,

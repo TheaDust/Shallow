@@ -139,7 +139,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000），暴露 `/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
-- `GitCliOps.open` 首次初始化要求目录为空或仅有 `.gitignore`。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
+- `GitCliOps.open` 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置脚手架 `.arc/`、`requirements/`；其他残留会被拒绝。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
 - 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。
 - 修改脱敏、证据或 ARC 投影时，先读 `docs/2026-09-07-observability-arc-projection.md`：官方固定提交与字段、投影重建范围和安全限制均在此。验证 `test/observability.test.ts`、`test/arc-protocol.test.ts`、`test/human-log.test.ts`、`test/pipeline.e2e.test.ts`；目录链接检查不代表 OS 隔离。

@@ -180,6 +180,23 @@ test("GitOps open refuses to clean a dirty repository it did not create", async 
   });
 });
 
+test("GitOps open initializes over pre-seeded platform scaffold entries", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await mkdir(join(directory, ".arc", "traceability"), { recursive: true });
+    await writeFile(join(directory, ".arc", "traceability", "node_states.json"), "{}", "utf8");
+    await mkdir(join(directory, "requirements"));
+    await writeFile(join(directory, "requirements", "requirements.yaml"), "root: {}\n", "utf8");
+
+    const git = await GitCliOps.open(directory);
+    const baseline = await git.captureAccepted("shallow: initial state");
+
+    assert.match(baseline, /^[0-9a-f]{40}$/);
+    const tracked = await execFileAsync("git", ["ls-files"], { cwd: directory });
+    assert.match(tracked.stdout, /\.arc\/traceability\/node_states\.json/);
+    assert.match(tracked.stdout, /requirements\/requirements\.yaml/);
+  });
+});
+
 test("GitOps open refuses a fresh directory that is not empty", async () => {
   await withTempDir("shallow-git-", async (directory) => {
     const stray = join(directory, "stray.txt");
