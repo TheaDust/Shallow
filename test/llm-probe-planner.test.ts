@@ -11,7 +11,7 @@ import {
   PROBE_PLAN_JSON_SCHEMA,
   type ProbePlan,
 } from "../src/judge/probe-schema.js";
-import type { WorkPacket } from "../src/types.js";
+import type { SeedDataCategory, WorkPacket } from "../src/types.js";
 
 test("Probe Planner accepts a bounded declarative plan", () => {
   const plan = parseProbePlan(validPlan(), packet());
@@ -208,6 +208,33 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /never assert feedback the evidence does not state/i);
 });
 
+test("Probe Planner forwards declared seed data and omits it when empty", async () => {
+  const bodies: string[] = [];
+  const fetchFn: typeof fetch = async (_input, init) => {
+    bodies.push(String(init?.body));
+    return jsonResponse({
+      choices: [{ message: { content: JSON.stringify(validPlan()) } }],
+    });
+  };
+  const planner = new LlmProbePlanner(config(), fetchFn);
+
+  const seedData: SeedDataCategory[] = [
+    { category: "notes", items: ["Sprint goals", "Groceries"] },
+  ];
+  await planner.plan(packet(seedData));
+
+  const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
+  assert.match(seeded.messages[0].content, /seedData is supplied/);
+  assert.match(seeded.messages[0].content, /appear verbatim/);
+  const seededPayload = JSON.parse(seeded.messages[1].content) as { seedData?: unknown };
+  assert.deepEqual(seededPayload.seedData, seedData);
+
+  await planner.plan(packet());
+  const plain = JSON.parse(bodies[1]) as { messages: Array<{ content: string }> };
+  const plainPayload = JSON.parse(plain.messages[1].content) as { seedData?: unknown };
+  assert.equal("seedData" in plainPayload, false);
+});
+
 test("Probe Planner extracts JSON from fenced and annotated responses", async () => {
   const raw = JSON.stringify(validPlan());
   const contents = [
@@ -391,7 +418,7 @@ function validPlan(): {
   };
 }
 
-function packet(): WorkPacket {
+function packet(seedData: SeedDataCategory[] = []): WorkPacket {
   return {
     id: "packet-profile",
     requirementIds: ["REQ-PROFILE"],
@@ -412,7 +439,7 @@ function packet(): WorkPacket {
           rootId: "ROOT",
           rootName: "Demo Product",
           description: "Root description.",
-          seedData: [],
+          seedData,
         },
         ancestors: [
           { id: "PROFILE", name: "Profile", description: "Profile area" },
