@@ -84,6 +84,52 @@ def load_env_file(root: Path) -> dict[str, str]:
 
 GATEWAY_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL")
 
+CGROUP_MEMORY_FILES = (
+    "/sys/fs/cgroup/memory.max",
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory.events",
+    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+    "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+)
+
+
+def cgroup_memory_summary() -> str:
+    """Best-effort container memory state; a nonzero oom_kill in memory.events proves the platform killed us."""
+    parts: list[str] = []
+    for entry in CGROUP_MEMORY_FILES:
+        path = Path(entry)
+        try:
+            if not path.is_file():
+                continue
+            value = " ".join(path.read_text(encoding="utf-8", errors="replace").split())
+        except OSError:
+            continue
+        parts.append(f"{path.name}={value}")
+    return "; ".join(parts)
+
+
+def cgroup_memory_limit_bytes() -> int | None:
+    for entry in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            text = Path(entry).read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not text or text == "max":
+            continue
+        try:
+            value = int(text)
+        except ValueError:
+            continue
+        if value > 0:
+            return value
+    return None
+
+
+LOW_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024
+LOW_MEMORY_NODE_OPTIONS = "--max-old-space-size=384"
+# Bun runtime heap cap for the OpenCode server binary; measured ~70 MiB lower RSS.
+LOW_MEMORY_BUN_JSC_FORCE_RAM_SIZE = "201326592"
+
 
 def resolve_gateway_env(root: Path) -> dict[str, str]:
     values = {name: (os.environ.get(name) or "").strip() for name in GATEWAY_VARS}
@@ -228,6 +274,20 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log(f"eval port is {args.web_port}; generation never binds it")
+    memory_limit = cgroup_memory_limit_bytes()
+    if memory_limit is not None:
+        log(f"container memory limit: {memory_limit // (1024 * 1024)} MiB")
+        if memory_limit <= LOW_MEMORY_LIMIT_BYTES:
+            # Applies to every Node child (npm install, playwright install, the
+            # pipeline, MCP children); Python and native binaries are unaffected.
+            os.environ.setdefault("NODE_OPTIONS", LOW_MEMORY_NODE_OPTIONS)
+            # The OpenCode server is a Bun executable; tighten its JSC heap too.
+            os.environ.setdefault("BUN_JSC_forceRAMSize", LOW_MEMORY_BUN_JSC_FORCE_RAM_SIZE)
+            log(f"low-memory mode: NODE_OPTIONS={os.environ['NODE_OPTIONS']} BUN_JSC_forceRAMSize={os.environ['BUN_JSC_forceRAMSize']}")
+    memory = cgroup_memory_summary()
+    if memory:
+        log(f"cgroup memory at start: {memory}")
+
     try:
         probe_model_endpoint(resolve_gateway_env(root))
         check_node_version()
@@ -237,10 +297,13 @@ def main() -> int:
         return 1
 
     budget = (os.environ.get("SHALLOW_BUDGET_MS") or "0").strip() or "0"
+    compiled_entry = root / "build" / "index.js"
+    if compiled_entry.is_file():
+        entry = ["node", str(compiled_entry)]
+    else:
+        entry = [npx_cmd(), "tsx", "index.ts"]
     command = [
-        npx_cmd(),
-        "tsx",
-        "index.ts",
+        *entry,
         "--requirements-dir",
         str(requirement_dir),
         "--output-dir",
@@ -254,6 +317,9 @@ def main() -> int:
     except RuntimeError as error:
         log(str(error))
         exit_code = 1
+    memory = cgroup_memory_summary()
+    if memory:
+        log(f"cgroup memory after pipeline: {memory}")
 
     if not check_template(output_dir):
         return 1

@@ -7,3 +7,4 @@
 官方参考实现仓库：octos-org/arc-adapter
 
 初赛题：https://github.com/code-philia/arc-bench-website/tree/main/data/competition/hackathon
+

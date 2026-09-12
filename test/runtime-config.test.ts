@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseCgroupMemoryLimit,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -14,6 +15,14 @@ import {
   readGatewayConfig,
 } from "../src/runtime-config.js";
 import { withTempDir } from "./helpers/temp-dir.js";
+
+test("cgroup memory limits parse v2 numbers and ignore unlimited or invalid values", () => {
+  assert.equal(parseCgroupMemoryLimit("536870912\n"), 536_870_912);
+  assert.equal(parseCgroupMemoryLimit("max"), undefined);
+  assert.equal(parseCgroupMemoryLimit(""), undefined);
+  assert.equal(parseCgroupMemoryLimit("not-a-number"), undefined);
+  assert.equal(parseCgroupMemoryLimit("0"), undefined);
+});
 
 test("Runtime config requires the three explicit gateway variables", () => {
   const complete = {

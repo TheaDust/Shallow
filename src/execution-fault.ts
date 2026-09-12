@@ -6,7 +6,12 @@ export class ExecutionFault extends Error {
     readonly retryable: boolean,
     options?: ErrorOptions,
   ) {
-    super(`${source}: ${code}`, options);
+    super(
+      options?.cause instanceof Error && options.cause.message
+        ? `${source}: ${code}: ${options.cause.message}`
+        : `${source}: ${code}`,
+      options,
+    );
     this.name = "ExecutionFault";
   }
 }

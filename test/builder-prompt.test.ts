@@ -8,6 +8,7 @@ import {
   OpenCodeSdkBuilder,
   type OpenCodePromptInput,
   type OpenCodeRuntime,
+  type OpenCodeServerExit,
 } from "../src/builder/opencode-sdk.js";
 import { compileBuilderPrompt } from "../src/builder/prompt.js";
 import type {
@@ -326,6 +327,55 @@ test("Builder reports failure when the abort call itself fails", async () => {
   assert.equal(result.summary, "OpenCode session abort failed");
 });
 
+test("Builder restarts the runtime and re-issues the task after the server was killed", async () => {
+  const runtime = new KilledServerRuntime(1);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "completed");
+  assert.equal(runtime.startedDirectories.length, 2);
+  assert.equal(runtime.prompts.length, 2);
+  assert.deepEqual(runtime.prompts[0].input, runtime.prompts[1].input);
+  assert.equal(result.sessionId, "session-2");
+});
+
+test("Builder stops restarting after the server-death budget is exhausted", async () => {
+  const runtime = new KilledServerRuntime(Number.POSITIVE_INFINITY);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(runtime.startedDirectories.length, 3);
+  assert.equal(runtime.prompts.length, 3);
+});
+
+test("Builder does not restart a live server after an ordinary prompt failure", async () => {
+  const runtime = new KilledServerRuntime(0, 1);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
+
+  const result = await builder.run(builderRequest(1));
+  await builder.close();
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(runtime.startedDirectories.length, 1);
+});
+
+test("Builder releases the runtime after each call when configured", async () => {
+  const runtime = new RecordingRuntime();
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000, releaseRuntimeAfterRun: true });
+
+  assert.equal((await builder.run(builderRequest(1))).outcome, "completed");
+  assert.equal(runtime.closeCount, 1);
+  assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
+  assert.equal(runtime.closeCount, 2);
+  assert.equal(runtime.startedDirectories.length, 2);
+  await builder.close();
+});
+
 test("FakeBuilder copies only the test fixture app into output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "shallow-fake-builder-"));
   try {
@@ -415,6 +465,51 @@ class GhostRuntime implements OpenCodeRuntime {
   }
 
   async close(): Promise<void> {}
+}
+
+class KilledServerRuntime implements OpenCodeRuntime {
+  startedDirectories: string[] = [];
+  createdSessions: string[] = [];
+  prompts: Array<{ sessionId: string; input: OpenCodePromptInput }> = [];
+  private exit?: OpenCodeServerExit;
+  private promptCount = 0;
+
+  constructor(
+    private readonly killedPrompts: number,
+    private readonly failingPrompts = 0,
+  ) {}
+
+  async start(directory: string): Promise<void> {
+    this.startedDirectories.push(directory);
+    this.exit = undefined;
+  }
+
+  async createSession(): Promise<string> {
+    const id = `session-${this.createdSessions.length + 1}`;
+    this.createdSessions.push(id);
+    return id;
+  }
+
+  async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
+    this.prompts.push({ sessionId, input });
+    this.promptCount += 1;
+    if (this.promptCount <= this.killedPrompts) {
+      this.exit = { code: null, signal: "SIGKILL" };
+      throw new TypeError("fetch failed");
+    }
+    if (this.promptCount <= this.killedPrompts + this.failingPrompts) {
+      throw new TypeError("fetch failed");
+    }
+    return "implemented";
+  }
+
+  async abort(): Promise<void> {}
+
+  async close(): Promise<void> {}
+
+  serverExit(): OpenCodeServerExit | undefined {
+    return this.exit;
+  }
 }
 
 function implementRequest(): BuilderPromptInput {

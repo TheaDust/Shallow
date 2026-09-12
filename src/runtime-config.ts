@@ -4,6 +4,28 @@ import { resolve } from "node:path";
 
 import type { PlatformContract } from "./types.js";
 
+export const LOW_MEMORY_LIMIT_BYTES = 1024 ** 3;
+
+export function parseCgroupMemoryLimit(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed === "max") return undefined;
+  const value = Number(trimmed);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Container memory limit (cgroup v2 `memory.max`, then cgroup v1); undefined when unlimited/unreadable. */
+export async function readCgroupMemoryLimitBytes(): Promise<number | undefined> {
+  for (const file of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
+    try {
+      const value = parseCgroupMemoryLimit(await readFile(file, "utf8"));
+      if (value !== undefined) return value;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 export interface GatewayConfig {
   apiKey: string;
   baseUrl: string;

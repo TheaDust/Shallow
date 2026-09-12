@@ -117,7 +117,7 @@ ProbePlan 的 JSON Schema 完整描述步骤与 locator 字段；每个 case 必
 
 Builder 完成代码修改后调用 `candidate` MCP 的 `prepare`。控制器在本次运行目录 `candidate/app/` 创建应用副本，安装必要依赖、构建并启动自测实例，返回 `baseUrl`。Builder 用浏览器操作当前需求的关键路径，涉及持久化时重新加载页面；继续修改前调用 `stop`，修改后重新 `prepare`。回执列出通过／失败／未执行、实际观察与资源清理结果，仍属于自述诊断，最终通过条件由独立 Judge 决定。
 
-运行时在发送模型请求前连接并检查 MCP 状态，请求结束后断开 MCP；取消期间的延迟连接不会继续发送模型请求。连接失败或清理失败按 `builder_self_test` 执行故障停止。自测计入本次 Builder 调用，未增加 Builder 尝试次数；超时后的资源收尾仍按有界清理执行。
+运行时在发送模型请求前连接并检查 MCP 状态，请求结束后断开 MCP；取消期间的延迟连接不会继续发送模型请求。连接失败按 `builder_self_test` 执行故障停止；会话结束后的清理失败只写诊断告警并继续采用已完成的 Builder 结果，MCP 进程随运行时关闭回收。自测计入本次 Builder 调用，未增加 Builder 尝试次数；超时后的资源收尾仍按有界清理执行。
 
 浏览器使用无头、临时配置；允许来源配置为本次合同中的本地探针地址，图片响应关闭，主要通过 `browser_snapshot` 查看页面结构。来源过滤是防误操作措施，不是操作系统级安全隔离。自测产物保存在本次日志目录的 `builder-self-test/` 下；自动导航返回文件链接时可调用 `browser_snapshot` 获取直接返回的页面结构。
 
@@ -236,6 +236,7 @@ GitOps（`src/git-ops.ts`）细节：
 | 来源 | 当前处理 |
 | --- | --- |
 | 业务断言、应用导航/操作超时、候选应用启动失败 | 白名单观测交给 Builder；首次实现加两次修复，最多三次调用 |
+| Builder 端 OpenCode server 被环境杀死（`signal=SIGKILL` 等） | 同一 Builder 尝试内最多重启 server 并重发同一任务 2 次（`MAX_SERVER_RESTARTS`），不消耗 packet 尝试；退出码、信号、server 尾部和容器 cgroup 内存一并写入 stderr 诊断 |
 | 浏览器断连或页面 crash 事件 | `ExecutionFault` 标识执行故障；每 packet 最多重试一次，保持候选、应用进程和合法计划，重试前检查总预算 |
 | Planner 网络请求失败、HTTP 408/429/5xx | 最多重试一次，独立于 Builder 次数；已有合法计划继续复用 |
 | Planner JSON/schema 校验失败 | 一次带反馈的计划修正；仍失败则阻塞 packet |

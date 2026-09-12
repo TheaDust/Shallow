@@ -1,10 +1,16 @@
 import {
   createOpencodeClient,
-  createOpencodeServer,
+  type Config,
   type createOpencode,
   type OpencodeClient,
 } from "@opencode-ai/sdk";
+import { spawnSync, type ChildProcess } from "node:child_process";
+import { open, readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Agent, fetch as undiciFetch } from "undici";
+
+import { spawnProcess } from "../process-spawn.js";
 import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 
 import { compileBuilderPrompt } from "./prompt.js";
@@ -12,6 +18,7 @@ import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
 import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
 import { ExecutionFault } from "../execution-fault.js";
+import { sanitizeDiagnosticText } from "../diagnostics.js";
 import { builderSelfTestConfig, SELF_TEST_MCP_NAME, CANDIDATE_MCP_NAME, type BuilderSelfTestOptions } from "./self-test.js";
 import type { CandidateRuntime } from "../candidate-runtime.js";
 import type { McpRemoteConfig } from "@opencode-ai/sdk";
@@ -28,12 +35,22 @@ export interface OpenCodeRuntime {
   prompt(sessionId: string, input: OpenCodePromptInput): Promise<string>;
   abort(sessionId: string): Promise<void>;
   close(): Promise<void>;
+  serverExit?(): OpenCodeServerExit | undefined;
 }
 
 export interface OpenCodeSdkBuilderOptions {
   timeoutMs: number;
   promptSettleTimeoutMs?: number;
   requirementsDir?: string;
+  /** Stop the OpenCode server after every Builder call so each run starts from a clean baseline. */
+  releaseRuntimeAfterRun?: boolean;
+}
+
+interface PreparedBuilderRun {
+  title: string;
+  baseInput: OpenCodePromptInput;
+  input: OpenCodePromptInput;
+  referenceImages?: BuilderResult["referenceImages"];
 }
 
 type RuntimeConfigPermission = NonNullable<
@@ -61,11 +78,60 @@ const BUILDER_TOOL_PERMISSION = {
 
 const BUILDER_PERMISSION_CONFIG = BUILDER_TOOL_PERMISSION as unknown as RuntimeConfigPermission;
 
+// OpenCode subsystems the Builder never uses (snapshot undo, sharing, update
+// checks, plugin/filewatcher extras) still hold state for the server's whole
+// lifetime; switch them off so the container budget goes to the model session.
+export const OPENCODE_MEMORY_ENV = {
+  OPENCODE_DISABLE_AUTOUPDATE: "1",
+  OPENCODE_DISABLE_MODELS_FETCH: "1",
+  OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
+  OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
+  OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
+} as const;
+
+const MEMORY_CONFIG: Pick<
+  Config,
+  "snapshot" | "autoupdate" | "share" | "formatter" | "lsp" | "watcher"
+> = {
+  snapshot: false,
+  autoupdate: false,
+  share: "disabled",
+  formatter: false,
+  lsp: false,
+  watcher: { ignore: ["node_modules/**", "dist/**", ".git/**", ".arc/**"] },
+};
+
 class ImageInputUnsupportedError extends Error {}
 
 type CreateOpencodeInstanceOptions = NonNullable<
   Parameters<typeof createOpencode>[0]
-> & { fetch: typeof fetch };
+> & { fetch: typeof fetch; onServerExit?: (exit: OpenCodeServerExit) => void };
+
+export interface OpenCodeServerExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+const MAX_SERVER_RESTARTS = 2;
+
+const CGROUP_MEMORY_FILES = [
+  "/sys/fs/cgroup/memory.max",
+  "/sys/fs/cgroup/memory.current",
+  "/sys/fs/cgroup/memory.events",
+] as const;
+
+async function cgroupMemorySummary(): Promise<string | undefined> {
+  const parts: string[] = [];
+  for (const file of CGROUP_MEMORY_FILES) {
+    try {
+      const value = (await readFile(file, "utf8")).trim().replace(/\s+/g, " ");
+      parts.push(`${file.split("/").at(-1)}=${value}`);
+    } catch {
+      continue;
+    }
+  }
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
 
 export type CreateOpencodeInstance = (
   options: CreateOpencodeInstanceOptions,
@@ -98,19 +164,95 @@ export const sdkFetch = (async (
   );
 }) as unknown as typeof fetch;
 
+const SERVER_START_TIMEOUT_MS = 5_000;
+const SERVER_TAIL_LINES = 60;
+
 async function createProductionInstance(
   options: CreateOpencodeInstanceOptions,
 ): Promise<{ client: OpencodeClient; server: { url: string; close(): void } }> {
-  const server = await createOpencodeServer({
-    port: options.port,
-    config: options.config,
-    timeout: 5_000,
+  const hostname = options.hostname ?? "127.0.0.1";
+  const args = ["serve", `--hostname=${hostname}`, `--port=${options.port}`];
+  const config = options.config as { logLevel?: string; provider?: Record<string, { options?: { apiKey?: string } }> } | undefined;
+  if (config?.logLevel) args.push(`--log-level=${config.logLevel}`);
+  const proc = spawnProcess(process.platform === "win32" ? "opencode.cmd" : "opencode", args, {
+    env: { ...process.env, ...OPENCODE_MEMORY_ENV, OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config ?? {}) },
+    shell: false,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  const client = createOpencodeClient({
-    baseUrl: server.url,
-    fetch: options.fetch,
+  const secrets = config?.provider?.["shallow-gateway"]?.options?.apiKey;
+  const tail: string[] = [];
+  const capture = (chunk: unknown): void => {
+    for (const line of String(chunk).split(/\r?\n/)) {
+      if (line.trim().length > 0) tail.push(line);
+    }
+    while (tail.length > SERVER_TAIL_LINES) tail.shift();
+  };
+  proc.stdout?.on("data", capture);
+  proc.stderr?.on("data", capture);
+
+  let started = false;
+  let stopping = false;
+  let resolveUrl!: (url: string) => void;
+  let rejectUrl!: (error: Error) => void;
+  const urlPromise = new Promise<string>((resolvePromise, reject) => {
+    resolveUrl = resolvePromise;
+    rejectUrl = reject;
   });
-  return { client, server };
+  let startupTimer: NodeJS.Timeout | undefined = setTimeout(() => {
+    stopServer(proc);
+    rejectUrl(new Error(`Timeout waiting for server to start after ${SERVER_START_TIMEOUT_MS}ms`));
+  }, SERVER_START_TIMEOUT_MS);
+  proc.once("error", (error) => {
+    if (startupTimer) clearTimeout(startupTimer);
+    rejectUrl(error);
+  });
+  proc.once("exit", (code, signal) => {
+    if (startupTimer) clearTimeout(startupTimer);
+    options.onServerExit?.({ code, signal });
+    if (stopping || !started) {
+      if (!started) {
+        const diagnostics = sanitizeDiagnosticText(tail.join("\n"), secrets ? [secrets] : []);
+        rejectUrl(new Error(`Server exited with code ${code} signal ${signal}: ${diagnostics}`));
+      }
+      return;
+    }
+    const diagnostics = sanitizeDiagnosticText(tail.join("\n"), secrets ? [secrets] : []);
+    void cgroupMemorySummary().then((memory) => {
+      process.stderr.write(`[ShallowCode] warning: OpenCode server exited code=${code} signal=${signal}${memory ? ` container[${memory}]` : ""}\n${diagnostics}\n`);
+    });
+  });
+  let output = "";
+  proc.stdout?.on("data", (chunk) => {
+    if (started) return;
+    output += String(chunk);
+    for (const line of output.split("\n")) {
+      if (!line.startsWith("opencode server listening")) continue;
+      const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
+      if (!match) {
+        stopServer(proc);
+        rejectUrl(new Error(`Failed to parse server url from output: ${line}`));
+        return;
+      }
+      started = true;
+      if (startupTimer) clearTimeout(startupTimer);
+      resolveUrl(match[1]);
+      return;
+    }
+  });
+
+  const url = await urlPromise;
+  const client = createOpencodeClient({ baseUrl: url, fetch: options.fetch });
+  return { client, server: { url, close() { stopping = true; stopServer(proc); } } };
+}
+
+function stopServer(proc: ChildProcess): void {
+  if (proc.exitCode !== null || proc.signalCode !== null) return;
+  if (process.platform === "win32" && proc.pid) {
+    const result = spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { windowsHide: true });
+    if (!result.error && result.status === 0) return;
+  }
+  proc.kill();
 }
 
 async function waitForPromptSettlement(
@@ -147,6 +289,45 @@ export class OpenCodeSdkBuilder implements BuilderPort {
     } catch (error) {
       throw new ExecutionFault("builder", "builder_start", false, { cause: error });
     }
+    const prepared = await this.prepareRun(request);
+    const deadline = Date.now() + this.options.timeoutMs;
+    let restarts = 0;
+    try {
+      for (;;) {
+        let result: BuilderResult | undefined;
+        let failure: unknown;
+        try {
+          const remaining = restarts === 0 ? this.options.timeoutMs : Math.max(1_000, deadline - Date.now());
+          result = await this.dispatchRun(prepared, remaining);
+        } catch (error) {
+          failure = error;
+        }
+        const exit = this.runtime.serverExit?.();
+        // The eval container SIGKILLs the OpenCode server mid-prompt; restart and re-issue
+        // the same task so an environment kill does not burn a packet attempt.
+        if (exit && restarts < MAX_SERVER_RESTARTS && Date.now() < deadline &&
+          (failure !== undefined || result?.outcome === "failed")) {
+          restarts += 1;
+          process.stderr.write(
+            `[ShallowCode] warning: OpenCode server was killed (code=${exit.code} signal=${exit.signal}); restarting and re-issuing the Builder task (restart ${restarts}/${MAX_SERVER_RESTARTS})\n`,
+          );
+          await this.resetRuntime();
+          try {
+            await this.ensureStarted(request.outputDir);
+          } catch (error) {
+            throw new ExecutionFault("builder", "builder_start", false, { cause: error });
+          }
+          continue;
+        }
+        if (failure !== undefined) throw failure;
+        return result!;
+      }
+    } finally {
+      if (this.options.releaseRuntimeAfterRun) await this.resetRuntime();
+    }
+  }
+
+  private async prepareRun(request: BuilderRequest): Promise<PreparedBuilderRun> {
     const title =
       request.mode === "delivery_repair"
         ? "delivery repair"
@@ -176,10 +357,15 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         })}`;
       }
     }
+    return { title, baseInput, input, referenceImages };
+  }
+
+  private async dispatchRun(prepared: PreparedBuilderRun, timeoutMs: number): Promise<BuilderResult> {
+    const { title, baseInput, input } = prepared;
     let sessionId = await this.runtime.createSession(title);
     let cancelled = false;
     const finish = (outcome: BuilderResult["outcome"], summary: string): BuilderResult => ({
-      sessionId, outcome, summary, ...(referenceImages ? { referenceImages } : {}),
+      sessionId, outcome, summary, ...(prepared.referenceImages ? { referenceImages: prepared.referenceImages } : {}),
     });
     const promptPromise = (async () => {
       try {
@@ -196,7 +382,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
           await this.runtime.abort(sessionId);
           throw error;
         }
-        referenceImages = { ...referenceImages!, mode: "text_fallback", attachedCount: 0 };
+        prepared.referenceImages = { ...prepared.referenceImages!, mode: "text_fallback", attachedCount: 0 };
         return this.runtime.prompt(sessionId, {
           systemPrompt: baseInput.systemPrompt,
           taskPrompt: `${baseInput.taskPrompt}\n\n${loadBuilderPrompt("system", "reference-images-text-fallback")}`,
@@ -212,7 +398,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
           summary,
         })),
         new Promise<{ kind: "timed_out" }>((resolve) => {
-          timeout = setTimeout(() => resolve({ kind: "timed_out" }), this.options.timeoutMs);
+          timeout = setTimeout(() => resolve({ kind: "timed_out" }), timeoutMs);
         }),
       ]);
       if (result.kind === "timed_out") {
@@ -280,6 +466,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private client?: OpencodeClient;
   private server?: { close(): void };
   private directory?: string;
+  private lastServerExit?: OpenCodeServerExit;
   private readonly abortedSessions = new Set<string>();
 
   constructor(
@@ -291,9 +478,11 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
 
   async start(directory: string): Promise<void> {
     const model = this.gateway.model;
+    this.lastServerExit = undefined;
     const instance = await this.create({
       port: await pickFreePort(),
       fetch: sdkFetch,
+      onServerExit: (exit) => { this.lastServerExit = exit; },
       config: {
         ...(this.selfTest || this.candidateTools ? { mcp: {
           ...(this.selfTest ? { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } : {}),
@@ -303,6 +492,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
         small_model: `shallow-gateway/${model}`,
         enabled_providers: ["shallow-gateway"],
         permission: BUILDER_PERMISSION_CONFIG,
+        ...MEMORY_CONFIG,
         provider: {
           "shallow-gateway": {
             npm: "@ai-sdk/openai-compatible",
@@ -324,6 +514,10 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     this.client = instance.client;
     this.server = instance.server;
     this.directory = directory;
+  }
+
+  serverExit(): OpenCodeServerExit | undefined {
+    return this.lastServerExit;
   }
 
   async createSession(title: string): Promise<string> {
@@ -356,9 +550,24 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
       }
       if (this.client !== client || this.abortedSessions.has(sessionId)) throw new Error("OpenCode prompt cancelled before dispatch");
       return await this.sendPrompt(client, directory, sessionId, input);
+    } catch (error) {
+      await this.reportOpencodeLog();
+      throw error;
     } finally {
       try { if (epoch !== undefined) await this.candidateTools?.runtime.endBuilder(epoch); }
       finally { if (this.client === client) await this.disconnectSelfTest(client, directory); }
+    }
+  }
+
+  private async reportOpencodeLog(): Promise<void> {
+    if (this.create !== createProductionInstance) return;
+    try {
+      const dataHome = process.env.XDG_DATA_HOME?.trim() || join(homedir(), ".local", "share");
+      const tail = await readOpencodeLogTail(dataHome);
+      if (!tail) return;
+      process.stderr.write(`[ShallowCode] warning: OpenCode server log tail:\n${sanitizeDiagnosticText(tail, [this.gateway.apiKey], 3_000)}\n`);
+    } catch {
+      return;
     }
   }
 
@@ -369,10 +578,15 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private async disconnectSelfTest(client: OpencodeClient, directory: string): Promise<void> {
     const results = await Promise.allSettled(this.mcpNames().map(async (name) => {
       const response = await client.mcp.disconnect({ path: { name }, query: { directory }, signal: AbortSignal.timeout(5_000) });
-      if (response.error || response.data !== true) throw new Error("MCP disconnect failed");
+      if (response.error || response.data !== true) {
+        throw new Error(`${name} MCP disconnect failed: ${response.error ? formatSdkError(response.error) : `status ${String(response.data)}`}`);
+      }
     }));
-    const failure = results.find((result) => result.status === "rejected");
-    if (failure?.status === "rejected") throw new ExecutionFault("builder", "builder_self_test", false, { cause: failure.reason });
+    for (const result of results) {
+      if (result.status !== "rejected") continue;
+      const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      process.stderr.write(`[ShallowCode] warning: builder self-test cleanup failed: ${sanitizeDiagnosticText(message, [this.gateway.apiKey])}\n`);
+    }
   }
 
   private async sendPrompt(client: OpencodeClient, directory: string, sessionId: string, input: OpenCodePromptInput): Promise<string> {
@@ -443,6 +657,42 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private requireStarted(): { client: OpencodeClient; directory: string } {
     if (!this.client || !this.directory) throw new Error("OpenCode runtime is not started");
     return { client: this.client, directory: this.directory };
+  }
+}
+
+export async function readOpencodeLogTail(dataHome: string, maxBytes = 65_536): Promise<string | undefined> {
+  const logDir = join(dataHome, "opencode", "log");
+  let names: string[];
+  try {
+    names = (await readdir(logDir)).filter((name) => name.endsWith(".log"));
+  } catch {
+    return undefined;
+  }
+  let newest: { path: string; mtimeMs: number } | undefined;
+  for (const name of names) {
+    try {
+      const info = await stat(join(logDir, name));
+      if (!newest || info.mtimeMs > newest.mtimeMs) newest = { path: join(logDir, name), mtimeMs: info.mtimeMs };
+    } catch {
+      continue;
+    }
+  }
+  if (!newest) return undefined;
+  try {
+    const info = await stat(newest.path);
+    const length = Math.min(info.size, maxBytes);
+    const handle = await open(newest.path, "r");
+    try {
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, info.size - length);
+      const lines = buffer.toString("utf8").split(/\r?\n/).filter((line) => line.trim().length > 0);
+      const errors = lines.filter((line) => line.includes("level=ERROR"));
+      return (errors.length > 0 ? errors : lines).slice(-8).join("\n") || undefined;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return undefined;
   }
 }
 

@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { test } from "node:test";
 import { createOpencodeClient, type createOpencode } from "@opencode-ai/sdk";
-import { sdkFetch, SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
+import { OPENCODE_MEMORY_ENV, readOpencodeLogTail, sdkFetch, SdkOpenCodeRuntime, type OpenCodeServerExit } from "../src/builder/opencode-sdk.js";
 import { ExecutionFault } from "../src/execution-fault.js";
+import { withTempDir } from "./helpers/temp-dir.js";
 
 for (const outcome of ["completed", "model-error", "connect-error", "disconnect-error"] as const) {
   test(`SDK scopes the Builder browser to one prompt: ${outcome}`, async () => {
@@ -28,15 +31,14 @@ for (const outcome of ["completed", "model-error", "connect-error", "disconnect-
     try {
       assert.equal(configured?.config?.mcp?.playwright.enabled, false);
       const prompt = runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task" });
-      if (outcome === "completed") assert.equal(await prompt, "done");
+      if (outcome === "completed" || outcome === "disconnect-error") assert.equal(await prompt, "done");
       else if (outcome === "model-error") await assert.rejects(prompt, /gateway unavailable/);
       else await assert.rejects(prompt, ExecutionFault);
       assert.deepEqual(calls.slice(0, 2), ["/mcp/playwright/connect", "/mcp"]);
       assert.equal(calls.at(-1), "/mcp/playwright/disconnect");
       assert.equal(calls.some((path) => path.startsWith("/session/")), outcome !== "connect-error");
     } finally {
-      if (outcome === "disconnect-error") await assert.rejects(runtime.close(), ExecutionFault);
-      else await runtime.close();
+      await runtime.close();
     }
   });
 }
@@ -94,6 +96,22 @@ test("SDK runtime does not use the Node global fetch that enforces the 300s head
   assert.equal(typeof options?.fetch, "function");
   assert.notEqual(options?.fetch, globalThis.fetch);
   assert.equal(options?.config?.mcp, undefined, "shared runtime stays unchanged unless self-test is explicitly enabled");
+});
+
+test("SDK runtime reports an unexpected server exit and clears it on restart", async () => {
+  let exit!: (info: OpenCodeServerExit) => void;
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    exit = options.onServerExit!;
+    return { server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://localhost:1" }) };
+  });
+  await runtime.start("candidate");
+  assert.equal(runtime.serverExit(), undefined);
+  exit({ code: null, signal: "SIGKILL" });
+  assert.deepEqual(runtime.serverExit(), { code: null, signal: "SIGKILL" });
+  await runtime.close();
+  await runtime.start("candidate");
+  assert.equal(runtime.serverExit(), undefined);
+  await runtime.close();
 });
 
 test("sdkFetch adapts the SDK's Node Request objects", async () => {
@@ -182,6 +200,30 @@ test("SDK runtime forwards the gateway and preserves raw model IDs in all model 
   }
 });
 
+test("SDK runtime trims unused OpenCode subsystems to reduce memory overhead", async () => {
+  let config: Parameters<typeof createOpencode>[0];
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    config = options;
+    return { server: { url: "http://127.0.0.1:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://127.0.0.1:1" }) };
+  });
+  await runtime.start("candidate");
+  await runtime.close();
+
+  assert.equal(config?.config?.snapshot, false);
+  assert.equal(config?.config?.autoupdate, false);
+  assert.equal(config?.config?.share, "disabled");
+  assert.equal(config?.config?.formatter, false);
+  assert.equal(config?.config?.lsp, false);
+  assert.deepEqual(config?.config?.watcher, { ignore: ["node_modules/**", "dist/**", ".git/**", ".arc/**"] });
+  assert.deepEqual({ ...OPENCODE_MEMORY_ENV }, {
+    OPENCODE_DISABLE_AUTOUPDATE: "1",
+    OPENCODE_DISABLE_MODELS_FETCH: "1",
+    OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
+    OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
+    OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
+  });
+});
+
 test("SDK runtime denies Builder tool access to .arc and external paths", async () => {
   const arcPathDenies = {
     "**/.arc/**": "deny",
@@ -240,4 +282,18 @@ test("SDK runtime submits reference images as file parts with image-capable prov
     { type: "file", mime: "image/png", filename: "reference/ui.png", url: "data:image/png;base64,aW1hZ2U=" },
   ]);
   assert.deepEqual(config?.config?.provider?.["shallow-gateway"].models?.model.modalities?.input, ["text", "image"]);
+});
+
+test("OpenCode log tail surfaces the newest server errors for diagnostics", async () => {
+  await withTempDir("shallow-opencode-", async (directory) => {
+    const logDir = join(directory, "opencode", "log");
+    await mkdir(logDir, { recursive: true });
+    await writeFile(join(logDir, "old.log"), "level=ERROR message=old failure\n", "utf8");
+    await writeFile(join(logDir, "new.log"), "level=INFO message=started\nlevel=ERROR message=backend crashed\n", "utf8");
+    const past = new Date(Date.now() - 60_000);
+    await utimes(join(logDir, "old.log"), past, past);
+
+    assert.equal(await readOpencodeLogTail(directory), "level=ERROR message=backend crashed");
+    assert.equal(await readOpencodeLogTail(join(directory, "missing")), undefined);
+  });
 });
