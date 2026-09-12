@@ -12,6 +12,9 @@
     "build:main": "tsc -p tsconfig.build.json",
     "package:baseline": "node scripts/package-baseline.mjs",
     "package:main": "npm run build:main && node scripts/package-main.mjs",
+    "eval:local": "node scripts/eval-local.mjs",
+    "eval:main": "node scripts/eval-local.mjs --agent main",
+    "eval:baseline": "node scripts/eval-local.mjs --agent baseline",
     "start": "tsx index.ts"
   },
   "dependencies": {
