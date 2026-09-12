@@ -61,3 +61,69 @@ test("An earlier product assertion remains a failure when Chromium later disconn
     await server.stop();
   }
 });
+
+test("Locator fallbacks rescue missed primaries; hits keep assertion failures strict", async () => {
+  const server = await startFixtureServer();
+  try {
+    const report = await new PlaywrightProbeRunner().run({
+      packetId: "packet", cases: [
+        {
+          id: "fallback-click", requirementIds: ["req"], purpose: "happy_path", steps: [
+            { op: "goto", path: "/" },
+            {
+              op: "click",
+              locator: { by: "role", role: "tab", name: "Save", fallbacks: [{ by: "role", role: "button", name: "Save" }] },
+            },
+            { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+          ],
+        },
+        {
+          id: "any-of-feedback", requirementIds: ["req"], purpose: "happy_path", steps: [
+            { op: "goto", path: "/" },
+            { op: "hover", locator: { by: "role", role: "button", name: "Hint" } },
+            { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved", anyOf: ["Hovered"] },
+          ],
+        },
+        {
+          id: "assert-after-fallback", requirementIds: ["req"], purpose: "happy_path", steps: [
+            { op: "goto", path: "/" },
+            {
+              op: "expectText",
+              locator: { by: "role", role: "alert", fallbacks: [{ by: "role", role: "status" }] },
+              text: "Wrong",
+            },
+          ],
+        },
+      ],
+    }, { baseUrl: server.baseUrl, stepTimeoutMs: 1_000, caseTimeoutMs: 10_000 });
+    assert.deepEqual(report.failures.filter((failure) => failure.caseId !== "assert-after-fallback"), []);
+    const assertion = report.failures.find((failure) => failure.caseId === "assert-after-fallback");
+    assert.equal(assertion?.category, "assertion");
+  } finally {
+    await server.stop();
+  }
+});
+
+test("All locator candidates missing stays a locator failure eligible for refinement", async () => {
+  const server = await startFixtureServer();
+  try {
+    const report = await new PlaywrightProbeRunner().run({
+      packetId: "packet", cases: [
+        {
+          id: "all-miss", requirementIds: ["req"], purpose: "happy_path", steps: [
+            { op: "goto", path: "/" },
+            {
+              op: "expectVisible",
+              locator: { by: "role", role: "tab", name: "Missing", fallbacks: [{ by: "role", role: "menuitem", name: "Missing" }] },
+            },
+          ],
+        },
+      ],
+    }, { baseUrl: server.baseUrl, stepTimeoutMs: 1_000, caseTimeoutMs: 10_000 });
+    assert.equal(report.verdict, "inconclusive");
+    assert.equal(report.failures[0].category, "locator");
+    assert.ok(report.failures[0].locatorSnapshot);
+  } finally {
+    await server.stop();
+  }
+});

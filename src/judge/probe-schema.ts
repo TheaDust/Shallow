@@ -1,9 +1,9 @@
 import type { WorkPacket } from "../types.js";
 
 export type ProbeLocator =
-  | { by: "role"; role: string; name?: string; exact?: boolean }
-  | { by: "label"; text: string; exact?: boolean }
-  | { by: "text"; text: string; exact?: boolean };
+  | { by: "role"; role: string; name?: string; exact?: boolean; fallbacks?: ProbeLocator[] }
+  | { by: "label"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }
+  | { by: "text"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] };
 
 export const PRESS_KEYS = [
   "Enter",
@@ -30,7 +30,7 @@ export type ProbeStep =
   | { op: "fill"; locator: ProbeLocator; value: string }
   | { op: "select"; locator: ProbeLocator; value: string }
   | { op: "expectVisible"; locator: ProbeLocator }
-  | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean }
+  | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
   | { op: "reload" }
@@ -50,6 +50,12 @@ export interface ProbePlan {
 
 export type { ShadowReport } from "../types.js";
 
+const MAX_CASES = 6;
+const MAX_STEPS = 30;
+const MAX_STRING = 2_000;
+const MAX_FALLBACKS = 3;
+const MAX_TEXT_ALTERNATIVES = 4;
+
 const STRING_SCHEMA = { type: "string", maxLength: 2_000 };
 const NONEMPTY_STRING_SCHEMA = { ...STRING_SCHEMA, minLength: 1 };
 const OPTIONAL_STRING_SCHEMA = { type: ["string", "null"], maxLength: 2_000 };
@@ -68,7 +74,7 @@ function literalSchema(value: string) {
   return { type: "string", enum: [value] };
 }
 
-const LOCATOR_SCHEMA = {
+const LOCATOR_FLAT_SCHEMA = {
   anyOf: [
     objectSchema({
       by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
@@ -76,6 +82,19 @@ const LOCATOR_SCHEMA = {
     }),
     ...["label", "text"].map((by) => objectSchema({
       by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+    })),
+  ],
+};
+const LOCATOR_SCHEMA = {
+  anyOf: [
+    objectSchema({
+      by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
+    }),
+    ...["label", "text"].map((by) => objectSchema({
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     })),
   ],
 };
@@ -96,6 +115,7 @@ const STEP_SCHEMA = {
     objectSchema({
       op: literalSchema("expectText"), locator: LOCATOR_REF,
       text: STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      anyOf: { type: ["array", "null"], maxItems: MAX_TEXT_ALTERNATIVES, items: STRING_SCHEMA },
     }),
     objectSchema({
       op: literalSchema("expectCount"), locator: LOCATOR_REF,
@@ -107,7 +127,7 @@ const STEP_SCHEMA = {
 };
 
 export const PROBE_PLAN_JSON_SCHEMA = {
-  $defs: { locator: LOCATOR_SCHEMA },
+  $defs: { locator: LOCATOR_SCHEMA, locatorFlat: LOCATOR_FLAT_SCHEMA },
   type: "object",
   additionalProperties: false,
   required: ["packetId", "cases"],
@@ -133,7 +153,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             minItems: 1,
             maxItems: 30,
             description:
-              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only. Locator strings and expectText text are literal, not regular expressions; expectText matches the full text unless exact: false; expectCount count 0 asserts absence.",
+              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings, expectText text, and anyOf entries are literal, not regular expressions; expectText matches the full text unless exact: false, and anyOf lists alternative accepted texts; expectCount count 0 asserts absence.",
             items: STEP_SCHEMA,
           },
         },
@@ -141,10 +161,6 @@ export const PROBE_PLAN_JSON_SCHEMA = {
     },
   },
 } as const;
-
-const MAX_CASES = 6;
-const MAX_STEPS = 30;
-const MAX_STRING = 2_000;
 
 export function parseProbePlan(
   value: unknown,
@@ -161,7 +177,6 @@ export function parseProbePlan(
   if (caseValues.length > MAX_CASES) {
     throw new Error(`ProbePlan allows at most ${MAX_CASES} cases`);
   }
-
   const seen = new Set<string>();
   const cases = caseValues.map((candidate, index) => {
     const parsed = parseCase(candidate, index, packet?.requirementIds);
@@ -304,12 +319,21 @@ function parseStep(value: unknown, location: string): ProbeStep {
       };
     }
     case "expectText": {
-      keys(step, ["op", "locator", "text", "exact"], location);
+      keys(step, ["op", "locator", "text", "exact", "anyOf"], location);
+      let anyOf: string[] | undefined;
+      if (step.anyOf != null) {
+        const values = array(step.anyOf, `${location}.anyOf`);
+        if (values.length > MAX_TEXT_ALTERNATIVES) {
+          throw new Error(`${location} allows at most ${MAX_TEXT_ALTERNATIVES} anyOf candidates`);
+        }
+        anyOf = values.map((item, index) => dataText(item, `${location}.anyOf[${index}]`));
+      }
       return {
         op,
         locator: parseLocator(step.locator, `${location}.locator`),
         text: dataText(step.text, `${location}.text`),
         ...(step.exact == null ? {} : { exact: boolean(step.exact, `${location}.exact`) }),
+        ...(anyOf?.length ? { anyOf } : {}),
       };
     }
     case "expectCount": {
@@ -338,12 +362,13 @@ function parseStep(value: unknown, location: string): ProbeStep {
   }
 }
 
-function parseLocator(value: unknown, location: string): ProbeLocator {
+function parseLocator(value: unknown, location: string, allowFallbacks = true): ProbeLocator {
   const locator = record(value, location);
   const by = text(locator.by, `${location}.by`);
+  let base: ProbeLocator;
   if (by === "role") {
-    keys(locator, ["by", "role", "name", "exact"], location);
-    return {
+    keys(locator, ["by", "role", "name", "exact", "fallbacks"], location);
+    base = {
       by,
       role: text(locator.role, `${location}.role`),
       ...(locator.name == null ? {} : { name: dataText(locator.name, `${location}.name`) }),
@@ -351,18 +376,29 @@ function parseLocator(value: unknown, location: string): ProbeLocator {
         ? {}
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
-  }
-  if (by === "label" || by === "text") {
-    keys(locator, ["by", "text", "exact"], location);
-    return {
+  } else if (by === "label" || by === "text") {
+    keys(locator, ["by", "text", "exact", "fallbacks"], location);
+    base = {
       by,
       text: text(locator.text, `${location}.text`),
       ...(locator.exact == null
         ? {}
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
+  } else {
+    throw new Error(`${location} ProbePlan locator must use role, label, or text`);
   }
-  throw new Error(`${location} ProbePlan locator must use role, label, or text`);
+  if (locator.fallbacks == null) return base;
+  if (!allowFallbacks) throw new Error(`${location} fallbacks must not be nested`);
+  const fallbackValues = array(locator.fallbacks, `${location}.fallbacks`);
+  if (fallbackValues.length > MAX_FALLBACKS) {
+    throw new Error(`${location} allows at most ${MAX_FALLBACKS} fallbacks`);
+  }
+  if (fallbackValues.length === 0) return base;
+  const fallbacks = fallbackValues.map((item, index) =>
+    parseLocator(item, `${location}.fallbacks[${index}]`, false),
+  );
+  return { ...base, fallbacks };
 }
 
 function record(value: unknown, location: string): Record<string, unknown> {

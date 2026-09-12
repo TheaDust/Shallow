@@ -62,6 +62,9 @@ test("Wire schema fully describes the DSL and closes every structured-output obj
   const wire = JSON.stringify(PROBE_PLAN_JSON_SCHEMA);
   assert.match(wire, /"locator"/);
   assert.match(wire, /"expectValue"/);
+  assert.match(wire, /"fallbacks"/);
+  assert.match(wire, /"anyOf"/);
+  assert.match(wire, /locatorFlat/);
 });
 
 test("Probe plans accept bounded keyboard and pointer actions with enumerated keys", () => {
@@ -130,6 +133,75 @@ test("Probe Planner rejects empty, oversized, duplicate, or unrelated cases", ()
   assert.throws(() => parseProbePlan(unrelated, packet()), /outside packet/);
 });
 
+test("Probe plans accept locator fallbacks and expectText alternatives within bounds", () => {
+  const candidate = validPlan();
+  candidate.cases[0].steps = [
+    { op: "goto", path: "/" },
+    {
+      op: "click",
+      locator: {
+        by: "role", role: "tab", name: "Save",
+        fallbacks: [{ by: "role", role: "button", name: "Save" }, { by: "text", text: "Save" }],
+      },
+    },
+    {
+      op: "expectText",
+      locator: { by: "role", role: "status" },
+      text: "Saved",
+      anyOf: ["Stored", "Profile saved"],
+    },
+  ];
+  const parsed = parseProbePlan(candidate, packet());
+  assert.deepEqual(parsed.cases[0].steps[1], {
+    op: "click",
+    locator: {
+      by: "role", role: "tab", name: "Save",
+      fallbacks: [{ by: "role", role: "button", name: "Save" }, { by: "text", text: "Save" }],
+    },
+  });
+  const expectStep = parsed.cases[0].steps[2];
+  if (expectStep.op !== "expectText") throw new Error("fixture step must be expectText");
+  assert.deepEqual(expectStep.anyOf, ["Stored", "Profile saved"]);
+});
+
+test("Probe plans bound fallbacks, forbid nesting, and bound text alternatives", () => {
+  const nested = validPlan();
+  nested.cases[0].steps = [{
+    op: "goto", path: "/",
+  }, {
+    op: "click",
+    locator: {
+      by: "role", role: "button", name: "Save",
+      fallbacks: [{ by: "role", role: "link", name: "Save", fallbacks: [{ by: "text", text: "Save" }] }],
+    },
+  }];
+  assert.throws(() => parseProbePlan(nested, packet()), /fallbacks must not be nested/);
+
+  const oversized = validPlan();
+  oversized.cases[0].steps = [{
+    op: "goto", path: "/",
+  }, {
+    op: "click",
+    locator: {
+      by: "role", role: "button", name: "Save",
+      fallbacks: [
+        { by: "text", text: "1" }, { by: "text", text: "2" },
+        { by: "text", text: "3" }, { by: "text", text: "4" },
+      ],
+    },
+  }];
+  assert.throws(() => parseProbePlan(oversized, packet()), /at most 3 fallbacks/);
+
+  const manyAlternatives = validPlan();
+  manyAlternatives.cases[0].steps = [{
+    op: "goto", path: "/",
+  }, {
+    op: "expectText", locator: { by: "role", role: "status" }, text: "Saved",
+    anyOf: ["1", "2", "3", "4", "5"],
+  }];
+  assert.throws(() => parseProbePlan(manyAlternatives, packet()), /at most 4 anyOf/);
+});
+
 test("Probe Planner refinement may change locators but not behavior", () => {
   const original = parseProbePlan(validPlan(), packet());
   const locatorOnly = structuredClone(original);
@@ -147,6 +219,26 @@ test("Probe Planner refinement may change locators but not behavior", () => {
     () => assertLocatorOnlyRefinement(original, changedValue),
     /locator fields/,
   );
+});
+
+test("Refinement may rewrite fallbacks but not expectText alternatives", () => {
+  const base = validPlan();
+  base.cases[0].steps[3] = {
+    op: "expectText", locator: { by: "role", role: "status" }, text: "Saved", anyOf: ["Stored"],
+  };
+  const original = parseProbePlan(base, packet());
+
+  const fallbackOnly = structuredClone(original);
+  const click = fallbackOnly.cases[0].steps[2];
+  if (click.op !== "click") throw new Error("fixture step must be click");
+  click.locator = { by: "role", role: "button", name: "Save", fallbacks: [{ by: "text", text: "Save" }] };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, fallbackOnly));
+
+  const changedAnyOf = structuredClone(original);
+  const expectStep = changedAnyOf.cases[0].steps[3];
+  if (expectStep.op !== "expectText") throw new Error("fixture step must be expectText");
+  expectStep.anyOf = ["Different"];
+  assert.throws(() => assertLocatorOnlyRefinement(original, changedAnyOf), /locator fields/);
 });
 
 test("Probe Planner sends one source-blind OpenAI-compatible request", async () => {
@@ -206,6 +298,9 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /boundary cases/);
   assert.match(body, /empty, oversized, or invalid inputs/);
   assert.match(body, /never assert feedback the evidence does not state/i);
+  assert.match(body, /fallbacks/);
+  assert.match(body, /anyOf/);
+  assert.match(body, /never invent alternatives/i);
 });
 
 test("Probe Planner forwards declared seed data and omits it when empty", async () => {

@@ -178,18 +178,7 @@ async function executeStep(
     }
   }
 
-  const locator = locate(session.page, step.locator);
-  if (step.op !== "expectCount" || step.count !== 0) {
-    try {
-      await locator.waitFor({ state: "attached", timeout: timeoutMs });
-    } catch (error) {
-      throw new ProbeExecutionError(
-        "locator",
-        compactError(error),
-        await ariaSnapshot(session.page, timeoutMs),
-      );
-    }
-  }
+  const locator = await resolveLocator(session, step, timeoutMs);
 
   try {
     switch (step.op) {
@@ -215,11 +204,7 @@ async function executeStep(
         await expect(locator).toBeVisible({ timeout: timeoutMs });
         break;
       case "expectText":
-        if (step.exact === false) {
-          await expect(locator).toContainText(step.text, { timeout: timeoutMs });
-        } else {
-          await expect(locator).toHaveText(step.text, { timeout: timeoutMs });
-        }
+        await expectAnyText(locator, step, timeoutMs);
         break;
       case "expectValue":
         await expect(locator).toHaveValue(step.value, { timeout: timeoutMs });
@@ -234,6 +219,68 @@ async function executeStep(
   }
   return session;
 }
+
+/**
+ * Try candidates in order; non-final candidates get a short probe so a wrong
+ * guess does not consume the step budget, the final one keeps the full timeout.
+ * Only an all-candidates miss is a locator failure; a hit followed by a failing
+ * operation stays an assertion/timeout failure.
+ */
+async function resolveLocator(
+  session: BrowserSession,
+  step: Extract<ProbeStep, { locator: ProbeLocator }>,
+  timeoutMs: number,
+): Promise<Locator> {
+  const primary = locate(session.page, step.locator);
+  if (step.op === "expectCount" && step.count === 0) return primary;
+  const candidates: ProbeLocator[] = [step.locator, ...(step.locator.fallbacks ?? [])];
+  let lastMiss: unknown;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const isFinal = index === candidates.length - 1;
+    const candidate = locate(session.page, candidates[index]);
+    try {
+      await candidate.waitFor({
+        state: "attached",
+        timeout: isFinal ? timeoutMs : Math.min(LOCATOR_PROBE_TIMEOUT_MS, timeoutMs),
+      });
+      return candidate;
+    } catch (error) {
+      lastMiss = error;
+    }
+  }
+  throw new ProbeExecutionError(
+    "locator",
+    compactError(lastMiss),
+    await ariaSnapshot(session.page, timeoutMs),
+  );
+}
+
+/** expectText anyOf tries candidates in order; Playwright array form is multi-element, not any-of. */
+async function expectAnyText(
+  locator: Locator,
+  step: Extract<ProbeStep, { op: "expectText" }>,
+  timeoutMs: number,
+): Promise<void> {
+  const candidates = [step.text, ...(step.anyOf ?? [])];
+  let lastError: unknown;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const isFinal = index === candidates.length - 1;
+    const timeout = isFinal ? timeoutMs : Math.min(LOCATOR_PROBE_TIMEOUT_MS, timeoutMs);
+    try {
+      if (step.exact === false) {
+        await expect(locator).toContainText(candidates[index], { timeout });
+      } else {
+        await expect(locator).toHaveText(candidates[index], { timeout });
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+const LOCATOR_PROBE_TIMEOUT_MS = 500;
 
 async function createSession(browser: Browser): Promise<BrowserSession> {
   const context = await browser.newContext();
