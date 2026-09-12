@@ -160,9 +160,43 @@ test("Catalog expands folder dependencies and inherits ancestor prerequisites", 
   }
 });
 
-test("Catalog rejects a cycle introduced by a dependency on an enclosing folder", async () => {
-  await withYaml("id: ROOT\nname: Root\ntype: ROOT\nchildren:\n  - id: AREA\n    name: Area\n    type: FOLDER\n    children:\n      - id: X\n        name: One\n        type: ATOMIC\n        dependencies: [AREA]\n", async (file) => {
-    await assert.rejects(loadRequirementCatalog(file), /Dependency cycle/);
+test("Catalog drops vacuous self and enclosing-folder dependencies", async () => {
+  await withYaml("id: ROOT\nname: Root\ntype: ROOT\nchildren:\n  - id: AREA\n    name: Area\n    type: FOLDER\n    children:\n      - id: X\n        name: One\n        type: ATOMIC\n        dependencies: [AREA, X]\n", async (file) => {
+    const catalog = await loadRequirementCatalog(file);
+    assert.deepEqual(catalog.requirements[0].dependencyIds, []);
+  });
+});
+
+test("Catalog keeps cross-subtree ordering while ignoring a folder dependency on its own ancestor", async () => {
+  const yaml = [
+    "id: ROOT",
+    "name: Root",
+    "type: ROOT",
+    "children:",
+    "  - id: P",
+    "    name: Parent",
+    "    type: FOLDER",
+    "    dependencies: []",
+    "    children:",
+    "      - id: A",
+    "        name: First",
+    "        type: ATOMIC",
+    "        dependencies: []",
+    "      - id: F",
+    "        name: Nested",
+    "        type: FOLDER",
+    "        dependencies: [P]",
+    "        children:",
+    "          - id: B",
+    "            name: Second",
+    "            type: ATOMIC",
+    "            dependencies: [A]",
+  ].join("\n");
+  await withYaml(`${yaml}\n`, async (file) => {
+    const catalog = await loadRequirementCatalog(file);
+    const byId = new Map(catalog.requirements.map((item) => [item.id, item]));
+    assert.deepEqual(byId.get("A")?.dependencyIds, []);
+    assert.deepEqual(byId.get("B")?.dependencyIds, ["A"]);
   });
 });
 

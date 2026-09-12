@@ -49,12 +49,20 @@ export async function loadRequirementCatalog(
   };
   collectAtomics(root, [], [], product, requirements);
   // Folder dependencies are completion barriers over their atomic descendants.
-  // Ancestor dependencies also apply to every atomic requirement underneath them.
+  // Ancestor dependencies also apply to every atomic requirement underneath
+  // them, except when the dependency targets the requirement itself or one of
+  // its own ancestor folders (official task data contains both forms): an
+  // ancestor's completion already implies the requirement's own completion, so
+  // waiting on it is vacuous and expanding it would fabricate sibling cycles.
   for (const requirement of requirements) {
-    const scope = [...requirement.folderPath, requirement.id];
-    requirement.dependencyIds = [...new Set(scope.flatMap((id) =>
-      nodes.get(id)!.dependencies.flatMap((dependency) => atomicIds(nodes.get(dependency)!)),
-    ))];
+    const vacuous = new Set([...requirement.folderPath, root.id, requirement.id]);
+    requirement.dependencyIds = [...new Set(
+      [...requirement.folderPath, requirement.id].flatMap((scopeId) =>
+        nodes.get(scopeId)!.dependencies.flatMap((dependency) =>
+          vacuous.has(dependency) ? [] : atomicIds(nodes.get(dependency)!),
+        ),
+      ),
+    )].filter((dependency) => !vacuous.has(dependency));
   }
   validateDependencies(new Map(requirements.map((requirement) => [
     requirement.id,
@@ -100,7 +108,7 @@ function parseNode(value: unknown, location: string): ParsedNode {
   const dependencies = requireStringArray(
     record.dependencies ?? [],
     `${location}.dependencies`,
-  );
+  ).filter((dependency) => dependency !== id);
   const children = requireArray(record.children ?? [], `${location}.children`).map(
     (child, index) => parseNode(child, `${location}.children[${index}]`),
   );
