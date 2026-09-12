@@ -1,6 +1,6 @@
 比赛官网：https://create.gosim.org/factory26/
 
-竞赛平台：http://arc-bench.com/
+竞赛平台：https://github.com/code-philia/arc-bench
 
 如何评测项目：告诉agent：“读取 https://arc-bench-tutorial.vercel.app/skill.md 并照做,把我的 agent 提交到 ARC-Bench 评测”
 
