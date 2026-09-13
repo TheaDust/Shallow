@@ -161,9 +161,10 @@ flowchart TD
     C --> D["启动应用并执行探针"]
     D --> E{"ShadowReport verdict？"}
     E -->|"pass"| OK["captureAccepted 标记 verified"]
-    E -->|"inconclusive 且未 refinement"| R["refineLocators 一次后重跑"]
+    E -->|"inconclusive 且定位恢复有额度和预算"| R["refineLocators：每 packet 最多两轮"]
     R --> D
-    E -->|"fail"| N{"当前 attempt？"}
+    E -->|"Judge 无有效证据且恢复耗尽"| BLK
+    E -->|"应用行为失败"| N{"当前 attempt？"}
     N -->|"1"| A2["attempt 2 修复"]
     N -->|"2"| A3["attempt 3 修复（root-cause-first）"]
     N -->|"3"| BLK["restoreAccepted + 标记 blocked"]
@@ -174,8 +175,9 @@ flowchart TD
 判定规则（`deriveProbeVerdict`）：
 
 - **pass**：没有任何失败。`captureAccepted` 更新 accepted SHA，packet 需求标记 `verified`，继续调度。
-- **fail**：存在 locator 之外的失败（断言、导航、超时、runner），或 locator 失败没有任何 aria snapshot。按 attempt 递进——第一次失败进入 attempt 2 修复；第二次失败进入 attempt 3 修复（prompt 要求先做根因分析）；第三次失败调用 `restoreAccepted` 回滚到 accepted SHA 并将该 packet 标记 `blocked`。每个 packet 最多三次 Builder 调用。
-- **inconclusive**：仅当全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，把清洗后的快照交给 Planner 做一次 locator-only refinement（不得改变输入值、断言或步骤数），重跑探针；refinement 不消耗 Builder 修复次数。
+- **fail**：存在 locator 之外的失败（断言、导航、超时、runner），或 locator 失败没有任何 aria snapshot。应用行为失败、应用启动失败及 Builder 调用失败按 attempt 递进：第一次进入 attempt 2 修复，第二次进入 attempt 3 修复（先做根因分析），第三次回滚并阻塞。仅含 locator/runner 的探针报告属于 Judge 无法取得有效行为证据，走定位/基础设施恢复与止损，不触发 Builder 修复。每个 packet 最多三次 Builder 调用。
+- **inconclusive**：全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，交给 Planner 做 locator-only refinement。每个 packet 最多两轮，跨 Builder 尝试共享额度；每轮前及模型返回后检查预算。请求包含每个失败的 case ID、从 0 开始的 step index、候选定位器及各自错误、对应快照。每个失败步骤必须引入新的定位候选；原样返回、重排候选、仅改变等价大小写或默认值均被拒绝，不重复执行。第二轮携带最新失败现场或上轮校验原因。步骤、输入值和断言保持固定；定位恢复不消耗 Builder 修复次数，仍无有效证据时回滚并阻塞。
+- 初始计划中的纯 text 定位器若没有当前需求的明确 UI 字符串、种子项或本用例先前输入值作锚点，必须带同一目标的 role/label 备选；无明确标签时优先结构角色。“展示首页”应通过页面区域判断，描述性词语不自动成为必须出现的 UI 文案。
 - 判定循环另有迭代上限（6）作为止损保险：超出即回滚并阻塞该 packet。
 - 每次 Builder 尝试前检查预算；预算耗尽时不再开启 packet 修复，回滚未接受的候选并进入交付。
 - 修复 prompt 保留需求证据，并追加白名单化观测；Planner 的隐藏推理与完整探针计划保持在 Judge 一侧。
@@ -211,11 +213,11 @@ flowchart TD
 - **stderr**：运行事件的脱敏 JSON；包含规划、应用启停、探针、修复安排和交付验证等阶段。Planner 原始响应片段只进入私有台账。
 - **run-log.txt（人类可读）**：与 ledger 同目录，显示本地时间、累计耗时、事件序号、尝试次数，以及可用的阶段耗时、需求名称、失败分类、证据 ID、接受 SHA 和最终 verified/blocked/todo 数量及未完成 ID。Builder 回执标为“自述回执（非验收）”，换行转换为可见分隔，保持每事件一行。启动时打印文件绝对路径。
 - **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<目录运行ID>/run-ledger.jsonl`。内部事件采用判别联合，由 `RunStateStore` 注入运行 UUID、唯一事件 ID、递增序号、累计耗时、最后接受 SHA 和已登记的 packet 尝试次数；SHA 表示接受基线，不是当前未提交候选的摘要。生产启动事件记录模型、Builder/Planner 超时、prompt 资产与 Probe schema 的 SHA-256；当前 usage 标记 `unavailable`，不报告估算计费 token。
-- **evidence/**：与 ledger 同目录，只保存失败报告的白名单文本：每运行最多 128 份、每份最多 8 个失败、各文本字段最多 1500 字符，单文件硬上限 128 KiB；包含总失败数、尝试次数和接受基线。日志通过 ID 引用，正文保留在控制器目录。
+- **evidence/**：与 ledger 同目录，保存失败报告的白名单文本、执行计划 SHA-256、失败步骤的定位候选及每个候选的错误；完整计划和断言不落盘。每运行最多 128 份、每份最多 8 个失败、每个步骤最多 4 个候选、各文本字段最多 1500 字符，单文件硬上限 128 KiB；包含总失败数、尝试次数和接受基线。日志通过 ID 引用，正文保留在控制器目录。
 - **arc-projection.jsonl**：与 ledger 同目录，保存官方格式的平台事件及完整需求树投影意图，内部记录带唯一 ID。主线结束时从它重建本轮 `.arc`，重复 ID 只投影一次；写入失败记录告警，不改变已提交的验收决定。
 - **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
 
-Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。反馈仅在 Judge 侧使用。
+Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。`probe_started` 记录执行计划指纹，`probe_refined` 记录恢复轮次及前后计划指纹，`probe_refinement_failed` 记录轮次与被保留的计划指纹；定位明文仅在私有证据中。反馈仅在 Judge 侧使用。
 
 `diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
 
@@ -240,7 +242,7 @@ GitOps（`src/git-ops.ts`）细节：
 | 浏览器断连或页面 crash 事件 | `ExecutionFault` 标识执行故障；每 packet 最多重试一次，保持候选、应用进程和合法计划，重试前检查总预算 |
 | Planner 网络请求失败、HTTP 408/429/5xx | 最多重试一次，独立于 Builder 次数；已有合法计划继续复用 |
 | Planner JSON/schema 校验失败 | 一次带反馈的计划修正；仍失败则阻塞 packet |
-| locator-only 失败 | 有快照时至多一次精化；仍缺少有效行为证据则阻塞 packet |
+| locator-only 失败 | 有快照及预算时每 packet 至多两轮精化；失败步骤必须新增定位候选；额度耗尽仍无有效证据则阻塞 packet |
 | Planner 其他 HTTP 错误或无效响应协议、Builder 运行时或浏览器启动失败 | 停止本轮并回滚，报告运行环境/协议问题 |
 
 基础设施故障通过结构化类别与调用来源判断。应用自身的错误响应不按模型网关故障处理；已观察到的业务断言失败也不会被后续浏览器崩溃抹除。`builder_started` 记录实际 attempt，浏览器重试不增加或重置 Builder 次数；Builder 已开始的调用及普通 SDK 失败仍计入三次上限。
@@ -374,7 +376,7 @@ src/
     shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
   judge/
     probe-schema.ts            ProbePlan 白名单 schema 与 locator-only refinement 校验
-    llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、一次 locator refinement）
+    llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
 test/
   *.test.ts                    单元/集成测试（含无凭证全链路 e2e）

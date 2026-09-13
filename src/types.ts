@@ -1,4 +1,4 @@
-import type { ProbePlan } from "./judge/probe-schema.js";
+import type { ProbeLocator, ProbePlan } from "./judge/probe-schema.js";
 
 export type RequirementStatus = "todo" | "verified" | "blocked";
 
@@ -113,11 +113,11 @@ interface RunEventDetails {
   candidate_prepare_failed: { stage: string; message: string; durationMs: number };
   probe_planning: Record<string, never>;
   probe_planned: { cases: number };
-  probe_started: { cases: number; retryCount: number; plan?: ProbePlan };
+  probe_started: { cases: number; retryCount: number; plan?: ProbePlan; planSha256?: string };
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;
     durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
-  probe_refined: { plan?: ProbePlan };
-  probe_refinement_failed: DiagnosticDetail;
+  probe_refined: { plan?: ProbePlan; refinementAttempt?: number; beforePlanSha256?: string; planSha256?: string };
+  probe_refinement_failed: DiagnosticDetail & { refinementAttempt?: number; planSha256?: string };
   probe_planner_retry: DiagnosticDetail;
   probe_planner_failed: DiagnosticDetail;
   application_starting: Record<string, never>;
@@ -152,6 +152,7 @@ export interface ProbeFailure {
   category: "assertion" | "locator" | "navigation" | "timeout" | "runner";
   message: string;
   locatorSnapshot?: string;
+  locatorAttempts?: Array<{ locator: ProbeLocator; message: string }>;
 }
 
 export interface ShadowReport {

@@ -111,9 +111,9 @@ function describe(type: string, event: RunEvent): string | null {
         detail?.refined === true ? "（精化后重跑）" : ""
       }（${packetId}）${typeof detail?.passed === "number" ? `；通过 ${detail.passed} / 失败 ${detail.failed}；失败分类 ${strings(detail.categories).join("、") || "无"}` : ""}${pickString(detail, "evidenceId") ? `；私有证据 ${pickString(detail, "evidenceId")}` : ""}`;
     case "probe_refined":
-      return `定位器已精化，重跑探针（${packetId}）`;
+      return `定位器已精化，重跑探针（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}`;
     case "probe_refinement_failed":
-      return `定位器精化失败（${packetId}）${plannerFailureText(detail)}`;
+      return `定位器精化失败（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}${plannerFailureText(detail)}`;
     case "probe_planner_retry":
       return `探针规划失败，将重试（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_failed":

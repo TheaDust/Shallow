@@ -20,7 +20,7 @@ import type {
 } from "./final-verifier.js";
 import { ProbePlannerError, type ProbePlanner, type ProbePlannerFeedback } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
-import { parseProbePlan, type ProbePlan } from "./judge/probe-schema.js";
+import { assertLocatorOnlyRefinement, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { selectNextPacket } from "./scheduler.js";
 import { ExecutionFault } from "./execution-fault.js";
@@ -275,9 +275,8 @@ async function executePacket(
   let attempt: 1 | 2 | 3 = 1;
   let previousReport: ShadowReport | undefined;
   let plan: ProbePlan | undefined;
-  let refinementUsed = false;
   let iteration = 0;
-  const infrastructure = { browserRetries: 0 };
+  const recovery = { browserRetries: 0, locatorRefinements: 0 };
 
   while (true) {
     iteration += 1;
@@ -379,14 +378,13 @@ async function executePacket(
       }
       let probeOutcome: ProbeOutcome;
       try {
-        probeOutcome = await runShadowProbes(packet, plan, options, deps, state, refinementUsed, infrastructure);
+        probeOutcome = await runShadowProbes(packet, plan, options, deps, state, recovery);
       } catch (error) {
         if (!(error instanceof ExecutionFault) || !error.retryable) throw error;
         await blockPacket(deps, state, packet, catalogStatus, "browser infrastructure retries exhausted or budget exhausted");
         return;
       }
       plan = probeOutcome.plan;
-      refinementUsed = probeOutcome.refinementUsed;
       report = probeOutcome.report;
       if (probeOutcome.source === "probe" && report.verdict !== "pass" &&
         report.failures.every((failure) => failure.category === "locator" || failure.category === "runner")) {
@@ -435,7 +433,6 @@ interface ProbeOutcome {
   source: "application" | "probe";
   report: ShadowReport;
   plan: ProbePlan;
-  refinementUsed: boolean;
 }
 
 function packetBuilderMode(attempt: 1 | 2 | 3): "implement" | "repair" | "root_cause_repair" {
@@ -491,8 +488,7 @@ async function runShadowProbes(
   options: PipelineOptions,
   deps: PipelineDeps,
   state: RunStateStore,
-  refinementUsed: boolean,
-  infrastructure: { browserRetries: number },
+  recovery: { browserRetries: number; locatorRefinements: number },
 ): Promise<ProbeOutcome> {
   await state.record({ at: now(), type: "application_starting", packetId: packet.id });
   let application: Awaited<ReturnType<AppLifecycle["start"]>>;
@@ -508,70 +504,80 @@ async function runShadowProbes(
       packetId: packet.id,
       detail: { message: errorMessage(error) },
     });
-    return { source: "application", report: applicationFailureReport(packet.id, error), plan, refinementUsed };
+    return { source: "application", report: applicationFailureReport(packet.id, error), plan };
   }
 
   try {
     await state.record({ at: now(), type: "application_ready", packetId: packet.id,
       detail: { baseUrl: application.baseUrl, ...(application.candidate ? { candidate: application.candidate } : {}) } });
     let currentPlan = plan;
-    let used = refinementUsed;
     const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
     const run = async (): Promise<ShadowReport> => {
       while (true) {
         const startedAt = deps.clock.nowMs();
         await state.record({ at: now(), type: "probe_started", packetId: packet.id,
-          detail: { cases: currentPlan.cases.length, retryCount: infrastructure.browserRetries,
-            plan: currentPlan } });
+          detail: { cases: currentPlan.cases.length, retryCount: recovery.browserRetries,
+            planSha256: probePlanSha256(currentPlan) } });
         try {
           const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
           await application.assertUnchanged?.();
           if (application.candidate) report.candidate = application.candidate;
-          const evidenceId = await state.saveEvidence(report);
+          const evidenceId = await state.saveEvidence(report, currentPlan);
           await state.record({ at: now(), type: "probe_finished", packetId: packet.id,
-            detail: { verdict: report.verdict, refined: used, passed: report.passedCases.length,
+            detail: { verdict: report.verdict, refined: recovery.locatorRefinements > 0, passed: report.passedCases.length,
               failed: report.failures.length, durationMs: Math.max(0, deps.clock.nowMs() - startedAt),
               categories: report.failures.map((failure) => failure.category), evidenceId,
               ...(report.candidate ? { candidate: report.candidate } : {}) } });
           return report;
         } catch (error) {
           if (!(error instanceof ExecutionFault)) throw error;
-          const retry = error.retryable && infrastructure.browserRetries < 1 &&
+          const retry = error.retryable && recovery.browserRetries < 1 &&
             !state.shouldEnterDelivery(deps.clock.nowMs());
           await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
             detail: { source: error.source, code: error.code, retryable: error.retryable,
-              retry, attempt: packet.attempt, retryCount: infrastructure.browserRetries } });
+              retry, attempt: packet.attempt, retryCount: recovery.browserRetries } });
           if (!retry) throw error;
-          infrastructure.browserRetries += 1;
+          recovery.browserRetries += 1;
         }
       }
     };
     let report = await run();
 
-    if (report.verdict === "inconclusive" && !used) {
-      const snapshot = report.failures.find(
-        (failure) => failure.category === "locator" && failure.locatorSnapshot,
-      )?.locatorSnapshot;
-      if (snapshot) {
-        try {
-          currentPlan = await deps.planner.refineLocators(currentPlan, snapshot);
-          used = true;
-          await state.record({ at: now(), type: "probe_refined", packetId: packet.id,
-            detail: { plan: currentPlan } });
-          report = await run();
-        } catch (error) {
-          if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
-          used = true;
-          await state.record({
-            at: now(),
-            type: "probe_refinement_failed",
-            packetId: packet.id,
-            detail: plannerFailureDetail(error),
-          });
-        }
+    let feedback: ProbePlannerFeedback | undefined;
+    while (report.verdict === "inconclusive" &&
+      report.failures.length > 0 && report.failures.every((failure) => failure.category === "locator") &&
+      report.failures.some((failure) => failure.locatorSnapshot) &&
+      recovery.locatorRefinements < MAX_LOCATOR_REFINEMENTS &&
+      !state.shouldEnterDelivery(deps.clock.nowMs())) {
+      const refinementAttempt = ++recovery.locatorRefinements;
+      const beforePlanSha256 = probePlanSha256(currentPlan);
+      let refined: ProbePlan;
+      try {
+        // Pass a copy so a planner implementation cannot mutate the behavior being checked.
+        refined = parseProbePlan(await deps.planner.refineLocators(
+          structuredClone(currentPlan), structuredClone(report.failures), feedback,
+        ));
+        assertLocatorOnlyRefinement(currentPlan, refined, report.failures);
+      } catch (error) {
+        if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
+        const detail = plannerFailureDetail(error);
+        feedback = {
+          validationError: String(detail.validationError ?? detail.message),
+          ...(typeof detail.contentPreview === "string" ? { contentPreview: detail.contentPreview } : {}),
+        };
+        await state.record({ at: now(), type: "probe_refinement_failed", packetId: packet.id,
+          detail: { ...detail, refinementAttempt, planSha256: beforePlanSha256 } });
+        continue;
       }
+      if (state.shouldEnterDelivery(deps.clock.nowMs())) break;
+      currentPlan = refined;
+      feedback = undefined;
+      await state.record({ at: now(), type: "probe_refined", packetId: packet.id,
+        detail: { refinementAttempt, beforePlanSha256, planSha256: probePlanSha256(currentPlan) } });
+      // Browser failures use their own shared quota, outside the planner error handler.
+      report = await run();
     }
-    return { source: "probe", report, plan: currentPlan, refinementUsed: used };
+    return { source: "probe", report, plan: currentPlan };
   } finally {
     await application.stop();
     await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
@@ -579,6 +585,7 @@ async function runShadowProbes(
 }
 
 const MAX_PACKET_ITERATIONS = 6;
+const MAX_LOCATOR_REFINEMENTS = 2;
 
 async function planProbe(
   packet: WorkPacket,

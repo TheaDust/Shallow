@@ -204,7 +204,7 @@ test("Pipeline E2E refines a missing locator without another Builder attempt", a
 
     assert.equal(builder.requests.length, 1);
     assert.equal(planner.refinements.length, 1);
-    assert.match(planner.refinements[0].snapshot, /Profile name|Save/);
+    assert.match(planner.refinements[0].failures[0].locatorSnapshot ?? "", /Profile name|Save/);
     assert.deepEqual(summary.verifiedRequirementIds, ["REQ-PROFILE"]);
   });
 });
@@ -430,7 +430,7 @@ for (const crash of [false, true]) {
   test(`Locator refinement stays Judge-owned when it ${crash ? "is followed by a browser crash" : "cannot resolve the locator"}`, async () => {
     await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
       const builder = new FakeBuilder();
-      const planner = new FakeProbePlanner([workingPlan()]);
+      const planner = new FakeProbePlanner([missingLocatorPlan(), workingPlan()]);
       const plans: ProbePlan[] = [];
       const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
         builder, planner, git: new FakeGitOps(["baseline", "accepted"]), appLifecycle: new RecordingLifecycle(),
@@ -441,12 +441,12 @@ for (const crash of [false, true]) {
           return crash && plans.length === 3
             ? { packetId: plan.packetId, verdict: "pass", failures: [], passedCases: ["save-profile"] }
             : { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [
-              { caseId: "save-profile", stepIndex: 1, category: "locator", message: "missing", locatorSnapshot: "- main" },
+              { caseId: "save-profile", stepIndex: 2, category: "locator", message: "missing", locatorSnapshot: "- main" },
             ] };
         } },
       });
       assert.equal(builder.requests.length, 1);
-      assert.equal(planner.refinements.length, 1);
+      assert.equal(planner.refinements.length, crash ? 1 : 2);
       assert.equal(plans.length, crash ? 3 : 2);
       if (crash) assert.deepEqual(plans[1], plans[2]);
       assert.equal(summary.status, crash ? "delivered" : "partial");

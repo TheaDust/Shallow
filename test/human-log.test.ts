@@ -71,6 +71,15 @@ test("HumanRunFormatter shows planner validation reasons while keeping response 
   }
 });
 
+test("HumanRunFormatter identifies both locator recovery rounds", () => {
+  const formatter = new HumanRunFormatter();
+  for (const [type, refinementAttempt] of [["probe_refinement_failed", 1], ["probe_refined", 2]] as const) {
+    assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:00Z", type, {
+      packetId: "p", detail: { refinementAttempt, validationError: "unchanged failed locator" },
+    })), new RegExp(`定位恢复第 ${refinementAttempt}/2 轮`));
+  }
+});
+
 test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () => {
   const formatter = new HumanRunFormatter();
   const lines = [

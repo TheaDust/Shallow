@@ -1,4 +1,5 @@
-import type { WorkPacket } from "../types.js";
+import { createHash } from "node:crypto";
+import type { ProbeFailure, WorkPacket } from "../types.js";
 
 export type ProbeLocator =
   | { by: "role"; role: string; name?: string; exact?: boolean; fallbacks?: ProbeLocator[] }
@@ -164,7 +165,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
 
 export function parseProbePlan(
   value: unknown,
-  packet?: Pick<WorkPacket, "id" | "requirementIds">,
+  packet?: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements">>,
 ): ProbePlan {
   const plan = record(value, "ProbePlan");
   keys(plan, ["packetId", "cases"], "ProbePlan");
@@ -189,12 +190,49 @@ export function parseProbePlan(
     const missing = packet.requirementIds.filter((id) => !covered.has(id));
     if (missing.length > 0) throw new Error(`ProbePlan does not cover requirements: ${missing.join(", ")}`);
   }
+  if (packet?.requirements) {
+    for (const probeCase of cases) {
+      const exactUiStrings = packet.requirements
+        .filter((requirement) => probeCase.requirementIds.includes(requirement.id))
+        .flatMap((requirement) => requirement.exactUiStrings);
+      for (const [stepIndex, step] of probeCase.steps.entries()) {
+        if (!("locator" in step) || step.locator.by !== "text") continue;
+        const literal = step.locator.text;
+        const declared = exactUiStrings.some((value) => value.toLowerCase() === literal.toLowerCase());
+        const entered = probeCase.steps.slice(0, stepIndex).some((previous) =>
+          previous.op === "fill" && previous.value === literal);
+        const seeded = packet.requirements.some((requirement) => requirement.product.seedData
+          .some((category) => category.items.includes(literal)));
+        if (!declared && !entered && !seeded &&
+          !step.locator.fallbacks?.some((fallback) => fallback.by === "role" || fallback.by === "label")) {
+          throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: unanchored text locator requires a role or label fallback; prefer a structural role when no UI label is declared`);
+        }
+      }
+    }
+  }
   return { packetId, cases };
+}
+
+export function probePlanSha256(plan: ProbePlan): string {
+  return createHash("sha256").update(JSON.stringify(parseProbePlan(plan))).digest("hex");
+}
+
+export function locatorCandidates(locator: ProbeLocator): ProbeLocator[] {
+  const { fallbacks, ...primary } = locator;
+  return [primary, ...(fallbacks ?? [])];
+}
+
+function locatorKey(locator: ProbeLocator): string {
+  const value = locator.by === "role" ? locator.name : locator.text;
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return JSON.stringify([locator.by, locator.by === "role" ? locator.role : null,
+    locator.exact ? normalized : normalized?.toLowerCase(), locator.exact === true]);
 }
 
 export function assertLocatorOnlyRefinement(
   original: ProbePlan,
   refined: ProbePlan,
+  failures: readonly Pick<ProbeFailure, "caseId" | "stepIndex">[] = [],
 ): void {
   if (original.packetId !== refined.packetId || original.cases.length !== refined.cases.length) {
     throw new Error("Refinement may change only locator fields");
@@ -222,6 +260,18 @@ export function assertLocatorOnlyRefinement(
       if (JSON.stringify(beforeBehavior) !== JSON.stringify(afterBehavior)) {
         throw new Error("Refinement may change only locator fields");
       }
+    }
+  }
+
+  for (const failure of failures) {
+    const before = original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex];
+    const after = refined.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex];
+    if (!before || !after || !("locator" in before) || !("locator" in after)) {
+      throw new Error(`Refinement failure target ${failure.caseId} step ${failure.stepIndex} has no locator`);
+    }
+    const exhausted = new Set(locatorCandidates(before.locator).map(locatorKey));
+    if (!locatorCandidates(after.locator).some((candidate) => !exhausted.has(locatorKey(candidate)))) {
+      throw new Error(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
     }
   }
 }

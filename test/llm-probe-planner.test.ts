@@ -11,7 +11,7 @@ import {
   PROBE_PLAN_JSON_SCHEMA,
   type ProbePlan,
 } from "../src/judge/probe-schema.js";
-import type { SeedDataCategory, WorkPacket } from "../src/types.js";
+import type { ProbeFailure, SeedDataCategory, WorkPacket } from "../src/types.js";
 
 test("Probe Planner accepts a bounded declarative plan", () => {
   const plan = parseProbePlan(validPlan(), packet());
@@ -30,6 +30,54 @@ test("Probe plans require an assertion per case and coverage of every packet req
   withoutAssertion.cases[0].steps = [{ op: "goto", path: "/" }];
   assert.throws(() => parseProbePlan(withoutAssertion, packet()), /assertion/);
   assert.throws(() => parseProbePlan(validPlan(), { id: packet().id, requirementIds: ["REQ-PROFILE", "REQ-OMITTED"] }), /REQ-OMITTED/);
+});
+
+test("Initial plans require semantic alternatives for unanchored text and allow structural roles", () => {
+  const input = packet();
+  input.requirements[0].exactUiStrings = [];
+  const plan = validPlan();
+  plan.cases[0].steps = [{ op: "goto", path: "/" },
+    { op: "expectVisible", locator: { by: "text", text: "Home" } }];
+  assert.throws(() => parseProbePlan(plan, input), /unanchored text locator.*role or label fallback/);
+  plan.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "main" } };
+  assert.doesNotThrow(() => parseProbePlan(plan, input));
+  plan.cases[0].steps[1] = { op: "expectVisible", locator: {
+    by: "text", text: "Home", fallbacks: [{ by: "role", role: "button", name: "Home" }],
+  } };
+  assert.doesNotThrow(() => parseProbePlan(plan, input));
+});
+
+test("Literal text assertions keep declared labels, seed items and data entered earlier in the case", () => {
+  for (const source of ["label", "seed", "input"] as const) {
+    const input = packet(source === "seed" ? [{ category: "notes", items: ["Sample"] }] : []);
+    input.requirements[0].exactUiStrings = source === "label" ? ["Sample"] : [];
+    const plan = validPlan();
+    plan.cases[0].steps = [{ op: "goto", path: "/" },
+      ...(source === "input" ? [{ op: "fill", locator: { by: "role", role: "textbox" }, value: "Sample" }] : []),
+      { op: "expectVisible", locator: { by: "text", text: "Sample" } }];
+    assert.doesNotThrow(() => parseProbePlan(plan, input));
+  }
+});
+
+test("Refinement rejects unchanged, reordered and equivalent candidates at every failed step", () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const fill = original.cases[0].steps[1];
+  if (fill.op !== "fill") assert.fail("expected fill");
+  fill.locator = { by: "label", text: "Missing", fallbacks: [{ by: "text", text: "Home" }] };
+  for (const locator of [fill.locator,
+    { by: "text", text: "Home", fallbacks: [{ by: "label", text: "Missing" }] },
+    { by: "label", text: "missing", exact: false, fallbacks: [{ by: "text", text: "home", exact: false }] },
+  ]) {
+    const changed = structuredClone(original);
+    changed.cases[0].steps[1] = { ...fill, locator } as typeof fill;
+    assert.throws(() => assertLocatorOnlyRefinement(original, changed, locatorFailures()), /new locator candidate.*save-profile step 1/);
+  }
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { ...fill, locator: { by: "role", role: "textbox", name: "Profile name" } };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, changed, locatorFailures()));
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [
+    ...locatorFailures(), { caseId: "refresh-profile", stepIndex: 2 },
+  ]), /refresh-profile step 2/);
 });
 
 test("Probe plans support empty inputs and empty-value assertions with strict-schema null optionals", () => {
@@ -407,7 +455,7 @@ test("Probe Planner preserves bounded, redacted validation diagnostics", async (
   });
 });
 
-test("Probe Planner reports rejected refinement details and keeps the one-refinement limit", async () => {
+test("Probe Planner reports rejected behavior changes and accepts controller-owned retry feedback", async () => {
   const changed = validPlan();
   changed.cases[0].steps[1].value = "different-input";
   let calls = 0;
@@ -416,18 +464,20 @@ test("Probe Planner reports rejected refinement details and keeps the one-refine
     return jsonResponse({ choices: [{ message: { content: JSON.stringify(changed) } }] });
   });
   const original = parseProbePlan(validPlan(), packet());
-  await assert.rejects(planner.refineLocators(original, "- textbox Profile"), (error: unknown) => {
+  await assert.rejects(planner.refineLocators(original, locatorFailures()), (error: unknown) => {
     assert.ok(error instanceof ProbePlannerError);
     assert.equal(error.category, "refinement");
     assert.match(error.diagnostics.validationError ?? "", /only locator fields/);
     assert.match(error.diagnostics.contentPreview ?? "", /different-input/);
     return true;
   });
-  await assert.rejects(planner.refineLocators(original, "- textbox Profile"), /already used/);
-  assert.equal(calls, 1);
+  await assert.rejects(planner.refineLocators(original, locatorFailures(), {
+    validationError: "Preserve inputs", contentPreview: "previous response",
+  }), /invalid locator refinement/);
+  assert.equal(calls, 2);
 });
 
-test("Probe Planner allows one sanitized locator refinement per packet", async () => {
+test("Probe Planner sends per-case failed steps, all locator attempts, sanitized snapshots and feedback", async () => {
   const bodies: string[] = [];
   const fetchFn: typeof fetch = async (_input, init) => {
     bodies.push(String(init?.body));
@@ -436,6 +486,9 @@ test("Probe Planner allows one sanitized locator refinement per packet", async (
       op: "fill",
       locator: { by: "role", role: "textbox", name: "Profile name" },
       value: "Ada",
+    };
+    refined.cases[1].steps[2] = {
+      op: "expectValue", locator: { by: "role", role: "textbox", name: "Profile name" }, value: "Ada",
     };
     return jsonResponse({
       choices: [{ message: { content: JSON.stringify(refined) } }],
@@ -446,20 +499,43 @@ test("Probe Planner allows one sanitized locator refinement per packet", async (
 
   await planner.refineLocators(
     original,
-    `- textbox "Profile name"\npassword: super-secret\ntoken=abc123\n${"x".repeat(10_000)}`,
+    [...locatorFailures(`- textbox "Profile name"\npassword: super-secret\ntoken=abc123\n${"x".repeat(10_000)}`),
+      { caseId: "refresh-profile", stepIndex: 2, category: "locator", message: "secret-key missing", locatorSnapshot: "- main" }],
+    { validationError: "unchanged failed step secret-key", contentPreview: "password=hidden" },
   );
 
   assert.equal(bodies.length, 1);
-  assert.doesNotMatch(bodies[0], /super-secret|abc123/);
+  assert.doesNotMatch(JSON.parse(bodies[0]).messages[1].content, /super-secret|abc123|secret-key|hidden/);
   const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
-  const refinement = JSON.parse(request.messages[1].content) as { accessibilitySnapshot: string };
-  assert.ok(refinement.accessibilitySnapshot.length <= 4_000);
-  await assert.rejects(
-    planner.refineLocators(original, "second snapshot"),
-    (error: unknown) =>
-      error instanceof ProbePlannerError && error.category === "refinement",
-  );
+  const refinement = JSON.parse(request.messages[1].content);
+  assert.equal(refinement.failures.length, 2);
+  assert.equal(refinement.failures[0].caseId, "save-profile");
+  assert.equal(refinement.failures[0].stepIndex, 1);
+  assert.deepEqual(refinement.failures[0].step, original.cases[0].steps[1]);
+  assert.ok(refinement.failures[0].accessibilitySnapshot.length <= 4_000);
+  assert.match(refinement.failures[0].locatorAttempts[0].message, /strict mode violation/);
+  assert.equal(refinement.failures[1].accessibilitySnapshot, "- main");
+  assert.match(refinement.validationError, /unchanged failed step/);
 });
+
+test("LLM returning an unchanged failed locator is a refinement error with actionable diagnostics", async () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const planner = new LlmProbePlanner(config(), async () =>
+    jsonResponse({ choices: [{ message: { content: JSON.stringify(original) } }] }));
+  await assert.rejects(planner.refineLocators(original, locatorFailures()), (error: unknown) => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.category, "refinement");
+    assert.match(error.diagnostics.validationError ?? "", /save-profile step 1/);
+    return true;
+  });
+});
+
+function locatorFailures(snapshot = '- textbox "Profile name"'): ProbeFailure[] {
+  return [{ caseId: "save-profile", stepIndex: 1, category: "locator", message: "strict mode violation",
+    locatorSnapshot: snapshot, locatorAttempts: [
+      { locator: { by: "label", text: "Profile name", exact: true }, message: "strict mode violation secret-key" },
+    ] }];
+}
 
 function validPlan(): {
   packetId: string;

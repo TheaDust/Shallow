@@ -2,6 +2,7 @@ import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { sanitizeDiagnosticText } from "./diagnostics.js";
+import { locatorCandidates, probePlanSha256, type ProbeLocator, type ProbePlan } from "./judge/probe-schema.js";
 export { sanitizeDiagnosticText } from "./diagnostics.js";
 
 import type {
@@ -112,19 +113,32 @@ export class RunStateStore {
   }
 
   /** Bounded, source-free failure evidence; neither full plans nor raw browser traces. */
-  async saveEvidence(report: ShadowReport): Promise<string | undefined> {
+  async saveEvidence(report: ShadowReport, plan?: ProbePlan): Promise<string | undefined> {
     if (!this.ledgerFile || report.failures.length === 0 || this.evidenceCount >= 128) return undefined;
     const id = `${this.runId}-${++this.evidenceCount}`;
     const evidence = {
       id, packetId: sanitizeDiagnosticText(report.packetId, this.secrets), verdict: report.verdict,
       acceptedSha: this.state.acceptedSha, attempt: this.state.attemptsByPacketId[report.packetId],
       ...(report.candidate ? { candidate: report.candidate } : {}),
+      ...(plan ? { planSha256: probePlanSha256(plan) } : {}),
       failureCount: report.failures.length,
-      failures: report.failures.slice(0, 8).map((failure) => ({
-        caseId: sanitizeDiagnosticText(failure.caseId, this.secrets), stepIndex: failure.stepIndex,
-        category: failure.category, message: sanitizeDiagnosticText(failure.message, this.secrets),
-        ...(failure.locatorSnapshot ? { accessibilityExcerpt: sanitizeDiagnosticText(failure.locatorSnapshot, this.secrets) } : {}),
-      })),
+      failures: report.failures.slice(0, 8).map((failure) => {
+        const step = plan?.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex];
+        return {
+          caseId: sanitizeDiagnosticText(failure.caseId, this.secrets), stepIndex: failure.stepIndex,
+          category: failure.category, message: sanitizeDiagnosticText(failure.message, this.secrets),
+          ...(failure.locatorSnapshot ? { accessibilityExcerpt: sanitizeDiagnosticText(failure.locatorSnapshot, this.secrets) } : {}),
+          ...(step && "locator" in step ? {
+            locators: locatorCandidates(step.locator).map((locator) => sanitizeEvidenceLocator(locator, this.secrets)),
+          } : {}),
+          ...(failure.locatorAttempts ? {
+            locatorAttempts: failure.locatorAttempts.slice(0, 4).map((attempt) => ({
+              locator: sanitizeEvidenceLocator(attempt.locator, this.secrets),
+              message: sanitizeDiagnosticText(attempt.message, this.secrets),
+            })),
+          } : {}),
+        };
+      }),
     };
     try {
       const payload = `${JSON.stringify(evidence)}\n`;
@@ -173,6 +187,14 @@ function redactEvent(event: RunEvent, secrets: readonly string[]): RunEvent {
     if (typeof value === "string") return sanitizeDiagnosticText(value, secrets);
     return value;
   })) as RunEvent;
+}
+
+function sanitizeEvidenceLocator(locator: ProbeLocator, secrets: readonly string[]): ProbeLocator {
+  const exact = locator.exact === undefined ? {} : { exact: locator.exact };
+  return locator.by === "role"
+    ? { by: "role", role: sanitizeDiagnosticText(locator.role, secrets), ...exact,
+      ...(locator.name === undefined ? {} : { name: sanitizeDiagnosticText(locator.name, secrets) }) }
+    : { by: locator.by, text: sanitizeDiagnosticText(locator.text, secrets), ...exact };
 }
 
 function eventPhase(event: RunEvent): RunEvent["phase"] {

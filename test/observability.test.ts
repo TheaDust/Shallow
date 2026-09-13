@@ -9,6 +9,7 @@ import { HumanRunFormatter } from "../src/human-log.js";
 import { toBuilderShadowObservation } from "../src/builder/shadow-observation.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 import type { RunEvent } from "../src/types.js";
+import type { ProbePlan } from "../src/judge/probe-schema.js";
 
 test("Diagnostics redact known secrets, embedded headers, quoted values and URL credentials before truncation", () => {
   const raw = ['opaque-gateway-credential', 'Authorization: Bearer header-value',
@@ -53,14 +54,22 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
     const report = { packetId: "p", verdict: "fail" as const, passedCases: [], failures: Array.from({ length: 20 }, () => ({
       caseId: "c", stepIndex: 2, category: "locator" as const,
       message: "opaque-credential", locatorSnapshot: "Cookie: sid=private\n" + "x".repeat(5000),
+      locatorAttempts: [{ locator: { by: "text" as const, text: "opaque-credential" }, message: "password=attempt-secret" }],
     })), probePlan: "HIDDEN-PLAN" };
-    const id = await store.saveEvidence(report);
+    const plan: ProbePlan = { packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path", steps: [
+      { op: "goto", path: "/" }, { op: "reload" },
+      { op: "expectText", locator: { by: "text", text: "opaque-credential" }, text: "HIDDEN-ASSERTION" },
+    ] }] };
+    const id = await store.saveEvidence(report, plan);
     assert.ok(id);
     const raw = await readFile(join(directory, "evidence", `${id}.json`), "utf8");
     const evidence = JSON.parse(raw);
     assert.equal(evidence.failures.length, 8);
     assert.equal(evidence.failureCount, 20);
-    assert.doesNotMatch(raw, /opaque-credential|sid=private|HIDDEN-PLAN/);
+    assert.doesNotMatch(raw, /opaque-credential|sid=private|HIDDEN-PLAN|HIDDEN-ASSERTION|attempt-secret/);
+    assert.match(evidence.planSha256, /^[a-f0-9]{64}$/);
+    assert.deepEqual(evidence.failures[0].locators, [{ by: "text", text: "[redacted]" }]);
+    assert.equal(evidence.failures[0].locatorAttempts[0].locator.text, "[redacted]");
     assert.ok(evidence.failures[0].accessibilityExcerpt.length <= 1500);
     const feedback = toBuilderShadowObservation(report, ["opaque-credential"]);
     assert.doesNotMatch(JSON.stringify(feedback), /opaque-credential|sid=private|HIDDEN-PLAN/);

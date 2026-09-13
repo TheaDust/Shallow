@@ -7,7 +7,7 @@ import {
   type Page,
 } from "@playwright/test";
 
-import type { ProbeCase, ProbeLocator, ProbePlan, ProbeStep } from "./probe-schema.js";
+import { locatorCandidates, type ProbeCase, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 import type { ProbeFailure, ShadowReport } from "../types.js";
 import { ExecutionFault } from "../execution-fault.js";
 
@@ -28,6 +28,7 @@ class ProbeExecutionError extends Error {
     readonly category: ProbeFailure["category"],
     message: string,
     readonly locatorSnapshot?: string,
+    readonly locatorAttempts?: ProbeFailure["locatorAttempts"],
   ) {
     super(message);
     this.name = "ProbeExecutionError";
@@ -129,6 +130,7 @@ export class PlaywrightProbeRunner {
             stepIndex,
             category: executionError.category,
             message: compactError(executionError),
+            ...(executionError.locatorAttempts ? { locatorAttempts: executionError.locatorAttempts } : {}),
             ...(executionError.locatorSnapshot
               ? { locatorSnapshot: executionError.locatorSnapshot }
               : {}),
@@ -233,7 +235,8 @@ async function resolveLocator(
 ): Promise<Locator> {
   const primary = locate(session.page, step.locator);
   if (step.op === "expectCount" && step.count === 0) return primary;
-  const candidates: ProbeLocator[] = [step.locator, ...(step.locator.fallbacks ?? [])];
+  const candidates = locatorCandidates(step.locator);
+  const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
   for (let index = 0; index < candidates.length; index += 1) {
     const isFinal = index === candidates.length - 1;
@@ -246,12 +249,14 @@ async function resolveLocator(
       return candidate;
     } catch (error) {
       lastMiss = error;
+      attempts.push({ locator: candidates[index], message: compactError(error) });
     }
   }
   throw new ProbeExecutionError(
     "locator",
     compactError(lastMiss),
     await ariaSnapshot(session.page, timeoutMs),
+    attempts,
   );
 }
 
