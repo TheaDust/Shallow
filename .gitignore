@@ -14,4 +14,11 @@ runs/
 __pycache__/
 tmp/
 docs/handoff
-benchmarks/
+# 只内联官方 benchmark 的 webapp 任务资产；runner clone（含 node_modules、报告）保持本地
+/benchmarks/*
+!/benchmarks/arc-bench/
+/benchmarks/arc-bench/*
+!/benchmarks/arc-bench/arc-bench/
+/benchmarks/arc-bench/arc-bench/*
+!/benchmarks/arc-bench/arc-bench/webapp/
+
