@@ -67,7 +67,7 @@ src/
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
-    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理、每次调用后释放 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny 与内存裁剪配置（OPENCODE_MEMORY_ENV / MEMORY_CONFIG：关 snapshot/autoupdate/share/formatter/lsp、watcher ignore）
+    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理、跨调用复用 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny，关闭 snapshot/autoupdate/share 以保持 Git 接受点、版本及共享行为受控
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     self-test.ts                builderSelfTestConfig：本地 Playwright MCP 入口、Chromium 路径、来源与输出目录
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
@@ -160,7 +160,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 6. **Builder 不做局部决策之外的事**：选型、文件结构、局部构建修复都归 OpenCode；ShallowCode 不新增第二套源码编辑工具。
 7. **Builder prompt 外置**：所有 Builder 文案在 `prompts/` 中文资产里；`src/builder/` 只做组装。改文案改 `.md`，改结构改 `prompt.ts`/`prompt-fragments.ts`，两者都要同步 `test/builder-prompt.test.ts` 与 `test/prompt-assets.test.ts` 的锚点断言。
 8. **超时自愈**：git 单命令 30s；Builder 超时后对 abort 与 prompt 落地各给最多 5s（`promptSettleTimeoutMs`）。abort 失败或落地超时则关闭运行时，下一次调用重启。每次 packet 尝试前检查预算；预算不强行中断已开始的调用或最终交付。
-9. **故障分配**：按 `ExecutionFault` 与 `ProbePlannerError` 的结构化来源处理基础设施故障。OpenCode server 意外退出（评测容器会 SIGKILL）时，`SdkOpenCodeRuntime.serverExit` 上报退出码/信号，Builder 在一次尝试内至多重启并重发同一任务 2 次（`MAX_SERVER_RESTARTS`），不消耗 packet 尝试；server 意外退出与 main.py 失败路径都会打印容器 cgroup 内存（`memory.max/current/events`）作为 OOM 证据。浏览器每 packet 至多重试一次（含精化后执行），保持候选和计划、检查总预算；业务失败继续使用三次 Builder 上限。locator-only 有快照时每 packet 至多两轮精化，跨 Builder 尝试共享额度；每轮前及模型返回后检查预算，携带全部失败步骤、候选错误与对应快照，每个失败步骤必须引入新定位候选；原样或等价重排不执行，下一轮携带校验原因。两轮仍无有效证据、无效计划修正耗尽时阻塞 packet。Planner 鉴权/协议及运行时启动故障终止本轮；最终验证另有一次浏览器基础设施重试。具体规则与数据恢复限制见 README“故障来源与修复机会”；改动时验证 `test/opencode-runtime.test.ts`、`test/builder-prompt.test.ts`、`test/probe-infrastructure.test.ts`、`test/pipeline.e2e.test.ts`、`test/llm-probe-planner.test.ts`、`test/locator-recovery.test.ts` 和 `test/human-log.test.ts`。
+9. **故障分配**：按 `ExecutionFault` 与 `ProbePlannerError` 的结构化来源处理基础设施故障。OpenCode server 意外退出时，`SdkOpenCodeRuntime.serverExit` 上报退出码/信号，Builder 在一次尝试内至多重启并重发同一任务 2 次（`MAX_SERVER_RESTARTS`），不消耗 packet 尝试；server 意外退出与 main.py 失败路径都会打印容器 cgroup 内存（`memory.max/current/events`）辅助排查 OOM（累计计数不单独证明当前进程被 OOM 杀死）。浏览器每 packet 至多重试一次（含精化后执行），保持候选和计划、检查总预算；业务失败继续使用三次 Builder 上限。locator-only 有快照时每 packet 至多两轮精化，跨 Builder 尝试共享额度；每轮前及模型返回后检查预算，携带全部失败步骤、候选错误与对应快照，每个失败步骤必须引入新定位候选；原样或等价重排不执行，下一轮携带校验原因。两轮仍无有效证据、无效计划修正耗尽时阻塞 packet。Planner 鉴权/协议及运行时启动故障终止本轮；最终验证另有一次浏览器基础设施重试。具体规则与数据恢复限制见 README“故障来源与修复机会”；改动时验证 `test/opencode-runtime.test.ts`、`test/builder-prompt.test.ts`、`test/probe-infrastructure.test.ts`、`test/pipeline.e2e.test.ts`、`test/llm-probe-planner.test.ts`、`test/locator-recovery.test.ts` 和 `test/human-log.test.ts`。
 
 调度器（`src/scheduler.ts`）是确定性规则：只选依赖全 verified 的 todo 需求；先选种子，再加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求。修改排序或关联规则时验证 `test/scheduler.test.ts`。
 

@@ -29,11 +29,9 @@ import { PROBE_PLAN_JSON_SCHEMA } from "./src/judge/probe-schema.js";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
-  LOW_MEMORY_LIMIT_BYTES,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
-  readCgroupMemoryLimitBytes,
   readEnvFile,
   readGatewayConfig,
   type GatewayConfig,
@@ -113,24 +111,13 @@ async function executeProduction(
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
   const candidateMcp = await startCandidateMcp(candidate, [gateway.apiKey]);
   try {
-    const memoryLimit = await readCgroupMemoryLimitBytes();
-    const lowMemory = memoryLimit !== undefined && memoryLimit <= LOW_MEMORY_LIMIT_BYTES;
-    // Under the ARC-Bench 512 MiB container the OpenCode server plus a Playwright
-    // MCP child plus a Chromium self-test cannot coexist; lite mode drops the
-    // browser self-test. The server is always released after every Builder call
-    // so each attempt starts from a clean memory baseline.
-    const selfTest = lowMemory
-      ? undefined
-      : {
-          baseUrl: pipelineOptions.platformContract.baseUrl,
-          artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
-        };
-    process.stderr.write(`[ShallowCode] memory limit ${memoryLimit ?? "unlimited"}; builder self-test ${selfTest ? "enabled" : "disabled (low-memory mode)"}\n`);
-    const runtime = new SdkOpenCodeRuntime(gateway, undefined, selfTest, { runtime: candidate, config: candidateMcp.config });
+    const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
+      baseUrl: pipelineOptions.platformContract.baseUrl,
+      artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
+    }, { runtime: candidate, config: candidateMcp.config });
     const builder = new OpenCodeSdkBuilder(runtime, {
       timeoutMs: modelTimeouts.builderTimeoutMs,
       requirementsDir: dirname(pipelineOptions.requirementsFile),
-      releaseRuntimeAfterRun: true,
     });
     const planner = new LlmProbePlanner({
       ...gateway,

@@ -48,6 +48,28 @@ test("Ordinary gateway errors do not trigger an image fallback", async () => {
   }
 });
 
+test("Server restart preserves text fallback after an image rejection", async () => {
+  let calls = 0;
+  await withImageBuilder(async ({ builder, request, prompts }) => {
+    const result = await builder.run(request);
+    assert.equal(result.outcome, "completed");
+    assert.equal(result.referenceImages?.mode, "text_fallback");
+    assert.equal(result.referenceImages?.attachedCount, 0);
+    assert.equal(prompts.length, 3);
+    assert.equal(prompts[0].parts.filter((part) => part.type === "file").length, 1);
+    assert.equal(prompts[1].parts.length, 1);
+    assert.deepEqual(prompts[2].parts, prompts[1].parts);
+  }, (_prompt, exitServer) => {
+    calls += 1;
+    if (calls === 1) return Response.json({ error: { message: "image_url is not supported by this model" } }, { status: 400 });
+    if (calls === 2) {
+      exitServer();
+      throw new TypeError("fetch failed");
+    }
+    return Response.json({ info: {}, parts: [{ type: "text", text: "done" }] });
+  });
+});
+
 test("An HTTP image rejection falls back only once and text failure remains failure", async () => {
   await withImageBuilder(async ({ builder, request, prompts }) => {
     const result = await builder.run(request);
@@ -94,7 +116,7 @@ async function withImageBuilder(
   callback: (context: {
     builder: OpenCodeSdkBuilder; request: BuilderRequest; prompts: SentPrompt[]; aborted: string[];
   }) => Promise<void>,
-  respond: (prompt: SentPrompt) => Response | Promise<Response>,
+  respond: (prompt: SentPrompt, exitServer: () => void) => Response | Promise<Response>,
   timeoutMs = 1_000,
 ): Promise<void> {
   await withTempDir("shallow-image-input-", async (directory) => {
@@ -108,7 +130,7 @@ async function withImageBuilder(
     const prompts: SentPrompt[] = [];
     const aborted: string[] = [];
     let sessions = 0;
-    const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async () => ({
+    const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => ({
       server: { url: "http://sdk.invalid", close() {} },
       client: createOpencodeClient({ baseUrl: "http://sdk.invalid", fetch: async (input) => {
         const request = input as Request;
@@ -121,7 +143,7 @@ async function withImageBuilder(
         const body = await request.json() as Omit<SentPrompt, "sessionId">;
         const prompt = { ...body, sessionId: path.split("/")[2] };
         prompts.push(prompt);
-        return respond(prompt);
+        return respond(prompt, () => options.onServerExit!({ code: null, signal: "SIGKILL" }));
       } }),
     }));
     const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs, promptSettleTimeoutMs: 20, requirementsDir: directory });

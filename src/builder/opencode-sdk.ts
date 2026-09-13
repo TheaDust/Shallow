@@ -1,13 +1,13 @@
 import {
   createOpencodeClient,
-  type Config,
   type createOpencode,
   type OpencodeClient,
 } from "@opencode-ai/sdk";
 import { spawnSync, type ChildProcess } from "node:child_process";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { Agent, fetch as undiciFetch } from "undici";
 
 import { spawnProcess } from "../process-spawn.js";
@@ -42,8 +42,6 @@ export interface OpenCodeSdkBuilderOptions {
   timeoutMs: number;
   promptSettleTimeoutMs?: number;
   requirementsDir?: string;
-  /** Stop the OpenCode server after every Builder call so each run starts from a clean baseline. */
-  releaseRuntimeAfterRun?: boolean;
 }
 
 interface PreparedBuilderRun {
@@ -77,28 +75,6 @@ const BUILDER_TOOL_PERMISSION = {
 } as const;
 
 const BUILDER_PERMISSION_CONFIG = BUILDER_TOOL_PERMISSION as unknown as RuntimeConfigPermission;
-
-// OpenCode subsystems the Builder never uses (snapshot undo, sharing, update
-// checks, plugin extras) still hold state for the server's whole lifetime;
-// switch them off so the container budget goes to the model session.
-export const OPENCODE_MEMORY_ENV = {
-  OPENCODE_DISABLE_AUTOUPDATE: "1",
-  OPENCODE_DISABLE_MODELS_FETCH: "1",
-  OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
-  OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
-} as const;
-
-const MEMORY_CONFIG: Pick<
-  Config,
-  "snapshot" | "autoupdate" | "share" | "formatter" | "lsp" | "watcher"
-> = {
-  snapshot: false,
-  autoupdate: false,
-  share: "disabled",
-  formatter: false,
-  lsp: false,
-  watcher: { ignore: ["node_modules/**", "dist/**", ".git/**", ".arc/**"] },
-};
 
 class ImageInputUnsupportedError extends Error {}
 
@@ -174,8 +150,10 @@ async function createProductionInstance(
   const args = ["serve", `--hostname=${hostname}`, `--port=${options.port}`];
   const config = options.config as { logLevel?: string; provider?: Record<string, { options?: { apiKey?: string } }> } | undefined;
   if (config?.logLevel) args.push(`--log-level=${config.logLevel}`);
-  const proc = spawnProcess(process.platform === "win32" ? "opencode.cmd" : "opencode", args, {
-    env: { ...process.env, ...OPENCODE_MEMORY_ENV, OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config ?? {}) },
+  const packagePath = createRequire(import.meta.url).resolve("opencode-ai/package.json");
+  const cliPackage = JSON.parse(await readFile(packagePath, "utf8")) as { bin: { opencode: string } };
+  const proc = spawnProcess(resolve(dirname(packagePath), cliPackage.bin.opencode), args, {
+    env: { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config ?? {}) },
     shell: false,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -295,38 +273,37 @@ export class OpenCodeSdkBuilder implements BuilderPort {
     const prepared = await this.prepareRun(request);
     const deadline = Date.now() + this.options.timeoutMs;
     let restarts = 0;
-    try {
-      for (;;) {
-        let result: BuilderResult | undefined;
-        let failure: unknown;
-        try {
-          const remaining = restarts === 0 ? this.options.timeoutMs : Math.max(1_000, deadline - Date.now());
-          result = await this.dispatchRun(prepared, remaining);
-        } catch (error) {
-          failure = error;
-        }
-        const exit = this.runtime.serverExit?.();
-        // The eval container SIGKILLs the OpenCode server mid-prompt; restart and re-issue
-        // the same task so an environment kill does not burn a packet attempt.
-        if (exit && restarts < MAX_SERVER_RESTARTS && Date.now() < deadline &&
-          (failure !== undefined || result?.outcome === "failed")) {
-          restarts += 1;
-          process.stderr.write(
-            `[ShallowCode] warning: OpenCode server was killed (code=${exit.code} signal=${exit.signal}); restarting and re-issuing the Builder task (restart ${restarts}/${MAX_SERVER_RESTARTS})\n`,
-          );
-          await this.resetRuntime();
-          try {
-            await this.ensureStarted(request.outputDir);
-          } catch (error) {
-            throw new ExecutionFault("builder", "builder_start", false, { cause: error });
-          }
-          continue;
-        }
-        if (failure !== undefined) throw failure;
-        return result!;
+    for (;;) {
+      let result: BuilderResult | undefined;
+      let failure: unknown;
+      try {
+        const remaining = restarts === 0 ? this.options.timeoutMs : Math.max(1, deadline - Date.now());
+        result = await this.dispatchRun(prepared, remaining);
+      } catch (error) {
+        failure = error;
       }
-    } finally {
-      if (this.options.releaseRuntimeAfterRun) await this.resetRuntime();
+      const exit = this.runtime.serverExit?.();
+      // Retry unexpected server exits within the current attempt and deadline.
+      if (exit && restarts < MAX_SERVER_RESTARTS && Date.now() < deadline &&
+        (failure !== undefined || result?.outcome === "failed")) {
+        restarts += 1;
+        process.stderr.write(
+          `[ShallowCode] warning: OpenCode server exited unexpectedly (code=${exit.code} signal=${exit.signal}); restarting and re-issuing the Builder task (restart ${restarts}/${MAX_SERVER_RESTARTS})\n`,
+        );
+        await this.resetRuntime();
+        try {
+          await this.ensureStarted(request.outputDir);
+        } catch (error) {
+          throw new ExecutionFault("builder", "builder_start", false, { cause: error });
+        }
+        if (Date.now() >= deadline) {
+          if (failure !== undefined) throw failure;
+          return { ...result!, outcome: "timed_out", summary: "OpenCode server recovery exceeded the task timeout" };
+        }
+        continue;
+      }
+      if (failure !== undefined) throw failure;
+      return result!;
     }
   }
 
@@ -386,10 +363,11 @@ export class OpenCodeSdkBuilder implements BuilderPort {
           throw error;
         }
         prepared.referenceImages = { ...prepared.referenceImages!, mode: "text_fallback", attachedCount: 0 };
-        return this.runtime.prompt(sessionId, {
+        prepared.input = {
           systemPrompt: baseInput.systemPrompt,
           taskPrompt: `${baseInput.taskPrompt}\n\n${loadBuilderPrompt("system", "reference-images-text-fallback")}`,
-        });
+        };
+        return this.runtime.prompt(sessionId, prepared.input);
       }
     })();
     let timeout: NodeJS.Timeout | undefined;
@@ -457,6 +435,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
     if (this.startedDirectory && this.startedDirectory !== directory) {
       throw new Error("One OpenCodeSdkBuilder cannot switch output directories");
     }
+    if (this.startedDirectory && this.runtime.serverExit?.()) await this.resetRuntime();
     if (!this.startedDirectory) {
       await this.runtime.start(directory);
       this.startedDirectory = directory;
@@ -470,7 +449,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private server?: { close(): void };
   private directory?: string;
   private lastServerExit?: OpenCodeServerExit;
-  private instanceActive = false;
+  private activeInstance?: object;
   private readonly connectedMcps = new WeakSet<OpencodeClient>();
   private readonly abortedSessions = new Set<string>();
 
@@ -484,11 +463,12 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   async start(directory: string): Promise<void> {
     const model = this.gateway.model;
     this.lastServerExit = undefined;
-    this.instanceActive = true;
+    const instanceToken = {};
+    this.activeInstance = instanceToken;
     const instance = await this.create({
       port: await pickFreePort(),
       fetch: sdkFetch,
-      onServerExit: (exit) => { if (this.instanceActive) this.lastServerExit = exit; },
+      onServerExit: (exit) => { if (this.activeInstance === instanceToken) this.lastServerExit = exit; },
       config: {
         ...(this.selfTest || this.candidateTools ? { mcp: {
           ...(this.selfTest ? { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } : {}),
@@ -498,7 +478,10 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
         small_model: `shallow-gateway/${model}`,
         enabled_providers: ["shallow-gateway"],
         permission: BUILDER_PERMISSION_CONFIG,
-        ...MEMORY_CONFIG,
+        // The harness owns accepted Git states; keep runtime updates and sharing explicit.
+        snapshot: false,
+        autoupdate: false,
+        share: "disabled",
         provider: {
           "shallow-gateway": {
             npm: "@ai-sdk/openai-compatible",
@@ -649,7 +632,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     const directory = this.directory;
     // Invalidate pending connects before awaiting cleanup; they must never dispatch a late model call.
     this.client = undefined;
-    this.instanceActive = false;
+    this.activeInstance = undefined;
     try {
       if (client && directory) await this.disconnectSelfTest(client, directory);
     } finally {

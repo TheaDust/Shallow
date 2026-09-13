@@ -353,6 +353,40 @@ test("Builder stops restarting after the server-death budget is exhausted", asyn
   assert.equal(runtime.prompts.length, 3);
 });
 
+test("Builder replaces a reused server that exited between calls", async () => {
+  const runtime = new KilledServerRuntime(0);
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
+  try {
+    assert.equal((await builder.run(builderRequest(1))).outcome, "completed");
+    let exit: OpenCodeServerExit | undefined = { code: null, signal: "SIGKILL" };
+    runtime.serverExit = () => exit;
+    const start = runtime.start.bind(runtime);
+    runtime.start = async directory => { exit = undefined; await start(directory); };
+    assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
+    assert.equal(runtime.startedDirectories.length, 2);
+    assert.equal(runtime.prompts.length, 2);
+  } finally {
+    await builder.close();
+  }
+});
+
+test("Builder does not re-issue a task when server recovery uses the remaining timeout", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 0 });
+  const runtime = new KilledServerRuntime(1);
+  const start = runtime.start.bind(runtime);
+  runtime.start = async directory => {
+    await start(directory);
+    if (runtime.startedDirectories.length === 2) t.mock.timers.setTime(1_001);
+  };
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
+  try {
+    assert.equal((await builder.run(builderRequest(1))).outcome, "timed_out");
+    assert.equal(runtime.prompts.length, 1);
+  } finally {
+    await builder.close();
+  }
+});
+
 test("Builder does not restart a live server after an ordinary prompt failure", async () => {
   const runtime = new KilledServerRuntime(0, 1);
   const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
@@ -364,23 +398,25 @@ test("Builder does not restart a live server after an ordinary prompt failure", 
   assert.equal(runtime.startedDirectories.length, 1);
 });
 
-test("Builder releases the runtime after each call when configured", async () => {
+test("Builder reuses the runtime across calls and closes it at shutdown", async () => {
   const runtime = new RecordingRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000, releaseRuntimeAfterRun: true });
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
 
   assert.equal((await builder.run(builderRequest(1))).outcome, "completed");
-  assert.equal(runtime.closeCount, 1);
+  assert.equal(runtime.closeCount, 0);
   assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
-  assert.equal(runtime.closeCount, 2);
-  assert.equal(runtime.startedDirectories.length, 2);
+  assert.equal(runtime.closeCount, 0);
+  assert.equal(runtime.startedDirectories.length, 1);
+  assert.equal(runtime.createdTitles.length, 2);
   await builder.close();
+  assert.equal(runtime.closeCount, 1);
 });
 
 test("Builder does not re-issue a task when the runtime reports no environment exit", async () => {
   const runtime = new RecordingRuntime();
   runtime.abort = async () => { throw new Error("abort endpoint down"); };
   runtime.promptResult = Promise.reject(new Error("fetch failed; other side closed"));
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5_000, releaseRuntimeAfterRun: true });
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5_000 });
 
   const result = await builder.run(builderRequest(1));
   assert.equal(result.outcome, "failed");

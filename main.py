@@ -94,7 +94,7 @@ CGROUP_MEMORY_FILES = (
 
 
 def cgroup_memory_summary() -> str:
-    """Best-effort container memory state; a nonzero oom_kill in memory.events proves the platform killed us."""
+    """Best-effort container memory state; counters are cumulative and do not identify which process was killed."""
     parts: list[str] = []
     for entry in CGROUP_MEMORY_FILES:
         path = Path(entry)
@@ -106,47 +106,6 @@ def cgroup_memory_summary() -> str:
             continue
         parts.append(f"{path.name}={value}")
     return "; ".join(parts)
-
-
-def cgroup_memory_limit_bytes() -> int | None:
-    for entry in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
-        try:
-            text = Path(entry).read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        if not text or text == "max":
-            continue
-        try:
-            value = int(text)
-        except ValueError:
-            continue
-        if value > 0:
-            return value
-    return None
-
-
-LOW_MEMORY_LIMIT_BYTES = 1024 * 1024 * 1024
-LOW_MEMORY_NODE_OPTIONS = "--max-old-space-size=384"
-# Bun runtime heap cap for the OpenCode server binary; measured ~70 MiB lower RSS.
-LOW_MEMORY_BUN_JSC_FORCE_RAM_SIZE = "201326592"
-
-BUILD_STALENESS_TOLERANCE_SECONDS = 2.0
-
-
-def compiled_entry_is_fresh(root: Path, compiled: Path) -> bool:
-    """A stale build/ silently runs old code; trust it only when no source file is newer."""
-    try:
-        built = compiled.stat().st_mtime
-    except OSError:
-        return False
-    sources = (root / "index.ts", *(root / "src").rglob("*.ts"))
-    for source in sources:
-        try:
-            if source.is_file() and source.stat().st_mtime > built + BUILD_STALENESS_TOLERANCE_SECONDS:
-                return False
-        except OSError:
-            continue
-    return True
 
 
 def resolve_gateway_env(root: Path) -> dict[str, str]:
@@ -292,16 +251,6 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log(f"eval port is {args.web_port}; generation never binds it")
-    memory_limit = cgroup_memory_limit_bytes()
-    if memory_limit is not None:
-        log(f"container memory limit: {memory_limit // (1024 * 1024)} MiB")
-        if memory_limit <= LOW_MEMORY_LIMIT_BYTES:
-            # Applies to every Node child (npm install, playwright install, the
-            # pipeline, MCP children); Python and native binaries are unaffected.
-            os.environ.setdefault("NODE_OPTIONS", LOW_MEMORY_NODE_OPTIONS)
-            # The OpenCode server is a Bun executable; tighten its JSC heap too.
-            os.environ.setdefault("BUN_JSC_forceRAMSize", LOW_MEMORY_BUN_JSC_FORCE_RAM_SIZE)
-            log(f"low-memory mode: NODE_OPTIONS={os.environ['NODE_OPTIONS']} BUN_JSC_forceRAMSize={os.environ['BUN_JSC_forceRAMSize']}")
     memory = cgroup_memory_summary()
     if memory:
         log(f"cgroup memory at start: {memory}")
@@ -315,15 +264,10 @@ def main() -> int:
         return 1
 
     budget = (os.environ.get("SHALLOW_BUDGET_MS") or "0").strip() or "0"
-    compiled_entry = root / "build" / "index.js"
-    if compiled_entry.is_file() and compiled_entry_is_fresh(root, compiled_entry):
-        entry = ["node", str(compiled_entry)]
-    else:
-        if compiled_entry.is_file():
-            log("compiled entry is older than src/; falling back to tsx")
-        entry = [npx_cmd(), "tsx", "index.ts"]
     command = [
-        *entry,
+        npx_cmd(),
+        "tsx",
+        "index.ts",
         "--requirements-dir",
         str(requirement_dir),
         "--output-dir",

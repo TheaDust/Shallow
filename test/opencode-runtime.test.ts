@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createOpencodeClient, type createOpencode } from "@opencode-ai/sdk";
-import { OPENCODE_MEMORY_ENV, readOpencodeLogTail, sdkFetch, SdkOpenCodeRuntime, type OpenCodeServerExit } from "../src/builder/opencode-sdk.js";
+import { readOpencodeLogTail, sdkFetch, SdkOpenCodeRuntime, type OpenCodeServerExit } from "../src/builder/opencode-sdk.js";
 import { ExecutionFault } from "../src/execution-fault.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
@@ -145,6 +145,25 @@ test("sdkFetch adapts the SDK's Node Request objects", async () => {
   }
 });
 
+test("SDK ignores a previous server's delayed exit after starting a replacement", async () => {
+  const exits: Array<(info: OpenCodeServerExit) => void> = [];
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    exits.push(options.onServerExit!);
+    return { server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({ baseUrl: "http://localhost:1" }) };
+  });
+  await runtime.start("candidate");
+  await runtime.close();
+  await runtime.start("candidate");
+  try {
+    exits[0]({ code: 0, signal: null });
+    assert.equal(runtime.serverExit(), undefined);
+    exits[1]({ code: null, signal: "SIGKILL" });
+    assert.deepEqual(runtime.serverExit(), { code: null, signal: "SIGKILL" });
+  } finally {
+    await runtime.close();
+  }
+});
+
 test("sdkFetch completes a request whose response headers arrive late", async () => {
   const server = createServer((_request, response) => {
     setTimeout(() => {
@@ -200,7 +219,7 @@ test("SDK runtime forwards the gateway and preserves raw model IDs in all model 
   }
 });
 
-test("SDK runtime trims unused OpenCode subsystems to reduce memory overhead", async () => {
+test("SDK runtime keeps harness Git ownership and enables normal language tooling", async () => {
   let config: Parameters<typeof createOpencode>[0];
   const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
     config = options;
@@ -212,15 +231,9 @@ test("SDK runtime trims unused OpenCode subsystems to reduce memory overhead", a
   assert.equal(config?.config?.snapshot, false);
   assert.equal(config?.config?.autoupdate, false);
   assert.equal(config?.config?.share, "disabled");
-  assert.equal(config?.config?.formatter, false);
-  assert.equal(config?.config?.lsp, false);
-  assert.deepEqual(config?.config?.watcher, { ignore: ["node_modules/**", "dist/**", ".git/**", ".arc/**"] });
-  assert.deepEqual({ ...OPENCODE_MEMORY_ENV }, {
-    OPENCODE_DISABLE_AUTOUPDATE: "1",
-    OPENCODE_DISABLE_MODELS_FETCH: "1",
-    OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
-    OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
-  });
+  assert.equal(config?.config?.formatter, undefined);
+  assert.equal(config?.config?.lsp, undefined);
+  assert.equal(config?.config?.watcher, undefined);
 });
 
 test("SDK runtime does not report an exit that follows the controller's own close", async () => {
