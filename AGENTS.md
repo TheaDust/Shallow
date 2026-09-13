@@ -67,7 +67,7 @@ src/
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
-    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理、每次调用后释放 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny 与内存裁剪配置（OPENCODE_MEMORY_ENV / MEMORY_CONFIG：关 snapshot/autoupdate/share/formatter/lsp、watcher ignore、filewatcher 等环境开关）
+    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理、每次调用后释放 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny 与内存裁剪配置（OPENCODE_MEMORY_ENV / MEMORY_CONFIG：关 snapshot/autoupdate/share/formatter/lsp、watcher ignore）
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     self-test.ts                builderSelfTestConfig：本地 Playwright MCP 入口、Chromium 路径、来源与输出目录
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）

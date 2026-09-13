@@ -376,6 +376,18 @@ test("Builder releases the runtime after each call when configured", async () =>
   await builder.close();
 });
 
+test("Builder does not re-issue a task when the runtime reports no environment exit", async () => {
+  const runtime = new RecordingRuntime();
+  runtime.abort = async () => { throw new Error("abort endpoint down"); };
+  runtime.promptResult = Promise.reject(new Error("fetch failed; other side closed"));
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5_000, releaseRuntimeAfterRun: true });
+
+  const result = await builder.run(builderRequest(1));
+  assert.equal(result.outcome, "failed");
+  assert.equal(runtime.prompts.length, 1);
+  await builder.close();
+});
+
 test("FakeBuilder copies only the test fixture app into output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "shallow-fake-builder-"));
   try {

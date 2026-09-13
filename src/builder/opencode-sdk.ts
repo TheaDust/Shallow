@@ -79,14 +79,13 @@ const BUILDER_TOOL_PERMISSION = {
 const BUILDER_PERMISSION_CONFIG = BUILDER_TOOL_PERMISSION as unknown as RuntimeConfigPermission;
 
 // OpenCode subsystems the Builder never uses (snapshot undo, sharing, update
-// checks, plugin/filewatcher extras) still hold state for the server's whole
-// lifetime; switch them off so the container budget goes to the model session.
+// checks, plugin extras) still hold state for the server's whole lifetime;
+// switch them off so the container budget goes to the model session.
 export const OPENCODE_MEMORY_ENV = {
   OPENCODE_DISABLE_AUTOUPDATE: "1",
   OPENCODE_DISABLE_MODELS_FETCH: "1",
   OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
   OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
-  OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
 } as const;
 
 const MEMORY_CONFIG: Pick<
@@ -164,7 +163,8 @@ export const sdkFetch = (async (
   );
 }) as unknown as typeof fetch;
 
-const SERVER_START_TIMEOUT_MS = 5_000;
+const SERVER_START_TIMEOUT_MS = 20_000;
+const SERVER_STOP_GRACE_MS = 3_000;
 const SERVER_TAIL_LINES = 60;
 
 async function createProductionInstance(
@@ -253,6 +253,9 @@ function stopServer(proc: ChildProcess): void {
     if (!result.error && result.status === 0) return;
   }
   proc.kill();
+  setTimeout(() => {
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+  }, SERVER_STOP_GRACE_MS).unref();
 }
 
 async function waitForPromptSettlement(
@@ -467,6 +470,8 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   private server?: { close(): void };
   private directory?: string;
   private lastServerExit?: OpenCodeServerExit;
+  private instanceActive = false;
+  private readonly connectedMcps = new WeakSet<OpencodeClient>();
   private readonly abortedSessions = new Set<string>();
 
   constructor(
@@ -479,10 +484,11 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   async start(directory: string): Promise<void> {
     const model = this.gateway.model;
     this.lastServerExit = undefined;
+    this.instanceActive = true;
     const instance = await this.create({
       port: await pickFreePort(),
       fetch: sdkFetch,
-      onServerExit: (exit) => { this.lastServerExit = exit; },
+      onServerExit: (exit) => { if (this.instanceActive) this.lastServerExit = exit; },
       config: {
         ...(this.selfTest || this.candidateTools ? { mcp: {
           ...(this.selfTest ? { [SELF_TEST_MCP_NAME]: builderSelfTestConfig(this.selfTest) } : {}),
@@ -537,6 +543,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     const epoch = this.candidateTools?.runtime.beginBuilder();
     if (epoch !== undefined) this.candidateSession = { id: sessionId, epoch };
     try {
+      if (this.mcpNames().length > 0) this.connectedMcps.add(client);
       for (const name of this.mcpNames()) {
         try {
           const connected = await client.mcp.connect({ path: { name }, query: { directory }, signal: AbortSignal.timeout(15_000) });
@@ -576,6 +583,8 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
   }
 
   private async disconnectSelfTest(client: OpencodeClient, directory: string): Promise<void> {
+    if (!this.connectedMcps.has(client)) return;
+    this.connectedMcps.delete(client);
     const results = await Promise.allSettled(this.mcpNames().map(async (name) => {
       const response = await client.mcp.disconnect({ path: { name }, query: { directory }, signal: AbortSignal.timeout(5_000) });
       if (response.error || response.data !== true) {
@@ -640,6 +649,7 @@ export class SdkOpenCodeRuntime implements OpenCodeRuntime {
     const directory = this.directory;
     // Invalidate pending connects before awaiting cleanup; they must never dispatch a late model call.
     this.client = undefined;
+    this.instanceActive = false;
     try {
       if (client && directory) await this.disconnectSelfTest(client, directory);
     } finally {

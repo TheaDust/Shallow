@@ -130,6 +130,24 @@ LOW_MEMORY_NODE_OPTIONS = "--max-old-space-size=384"
 # Bun runtime heap cap for the OpenCode server binary; measured ~70 MiB lower RSS.
 LOW_MEMORY_BUN_JSC_FORCE_RAM_SIZE = "201326592"
 
+BUILD_STALENESS_TOLERANCE_SECONDS = 2.0
+
+
+def compiled_entry_is_fresh(root: Path, compiled: Path) -> bool:
+    """A stale build/ silently runs old code; trust it only when no source file is newer."""
+    try:
+        built = compiled.stat().st_mtime
+    except OSError:
+        return False
+    sources = (root / "index.ts", *(root / "src").rglob("*.ts"))
+    for source in sources:
+        try:
+            if source.is_file() and source.stat().st_mtime > built + BUILD_STALENESS_TOLERANCE_SECONDS:
+                return False
+        except OSError:
+            continue
+    return True
+
 
 def resolve_gateway_env(root: Path) -> dict[str, str]:
     values = {name: (os.environ.get(name) or "").strip() for name in GATEWAY_VARS}
@@ -298,9 +316,11 @@ def main() -> int:
 
     budget = (os.environ.get("SHALLOW_BUDGET_MS") or "0").strip() or "0"
     compiled_entry = root / "build" / "index.js"
-    if compiled_entry.is_file():
+    if compiled_entry.is_file() and compiled_entry_is_fresh(root, compiled_entry):
         entry = ["node", str(compiled_entry)]
     else:
+        if compiled_entry.is_file():
+            log("compiled entry is older than src/; falling back to tsx")
         entry = [npx_cmd(), "tsx", "index.ts"]
     command = [
         *entry,

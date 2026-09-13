@@ -220,8 +220,41 @@ test("SDK runtime trims unused OpenCode subsystems to reduce memory overhead", a
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_DISABLE_EMBEDDED_WEB_UI: "1",
     OPENCODE_DISABLE_DEFAULT_PLUGINS: "1",
-    OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
   });
+});
+
+test("SDK runtime does not report an exit that follows the controller's own close", async () => {
+  let exit!: (info: OpenCodeServerExit) => void;
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async (options) => {
+    exit = options.onServerExit!;
+    return {
+      server: { url: "http://localhost:1", close() { exit({ code: 0, signal: null }); } },
+      client: createOpencodeClient({ baseUrl: "http://localhost:1" }),
+    };
+  });
+  await runtime.start("candidate");
+  await runtime.close();
+
+  assert.equal(runtime.serverExit(), undefined, "an intentional shutdown is not an environment kill");
+});
+
+test("SDK runtime disconnects the Builder MCPs only once per server instance", async () => {
+  let disconnects = 0;
+  const runtime = new SdkOpenCodeRuntime({ apiKey: "key", baseUrl: "https://gateway.example/v1", model: "model" }, async () => ({
+    server: { url: "http://localhost:1", close() {} },
+    client: createOpencodeClient({ baseUrl: "http://localhost:1", fetch: async (input) => {
+      const path = new URL((input as Request).url).pathname;
+      if (path.endsWith("/disconnect")) { disconnects += 1; return Response.json(true); }
+      if (path.endsWith("/connect")) return Response.json(true);
+      if (path === "/mcp") return Response.json({ playwright: { status: "connected" } });
+      return Response.json({ info: {}, parts: [{ type: "text", text: "done" }] });
+    } }),
+  }), { baseUrl: "http://127.0.0.1:45678", artifactsDir: "artifacts" });
+  await runtime.start("candidate");
+  await runtime.prompt("session", { systemPrompt: "system", taskPrompt: "task" });
+  await runtime.close();
+
+  assert.equal(disconnects, 1);
 });
 
 test("SDK runtime denies Builder tool access to .arc and external paths", async () => {
