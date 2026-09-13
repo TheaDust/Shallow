@@ -130,12 +130,12 @@ function describe(type: string, event: RunEvent): string | null {
       return "进入交付窗口，开始最终验收";
     case "delivery_repair_started":
       return `最终验收未通过（${pickString(detail, "stage")}），启动交付修复${
-        message ? `：${message}` : ""
-      }`;
+        pickNumber(detail, "round") ? `第 ${pickNumber(detail, "round")} 轮` : ""
+      }${message ? `：${message}` : ""}`;
     case "delivery_repair_accepted":
       return "交付修复验收通过";
     case "delivery_repair_restored":
-      return "交付修复未被接受，已恢复最后接受状态";
+      return `交付修复未被接受，已恢复最后接受状态${pickNumber(detail, "round") ? `（第 ${pickNumber(detail, "round")} 轮）` : ""}`;
     case "pipeline_failed":
       return `流水线异常退出，已回滚${message ? `：${message}` : ""}`;
     case "delivery_finished": {

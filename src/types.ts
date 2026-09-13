@@ -129,9 +129,9 @@ interface RunEventDetails {
   packet_accepted: { candidate?: CandidateEvidence };
   packet_blocked: { reason: string };
   delivery_started: Record<string, never>;
-  delivery_repair_started: { stage: string; message: string };
+  delivery_repair_started: { stage: string; message: string; round?: number };
   delivery_repair_accepted: { candidate?: CandidateEvidence };
-  delivery_repair_restored: Record<string, never>;
+  delivery_repair_restored: { round?: number };
   delivery_finished: { ok: boolean; stage: string; message: string };
   verification_started: { retryCount: number };
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };

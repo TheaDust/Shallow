@@ -138,11 +138,16 @@ export async function runPipeline(
     await state.record({ at: now(), type: "delivery_started" });
     await deps.candidate?.assertAcceptedInput();
     let finalReport = await runFinalVerifier(options, deps, state);
-    if (!finalReport.ok) {
+    // Keep repairing delivery until it passes. There is no attempt-count cap: the first
+    // repair always runs (delivery reserve) and later rounds require remaining budget.
+    let deliveryRepairRound = 0;
+    while (!finalReport.ok) {
+      deliveryRepairRound += 1;
+      if (deliveryRepairRound > 1 && !state.withinBudget(deps.clock.nowMs())) break;
       await state.record({
         at: now(),
         type: "delivery_repair_started",
-        detail: { stage: finalReport.stage, message: finalReport.message },
+        detail: { stage: finalReport.stage, message: finalReport.message, round: deliveryRepairRound },
       });
       await state.record({
         at: now(),
@@ -205,7 +210,7 @@ export async function runPipeline(
             message: `Delivery repair was not completed (${builderResult.outcome}); restored accepted state`,
           };
         }
-        await state.record({ at: now(), type: "delivery_repair_restored" });
+        await state.record({ at: now(), type: "delivery_repair_restored", detail: { round: deliveryRepairRound } });
       }
     }
     if (finalReport.ok) {
@@ -725,7 +730,11 @@ async function runFinalVerifier(
       return report;
     } catch (error) {
       if (error instanceof ExecutionFault) {
-        const retry = error.retryable && retryCount < 1;
+        // No retry-count cap: keep retrying retryable infrastructure faults while a
+        // finite budget allows it. The first retry always runs so delivery is never
+        // abandoned when the packet phase already consumed the budget.
+        const retry = error.retryable &&
+          (retryCount === 0 || state.withinBudget(deps.clock.nowMs()));
         await state.record({ at: now(), type: "execution_fault", packetId: "final-verification",
           detail: { source: error.source, code: error.code, retryable: error.retryable, retry, retryCount } });
         if (retry) continue;

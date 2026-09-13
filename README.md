@@ -191,19 +191,20 @@ flowchart TD
     S["无可调度 ready 需求 / 预算耗尽"] --> V["FinalVerifier：install → build → 启动 → readiness → 浏览器 smoke"]
     V --> P{"验证通过？"}
     P -->|"是"| FIN["记录 delivery_finished"]
-    P -->|"否"| RP["唯一一次交付修复 session（root-cause-first，携带验证失败报告）"]
+    P -->|"否"| RP["交付修复 session（root-cause-first，携带验证失败报告；无次数上限）"]
     RP --> V2["完整重跑 FinalVerifier"]
     V2 --> P2{"Builder completed 且复验通过？"}
     P2 -->|"是"| ACC["captureAccepted 接受交付修复"]
-    P2 -->|"否"| FAIL["summary = failed，退出码 1"]
+    P2 -->|"否且预算未耗尽"| RP
+    P2 -->|"否且预算耗尽"| FAIL["summary = failed，退出码 1"]
     FIN --> SUM["输出 RunSummary"]
     ACC --> SUM
     FAIL --> SUM
 ```
 
 - FinalVerifier 按固定平台合同执行 install → build → 启动（注入 `PORT`）→ 轮询 `/health` readiness → 用真实浏览器打开根页面做最小 smoke；无论结果如何都终止本次验证启动的进程。
-- 验证失败时启动恰好一次交付修复 session：Builder 收到 root-cause-first 指令与由验证报告转换的失败证据；随后**完整重跑**全部验证步骤，只接受复验通过的修复（`captureAccepted`）。
-- 交付修复最多一次：只有 Builder 返回 `completed` 且复验通过才接受；其余情况恢复 accepted SHA 并以 `failed` 退出。异常 runner 故障同样会停止 Builder、回滚并记录失败。
+- 验证失败时启动交付修复 session（不设次数上限，直到复验通过或预算耗尽）：Builder 收到 root-cause-first 指令与由验证报告转换的失败证据；随后**完整重跑**全部验证步骤，只接受复验通过的修复（`captureAccepted`）。
+- 只有 Builder 返回 `completed` 且复验通过才接受；未通过的修复恢复 accepted SHA，并在预算未耗尽时继续下一轮修复，预算耗尽仍失败则以 `failed` 退出。首轮交付修复始终执行。异常 runner 故障同样会停止 Builder、回滚并记录失败。
 - 启动日志持续读取，避免管道塞满；启动命令不存在时返回 readiness 失败。Windows 清理进程树，Linux 使用独立进程组停止启动器及其后代。
 
 ## 运行产物与日志
@@ -247,7 +248,7 @@ GitOps（`src/git-ops.ts`）细节：
 
 基础设施故障通过结构化类别与调用来源判断。应用自身的错误响应不按模型网关故障处理；已观察到的业务断言失败也不会被后续浏览器崩溃抹除。`builder_started` 记录实际 attempt，浏览器重试不增加或重置 Builder 次数；Builder 已开始的调用及普通 SDK 失败仍计入三次上限。
 
-最终交付遇到可恢复的浏览器执行故障时，有独立的一次验证重试；耗尽后停止，而非发起代码修复。`execution_fault` 记录来源、故障码和重试决定。浏览器重跑使用新浏览器上下文，但当前没有被测应用的数据快照恢复机制，前一次执行留下的服务端数据可能仍在。
+最终交付遇到可恢复的浏览器执行故障时，在预算内持续重试（首次重试始终执行），而非发起代码修复。`execution_fault` 记录来源、故障码和重试决定。浏览器重跑使用新浏览器上下文，但当前没有被测应用的数据快照恢复机制，前一次执行留下的服务端数据可能仍在。
 
 ### 时间额度
 

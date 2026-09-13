@@ -95,6 +95,12 @@ export class RunStateStore {
     return this.state.deliveryMode;
   }
 
+  /** True while the finite total budget is not exhausted; unlimited budgets (`<= 0`) always pass. */
+  withinBudget(nowMs: number): boolean {
+    if (this.state.totalBudgetMs <= 0) return true;
+    return Math.max(0, nowMs - this.state.startedAtMs) < this.state.totalBudgetMs;
+  }
+
   markRequirements(ids: string[], status: RequirementStatus): void {
     for (const id of ids) {
       if (!(id in this.state.statusByRequirementId)) {

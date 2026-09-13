@@ -209,8 +209,10 @@ test("Pipeline E2E refines a missing locator without another Builder attempt", a
   });
 });
 
-test("Pipeline E2E reports failure when independent final verification fails", async () => {
+test("Pipeline E2E reports failure when independent final verification fails until the budget is exhausted", async () => {
   await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    let time = 0;
+    let calls = 0;
     const summary = await runPipeline(
       options(requirementsFile, outputDir, ledgerFile),
       {
@@ -219,15 +221,18 @@ test("Pipeline E2E reports failure when independent final verification fails", a
         runner: new PlaywrightProbeRunner(),
         git: new FakeGitOps(["baseline", "accepted"]),
         appLifecycle: new RecordingLifecycle(),
-        clock: fixedClock(),
-        finalVerifier: new RecordingFinalVerifier({
-          ok: false,
-          stage: "build",
-          message: "production build failed",
-        }),
+        clock: { nowMs: () => time },
+        finalVerifier: {
+          async verify() {
+            calls += 1;
+            if (calls >= 2) time = 1_000_000;
+            return { ok: false, stage: "build", message: "production build failed" };
+          },
+        },
       },
     );
 
+    assert.equal(calls, 2);
     assert.equal(summary.status, "failed");
   });
 });
@@ -262,6 +267,45 @@ test("Pipeline E2E allows one delivery repair and reruns full final verification
     assert.equal(delivery.deliveryFailure.stage, "build");
     assert.equal(delivery.deliveryFailure.actual, "production build failed");
     assert.equal("packet" in delivery, false);
+    assert.equal(summary.status, "delivered");
+    assert.equal(summary.acceptedSha, "delivery-fixed");
+    assert.deepEqual(git.captureMessages, [
+      "shallow: initial state",
+      "shallow: accept packet-req-profile",
+      "shallow: accept delivery repair",
+    ]);
+  });
+});
+
+test("Pipeline keeps repairing delivery until it passes when the budget is unlimited", async () => {
+  await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
+    const builder = new FakeBuilder();
+    const git = new FakeGitOps(["baseline", "accepted", "delivery-fixed"]);
+    const finalVerifier = new SequencedFinalVerifier([
+      { ok: false, stage: "build", message: "production build failed" },
+      { ok: false, stage: "browser", message: "still broken after first repair" },
+      { ok: true, stage: "complete", message: "Final verification passed" },
+    ]);
+
+    const summary = await runPipeline(
+      { ...options(requirementsFile, outputDir, ledgerFile), totalBudgetMs: 0 },
+      {
+        builder,
+        planner: new FakeProbePlanner([workingPlan()]),
+        runner: new PlaywrightProbeRunner(),
+        git,
+        appLifecycle: new RecordingLifecycle(),
+        clock: fixedClock(),
+        finalVerifier,
+      },
+    );
+
+    assert.equal(finalVerifier.calls, 3);
+    assert.equal(builder.requests.length, 3);
+    assert.deepEqual(
+      builder.requests.map((request) => request.mode),
+      ["implement", "delivery_repair", "delivery_repair"],
+    );
     assert.equal(summary.status, "delivered");
     assert.equal(summary.acceptedSha, "delivery-fixed");
     assert.deepEqual(git.captureMessages, [
@@ -648,24 +692,29 @@ test("Pipeline stops starting packet repairs once the budget is exhausted", asyn
   });
 });
 
-test("Pipeline restores every unaccepted delivery repair and never reports it as delivered", async () => {
+test("Pipeline restores an unaccepted delivery repair and never reports it as delivered", async () => {
   for (const outcome of ["completed", "failed", "timed_out"] as const) {
     await withPipelineFiles(async ({ requirementsFile, outputDir, ledgerFile }) => {
       const builder = new FakeBuilder(["completed", outcome]);
       const git = new FakeGitOps();
-      const finalVerifier = new SequencedFinalVerifier([
-        { ok: false, stage: "build", message: "broken build" },
-        { ok: outcome !== "completed", stage: "browser", message: "repair verification" },
-      ]);
+      let time = 0;
+      let calls = 0;
       const summary = await runPipeline(options(requirementsFile, outputDir, ledgerFile), {
-        builder, planner: new FakeProbePlanner([workingPlan()]), git, finalVerifier,
+        builder, planner: new FakeProbePlanner([workingPlan()]), git,
+        finalVerifier: { async verify() {
+          calls += 1;
+          if (calls === 1) return { ok: false, stage: "build", message: "broken build" };
+          time = 1_000_000;
+          return { ok: outcome !== "completed", stage: "browser", message: "repair verification" };
+        } },
         runner: { async run(plan) { return { packetId: plan.packetId, verdict: "pass", passedCases: plan.cases.map((item) => item.id), failures: [] }; } },
-        appLifecycle: new RecordingLifecycle(), clock: fixedClock(),
+        appLifecycle: new RecordingLifecycle(), clock: { nowMs: () => time },
       });
       assert.equal(summary.status, "failed", outcome);
       assert.equal(summary.acceptedSha, "accepted");
       assert.deepEqual(git.restoredShas, ["accepted"]);
       assert.equal(git.captureMessages.length, 2);
+      assert.equal(calls, 2);
     });
   }
 });
