@@ -314,6 +314,8 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   assert.equal(calls[0].url, "https://gateway.example/v1/chat/completions");
   const headers = new Headers(calls[0].init?.headers);
   assert.equal(headers.get("authorization"), "Bearer secret-key");
+  assert.equal(headers.get("user-agent"), "ShallowCode/1.0");
+  assert.ok(headers.get("x-opencode-session"));
   const body = JSON.stringify(JSON.parse(String(calls[0].init?.body)));
   assert.match(body, /Keep the profile after refresh/);
   assert.match(body, /happy_path/);
@@ -321,6 +323,28 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
     body,
     /candidate-app|source code|git diff|acceptedSha|SECRET-OTHER-REQ|\/workspace\/tests/,
   );
+});
+
+test("Probe Planner uses broadly supported JSON mode and a stable per-instance session", async () => {
+  const calls: Array<{ init?: RequestInit }> = [];
+  const fetchFn: typeof fetch = async (_input, init) => {
+    calls.push({ init });
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
+  };
+  const planner = new LlmProbePlanner(config(), fetchFn);
+
+  await planner.plan(packet());
+  await planner.plan(packet());
+
+  const sessions = calls.map((call) => new Headers(call.init?.headers).get("x-opencode-session"));
+  assert.ok(sessions[0]);
+  assert.equal(sessions[0], sessions[1]);
+  for (const call of calls) {
+    const payload = JSON.parse(String(call.init?.body)) as { response_format?: unknown };
+    assert.deepEqual(payload.response_format, { type: "json_object" });
+    assert.doesNotMatch(String(call.init?.body), /json_schema/);
+    assert.equal(new Headers(call.init?.headers).get("user-agent"), "ShallowCode/1.0");
+  }
 });
 
 test("Probe Planner instructs literal locators and absence, persistence, and deep-link probes", async () => {

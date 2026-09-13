@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ProbeFailure, WorkPacket } from "../types.js";
 import { sanitizeDiagnosticText } from "../run-state.js";
 import {
@@ -24,6 +26,12 @@ export interface ProbePlannerConfig {
   model: string;
   timeoutMs: number;
 }
+
+// OpenAI-compatible gateways in front of the model proxy (for example OpenCode
+// Go) reject anonymous traffic with HTTP 400 unless the client identifies
+// itself; the session id is stable per planner so the proxy can route and cache
+// consistently. Unknown gateways ignore both headers.
+const PLANNER_USER_AGENT = "ShallowCode/1.0";
 
 export type ProbePlannerErrorCategory =
   | "transport"
@@ -72,6 +80,8 @@ export class ProbePlannerError extends Error {
 }
 
 export class LlmProbePlanner implements ProbePlanner {
+  private readonly sessionId = randomUUID();
+
   constructor(
     private readonly config: ProbePlannerConfig,
     private readonly fetchFn: typeof fetch = globalThis.fetch,
@@ -175,6 +185,14 @@ export class LlmProbePlanner implements ProbePlanner {
     messages: Array<{ role: "system" | "user"; content: string }>,
     timeoutMs = this.config.timeoutMs,
   ): Promise<string> {
+    // Structured outputs (`json_schema`) are unavailable on several
+    // OpenAI-compatible gateways, including the ARC-Bench model proxy, so the
+    // schema travels in the system message and the request asks for generic
+    // JSON mode instead. Plan parsing still tolerates fenced or annotated text
+    // and validates the result against PROBE_PLAN_JSON_SCHEMA.
+    const requestMessages = messages.map((message, index) => index === 0
+      ? { ...message, content: `${message.content}\n\nReturn only JSON matching this schema:\n${JSON.stringify(PROBE_PLAN_JSON_SCHEMA)}` }
+      : message);
     let response: Response;
     try {
       response = await this.fetchFn(`${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -182,18 +200,13 @@ export class LlmProbePlanner implements ProbePlanner {
         headers: {
           authorization: `Bearer ${this.config.apiKey}`,
           "content-type": "application/json",
+          "user-agent": PLANNER_USER_AGENT,
+          "x-opencode-session": this.sessionId,
         },
         body: JSON.stringify({
           model: this.config.model,
-          messages,
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "probe_plan",
-              strict: true,
-              schema: PROBE_PLAN_JSON_SCHEMA,
-            },
-          },
+          messages: requestMessages,
+          response_format: { type: "json_object" },
         }),
         signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, this.config.timeoutMs))),
       });
