@@ -11,22 +11,12 @@ import type {
   ShadowReport,
 } from "./types.js";
 
-export type Decision =
-  | { kind: "accept" }
-  | {
-      kind: "repair";
-      nextAttempt: 2 | 3;
-      requireRootCauseFirst: boolean;
-    }
-  | { kind: "block_and_restore" };
-
 export interface RunStateSnapshot {
   statusByRequirementId: Record<string, RequirementStatus>;
   attemptsByPacketId: Record<string, number>;
   acceptedSha: string;
   startedAtMs: number;
   totalBudgetMs: number;
-  deliveryMode: boolean;
   ledger: RunEvent[];
 }
 
@@ -39,20 +29,6 @@ export interface InitialRunState {
 
 export interface LogSink {
   write(chunk: string): void;
-}
-
-export function decideAfterReport(
-  report: ShadowReport,
-  attempt: 1 | 2 | 3,
-): Decision {
-  if (report.verdict === "pass") return { kind: "accept" };
-  if (attempt === 1) {
-    return { kind: "repair", nextAttempt: 2, requireRootCauseFirst: false };
-  }
-  if (attempt === 2) {
-    return { kind: "repair", nextAttempt: 3, requireRootCauseFirst: true };
-  }
-  return { kind: "block_and_restore" };
 }
 
 export class RunStateStore {
@@ -71,7 +47,6 @@ export class RunStateStore {
       ...initial,
       statusByRequirementId: { ...initial.statusByRequirementId },
       attemptsByPacketId: {},
-      deliveryMode: false,
       ledger: [],
     };
   }
@@ -83,22 +58,6 @@ export class RunStateStore {
       attemptsByPacketId: { ...this.state.attemptsByPacketId },
       ledger: [...this.state.ledger],
     };
-  }
-
-  shouldEnterDelivery(nowMs: number): boolean {
-    if (this.state.deliveryMode) return true;
-    if (this.state.totalBudgetMs <= 0) return false;
-    const elapsed = Math.max(0, nowMs - this.state.startedAtMs);
-    if (elapsed >= this.state.totalBudgetMs) {
-      this.state.deliveryMode = true;
-    }
-    return this.state.deliveryMode;
-  }
-
-  /** True while the finite total budget is not exhausted; unlimited budgets (`<= 0`) always pass. */
-  withinBudget(nowMs: number): boolean {
-    if (this.state.totalBudgetMs <= 0) return true;
-    return Math.max(0, nowMs - this.state.startedAtMs) < this.state.totalBudgetMs;
   }
 
   markRequirements(ids: string[], status: RequirementStatus): void {
@@ -197,10 +156,12 @@ function redactEvent(event: RunEvent, secrets: readonly string[]): RunEvent {
 
 function sanitizeEvidenceLocator(locator: ProbeLocator, secrets: readonly string[]): ProbeLocator {
   const exact = locator.exact === undefined ? {} : { exact: locator.exact };
+  const scope = locator.scope ? { scope: { ...sanitizeEvidenceLocator(locator.scope as ProbeLocator, secrets),
+    ...(locator.scope.hasText === undefined ? {} : { hasText: sanitizeDiagnosticText(locator.scope.hasText, secrets) }) } } : {};
   return locator.by === "role"
-    ? { by: "role", role: sanitizeDiagnosticText(locator.role, secrets), ...exact,
+    ? { by: "role", role: sanitizeDiagnosticText(locator.role, secrets), ...exact, ...scope,
       ...(locator.name === undefined ? {} : { name: sanitizeDiagnosticText(locator.name, secrets) }) }
-    : { by: locator.by, text: sanitizeDiagnosticText(locator.text, secrets), ...exact };
+    : { by: locator.by, text: sanitizeDiagnosticText(locator.text, secrets), ...exact, ...scope };
 }
 
 function eventPhase(event: RunEvent): RunEvent["phase"] {

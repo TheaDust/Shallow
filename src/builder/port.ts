@@ -13,7 +13,13 @@ export interface BuilderResult {
   };
 }
 
+export interface BuilderRunOptions {
+  timeoutMs?: number;
+  /** Controller-owned conversation key; omitted for isolated repair calls. */
+  sessionKey?: string;
+}
+
 export interface BuilderPort {
-  run(request: BuilderRequest): Promise<BuilderResult>;
+  run(request: BuilderRequest, options?: BuilderRunOptions): Promise<BuilderResult>;
   close(): Promise<void>;
 }

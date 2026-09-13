@@ -16,7 +16,7 @@ import { pickFreePort, type GatewayConfig } from "../runtime-config.js";
 import { compileBuilderPrompt } from "./prompt.js";
 import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
 import { loadReferenceImages, type ReferenceImage } from "./reference-images.js";
-import type { BuilderPort, BuilderRequest, BuilderResult } from "./port.js";
+import type { BuilderPort, BuilderRequest, BuilderResult, BuilderRunOptions } from "./port.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sanitizeDiagnosticText } from "../diagnostics.js";
 import { builderSelfTestConfig, SELF_TEST_MCP_NAME, CANDIDATE_MCP_NAME, type BuilderSelfTestOptions } from "./self-test.js";
@@ -257,13 +257,14 @@ export class OpenCodeSdkBuilder implements BuilderPort {
   private startedDirectory?: string;
   private closed = false;
   private imageInputUnsupported = false;
+  private sharedSession?: { key: string; id: string };
 
   constructor(
     private readonly runtime: OpenCodeRuntime,
     private readonly options: OpenCodeSdkBuilderOptions,
   ) {}
 
-  async run(request: BuilderRequest): Promise<BuilderResult> {
+  async run(request: BuilderRequest, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> {
     if (this.closed) throw new Error("OpenCodeSdkBuilder is closed");
     try {
       await this.ensureStarted(request.outputDir);
@@ -271,14 +272,15 @@ export class OpenCodeSdkBuilder implements BuilderPort {
       throw new ExecutionFault("builder", "builder_start", false, { cause: error });
     }
     const prepared = await this.prepareRun(request);
-    const deadline = Date.now() + this.options.timeoutMs;
+    const timeoutMs = Math.min(this.options.timeoutMs, runOptions.timeoutMs ?? this.options.timeoutMs);
+    const deadline = Date.now() + timeoutMs;
     let restarts = 0;
     for (;;) {
       let result: BuilderResult | undefined;
       let failure: unknown;
       try {
-        const remaining = restarts === 0 ? this.options.timeoutMs : Math.max(1, deadline - Date.now());
-        result = await this.dispatchRun(prepared, remaining);
+        const remaining = restarts === 0 ? timeoutMs : Math.max(1, deadline - Date.now());
+        result = await this.dispatchRun(prepared, remaining, runOptions.sessionKey);
       } catch (error) {
         failure = error;
       }
@@ -340,9 +342,11 @@ export class OpenCodeSdkBuilder implements BuilderPort {
     return { title, baseInput, input, referenceImages };
   }
 
-  private async dispatchRun(prepared: PreparedBuilderRun, timeoutMs: number): Promise<BuilderResult> {
+  private async dispatchRun(prepared: PreparedBuilderRun, timeoutMs: number, sessionKey?: string): Promise<BuilderResult> {
     const { title, baseInput, input } = prepared;
-    let sessionId = await this.runtime.createSession(title);
+    let sessionId = sessionKey && this.sharedSession?.key === sessionKey
+      ? this.sharedSession.id : await this.runtime.createSession(title);
+    this.sharedSession = undefined;
     let cancelled = false;
     const finish = (outcome: BuilderResult["outcome"], summary: string): BuilderResult => ({
       sessionId, outcome, summary, ...(prepared.referenceImages ? { referenceImages: prepared.referenceImages } : {}),
@@ -399,6 +403,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
         if (!settled) await this.resetRuntime();
         return finish("timed_out", "OpenCode session timed out");
       }
+      if (sessionKey) this.sharedSession = { key: sessionKey, id: sessionId };
       return finish("completed", result.summary);
     } catch (error) {
       cancelled = true;
@@ -427,6 +432,7 @@ export class OpenCodeSdkBuilder implements BuilderPort {
   }
 
   private async resetRuntime(): Promise<void> {
+    this.sharedSession = undefined;
     await this.runtime.close();
     this.startedDirectory = undefined;
   }

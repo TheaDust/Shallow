@@ -234,7 +234,7 @@ async function resolveLocator(
   timeoutMs: number,
 ): Promise<Locator> {
   const primary = locate(session.page, step.locator);
-  if (step.op === "expectCount" && step.count === 0) return primary;
+  if (step.op === "expectCount") return primary;
   const candidates = locatorCandidates(step.locator);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
@@ -299,7 +299,13 @@ async function createSession(browser: Browser): Promise<BrowserSession> {
   }
 }
 
-function locate(page: Page, locator: ProbeLocator): Locator {
+function locate(page: Page | Locator, locator: ProbeLocator): Locator {
+  if (locator.scope) {
+    let scope = locate(page, locator.scope as ProbeLocator);
+    if (locator.scope.hasText !== undefined) scope = scope.filter({ hasText: locator.scope.hasText });
+    const { scope: _scope, ...target } = locator;
+    return locate(scope, target);
+  }
   if (locator.by === "label") {
     return page.getByLabel(locator.text, { exact: locator.exact });
   }

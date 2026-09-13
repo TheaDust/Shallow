@@ -1,98 +1,38 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { implementationPackets, auditPackets } from "../src/scheduler.js";
+import type { AtomicRequirement, RequirementCatalog, RequirementStatus } from "../src/types.js";
 
-import { selectNextPacket } from "../src/scheduler.js";
-import type {
-  AtomicRequirement,
-  RequirementCatalog,
-  RequirementStatus,
-} from "../src/types.js";
+test("Implementation groups complete subtrees, including internal dependencies and more than three atomics", () => {
+  const catalog = makeCatalog(Array.from({ length: 5 }, (_, i) => requirement(`R${i}`, i,
+    { folder: ["ROOT", "NOTES", `SECTION${i}`], dependencies: i ? [`R${i-1}`] : [] })));
+  const packets = implementationPackets(catalog);
+  assert.equal(packets.length, 1);
+  assert.deepEqual(packets[0].requirementIds, ["R0", "R1", "R2", "R3", "R4"]);
+  assert.deepEqual(implementationPackets(catalog), packets);
+});
 
-test("Scheduler excludes requirements whose dependencies are not verified", () => {
+test("Implementation orders modules by dependencies, independent of verification status", () => {
+  const catalog = makeCatalog([requirement("CHILD", 0, { dependencies: ["BASE"] }), requirement("BASE", 1)], { BASE: "inconclusive" });
+  assert.deepEqual(implementationPackets(catalog).map(item => item.requirementIds), [["BASE"], ["CHILD"]]);
+});
+
+test("Cross-module dependency cycles merge modules without inventing atomic cycles", () => {
   const catalog = makeCatalog([
-    requirement("BASE", 0, { scenarios: ["Base path"] }),
-    requirement("DEPENDENT", 1, {
-      dependencies: ["BASE"],
-      scenarios: ["Dependent path", "Dependent refresh"],
-    }),
+    requirement("A1", 0, { folder: ["ROOT", "A"], dependencies: ["B1"] }),
+    requirement("A2", 1, { folder: ["ROOT", "A"] }),
+    requirement("B1", 2, { folder: ["ROOT", "B"] }),
+    requirement("B2", 3, { folder: ["ROOT", "B"], dependencies: ["A2"] }),
   ]);
-
-  const packet = selectNextPacket(catalog);
-
-  assert.deepEqual(packet?.requirementIds, ["BASE"]);
+  assert.deepEqual(implementationPackets(catalog).map(item => item.requirementIds), [["A1", "A2", "B1", "B2"]]);
 });
 
-test("Scheduler prefers scenario count then direct dependents", () => {
-  const catalog = makeCatalog([
-    requirement("SCENARIOS", 0, { scenarios: ["One", "Two"] }),
-    requirement("CENTRAL", 1, { scenarios: ["One"] }),
-    requirement("LEAF", 2, {
-      dependencies: ["CENTRAL"],
-      scenarios: ["Blocked"],
-    }),
-  ]);
-
-  assert.equal(selectNextPacket(catalog)?.requirementIds[0], "SCENARIOS");
-
-  catalog.requirements[0].scenarios = ["One"];
-  assert.equal(selectNextPacket(catalog)?.requirementIds[0], "CENTRAL");
-});
-
-test("Scheduler groups at most three related ready requirements in one folder", () => {
-  const catalog = makeCatalog([
-    requirement("REQ-A", 0, {
-      folder: ["ROOT", "PROFILE"],
-      scenarios: ["Create profile"],
-      uiStrings: ["Profile"],
-    }),
-    requirement("REQ-B", 1, {
-      folder: ["ROOT", "PROFILE"],
-      scenarios: ["Edit profile"],
-    }),
-    requirement("REQ-C", 2, {
-      folder: ["ROOT", "PROFILE"],
-      scenarios: ["Delete profile"],
-    }),
-    requirement("REQ-D", 3, {
-      folder: ["ROOT", "PROFILE"],
-      scenarios: ["Archive profile"],
-    }),
-    requirement("REQ-E", 4, {
-      folder: ["ROOT", "OTHER"],
-      scenarios: ["Profile report"],
-    }),
-  ]);
-
-  const first = selectNextPacket(catalog);
-  const second = selectNextPacket(catalog);
-
-  assert.deepEqual(first?.requirementIds, ["REQ-A", "REQ-B", "REQ-C"]);
-  assert.equal(first?.id, "packet-req-a__req-b__req-c");
-  assert.deepEqual(second, first);
-});
-
-test("Scheduler never returns blocked requirements", () => {
-  const catalog = makeCatalog(
-    [
-      requirement("BLOCKED", 0, { scenarios: ["One", "Two", "Three"] }),
-      requirement("READY", 1, { scenarios: ["Ready"] }),
-    ],
-    { BLOCKED: "blocked" },
-  );
-
-  assert.deepEqual(selectNextPacket(catalog)?.requirementIds, ["READY"]);
-});
-
-test("Scheduler returns undefined when no requirement is ready", () => {
-  const catalog = makeCatalog(
-    [
-      requirement("BLOCKED", 0),
-      requirement("WAITING", 1, { dependencies: ["BLOCKED"] }),
-    ],
-    { BLOCKED: "blocked" },
-  );
-
-  assert.equal(selectNextPacket(catalog), undefined);
+test("Atomic audit covers every requirement and carries transitive textual prerequisites", () => {
+  const catalog = makeCatalog([requirement("A", 0), requirement("B", 1, { dependencies: ["A"] }), requirement("C", 2, { dependencies: ["B"] })]);
+  const packets = auditPackets(catalog);
+  assert.deepEqual(packets.map(item => item.requirementIds), [["A"], ["B"], ["C"]]);
+  assert.deepEqual(packets[2].prerequisites?.map(item => item.id), ["A", "B"]);
+  assert.deepEqual(implementationPackets(makeCatalog([])), []);
 });
 
 function makeCatalog(

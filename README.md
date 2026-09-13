@@ -4,7 +4,7 @@ ShallowCode 是 OpenCode 之外的一层轻量比赛控制器，面向 GOSIM Fac
 
 > 只实现 OpenCode 因为不知道整场比赛的全局状态而无法可靠实现的部分。
 
-OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、调度 WorkPacket、用独立 LLM 生成黑盒探针、用真实浏览器确定性判定、维护唯一的 accepted SHA，并完成最终交付验证。详细设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`（主设计）、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
+OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、按完整模块组织实现、用独立 LLM 生成黑盒探针、用真实浏览器验收、分别维护可运行检查点与功能验证状态，并完成最终交付验证。当前设计见 [模块优先重构](docs/2026-09-13-module-first-refactor.md)；早期设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
 
 ## 快速开始
 
@@ -63,65 +63,48 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 
 | 维度 | ShallowCode 主线 | baseline |
 | --- | --- | --- |
-| 工作单元 | 依赖就绪的 1–3 个原子需求 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
-| 会话 | 每次实现或修复创建短会话 | 一次运行复用同一个会话 |
+| 工作单元 | 完整 ROOT 子树，按依赖排序；相互依赖模块合并 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
+| 会话 | 实现阶段复用会话；集中修复使用新会话 | 一次运行复用同一个会话 |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
-| 完成依据 | 独立黑盒探针、接受点与最终交付验证 | OpenCode 调用结果；Python 入口另检查 frontend/backend 目录 |
+| 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | OpenCode 调用结果；Python 入口另检查 frontend/backend 目录 |
 | 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |
 
 baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。
 
-baseline 单模块调用上限为主线 packet 的两倍：不限总预算时为 80 分钟，显式预算时按预算缩放（见“预算与超时”）。超时后先 abort，再等待旧请求结束，两阶段各最多 5 秒；清理失败会终止本轮运行并关闭运行时，清理成功后继续处理下一模块。
+baseline 单模块调用不限总预算时上限为3小时，显式预算时按预算缩放（见“预算与超时”）。超时后先 abort，再等待旧请求结束，两阶段各最多 5 秒；清理失败会终止本轮运行并关闭运行时，清理成功后继续处理下一模块。
 
 ## 运行流程总览
 
-以下流程与判定规则适用于 ShallowCode 主线。
-
 ```mermaid
 flowchart LR
-    R["requirements.yaml"] --> C["Catalog 解析"]
-    C --> S["Scheduler 确定性调度"]
-    S --> W["WorkPacket"]
-    W --> B["OpenCode Builder"]
-    B --> A["候选应用"]
-    W --> P["LLM Probe Planner"]
-    P --> PP["ProbePlan"]
-    A --> PR["Playwright Runner"]
-    PP --> PR
-    PR --> SR["ShadowReport"]
-    SR --> D["DecisionLoop"]
-    D -->|"pass"| G["captureAccepted"]
-    D -->|"fail"| W
-    D -->|"三次失败"| X["restoreAccepted + block"]
-    G --> S
-    X --> S
-    S -->|"无 ready 需求或预算耗尽"| F["FinalVerifier"]
-    F --> SM["RunSummary"]
+    C[Catalog] --> M[完整模块实现]
+    M --> K[构建及启动检查点]
+    K -->|下一模块| M
+    K -->|首轮实现结束| J[逐项独立验收]
+    J -->|可复现业务失败| R[集中修复]
+    R --> G[修复及既有路径复验]
+    G -->|改善且保留既有通过项| J
+    G -->|无改善或回归| B[恢复修复前检查点]
+    J --> F[最终交付验证]
+    B --> F
 ```
 
-1. **Catalog**（`src/catalog.ts`）：按声明顺序保留原文、目录路径、场景、引用与显式 UI 文本；顶层 `data` 解析为产品种子数据。拒绝重复 ID、未知依赖与依赖环。目录依赖展开为该目录下所有原子需求，祖先的依赖由叶子继承；展开后再次检查依赖环。所有 ATOMIC 需求初始为 `todo`。
-2. **Scheduler**（`src/scheduler.ts`）：从依赖全部 `verified` 的 todo 需求中选种子，依次比较场景数、直接依赖者数、显式 UI 文本数、较低的描述成本、声明顺序，前项相同才比较后一项。再按声明顺序加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求；packet id 由选中 ID 的 slug 拼接生成。
-3. **Builder**（`src/builder/`）：通过 `@opencode-ai/sdk` 驱动 OpenCode。Prompt 由 `prompts/` 中文资产编译为固定系统合同与模式任务模板，并按产品类型和需求关键词挑选规则碎片，附带完成回执。实现和修复均保留当前需求与产品上下文；修复额外接收白名单化的 `ShadowReport` 观测。第 3 次尝试（第 2 次修复）要求先给出根因判断再改代码。调用返回 `completed / failed / timed_out`。
-4. **Probe Planner**（`src/judge/llm-probe-planner.ts`、`probe-schema.ts`）：LLM 只根据 packet 证据生成声明式 `ProbePlan`（`goto/click/doubleClick/hover/press/fill/select/expectVisible/expectText/expectValue/expectCount/reload/newContext`，`press` 的 key 限枚举键），禁止 CSS/XPath、脚本执行与跨源导航；网关返回的 JSON 自动剥离 markdown 围栏与前后杂文后解析。
-5. **Probe Runner**（`src/judge/playwright-probe-runner.ts`）：真实 Chromium 按白名单执行探针，locator 只映射 `getByRole / getByLabel / getByText`，`goto` 绑定受控 baseUrl，每个 case 使用隔离 context；单步超时 2s、单 case 超时 15s，输出带失败分类（`assertion / locator / navigation / timeout / runner`）的结构化 `ShadowReport`。
-6. **DecisionLoop**（`src/run-state.ts`）与 **GitOps**（`src/git-ops.ts`）：见下两节。
-7. **FinalVerifier**（`src/final-verifier.ts`）：见交付阶段。
+1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖。
+2. `implementationPackets` 按 ROOT 直接子树组成模块，跨模块依赖决定顺序，相互依赖模块合并。每次实现包括模块全部后代；实现会话持续复用，回滚或运行时重启后换新会话。
+3. 模块完成后通过候选安装、构建和启动检查，保存可运行检查点。它不授予功能 verified；后续模块不等待前序功能验收。
+4. 全部模块实现或实现阶段额度用尽后，`auditPackets` 按原子需求组织独立验收，提供前置需求的文字证据。Judge 仅看需求与浏览器观察。
+5. 纯业务失败在新实例中复现后汇总为集中修复包；至多两轮。修复复查全部已实现需求，优先检查原先通过的路径。没有验证改善、出现回归或无法重新验证既有 pass 时恢复修复前版本。
+6. 最后执行 FinalVerifier，并生成对应交付版本的功能状态与运行结果。
 
-ProbePlan 的 JSON Schema 完整描述步骤与 locator 字段；每个 case 必须有断言，计划必须覆盖 packet 中每个需求 ID。空输入与空值断言均合法。每个 case 独立建立其所需前提。
-
-管线启动时先 `captureAccepted` 一次，把输出目录初始状态（空目录时为空提交）记录为 baseline SHA。所有事件的去向见[运行产物与日志](#运行产物与日志)。
+`acceptedSha` 保留字段名，但现在表示可运行检查点；`verifiedRequirementIds` 才表示当前版本独立探针通过的需求。初始空状态只用于首次回滚。Planner/定位错误不会删除已保存的实现。
 
 ## Builder 浏览器自测
 
 主线在每次 Builder 请求中提供官方 `@playwright/mcp` 的浏览器工具。工具随 harness 依赖安装，使用固定版本和绝对入口路径，复用 `npx playwright install chromium` 安装的 Chromium；目标应用无需额外安装自测依赖。baseline 保持原有工具装配。
 
-Builder 完成代码修改后调用 `candidate` MCP 的 `prepare`。控制器在本次运行目录 `candidate/app/` 创建应用副本，安装必要依赖、构建并启动自测实例，返回 `baseUrl`。Builder 用浏览器操作当前需求的关键路径，涉及持久化时重新加载页面；继续修改前调用 `stop`，修改后重新 `prepare`。回执列出通过／失败／未执行、实际观察与资源清理结果，仍属于自述诊断，最终通过条件由独立 Judge 决定。
+Builder 按需调用 `candidate.prepare` 在私有应用副本中安装、构建、启动，使用返回的 baseUrl 自测。每个模块或修复调用至多进行一轮关键路径检查，发现实际产品问题后可修复并再检查一次；CandidateRuntime 每调用最多允许两次 prepare。结束时关闭浏览器并调用 stop，清理自己创建的临时业务数据，保留种子数据。
 
-运行时在发送模型请求前连接并检查 MCP 状态，请求结束后断开 MCP；取消期间的延迟连接不会继续发送模型请求。连接失败按 `builder_self_test` 执行故障停止；会话结束后的清理失败只写诊断告警并继续采用已完成的 Builder 结果，MCP 进程随运行时关闭回收。自测计入本次 Builder 调用，未增加 Builder 尝试次数；超时后的资源收尾仍按有界清理执行。
-
-浏览器使用无头、临时配置；允许来源配置为本次合同中的本地探针地址，图片响应关闭，主要通过 `browser_snapshot` 查看页面结构。来源过滤是防误操作措施，不是操作系统级安全隔离。自测产物保存在本次日志目录的 `builder-self-test/` 下；自动导航返回文件链接时可调用 `browser_snapshot` 获取直接返回的页面结构。
-
-运行时负责关闭候选工具准入、取消在途安装/构建、停止控制器自测实例并断开 MCP。Builder 负责清理自测创建的业务数据和自行启动的额外进程。浏览器配置隔离不恢复服务端数据；预置数据和已有用户数据必须保留。自测只依据当前需求与允许的外部观察，不访问隐藏探针、台账和官方测试。
+MCP 仍按调用连接、检查、断开；控制器负责兜底停止自测应用。迟到连接不能派发模型调用，清理告警不覆盖 Builder 已完成的结果。简短回执报告实际检查或未执行原因，不能作为独立验收证据。文档按需更新，不要求每个原子需求都重复撰写、构建、验证。
 
 ### 候选构建复用
 
@@ -151,61 +134,19 @@ Judge 在控制器应用副本中另启实例，复用匹配的构建产物；Bu
 
 `builder_reference_images` 事件记录 `attached / text_fallback / unavailable` 模式、附件数量及跳过原因，写入台账和中文日志。诊断仅保存图片使用状态，图片载荷经模型输入通道传递。
 
-## 单个 WorkPacket 的判定循环
+## 独立验收与集中修复
 
-```mermaid
-flowchart TD
-    A["Builder 实现 / 修复（短 session）"] --> B{"Builder outcome？"}
-    B -->|"failed / timed_out"| F["按失败报告进入判定"]
-    B -->|"completed"| C["Planner 生成 ProbePlan"]
-    C --> D["启动应用并执行探针"]
-    D --> E{"ShadowReport verdict？"}
-    E -->|"pass"| OK["captureAccepted 标记 verified"]
-    E -->|"inconclusive 且定位恢复有额度和预算"| R["refineLocators：每 packet 最多两轮"]
-    R --> D
-    E -->|"Judge 无有效证据且恢复耗尽"| BLK
-    E -->|"应用行为失败"| N{"当前 attempt？"}
-    N -->|"1"| A2["attempt 2 修复"]
-    N -->|"2"| A3["attempt 3 修复（root-cause-first）"]
-    N -->|"3"| BLK["restoreAccepted + 标记 blocked"]
-    A2 --> A
-    A3 --> A
-```
+每个原子需求独立规划并检查，计划最多6个 case、每 case 最多30步；通常选择一条主路径和一条最高风险边界。wire case 的 `assertion` 必填，执行器将它附到 steps 末尾。role/label/text 定位支持单层 scope 和字面 hasText，可以定位某张卡片或某行内的重复按钮。禁止 CSS/XPath、任意脚本及跨源导航。
 
-判定规则（`deriveProbeVerdict`）：
+定位失败在 Judge 内精化，最多两轮；混合报告也先处理 locator 部分。期望值、操作、输入和顺序保持固定。仍无法建立证据、计划无效或浏览器故障时记 inconclusive，保留可运行检查点。纯业务失败须在新应用实例重现同一失败位置和类别后才能记 failed，交给一次集中修复。
 
-- **pass**：没有任何失败。`captureAccepted` 更新 accepted SHA，packet 需求标记 `verified`，继续调度。
-- **fail**：存在 locator 之外的失败（断言、导航、超时、runner），或 locator 失败没有任何 aria snapshot。应用行为失败、应用启动失败及 Builder 调用失败按 attempt 递进：第一次进入 attempt 2 修复，第二次进入 attempt 3 修复（先做根因分析），第三次回滚并阻塞。仅含 locator/runner 的探针报告属于 Judge 无法取得有效行为证据，走定位/基础设施恢复与止损，不触发 Builder 修复。每个 packet 最多三次 Builder 调用。
-- **inconclusive**：全部失败都是 `locator` 类且至少一个携带 aria snapshot 时，交给 Planner 做 locator-only refinement。每个 packet 最多两轮，跨 Builder 尝试共享额度；每轮前及模型返回后检查预算。请求包含每个失败的 case ID、从 0 开始的 step index、候选定位器及各自错误、对应快照。每个失败步骤必须引入新的定位候选；原样返回、重排候选、仅改变等价大小写或默认值均被拒绝，不重复执行。第二轮携带最新失败现场或上轮校验原因。步骤、输入值和断言保持固定；定位恢复不消耗 Builder 修复次数，仍无有效证据时回滚并阻塞。
-- 初始计划中的纯 text 定位器若没有当前需求的明确 UI 字符串、种子项或本用例先前输入值作锚点，必须带同一目标的 role/label 备选；无明确标签时优先结构角色。“展示首页”应通过页面区域判断，描述性词语不自动成为必须出现的 UI 文案。
-- 判定循环另有迭代上限（6）作为止损保险：超出即回滚并阻塞该 packet。
-- 每次 Builder 尝试前检查预算；预算耗尽时不再开启 packet 修复，回滚未接受的候选并进入交付。
-- 修复 prompt 保留需求证据，并追加白名单化观测；Planner 的隐藏推理与完整探针计划保持在 Judge 一侧。
+集中修复至多两轮，每轮使用新会话并复查缓存计划。必须至少使一个 failed 变为 verified，且所有既有 verified 仍通过，才保存修复；否则恢复原检查点并停止。Builder 自述不能授予通过。
 
 ## 交付阶段
 
-调度器持续领取新 packet，直到没有可调度的 ready 需求或总预算耗尽，随后不可逆进入交付。
+FinalVerifier 检查安装、构建、启动、健康状态和浏览器根页面。可恢复浏览器基础设施故障最多重试一次。存在剩余额度时，交付故障最多进行一次代码修复并完整复验；默认不限总时长也不会无限重试。
 
-```mermaid
-flowchart TD
-    S["无可调度 ready 需求 / 预算耗尽"] --> V["FinalVerifier：install → build → 启动 → readiness → 浏览器 smoke"]
-    V --> P{"验证通过？"}
-    P -->|"是"| FIN["记录 delivery_finished"]
-    P -->|"否"| RP["交付修复 session（root-cause-first，携带验证失败报告；无次数上限）"]
-    RP --> V2["完整重跑 FinalVerifier"]
-    V2 --> P2{"Builder completed 且复验通过？"}
-    P2 -->|"是"| ACC["captureAccepted 接受交付修复"]
-    P2 -->|"否且预算未耗尽"| RP
-    P2 -->|"否且预算耗尽"| FAIL["summary = failed，退出码 1"]
-    FIN --> SUM["输出 RunSummary"]
-    ACC --> SUM
-    FAIL --> SUM
-```
-
-- FinalVerifier 按固定平台合同执行 install → build → 启动（注入 `PORT`）→ 轮询 `/health` readiness → 用真实浏览器打开根页面做最小 smoke；无论结果如何都终止本次验证启动的进程。
-- 验证失败时启动交付修复 session（不设次数上限，直到复验通过或预算耗尽）：Builder 收到 root-cause-first 指令与由验证报告转换的失败证据；随后**完整重跑**全部验证步骤，只接受复验通过的修复（`captureAccepted`）。
-- 只有 Builder 返回 `completed` 且复验通过才接受；未通过的修复恢复 accepted SHA，并在预算未耗尽时继续下一轮修复，预算耗尽仍失败则以 `failed` 退出。首轮交付修复始终执行。异常 runner 故障同样会停止 Builder、回滚并记录失败。
-- 启动日志持续读取，避免管道塞满；启动命令不存在时返回 readiness 失败。Windows 清理进程树，Linux 使用独立进程组停止启动器及其后代。
+保留交付修复后，旧功能通过证据失效：按剩余额度重新验收，未重验的功能记 inconclusive。最终 `delivered` 需要交付验证通过且全部原子需求 verified；可运行但功能未全验证时为 partial，交付验证失败为 failed。
 
 ## 运行产物与日志
 
@@ -236,34 +177,36 @@ GitOps（`src/git-ops.ts`）细节：
 
 ### 故障来源与修复机会
 
-| 来源 | 当前处理 |
+| 来源 | 处理 |
 | --- | --- |
-| 业务断言、应用导航/操作超时、候选应用启动失败 | 白名单观测交给 Builder；首次实现加两次修复，最多三次调用 |
-| Builder 端 OpenCode server 被环境杀死（`signal=SIGKILL` 等） | 同一 Builder 尝试内最多重启 server 并重发同一任务 2 次（`MAX_SERVER_RESTARTS`），不消耗 packet 尝试；退出码、信号、server 尾部和容器 cgroup 内存一并写入 stderr 诊断 |
-| 浏览器断连或页面 crash 事件 | `ExecutionFault` 标识执行故障；每 packet 最多重试一次，保持候选、应用进程和合法计划，重试前检查总预算 |
-| Planner 网络请求失败、HTTP 408/429/5xx | 最多重试一次，独立于 Builder 次数；已有合法计划继续复用 |
-| Planner JSON/schema 校验失败 | 一次带反馈的计划修正；仍失败则阻塞 packet |
-| locator-only 失败 | 有快照及预算时每 packet 至多两轮精化；失败步骤必须新增定位候选；额度耗尽仍无有效证据则阻塞 packet |
-| Planner 其他 HTTP 错误或无效响应协议、Builder 运行时或浏览器启动失败 | 停止本轮并回滚，报告运行环境/协议问题 |
+| 模块未完成或无法构建/启动 | 恢复检查点，标记模块失败，使用新会话继续其他模块 |
+| 可复现业务失败 | 保留实现，汇总后至多两轮集中修复；复查既有通过项 |
+| Planner JSON/schema 错误 | 一次带反馈的修正；失败记 inconclusive |
+| Locator 失败（包括混合报告） | 在 Judge 内最多两轮定位精化；失败记 inconclusive |
+| 浏览器执行故障 | 每次原子验收最多重试一次；仍失败记 inconclusive |
+| Planner 鉴权/协议故障 | 当前验收记 inconclusive，不触发应用编辑或回滚 |
+| OpenCode server 意外退出 | 同次调用剩余额度内最多重启两次，新 server 使用新会话 |
+| Builder 运行时启动故障 | 停止运行并恢复检查点 |
+| 最终验证基础设施故障 | 最多一次重试；代码交付修复另限一次 |
 
-基础设施故障通过结构化类别与调用来源判断。应用自身的错误响应不按模型网关故障处理；已观察到的业务断言失败也不会被后续浏览器崩溃抹除。`builder_started` 记录实际 attempt，浏览器重试不增加或重置 Builder 次数；Builder 已开始的调用及普通 SDK 失败仍计入三次上限。
-
-最终交付遇到可恢复的浏览器执行故障时，在预算内持续重试（首次重试始终执行），而非发起代码修复。`execution_fault` 记录来源、故障码和重试决定。浏览器重跑使用新浏览器上下文，但当前没有被测应用的数据快照恢复机制，前一次执行留下的服务端数据可能仍在。
+验收报告的原始类别仍保留；只有 `audit_result` 中的 failed 才表示已复现、可用于集中修复。应用实例的业务数据由 CandidateRuntime 分次初始化，浏览器 context 隔离本身不代表服务端数据隔离。
 
 ### 时间额度
 
-| 超时 | 值 | 来源 |
-| --- | --- | --- |
-| 总预算 | `--budget-ms`，缺省或 `0` 为不限时 | CLI |
-| Builder 单次调用 | 预算的 40%，下限 30s、上限 3600s；不限时取 3600s（1h） | `deriveModelTimeouts` |
-| baseline 单模块调用 | 预算的 80%，下限 60s、上限 7200s；不限时取 10800s（3h） | `deriveBaselinePromptTimeoutMs` |
-| Planner 单次调用 | 预算的 10%，下限 10s、上限 720s；不限时取 720s | `deriveModelTimeouts` |
-| Builder 超时后落地等待 | 5s（可经 `promptSettleTimeoutMs` 配置） | `OpenCodeSdkBuilder` |
-| git 单命令 | 30s | `runGit` |
-| 探针单步 / 单 case | 2s / 15s | pipeline 固定 |
-| 构建 / 启动就绪 | 180s / 30s | 平台合同 |
+默认或显式 `--budget-ms 0` **不限总时长**。正预算按累计截止点预留：实现60%、初验20%、修复15%、交付5%；前面未用完的时间可用于后续阶段。
 
-预算控制新 packet 与后续修复的启动，进行中的调用仍受各自超时控制；最终交付独立执行，因此 `--budget-ms` 不是整个进程的强制终止时刻。Builder abort 也有 5s 等待上限；abort 失败或 prompt 在等待结束后仍未落地时关闭运行时，后续修复重启服务。
+| 调用 | main 上限（还受阶段剩余时间和 runtime 配置约束） |
+| --- | --- |
+| 模块实现 | 不限总时长时1小时；正预算时10分钟 |
+| 集中修复 | 4分钟，且最多使用剩余修复阶段的一半，留出复验时间 |
+| 交付修复 | 2分钟 |
+| Planner / locator 精化 | 45秒 |
+| Builder abort / 请求落地等待 | 各5秒 |
+| git 单命令 | 30秒 |
+| 探针单步 / case | 2秒 / 15秒；case 受阶段剩余时间约束 |
+| 构建 / 启动 | 180秒 / 30秒 |
+
+baseline 保留原有预算行为：总预算缺省0，单模块调用正预算时取 `deriveModelTimeouts` 的 Builder 上限两倍，不限时时三倍（3小时）。main 正预算限制阶段和新调用，安装、构建、关闭与最终检查仍有独立超时，因此不是整个进程的强制截止时刻。
 
 ## ARC 平台合同
 
@@ -328,7 +271,7 @@ npm run test:browser     # 真实 Chromium 浏览器测试
 npm run test:all         # 以上全部
 ```
 
-无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`（仅存在于 `test/fakes/`）加真实 Playwright 跑通 `schedule → build → plan → judge → accept/repair/restore → final verify` 全链路，覆盖 accept、修复后通过、三次失败后 restore/block、locator refinement、builder 超时落地等待、git 超时与忽略规则、交付修复 + 完整复验。
+无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`，并以真实 Git、候选运行时和 Chromium 验证模块实现顺序、Judge 故障保留代码、集中修复与回归恢复、候选一致性、定位精化、阶段预算和最终交付。基于假模型的测试不证明真实模型的耗时或正确率改善；固定模型/题目/机器资源的15、30、45分钟对照实验用于后续实测。
 
 种子数据与图片链路另覆盖：全量提示词注入、目录越界及链接检查、SDK 附件序列化、拒图后纯文本回退、回退次数与超时限制、诊断落盘。请求格式通过真实 SDK 配合模拟响应验证；真实网关的图片消费能力需单独实测。
 
@@ -357,9 +300,10 @@ src/
   types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
   cli.ts                       严格 CLI 参数解析
   catalog.ts                   requirements.yaml → 需求树与种子数据（重复/依赖/环校验）
-  scheduler.ts                 无模型确定性调度（1–3 个依赖全 verified 的需求）
-  pipeline.ts                  依赖注入编排：packet 循环、修复梯子、交付窗口、事件记录
-  run-state.ts                 判定决策、运行状态、脱敏 ledger 与 logSink
+  scheduler.ts                 完整模块依赖排序、逐原子验收包
+  pipeline.ts                  模块实现、检查点、独立验收、集中修复与交付
+  run-budget.ts                显式正预算的阶段预留与调用剩余额度
+  run-state.ts                 验收状态、可运行检查点 SHA、脱敏 ledger 与 logSink
   git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
   final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke）与 CommandAppLifecycle
   arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
@@ -369,14 +313,15 @@ src/
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
   builder/
     port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
-    opencode-sdk.ts            OpenCode SDK 适配：短会话、超时 abort + 落地等待
+    opencode-sdk.ts            OpenCode SDK 适配：实现会话复用、修复新会话、超时 abort + 落地等待
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
     prompt-assets.ts           prompts/ 资产加载与 {{占位符}} 模板填充
     prompt-fragments.ts        产品词典 → fragments 选择
     shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
   judge/
-    probe-schema.ts            ProbePlan 白名单 schema 与 locator-only refinement 校验
+    audit.ts                   Judge 故障恢复、业务失败复现与独立验收结果
+    probe-schema.ts            显式 assertion、单层 scope 与 locator-only refinement 校验
     llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
 test/
@@ -393,4 +338,4 @@ data/github、data/sheet        初赛需求树、种子数据及参考图片
 - Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），代码只负责组装与填充。
 - Probe Planner 依据需求证据工作，与目标应用源码、diff 及 OpenCode 对话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
 - Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
-- 失败次数有硬上限（每个 packet 最多两次修复、判定循环 6 次迭代上限，交付阶段最多一次修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。
+- 失败次数有硬上限（集中修复至多两轮，交付阶段至多一次修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。

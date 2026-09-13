@@ -260,3 +260,19 @@ test("HumanRunFormatter covers remaining planner, refinement, and delivery event
     /^\[\d{2}:\d{2}:\d{2} \+0s\] Builder 结束（p）$/,
   );
 });
+
+
+test("Human logs distinguish runnable checkpoints, unknown audits, and retained repairs", () => {
+  const formatter = new HumanRunFormatter();
+  const checkpoint = formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "checkpoint_saved", {
+    acceptedSha: "runnable-sha", detail: { requirementIds: ["A"], reason: "module-a" },
+  }));
+  assert.match(checkpoint, /可运行检查点.*功能验收状态单独记录/);
+  assert.doesNotMatch(checkpoint, /验收通过/);
+  assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:01Z", "audit_result", {
+    packetId: "packet-a", detail: { requirementIds: ["A"], status: "inconclusive", reason: "invalid plan" },
+  })), /无法判断.*保留可运行检查点/);
+  assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:02Z", "repair_batch_finished", {
+    detail: { round: 1, retained: false, reason: "regression" },
+  })), /已恢复原检查点.*regression/);
+});

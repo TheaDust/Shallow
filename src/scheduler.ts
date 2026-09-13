@@ -1,114 +1,65 @@
-import type {
-  AtomicRequirement,
-  RequirementCatalog,
-  WorkPacket,
-} from "./types.js";
+import type { AtomicRequirement, RequirementCatalog, WorkPacket } from "./types.js";
 
-const MAX_PACKET_SIZE = 3;
-const STOP_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "is",
-  "of",
-  "the",
-  "to",
-  "user",
-  "when",
-]);
-
-export function selectNextPacket(
-  catalog: RequirementCatalog,
-): WorkPacket | undefined {
-  const ready = catalog.requirements
-    .filter((requirement) => isReady(requirement, catalog))
-    .sort((left, right) => comparePriority(left, right, catalog));
-
-  const seed = ready[0];
-  if (!seed) return undefined;
-
-  const related = ready
-    .slice(1)
-    .filter((candidate) => isRelated(seed, candidate))
-    .sort((left, right) => left.declarationIndex - right.declarationIndex);
-  const requirements = [seed, ...related].slice(0, MAX_PACKET_SIZE);
-  const requirementIds = requirements.map((requirement) => requirement.id);
-
-  return {
-    id: `packet-${requirementIds.map(slugify).join("__")}`,
-    requirementIds,
-    requirements,
-    attempt: 1,
+/** Complete ROOT child subtrees; mutually dependent modules are built together. */
+export function implementationPackets(catalog: RequirementCatalog): WorkPacket[] {
+  const modules = new Map<string, AtomicRequirement[]>();
+  const owner = new Map<string, string>();
+  for (const requirement of catalog.requirements) {
+    const moduleId = requirement.folderPath[1] ?? requirement.id;
+    modules.set(moduleId, [...(modules.get(moduleId) ?? []), requirement]);
+    owner.set(requirement.id, moduleId);
+  }
+  const dependencies = new Map([...modules].map(([id, items]) => [id, new Set(items
+    .flatMap(item => item.dependencyIds.map(dependency => owner.get(dependency)!))
+    .filter(dependency => dependency !== id))]));
+  const reachable = (from: string, to: string, seen = new Set<string>()): boolean => {
+    if (from === to) return true;
+    if (seen.has(from)) return false;
+    seen.add(from);
+    return [...(dependencies.get(from) ?? [])].some(id => reachable(id, to, seen));
   };
-}
-
-function isReady(
-  requirement: AtomicRequirement,
-  catalog: RequirementCatalog,
-): boolean {
-  if (catalog.statusById[requirement.id] !== "todo") return false;
-  return requirement.dependencyIds.every(
-    (dependencyId) => catalog.statusById[dependencyId] === "verified",
-  );
-}
-
-function comparePriority(
-  left: AtomicRequirement,
-  right: AtomicRequirement,
-  catalog: RequirementCatalog,
-): number {
-  const leftSignals = signals(left, catalog);
-  const rightSignals = signals(right, catalog);
-  for (let index = 0; index < leftSignals.length; index += 1) {
-    const difference = rightSignals[index] - leftSignals[index];
-    if (difference !== 0) return difference;
+  const remaining = new Set(modules.keys());
+  const groups: string[][] = [];
+  for (const id of modules.keys()) {
+    if (!remaining.has(id)) continue;
+    const group = [...remaining].filter(other => reachable(id, other) && reachable(other, id));
+    group.forEach(item => remaining.delete(item));
+    groups.push(group);
   }
-  return left.declarationIndex - right.declarationIndex;
-}
-
-function signals(
-  requirement: AtomicRequirement,
-  catalog: RequirementCatalog,
-): number[] {
-  const dependentCount = catalog.requirements.filter((candidate) =>
-    candidate.dependencyIds.includes(requirement.id),
-  ).length;
-  const descriptionCostBucket = Math.ceil(requirement.text.length / 500);
-  return [
-    requirement.scenarios.length,
-    dependentCount,
-    requirement.exactUiStrings.length,
-    -descriptionCostBucket,
-  ];
-}
-
-function isRelated(
-  seed: AtomicRequirement,
-  candidate: AtomicRequirement,
-): boolean {
-  if (nearestFolder(seed) !== nearestFolder(candidate)) return false;
-
-  const seedDependencies = new Set(seed.dependencyIds);
-  if (candidate.dependencyIds.some((dependency) => seedDependencies.has(dependency))) {
-    return true;
+  const ordered: WorkPacket[] = [];
+  const built = new Set<string>();
+  while (groups.length) {
+    const index = groups.findIndex(group => group.every(id => [...dependencies.get(id)!]
+      .every(dependency => group.includes(dependency) || built.has(dependency))));
+    if (index < 0) throw new Error("Module dependency graph cannot be ordered");
+    const group = groups.splice(index, 1)[0];
+    const requirements = group.flatMap(id => modules.get(id)!).sort((a, b) => a.declarationIndex - b.declarationIndex);
+    ordered.push(makePacket(`module-${group.map(slugify).join("__")}`, requirements));
+    group.forEach(id => built.add(id));
   }
-
-  const seedTerms = new Set(scenarioTerms(seed));
-  return scenarioTerms(candidate).some((term) => seedTerms.has(term));
+  return ordered;
 }
 
-function nearestFolder(requirement: AtomicRequirement): string {
-  return requirement.folderPath.at(-1) ?? "";
+/** Audit atomics independently, with textual prerequisites but no application source. */
+export function auditPackets(catalog: RequirementCatalog): WorkPacket[] {
+  return catalog.requirements.map(requirement => {
+    const dependencies = new Set<string>();
+    const visit = (item: AtomicRequirement): void => {
+      for (const id of item.dependencyIds) {
+        if (dependencies.has(id)) continue;
+        dependencies.add(id);
+        const dependency = catalog.requirements.find(candidate => candidate.id === id);
+        if (dependency) visit(dependency);
+      }
+    };
+    visit(requirement);
+    return { ...makePacket(`packet-${slugify(requirement.id)}`, [requirement]),
+      prerequisites: catalog.requirements.filter(item => dependencies.has(item.id)) };
+  });
 }
 
-function scenarioTerms(requirement: AtomicRequirement): string[] {
-  return requirement.scenarios
-    .join(" ")
-    .toLowerCase()
-    .match(/[a-z0-9]+/g)
-    ?.filter((term) => term.length >= 4 && !STOP_WORDS.has(term)) ?? [];
+export function makePacket(id: string, requirements: AtomicRequirement[], attempt: 1 | 2 | 3 = 1): WorkPacket {
+  return { id, requirements, requirementIds: requirements.map(item => item.id), attempt };
 }
 
-function slugify(id: string): string {
-  return id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
+function slugify(id: string): string { return id.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }

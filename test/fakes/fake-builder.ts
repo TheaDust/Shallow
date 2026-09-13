@@ -3,12 +3,14 @@ import { resolve } from "node:path";
 
 import type {
   BuilderPort,
+  BuilderRunOptions,
   BuilderRequest,
   BuilderResult,
 } from "../../src/builder/port.js";
 
 export class FakeBuilder implements BuilderPort {
   readonly requests: BuilderRequest[] = [];
+  readonly runOptions: Array<BuilderRunOptions | undefined> = [];
   closeCount = 0;
   private callIndex = 0;
 
@@ -17,8 +19,9 @@ export class FakeBuilder implements BuilderPort {
     private readonly summaries?: string[],
   ) {}
 
-  async run(request: BuilderRequest): Promise<BuilderResult> {
+  async run(request: BuilderRequest, options?: BuilderRunOptions): Promise<BuilderResult> {
     this.requests.push(request);
+    this.runOptions.push(options);
     await cp(resolve("test/fixtures/app"), request.outputDir, {
       recursive: true,
       force: true,

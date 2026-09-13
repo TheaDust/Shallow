@@ -112,66 +112,23 @@ test("fixed system assets keep their Chinese anchors", () => {
   );
 });
 
-test("action assets carry their placeholders", () => {
+test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadBuilderPrompt("system", "self-test");
-  assert.match(selfTest, /当前工作包的一条关键用户路径/);
-  assert.match(selfTest, /不替代独立 Judge 验收/);
-  assert.match(selfTest, /交付修复只检查健康状态/);
-  assert.match(selfTest, /临时业务对象/);
-  assert.match(selfTest, /`candidate` MCP 的 `prepare`/);
-  assert.match(selfTest, /SHALLOW_DATA_DIR/);
-  assert.match(selfTest, /至少检查一个边界输入（空值或非法输入）/);
-  assert.match(loadBuilderPrompt("system", "candidate-prepare"), /本工具不执行 Judge 验收/);
-  assert.match(loadBuilderPrompt("system", "candidate-stop"), /释放端口/);
+  for (const anchor of ["至多进行一轮", "一条关键用户路径", "不替代独立 Judge 验收", "临时业务对象", "SHALLOW_DATA_DIR", "交付修复只检查健康状态"]) {
+    assert.ok(selfTest.includes(anchor), anchor);
+  }
+  const implement = loadBuilderPrompt("system", "action-implement");
+  assert.match(implement, /完整模块/);
+  assert.match(implement, /ARCHITECTURE\.md/);
+  assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadBuilderPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
   assert.ok(repair.includes("{{FAILURES}}"));
-  assert.match(repair, /ARCHITECTURE\.md/);
-  assert.match(repair, /需求与平台合同优先，当前实现以代码核对/);
-
-  const rootCause = loadBuilderPrompt("system", "action-root-cause-repair");
-  assert.ok(rootCause.includes("{{PASSED_CASE_IDS}}"));
-  assert.ok(rootCause.includes("{{FAILURES}}"));
-  assert.match(rootCause, /ARCHITECTURE\.md/);
-  assert.match(rootCause, /通常控制在约 60 行/);
-
+  assert.match(repair, /一次集中修复/);
   const delivery = loadBuilderPrompt("system", "action-delivery-repair");
-  for (const placeholder of [
-    "{{FAILURE_STAGE}}",
-    "{{FAILURE_COMMAND}}",
-    "{{FAILURE_EXPECTED}}",
-    "{{FAILURE_ACTUAL}}",
-    "{{PLATFORM_CONTRACT}}",
-  ]) {
-    assert.ok(delivery.includes(placeholder), `missing ${placeholder}`);
+  for (const key of ["FAILURE_STAGE", "FAILURE_COMMAND", "FAILURE_EXPECTED", "FAILURE_ACTUAL", "PLATFORM_CONTRACT"]) {
+    assert.ok(delivery.includes(`{{${key}}}`));
   }
-
-  const implement = loadBuilderPrompt("system", "action-implement");
-  assert.ok(implement.includes("# 行动：实现当前工作包"));
-  assert.match(implement, /可观察验收判据/);
-  assert.match(implement, /空值、超长或非法输入/);
-  assert.match(implement, /不猜测外部测试/);
-  assert.match(implement, /ARCHITECTURE\.md/);
-  assert.match(implement, /通常控制在约 60 行/);
-  for (const action of [implement, repair, rootCause]) {
-    assert.match(action, /关键入口路径/);
-    assert.match(action, /通常控制在约 60 行/);
-    assert.match(action, /保留必要约定时可适当超出/);
-    assert.match(action, /空小节可省略/);
-    assert.match(action, /每条记录一个稳定事实/);
-    const headings = ["# 项目架构笔记", "## 技术选型与理由", "## 模块与入口", "## 数据与接口约定", "## 已确认的注意事项"];
-    let previous = -1;
-    for (const heading of headings) {
-      const index = action.indexOf(heading);
-      assert.ok(index > previous, `missing or misplaced memory heading: ${heading}`);
-      previous = index;
-    }
-    assert.match(action, /直接修订或删除过时条目/);
-    assert.match(action, /没有变化时保持文件不动/);
-    assert.ok(action.indexOf("按需更新项目根") < action.indexOf("调用 `candidate.prepare`"));
-  }
-  assert.match(selfTest, /自测后如有必须记录的新事实/);
-  assert.match(selfTest, /再重新 `prepare` 并完成关键路径检查/);
 });
 
 test("task templates carry their placeholders", () => {

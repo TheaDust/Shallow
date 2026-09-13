@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import type { ProbeFailure, WorkPacket } from "../types.js";
 
-export type ProbeLocator =
+export type ProbeScope =
+  | { by: "role"; role: string; name?: string; exact?: boolean; hasText?: string }
+  | { by: "label" | "text"; text: string; exact?: boolean; hasText?: string };
+
+export type ProbeLocator = (
   | { by: "role"; role: string; name?: string; exact?: boolean; fallbacks?: ProbeLocator[] }
   | { by: "label"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }
-  | { by: "text"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] };
+  | { by: "text"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }) & { scope?: ProbeScope };
 
 export const PRESS_KEYS = [
   "Enter",
@@ -75,14 +79,25 @@ function literalSchema(value: string) {
   return { type: "string", enum: [value] };
 }
 
+const SCOPE_SCHEMA = {
+  anyOf: [
+    objectSchema({ by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, hasText: OPTIONAL_STRING_SCHEMA }),
+    ...["label", "text"].map(by => objectSchema({ by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA,
+      exact: OPTIONAL_BOOLEAN_SCHEMA, hasText: OPTIONAL_STRING_SCHEMA })),
+    { type: "null" },
+  ],
+};
+const SCOPE_REF = { $ref: "#/$defs/scope" };
+
 const LOCATOR_FLAT_SCHEMA = {
   anyOf: [
     objectSchema({
       by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
-      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
     }),
     ...["label", "text"].map((by) => objectSchema({
-      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
     })),
   ],
 };
@@ -90,11 +105,11 @@ const LOCATOR_SCHEMA = {
   anyOf: [
     objectSchema({
       by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
-      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
       fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     }),
     ...["label", "text"].map((by) => objectSchema({
-      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA,
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
       fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     })),
   ],
@@ -128,7 +143,7 @@ const STEP_SCHEMA = {
 };
 
 export const PROBE_PLAN_JSON_SCHEMA = {
-  $defs: { locator: LOCATOR_SCHEMA, locatorFlat: LOCATOR_FLAT_SCHEMA },
+  $defs: { locator: LOCATOR_SCHEMA, locatorFlat: LOCATOR_FLAT_SCHEMA, scope: SCOPE_SCHEMA },
   type: "object",
   additionalProperties: false,
   required: ["packetId", "cases"],
@@ -141,7 +156,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "requirementIds", "purpose", "steps"],
+        required: ["id", "requirementIds", "purpose", "assertion", "steps"],
         properties: {
           id: { type: "string" },
           requirementIds: { type: "array", minItems: 1, items: { type: "string" } },
@@ -149,10 +164,14 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             type: "string",
             enum: ["happy_path", "persistence", "negative", "permission"],
           },
+          assertion: { anyOf: STEP_SCHEMA.anyOf.filter(schema => {
+            const op = schema.properties.op as { enum: string[] };
+            return op.enum[0].startsWith("expect");
+          }) },
           steps: {
             type: "array",
-            minItems: 1,
-            maxItems: 30,
+            minItems: 0,
+            maxItems: MAX_STEPS - 1,
             description:
               "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings, expectText text, and anyOf entries are literal, not regular expressions; expectText matches the full text unless exact: false, and anyOf lists alternative accepted texts; expectCount count 0 asserts absence.",
             items: STEP_SCHEMA,
@@ -165,7 +184,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
 
 export function parseProbePlan(
   value: unknown,
-  packet?: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements">>,
+  packet?: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements" | "prerequisites">>,
 ): ProbePlan {
   const plan = record(value, "ProbePlan");
   keys(plan, ["packetId", "cases"], "ProbePlan");
@@ -192,9 +211,8 @@ export function parseProbePlan(
   }
   if (packet?.requirements) {
     for (const probeCase of cases) {
-      const exactUiStrings = packet.requirements
-        .filter((requirement) => probeCase.requirementIds.includes(requirement.id))
-        .flatMap((requirement) => requirement.exactUiStrings);
+      const evidence = [...packet.requirements.filter(item => probeCase.requirementIds.includes(item.id)), ...(packet.prerequisites ?? [])];
+      const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         if (!("locator" in step) || step.locator.by !== "text") continue;
         const literal = step.locator.text;
@@ -213,6 +231,15 @@ export function parseProbePlan(
   return { packetId, cases };
 }
 
+/** Wire cases require a final assertion; internal execution keeps a single ordered step list. */
+export function toWireProbePlan(plan: ProbePlan): unknown {
+  return { ...plan, cases: plan.cases.map(item => {
+    const last = item.steps.at(-1);
+    if (!last?.op.startsWith("expect")) throw new Error("Wire cases must end in an assertion");
+    return { ...item, steps: item.steps.slice(0, -1), assertion: last };
+  }) };
+}
+
 export function probePlanSha256(plan: ProbePlan): string {
   return createHash("sha256").update(JSON.stringify(parseProbePlan(plan))).digest("hex");
 }
@@ -226,7 +253,7 @@ function locatorKey(locator: ProbeLocator): string {
   const value = locator.by === "role" ? locator.name : locator.text;
   const normalized = value?.replace(/\s+/g, " ").trim();
   return JSON.stringify([locator.by, locator.by === "role" ? locator.role : null,
-    locator.exact ? normalized : normalized?.toLowerCase(), locator.exact === true]);
+    locator.exact ? normalized : normalized?.toLowerCase(), locator.exact === true, locator.scope ? [locatorKey(locator.scope as ProbeLocator), locator.scope.hasText] : null]);
 }
 
 export function assertLocatorOnlyRefinement(
@@ -283,7 +310,7 @@ function parseCase(
 ): ProbeCase {
   const location = `ProbePlan.cases[${index}]`;
   const candidate = record(value, location);
-  keys(candidate, ["id", "requirementIds", "purpose", "steps"], location);
+  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion"], location);
   const id = text(candidate.id, `${location}.id`);
   const requirementIds = array(candidate.requirementIds, `${location}.requirementIds`).map(
     (item, requirementIndex) =>
@@ -307,7 +334,12 @@ function parseCase(
   ) {
     throw new Error(`${location}.purpose is invalid`);
   }
-  const stepValues = array(candidate.steps, `${location}.steps`);
+  const stepValues = [...array(candidate.steps, `${location}.steps`)];
+  if (candidate.assertion !== undefined) {
+    const assertion = parseStep(candidate.assertion, `${location}.assertion`);
+    if (!assertion.op.startsWith("expect")) throw new Error(`${location}.assertion must be an assertion`);
+    stepValues.push(assertion);
+  }
   if (stepValues.length === 0) throw new Error(`${location} requires at least one step`);
   if (stepValues.length > MAX_STEPS) {
     throw new Error(`${location} allows at most ${MAX_STEPS} steps`);
@@ -417,7 +449,7 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
   const by = text(locator.by, `${location}.by`);
   let base: ProbeLocator;
   if (by === "role") {
-    keys(locator, ["by", "role", "name", "exact", "fallbacks"], location);
+    keys(locator, ["by", "role", "name", "exact", "fallbacks", "scope"], location);
     base = {
       by,
       role: text(locator.role, `${location}.role`),
@@ -427,7 +459,7 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
   } else if (by === "label" || by === "text") {
-    keys(locator, ["by", "text", "exact", "fallbacks"], location);
+    keys(locator, ["by", "text", "exact", "fallbacks", "scope"], location);
     base = {
       by,
       text: text(locator.text, `${location}.text`),
@@ -437,6 +469,13 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
     };
   } else {
     throw new Error(`${location} ProbePlan locator must use role, label, or text`);
+  }
+  if (locator.scope != null) {
+    const scope = record(locator.scope, `${location}.scope`);
+    const { hasText, ...target } = scope;
+    if ("scope" in target || "fallbacks" in target) throw new Error(`${location}.scope must be flat`);
+    const parsed = parseLocator(target, `${location}.scope`, false);
+    base = { ...base, scope: { ...parsed, ...(hasText == null ? {} : { hasText: text(hasText, `${location}.scope.hasText`) }) } };
   }
   if (locator.fallbacks == null) return base;
   if (!allowFallbacks) throw new Error(`${location} fallbacks must not be nested`);

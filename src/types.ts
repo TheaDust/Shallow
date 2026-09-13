@@ -1,6 +1,6 @@
 import type { ProbeLocator, ProbePlan } from "./judge/probe-schema.js";
 
-export type RequirementStatus = "todo" | "verified" | "blocked";
+export type RequirementStatus = "todo" | "verified" | "blocked" | "failed" | "inconclusive";
 
 export type ProductKind =
   | "repository_collaboration"
@@ -58,6 +58,7 @@ export interface RequirementNode {
 }
 
 export interface WorkPacket {
+  prerequisites?: AtomicRequirement[];
   id: string;
   requirementIds: string[];
   requirements: AtomicRequirement[];
@@ -100,6 +101,13 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
   httpStatus?: number; attempt?: number; retryCount?: number; retry?: boolean };
 
 interface RunEventDetails {
+  phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number };
+  checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
+  module_failed: { requirementIds: string[]; reason: string };
+  audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
+  repair_batch_started: { round: number; requirementIds: string[] };
+  repair_batch_finished: { round: number; retained: boolean; reason: string };
+
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
     usage?: { status: "unavailable" } };
@@ -136,7 +144,7 @@ interface RunEventDetails {
   verification_started: { retryCount: number };
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];
-    blockedRequirementIds: string[]; pendingRequirementIds: string[]; acceptedSha: string };
+    blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string };
   pipeline_failed: DiagnosticDetail;
   arc_projection_failed: DiagnosticDetail;
   evidence_write_failed: Record<string, never>;

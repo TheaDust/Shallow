@@ -102,6 +102,6 @@ test("Human logs show decisions, timings, evidence, receipts and final coverage 
   const summary = formatter.format(JSON.stringify({ type: "pipeline_finished", detail: {
     status: "partial", verifiedRequirementIds: ["a"], blockedRequirementIds: ["b"], pendingRequirementIds: ["c"], acceptedSha: "sha",
   } }))!;
-  assert.match(summary, /已验证 1，阻塞 1，待处理 1/);
+  assert.match(summary, /已验证 1，业务失败 0，无法判断 0，阻塞 1，待处理 1/);
   assert.match(summary, /阻塞 ID：b；待处理 ID：c/);
 });

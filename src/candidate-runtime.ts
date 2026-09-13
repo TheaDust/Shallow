@@ -20,6 +20,7 @@ export class CandidateRuntime {
   private application?: RunningApp;
   private builderEpoch = 0;
   private builderOpen = false;
+  private builderPreparations = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private recorder?: (event: RunEvent) => Promise<void>;
   private commandAbort?: AbortController;
@@ -41,6 +42,7 @@ export class CandidateRuntime {
   beginBuilder(): number {
     if (this.builderOpen) throw new Error("Builder candidate tools already active");
     this.builderOpen = true;
+    this.builderPreparations = 0;
     this.builderEpoch++;
     return this.builderEpoch;
   }
@@ -57,6 +59,8 @@ export class CandidateRuntime {
   async builderPrepare(): Promise<{ baseUrl: string }> {
     const epoch = this.builderEpoch;
     if (!this.builderOpen) throw new Error("Candidate tools are inactive outside a Builder call");
+    if (this.builderPreparations >= 2) throw new Error("Builder browser preparation limit reached (2 per call); report remaining checks in the receipt");
+    this.builderPreparations++;
     return this.serial(async () => {
       this.checkBuilder(epoch);
       await this.stop();

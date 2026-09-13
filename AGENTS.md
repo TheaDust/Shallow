@@ -4,7 +4,7 @@
 
 ShallowCode 是 GOSIM Factory 2026 / ARC-Bench 比赛用的轻量控制器（harness）：OpenCode（经 `@opencode-ai/sdk`）是唯一写代码的 Builder，ShallowCode 本身**从不生成目标应用的业务代码**，只负责调度需求、生成黑盒探针、执行验收和止损。核心理念是 "Never let the builder grade itself"——Judge 与 Builder 之间有严格的信息防火墙（见下）。
 
-竞赛背景见 `competition-info.txt`；设计文档：`docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`（主设计）、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
+当前模块优先流程见 `docs/2026-09-13-module-first-refactor.md`。竞赛背景见 `competition-info.txt`；早期设计文档：`docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`（主设计）、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
 
 ## 常用命令
 
@@ -49,10 +49,10 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树与 ProductContext.seedData；校验 ID 和依赖
-  scheduler.ts                  selectNextPacket：无模型确定性调度，1–3 个依赖全 verified 的需求
-  pipeline.ts                   编排核心：packet 循环、runShadowProbes、修复梯子、交付窗口、
-                                MAX_PACKET_ITERATIONS=6 止损、state.record 事件发射点都在这里
-  run-state.ts                  decideAfterReport（accept/repair/block 梯子）、RunStateStore（ledger+logSink）、
+  scheduler.ts                  implementationPackets：完整 ROOT 子树、依赖排序与相互依赖模块合并；auditPackets：逐原子验收及前置需求文字上下文
+  pipeline.ts                   编排核心：模块实现、可运行检查点、独立验收、至多两轮集中修复与最终交付
+  run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
+  run-state.ts                  RunStateStore（功能状态、可运行检查点 SHA、ledger+logSink）、
                                 sanitizeDiagnosticText（诊断文本清洗）
   git-ops.ts                    GitCliOps.open（仓库校验 + .gitignore 初始化并提交）、captureAccepted/
                                 restoreAccepted（保留 .arc 的应用回滚）、runGit（单命令 30s 超时）
@@ -67,7 +67,7 @@ src/
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome 与可选 referenceImages 诊断）
-    opencode-sdk.ts             OpenCodeSdkBuilder（短会话、拒图回退、超时清理、跨调用复用 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny，关闭 snapshot/autoupdate/share 以保持 Git 接受点、版本及共享行为受控
+    opencode-sdk.ts             OpenCodeSdkBuilder（实现阶段按 key 复用会话、修复新会话、拒图回退、超时清理、复用 runtime）、SdkOpenCodeRuntime / sdkFetch、运行时注入 .arc/外部目录工具级 deny，关闭 snapshot/autoupdate/share 以保持 Git 接受点、版本及共享行为受控
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     self-test.ts                builderSelfTestConfig：本地 Playwright MCP 入口、Chromium 路径、来源与输出目录
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
@@ -76,7 +76,8 @@ src/
     prompt-fragments.ts         selectPromptFragments：产品 kind 基础集 + generic_web 关键词 lexicon + 观测扩展
     shadow-observation.ts       toBuilderShadowObservation：ShadowReport → 白名单观测（控制字符清洗、1500 截断）
   judge/
-    probe-schema.ts             ProbePlan/ProbeCase schema、parseProbePlan（白名单校验）、
+    audit.ts                    auditPacket：计划恢复、定位恢复、业务失败复现；Judge 故障返回 inconclusive
+    probe-schema.ts             ProbePlan/ProbeCase schema、显式终末 assertion、单层 scope、parseProbePlan（白名单校验）、
                                 assertLocatorOnlyRefinement（refinement 只许改 locator）
     llm-probe-planner.ts        LlmProbePlanner：网关调用（json_schema）、extractJsonPayload（剥围栏/杂文提取 JSON）、
                                 plan/refineLocators（失败步骤诊断 + locator 校验；恢复额度由 pipeline 管理）
@@ -115,7 +116,7 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 
 ## CLI 与运行契约
 
-`npm start -- --requirements-dir <dir> [--output-dir <dir>] [--budget-ms <ms>]`（严格解析：只认这三个 flag，且必须 `--key value` 成对出现，未知/缺值直接抛错；`--output-dir` 可选，缺省 `<系统临时目录>/shallowcode-local/<main|baseline>`——主线与 baseline 各用各的，绝不共用；`--budget-ms` 可选，缺省或 `0` 表示不限时，管线在没有 ready 需求后进入交付）。
+`npm start -- --requirements-dir <dir> [--output-dir <dir>] [--budget-ms <ms>]`（严格解析：只认这三个 flag，且必须 `--key value` 成对出现，未知/缺值直接抛错；`--output-dir` 可选，缺省 `<系统临时目录>/shallowcode-local/<main|baseline>`——主线与 baseline 各用各的，绝不共用；`--budget-ms` 可选，缺省或 `0` 表示不限时，管线按模块实现、独立验收、集中修复、交付顺序运行；显式正预算按 60%/20%/15%/5% 预留阶段时间）。
 
 ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]`（契约见 `octos-org/arc-adapter`）。`main.py` 只做参数解析、Node 运行时准备与驱动 TS 管线，不写业务逻辑。
 
@@ -143,28 +144,24 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
 - 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。
 - 修改脱敏、证据或 ARC 投影时，先读 `docs/2026-09-07-observability-arc-projection.md`：官方固定提交与字段、投影重建范围和安全限制均在此。验证 `test/observability.test.ts`、`test/arc-protocol.test.ts`、`test/human-log.test.ts`、`test/pipeline.e2e.test.ts`；目录链接检查不代表 OS 隔离。
-- `RunSummary.delivered` 要求全部原子需求 verified 且最终验证通过；有 todo 或 blocked 时为 partial。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
+- `RunSummary.delivered` 要求当前交付版本全部原子需求 verified 且最终验证通过；todo/blocked/failed/inconclusive 均为 partial。implementedRequirementIds 表示模块完成且构建/启动检查通过，不代表功能正确。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
 - 回滚先 `reset --mixed <acceptedSha>`，再 `restore --worktree -- . :(top,exclude).arc` 和 `clean -fd -e .arc/`，保留 `.arc` 中包括失败在内的完整审计记录。
 
 ## 架构不变量
 
-管线：`catalog → scheduler → WorkPacket → OpenCodeSdkBuilder → LlmProbePlanner → PlaywrightProbeRunner → DecisionLoop → GitOps`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
+管线：`catalog → 完整模块实现 → 可运行检查点 → 原子需求独立验收 → 集中修复 → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
-以下约束当前是设计核心：
+1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。
+2. **模块实现**：完整 ROOT 子树按跨模块依赖排序，相互依赖模块合并。所有模块先实现，再验收；实现阶段复用同一会话，回滚/运行时重启后使用新会话。模块内部依赖和未 verified 的外部依赖不阻塞实现。
+3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码；模块未完成或无法构建/启动才恢复检查点。
+4. **集中修复**：纯业务失败须在新应用实例中复现，再按需求汇总交给 Builder；每次运行至多两轮。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。
+5. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。精化仅改 locator，固定操作、输入与预期。混合失败先处理带快照的 locator 部分；每次原子验收至多两轮精化、一次浏览器基础设施重试。业务失败复现共享这些额度。
+6. **交付**：最终验证为安装/构建/就绪/浏览器 smoke，至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
+7. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 不限总时长时单次实现保留1h超时；正预算时实现上限10min，集中修复4min（最多剩余修复阶段一半），交付修复2min，Planner45s；实际取阶段剩余及 runtime 配置的较小值。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
+8. **Builder 边界**：OpenCode 是唯一业务代码写入者。文案外置 `prompts/`；自测为按需的一轮关键路径，确有缺陷时可再检查一次；CandidateRuntime 每个 Builder 调用至多接受两次 prepare。改文案同步 prompt 资产和测试。
+9. **运行时恢复**：git 单命令30s；Builder abort/落地各最多5s。server 意外退出可在原调用剩余额度内重启两次，旧实例迟到退出不能污染新实例。启动故障终止运行并恢复检查点；Judge 故障保留应用并报告不确定。cgroup 计数仅用于诊断。新增事件同步 types/human-log；源码或构建发生变化会使候选证据失效。
 
-1. **信息防火墙**：Probe Planner 和 Probe Runner 绝不能看到目标应用源码。Builder 接收当前 packet、产品和直接依赖上下文、种子数据、当前引用图片及白名单化 ShadowReport 观测；隐藏探针计划和 Planner 推理保持在 Judge 一侧。官方测试/官方结果任何模块都不允许读取。
-2. **Packet 尝试上限**：首次实现 + 最多 2 次修复；第 3 次 Shadow 失败后必须 `restoreAccepted` 回滚并阻塞该 packet，不得继续烧预算。判定循环另有 `MAX_PACKET_ITERATIONS=6`（`src/pipeline.ts`）迭代止损保险。
-3. **单调接受**：只在 Shadow `pass` 后 `captureAccepted` 更新 acceptedSha；失败一律回滚到最后接受状态。
-4. **Probe DSL 白名单**：探针是声明式步骤（`src/judge/probe-schema.ts`），locator 只映射 `getByRole/getByLabel/getByText`，`goto` 只允许相对路径绑定受控 baseUrl；禁止 `page.evaluate`、任意网络请求、动态代码。判词（`deriveProbeVerdict`）有界：`inconclusive` 仅当全部失败为 locator 类且至少一个带 aria snapshot；断言/导航/超时/runner 失败一律 `fail`。
-5. **交付窗口**：预算耗尽或没有可调度的 ready 需求后才停止领新 packet，只做 FinalVerifier 与交付修复（不设次数上限，直到复验通过或预算耗尽；首轮修复始终执行）；一旦进入不可退出。
-6. **Builder 不做局部决策之外的事**：选型、文件结构、局部构建修复都归 OpenCode；ShallowCode 不新增第二套源码编辑工具。
-7. **Builder prompt 外置**：所有 Builder 文案在 `prompts/` 中文资产里；`src/builder/` 只做组装。改文案改 `.md`，改结构改 `prompt.ts`/`prompt-fragments.ts`，两者都要同步 `test/builder-prompt.test.ts` 与 `test/prompt-assets.test.ts` 的锚点断言。
-8. **超时自愈**：git 单命令 30s；Builder 超时后对 abort 与 prompt 落地各给最多 5s（`promptSettleTimeoutMs`）。abort 失败或落地超时则关闭运行时，下一次调用重启。每次 packet 尝试前检查预算；预算不强行中断已开始的调用或最终交付。
-9. **故障分配**：按 `ExecutionFault` 与 `ProbePlannerError` 的结构化来源处理基础设施故障。OpenCode server 意外退出时，`SdkOpenCodeRuntime.serverExit` 上报退出码/信号，Builder 在一次尝试内至多重启并重发同一任务 2 次（`MAX_SERVER_RESTARTS`），不消耗 packet 尝试；server 意外退出与 main.py 失败路径都会打印容器 cgroup 内存（`memory.max/current/events`）辅助排查 OOM（累计计数不单独证明当前进程被 OOM 杀死）。浏览器每 packet 至多重试一次（含精化后执行），保持候选和计划、检查总预算；业务失败继续使用三次 Builder 上限。locator-only 有快照时每 packet 至多两轮精化，跨 Builder 尝试共享额度；每轮前及模型返回后检查预算，携带全部失败步骤、候选错误与对应快照，每个失败步骤必须引入新定位候选；原样或等价重排不执行，下一轮携带校验原因。两轮仍无有效证据、无效计划修正耗尽时阻塞 packet。Planner 鉴权/协议及运行时启动故障终止本轮；最终验证的浏览器基础设施故障在预算内持续重试（首次重试始终执行）。具体规则与数据恢复限制见 README“故障来源与修复机会”；改动时验证 `test/opencode-runtime.test.ts`、`test/builder-prompt.test.ts`、`test/probe-infrastructure.test.ts`、`test/pipeline.e2e.test.ts`、`test/llm-probe-planner.test.ts`、`test/locator-recovery.test.ts` 和 `test/human-log.test.ts`。
-
-调度器（`src/scheduler.ts`）是确定性规则：只选依赖全 verified 的 todo 需求；先选种子，再加入至多两个同最近父目录、且与种子共享依赖或场景词项的 ready 需求。修改排序或关联规则时验证 `test/scheduler.test.ts`。
-
-Catalog 将目录依赖展开为原子叶子并继承祖先依赖，展开后检查环。ProbePlan 必须覆盖 packet 的所有 ID，每个 case 至少一个断言；空输入及空值断言合法，wire schema 使用 nullable 可选字段。
+Catalog 继续展开并验证原子依赖，保留完整原文与树。修改模块排序验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
 
 ## Builder 需求输入
 
@@ -178,7 +175,7 @@ Catalog 将目录依赖展开为原子叶子并继承祖先依赖，展开后检
 
 ## Baseline 开发范围
 
-`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用 `SdkOpenCodeRuntime`，共享网关和 SDK 请求适配。输入由 `baseline/system.md` 与 `modulePrompt` 组装。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的 packet、Shadow 验收、Git 接受点、种子数据和图片装配位于主线控制器中。修改共享 runtime 时同时检查两条入口；运行方式及结果解释见 README 的“Raw OpenCode baseline”节。
+`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用 `SdkOpenCodeRuntime`，共享网关和 SDK 请求适配。输入由 `baseline/system.md` 与 `modulePrompt` 组装。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、集中修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享 runtime 时同时检查两条入口；运行方式及结果解释见 README 的“Raw OpenCode baseline”节。
 
 ## 代码与测试惯例
 

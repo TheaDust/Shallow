@@ -150,7 +150,7 @@ function projectContextSection(context: BuilderProjectContext): string {
           .join("\n")
       : "无",
     "",
-    "已满足的直接依赖：",
+    "已有实现（待独立验收）的直接依赖：",
     context.satisfiedDependencies.length > 0
       ? context.satisfiedDependencies
           .map(

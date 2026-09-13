@@ -635,3 +635,28 @@ function jsonResponse(body: unknown): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+
+test("Wire cases require a final assertion and parse it into the ordered execution plan", () => {
+  assert.ok(PROBE_PLAN_JSON_SCHEMA.properties.cases.items.required.includes("assertion"));
+  const plan = parseProbePlan({ packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
+    steps: [{ op: "goto", path: "/" }], assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } }] });
+  assert.equal(plan.cases[0].steps.at(-1)?.op, "expectVisible");
+  assert.throws(() => parseProbePlan({ packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
+    steps: [], assertion: { op: "goto", path: "/" } }] }), /must be an assertion/);
+});
+
+test("Locator scopes are flat, bounded, and count as new localization evidence", () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const scoped = structuredClone(original);
+  const fill = scoped.cases[0].steps[1];
+  if (fill.op !== "fill") assert.fail("expected fill");
+  fill.locator.scope = { by: "role", role: "dialog", name: "Profile" };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, parseProbePlan(scoped), [{ caseId: original.cases[0].id, stepIndex: 1 }]));
+  const unsafe = structuredClone(scoped) as any;
+  unsafe.cases[0].steps[1].locator.scope.scope = { by: "text", text: "nested" };
+  assert.throws(() => parseProbePlan(unsafe), /must be flat/);
+  delete unsafe.cases[0].steps[1].locator.scope.scope;
+  unsafe.cases[0].steps[1].locator.scope.hasText = "x".repeat(2001);
+  assert.throws(() => parseProbePlan(unsafe), /2000 characters/);
+});

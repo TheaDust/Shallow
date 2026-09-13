@@ -1,6 +1,6 @@
 # 观测、安全边界与 ARC 投影
 
-更新日期：2026-09-07。对应 pipeline improvement roadmap 第 13 节；适用于主线生产装配。Baseline 继续使用自己的运行日志和模块状态流程。
+更新日期：2026-09-13。对应 pipeline improvement roadmap 第 13 节；适用于主线生产装配。Baseline 继续使用自己的运行日志和模块状态流程。
 
 ## 1. 数据归属
 
@@ -19,7 +19,7 @@
 
 `types.ts` 定义事件判别联合及各自 detail 字段；`RunStateStore.record` 注入运行 UUID、事件 ID、递增序号、阶段、累计耗时、最后接受 SHA，以及已登记的 packet attempt。一个进程内的运行 UUID 与日志目录的 `<pid>-<ts>` 名称用途不同，不应混用。
 
-SHA 表示最后接受的基线，不代表 Builder 正在编辑的候选内容。累计耗时从首个事件计算；Builder 和探针完成事件另记录调用耗时。启动事件记录模型、Builder/Planner 超时、全部 Builder Markdown 资产的内容摘要、Probe wire schema 摘要；摘要用于实验比对，不改变 prompt。真实模型 usage 尚未接入，明确标记 `unavailable`。
+SHA 表示最后保存的可运行检查点，不代表 Builder 正在编辑的候选内容，也不授予功能 verified。模块实现结果与当前版本独立验收分别记录；`checkpoint_saved` 和 `audit_result` 对应这两类事实。累计耗时从首个事件计算；Builder 和探针完成事件另记录调用耗时。启动事件记录模型、Builder/Planner 超时、全部 Builder Markdown 资产的内容摘要、Probe wire schema 摘要；摘要用于实验比对，不改变 prompt。真实模型 usage 尚未接入，明确标记 `unavailable`。
 
 人类日志覆盖：需求包名称、Builder 开始/完成、Planner 规划/失败/精化、应用启动/就绪/停止、探针执行与通过/失败数量、失败分类和证据 ID、修复次数与根因优先要求、交付验证、最终完成程度与未完成 ID。Builder 回执标为自述诊断，不能作为通过判定。正文换行显示为 `↵`，每个事件占一行。
 
@@ -56,6 +56,8 @@ SHA 表示最后接受的基线，不代表 Builder 正在编辑的候选内容�
 已对照课程实验材料 `code-philia/agentic-software-engineering-hackathon` Lab04 的 `.arc` 清单复核：`.arc/requirement`、`.arc/node_sessions`、`.arc/processing_queue.json`、`.arc/validation` 属于 ARC Visualizer/编译器自身的工作区数据，适配包契约不读取；评测端只读 `runner-events.jsonl`、`.arc/traceability/*.json` 与 git 提交（`arc-adapter` README 与 `context.py` 中的固定路径）。
 
 Catalog 同时保留原始完整树与调度用原子需求。投影包含 ROOT/FOLDER/ATOMIC（包括空目录和目录场景），依赖来自原始树，不使用调度器展开后的依赖覆盖源结构。显式场景 ID 优先保留；无 ID 的场景使用本项目稳定的 `<reqId>::<index>`。官方表没有节点 `type` 列，通过父子关系保留树结构。
+
+功能验收不能建立有效证据时，内部状态记 inconclusive；官方协议没有该状态，因此平台节点保留 implement/completed，不输出 test/passed。交付修复改变源码后，旧功能 pass 必须重验，未重验项重置为 inconclusive。
 
 Builder 回执只写内部日志。内部 envelope、证据附件和投影幂等 ID 不进入官方事件字段。
 

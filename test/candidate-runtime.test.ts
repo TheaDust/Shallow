@@ -262,7 +262,7 @@ children:
       const capture = git.captureAccepted.bind(git);
       git.captureAccepted = async (message) => {
         const sha = await capture(message);
-        if (mutation === "commit" && message.includes("accept packet")) await writeFile(join(output, "late.txt"), "late");
+        if (mutation === "commit" && message.includes("checkpoint module")) await writeFile(join(output, "late.txt"), "late");
         return sha;
       };
       const browser = new PlaywrightProbeRunner();
@@ -297,16 +297,33 @@ children:
         assert.equal(await counts(), "install\nbuild\n");
         const events: RunEvent[] = (await readFile(ledgerFile, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
         const probe = events.find((event) => event.type === "probe_finished");
-        const accepted = events.find((event) => event.type === "packet_accepted");
-        assert.ok(probe?.type === "probe_finished" && accepted?.type === "packet_accepted");
-        assert.deepEqual(accepted.detail?.candidate, probe.detail?.candidate);
+        const accepted = events.find((event) => event.type === "checkpoint_saved");
+        assert.ok(probe?.type === "probe_finished" && accepted?.type === "checkpoint_saved");
+        assert.equal(accepted.detail?.candidate?.inputDigest, probe.detail?.candidate?.inputDigest);
+        assert.equal(accepted.detail?.candidate?.buildId, probe.detail?.candidate?.buildId);
         assert.ok(accepted.detail?.candidate?.applicationDigest);
       } else {
         await assert.rejects(run, /evidence is invalid/);
         const ledger = await readFile(ledgerFile, "utf8");
         if (mutation !== "delivery") assert.doesNotMatch(ledger, /"type":"packet_accepted"/);
-        assert.deepEqual(git.restoredShas, [mutation === "delivery" ? "accepted" : "baseline"]);
+        assert.deepEqual(git.restoredShas, [mutation === "commit" ? "baseline" : "accepted"]);
       }
     });
   });
 }
+
+
+test("Builder browser preparation has a per-call limit and resets for the next module", async () => {
+  await fixture(async ({ candidate }) => {
+    candidate.beginBuilder();
+    try {
+      await candidate.builderPrepare();
+      await candidate.builderStop();
+      await candidate.builderPrepare();
+      await assert.rejects(candidate.builderPrepare(), /limit reached/);
+    } finally { await candidate.endBuilder(); }
+    candidate.beginBuilder();
+    try { await candidate.builderPrepare(); }
+    finally { await candidate.endBuilder(); }
+  });
+});

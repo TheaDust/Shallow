@@ -45,19 +45,19 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
 
   assert.match(compiled.systemPrompt, /唯一代码实现者/);
   assert.match(compiled.systemPrompt, /Builder 浏览器自测/);
-  assert.match(compiled.systemPrompt, /browser_snapshot/);
-  assert.match(compiled.systemPrompt, /服务端数据隔离/);
-  assert.match(compiled.systemPrompt, /由控制器停止自测应用/);
+  assert.match(compiled.systemPrompt, /至多进行一轮/);
+  assert.match(compiled.systemPrompt, /保留种子数据/);
+  assert.match(compiled.systemPrompt, /释放实例及端口/);
   assert.match(compiled.systemPrompt, /`candidate` MCP 的 `prepare`/);
   assert.match(compiled.systemPrompt, /SHALLOW_DATA_DIR/);
   assert.match(compiled.systemPrompt, /持续增量扩展/);
-  assert.match(compiled.systemPrompt, /至少检查一个边界输入/);
-  assert.match(compiled.taskPrompt, /浏览器自测：/);
-  assert.match(compiled.taskPrompt, /通过 \| 失败 \| 未执行/);
+  assert.match(compiled.systemPrompt, /必要的关键路径检查/);
+  assert.match(compiled.taskPrompt, /浏览器未执行/);
+  assert.match(compiled.taskPrompt, /未执行/);
   assert.doesNotMatch(compiled.systemPrompt, /REQ-PROFILE/);
-  assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
-  assert.match(compiled.taskPrompt, /可观察验收判据/);
-  assert.match(compiled.taskPrompt, /不猜测外部测试/);
+  assert.match(compiled.taskPrompt, /# 行动：实现当前模块/);
+  assert.match(compiled.taskPrompt, /完整业务链路/);
+  assert.match(compiled.taskPrompt, /不要为某个示例数据/);
   assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
   assert.match(compiled.taskPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /Root description/);
@@ -82,19 +82,13 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
-test("Builder memory guidance precedes final preparation in every packet mode", () => {
-  for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
-    const { systemPrompt, taskPrompt } = compileBuilderPrompt(request);
-    assert.match(taskPrompt, /需求与平台合同优先/);
-    assert.match(taskPrompt, /没有变化时保持文件不动/);
-    assert.match(taskPrompt, /通常控制在约 60 行/);
-    assert.match(taskPrompt, /保留必要约定时可适当超出/);
-    assert.match(taskPrompt, /## 模块与入口/);
-    assert.match(taskPrompt, /空小节可省略/);
-    const memory = taskPrompt.indexOf("按需更新项目根");
-    const preparation = taskPrompt.indexOf("调用 `candidate.prepare`");
-    assert.ok(memory >= 0 && preparation > memory);
-    assert.match(systemPrompt, /项目文档（包括 `ARCHITECTURE.md`）修改都会使之前的构建凭据失效/);
+test("Module and consolidated repair prompts bound self-test and keep implementation notes optional", () => {
+  for (const request of [implementRequest(), repairRequest("repair")]) {
+    const compiled = compileBuilderPrompt(request);
+    assert.match(compiled.systemPrompt, /至多进行一轮/);
+    assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
+    assert.match(compiled.taskPrompt, /不超过十行/);
+    assert.doesNotMatch(compiled.taskPrompt, /再重新 `prepare` 并完成关键路径检查/);
   }
 });
 
@@ -116,10 +110,10 @@ test("Builder includes all seed data in implementation and both packet repair mo
 test("Repair prompt carries only the cleaned shadow observation", () => {
   const compiled = compileBuilderPrompt(repairRequest("repair"));
 
-  assert.match(compiled.taskPrompt, /# 行动：根据外部黑盒观察修复当前工作包/);
-  assert.match(compiled.taskPrompt, /## 已通过的观察/);
+  assert.match(compiled.taskPrompt, /# 行动：集中修复已确认的业务失败/);
+  assert.match(compiled.taskPrompt, /已通过的用例标识/);
   assert.match(compiled.taskPrompt, /open-page/);
-  assert.match(compiled.taskPrompt, /## 失败观察/);
+  assert.match(compiled.taskPrompt, /允许使用的失败观测/);
   assert.match(compiled.taskPrompt, /save-profile/);
   assert.match(compiled.taskPrompt, /Expected Saved, received Error/);
   assert.doesNotMatch(compiled.taskPrompt, /"verdict"|JSON|black-box report/i);
@@ -133,7 +127,7 @@ test("Root-cause repair frames the last allowed attempt", () => {
   assert.match(compiled.taskPrompt, /# 行动：执行最后一次根因修复/);
   assert.match(compiled.taskPrompt, /身份认证和权限判断/);
   assert.match(compiled.taskPrompt, /不超过三句话/);
-  assert.match(compiled.taskPrompt, /根因：/);
+  assert.match(compiled.taskPrompt, /根因/);
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
@@ -193,7 +187,7 @@ test("Builder sends the system contract and task prompt through separate runtime
   assert.match(runtime.prompts[0].input.systemPrompt, /唯一代码实现者/);
   assert.match(runtime.prompts[0].input.taskPrompt, /当前工作包/);
   assert.doesNotMatch(runtime.prompts[0].input.systemPrompt, /REQ-PROFILE/);
-  assert.match(runtime.prompts[1].input.taskPrompt, /根据外部黑盒观察修复/);
+  assert.match(runtime.prompts[1].input.taskPrompt, /集中修复已确认的业务失败/);
   assert.equal(first.sessionId, "session-1");
   assert.equal(second.sessionId, "session-2");
   assert.equal(first.outcome, "completed");
@@ -410,6 +404,35 @@ test("Builder reuses the runtime across calls and closes it at shutdown", async 
   assert.equal(runtime.createdTitles.length, 2);
   await builder.close();
   assert.equal(runtime.closeCount, 1);
+});
+
+test("Implementation conversation is reused by key and repair gets a fresh session", async () => {
+  const runtime = new RecordingRuntime();
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
+  try {
+    const first = await builder.run(builderRequest(1), { sessionKey: "implementation-0" });
+    const second = await builder.run(builderRequest(1), { sessionKey: "implementation-0" });
+    const repair = await builder.run(builderRequest(2));
+    assert.equal(second.sessionId, first.sessionId);
+    assert.notEqual(repair.sessionId, first.sessionId);
+    assert.equal(runtime.createdTitles.length, 2);
+    const afterRollback = await builder.run(builderRequest(1), { sessionKey: "implementation-1" });
+    assert.notEqual(afterRollback.sessionId, first.sessionId);
+  } finally { await builder.close(); }
+});
+
+test("Failed calls discard their reusable conversation and respect the smaller call timeout", async () => {
+  const runtime = new RecordingRuntime();
+  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 5 });
+  try {
+    const first = await builder.run(builderRequest(1), { sessionKey: "implementation" });
+    runtime.promptResult = new Promise(() => {});
+    const timed = await builder.run(builderRequest(1), { sessionKey: "implementation", timeoutMs: 5 });
+    assert.equal(timed.outcome, "timed_out");
+    runtime.promptResult = Promise.resolve("done");
+    const next = await builder.run(builderRequest(1), { sessionKey: "implementation" });
+    assert.notEqual(next.sessionId, first.sessionId);
+  } finally { await builder.close(); }
 });
 
 test("Builder does not re-issue a task when the runtime reports no environment exit", async () => {

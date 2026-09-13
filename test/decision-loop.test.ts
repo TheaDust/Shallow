@@ -5,75 +5,19 @@ import { test } from "node:test";
 
 import {
   RunStateStore,
-  decideAfterReport,
   sanitizeDiagnosticText,
 } from "../src/run-state.js";
-import type { ShadowReport, RunEvent } from "../src/types.js";
+import type { RunEvent } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
-test("Decision Loop accepts a passing Shadow report", () => {
-  assert.deepEqual(decideAfterReport(report("pass"), 1), {
-    kind: "accept",
-  });
-});
-
-test("Decision Loop allows exactly two repairs and makes the second root-cause-first", () => {
-  assert.deepEqual(decideAfterReport(report("fail"), 1), {
-    kind: "repair",
-    nextAttempt: 2,
-    requireRootCauseFirst: false,
-  });
-  assert.deepEqual(decideAfterReport(report("fail"), 2), {
-    kind: "repair",
-    nextAttempt: 3,
-    requireRootCauseFirst: true,
-  });
-  assert.deepEqual(decideAfterReport(report("fail"), 3), {
-    kind: "block_and_restore",
-  });
-});
-
-test("Decision Loop routes inconclusive verdicts through the bounded repair ladder", () => {
-  assert.deepEqual(decideAfterReport(report("inconclusive"), 1), {
-    kind: "repair",
-    nextAttempt: 2,
-    requireRootCauseFirst: false,
-  });
-  assert.deepEqual(decideAfterReport(report("inconclusive"), 2), {
-    kind: "repair",
-    nextAttempt: 3,
-    requireRootCauseFirst: true,
-  });
-  assert.deepEqual(decideAfterReport(report("inconclusive"), 3), {
-    kind: "block_and_restore",
-  });
-});
-
-test("RunState enters delivery only when the budget is exhausted and never leaves it", () => {
-  const state = new RunStateStore({
-    statusByRequirementId: { REQ: "todo" },
-    acceptedSha: "initial",
-    startedAtMs: 1_000,
-    totalBudgetMs: 1_000,
-  });
-
-  assert.equal(state.shouldEnterDelivery(1_799), false);
-  assert.equal(state.shouldEnterDelivery(1_999), false);
-  assert.equal(state.shouldEnterDelivery(2_000), true);
-  assert.equal(state.shouldEnterDelivery(1_500), true);
-  assert.equal(state.snapshot.deliveryMode, true);
-});
-
-test("RunState never enters delivery by time when the budget is unlimited", () => {
-  const state = new RunStateStore({
-    statusByRequirementId: { REQ: "todo" },
-    acceptedSha: "initial",
-    startedAtMs: 1_000,
-    totalBudgetMs: 0,
-  });
-
-  assert.equal(state.shouldEnterDelivery(1_001_000), false);
-  assert.equal(state.snapshot.deliveryMode, false);
+test("RunState records unverified checkpoints independently from feature verdicts", () => {
+  const state = new RunStateStore({ statusByRequirementId: { REQ: "todo" }, acceptedSha: "initial", startedAtMs: 0, totalBudgetMs: 0 });
+  state.setAcceptedSha("runnable");
+  assert.equal(state.snapshot.statusByRequirementId.REQ, "todo");
+  state.markRequirements(["REQ"], "inconclusive");
+  assert.equal(state.snapshot.acceptedSha, "runnable");
+  state.markRequirements(["REQ"], "failed");
+  assert.equal(state.snapshot.acceptedSha, "runnable");
 });
 
 test("RunState records global transitions and writes a redacted JSONL ledger", async () => {
@@ -143,22 +87,3 @@ test("Diagnostic text is sanitized and capped for logs", () => {
   assert.equal(sanitizeDiagnosticText("结果\u0000：完成"), "结果 ：完成");
   assert.equal(sanitizeDiagnosticText("x".repeat(2_000)).length, 1_500);
 });
-
-function report(verdict: ShadowReport["verdict"]): ShadowReport {
-  return {
-    packetId: "packet-req",
-    verdict,
-    passedCases: verdict === "pass" ? ["case"] : [],
-    failures:
-      verdict === "pass"
-        ? []
-        : [
-            {
-              caseId: "case",
-              stepIndex: 1,
-              category: verdict === "inconclusive" ? "locator" : "assertion",
-              message: "failure",
-            },
-          ],
-  };
-}

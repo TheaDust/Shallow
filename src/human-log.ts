@@ -58,6 +58,18 @@ function describe(type: string, event: RunEvent): string | null {
   const message = pickString(detail, "message");
   const reason = pickString(detail, "reason");
   switch (type) {
+    case "phase_started":
+      return `进入${({ implementation: "模块实现", audit: "独立验收", repair: "集中修复", delivery: "最终交付" } as Record<string, string>)[pickString(detail, "phase") ?? ""] ?? "运行"}阶段${detail?.round ? `；第 ${detail.round} 轮` : ""}${typeof detail?.remainingMs === "number" ? `；阶段剩余 ${renderDuration(detail.remainingMs)}` : ""}`;
+    case "checkpoint_saved":
+      return `保存可运行检查点；${pickString(detail, "reason")}；需求 ${strings(detail?.requirementIds).join("、")}；SHA ${event.acceptedSha ?? ""}（功能验收状态单独记录）`;
+    case "module_failed":
+      return `模块实现未形成可运行版本，已恢复检查点（${packetId}）${reason ? `：${reason}` : ""}`;
+    case "audit_result":
+      return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
+    case "repair_batch_started":
+      return `开始第 ${detail?.round} 轮集中修复；需求 ${strings(detail?.requirementIds).join("、")}`;
+    case "repair_batch_finished":
+      return `第 ${detail?.round} 轮集中修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
     case "pipeline_started":
       return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}` : ""}`;
     case "packet_selected":
@@ -146,7 +158,7 @@ function describe(type: string, event: RunEvent): string | null {
         : `交付失败${stageSuffix}${message ? `：${message}` : ""}`;
     }
     case "pipeline_finished":
-      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已验证 ${strings(detail.verifiedRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
+      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
     default:
       return null;
   }

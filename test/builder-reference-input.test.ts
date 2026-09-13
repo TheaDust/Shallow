@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { createOpencodeClient } from "@opencode-ai/sdk";
 import { OpenCodeSdkBuilder, SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
-import { selectNextPacket } from "../src/scheduler.js";
+import { auditPackets } from "../src/scheduler.js";
 import { createArcPlatformContract } from "../src/runtime-config.js";
 import type { BuilderRequest } from "../src/builder/port.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -121,7 +121,7 @@ async function withImageBuilder(
 ): Promise<void> {
   await withTempDir("shallow-image-input-", async (directory) => {
     const catalog = await loadRequirementCatalog(resolve("test/fixtures/requirements.yaml"));
-    const packet = selectNextPacket(catalog)!;
+    const packet = auditPackets(catalog)[0];
     for (const requirement of packet.requirements) requirement.references = ["reference/ui.png"];
     await mkdir(join(directory, "reference"));
     await writeFile(join(directory, "reference/ui.png"), Buffer.from(

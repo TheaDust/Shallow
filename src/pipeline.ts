@@ -2,6 +2,7 @@ import type {
   BuilderPort,
   BuilderRequest,
   BuilderResult,
+  BuilderRunOptions,
 } from "./builder/port.js";
 import type {
   BuilderProjectContext,
@@ -18,18 +19,18 @@ import type {
   FinalVerificationReport,
   FinalVerifierPort,
 } from "./final-verifier.js";
-import { ProbePlannerError, type ProbePlanner, type ProbePlannerFeedback } from "./judge/llm-probe-planner.js";
+import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
-import { assertLocatorOnlyRefinement, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
-import { RunStateStore, decideAfterReport, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
-import { selectNextPacket } from "./scheduler.js";
+import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
+import { implementationPackets, auditPackets, makePacket } from "./scheduler.js";
+import { RunBudget, type PipelinePhase } from "./run-budget.js";
+import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { ExecutionFault } from "./execution-fault.js";
 import type { CandidateRuntime } from "./candidate-runtime.js";
 import type { CandidateEvidence } from "./types.js";
 import type {
   PlatformContract,
   RequirementCatalog,
-  ShadowReport,
   WorkPacket,
 } from "./types.js";
 
@@ -90,364 +91,218 @@ export interface RunSummary {
   verifiedRequirementIds: string[];
   blockedRequirementIds: string[];
   acceptedSha: string;
+  implementedRequirementIds?: string[];
+  failedRequirementIds?: string[];
+  inconclusiveRequirementIds?: string[];
 }
 
-export async function runPipeline(
-  options: PipelineOptions,
-  deps: PipelineDeps,
-): Promise<RunSummary> {
-  let builderClosed = false;
-  const closeBuilder = async () => {
-    if (builderClosed) return;
-    builderClosed = true;
-    await deps.builder.close();
-  };
+export async function runPipeline(options: PipelineOptions, deps: PipelineDeps): Promise<RunSummary> {
   const catalog = await loadRequirementCatalog(options.requirementsFile);
-  const baselineSha = await deps.git.captureAccepted("shallow: initial state");
-  const state = new RunStateStore(
-    {
-      statusByRequirementId: catalog.statusById,
-      acceptedSha: baselineSha,
-      startedAtMs: deps.clock.nowMs(),
-      totalBudgetMs: options.totalBudgetMs,
-    },
-    options.ledgerFile,
-    deps.logSink ?? null,
-    deps.diagnosticSecrets,
-  );
+  const startedAt = deps.clock.nowMs();
+  const budget = new RunBudget(options.totalBudgetMs, startedAt, () => deps.clock.nowMs());
+  const state = new RunStateStore({ statusByRequirementId: catalog.statusById,
+    acceptedSha: await deps.git.captureAccepted("shallow: initial state"), startedAtMs: startedAt,
+    totalBudgetMs: options.totalBudgetMs }, options.ledgerFile, deps.logSink ?? null, deps.diagnosticSecrets);
+  const implemented = new Set<string>();
+  const packets = auditPackets(catalog);
+  let results = new Map<string, AuditResult>();
+  let conversation = 0;
+  deps.candidate?.setRecorder(event => state.record(event));
 
-  deps.candidate?.setRecorder((event) => state.record(event));
+  const phase = async (name: PipelinePhase, round?: number): Promise<void> => {
+    const remaining = budget.remaining(name);
+    await state.record({ at: now(), type: "phase_started", detail: { phase: name, round,
+      ...(Number.isFinite(remaining) ? { remainingMs: remaining } : {}) } });
+  };
+  const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
+    const packetId = "packet" in request ? request.packet.id : "delivery-repair";
+    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? 240_000 : 120_000;
+    const timeoutMs = budget.callTimeout(name, Math.min(ceiling, runOptions.timeoutMs ?? ceiling));
+    if (timeoutMs <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
+    state.setPacketAttempt(packetId, "packet" in request ? request.packet.attempt : 1);
+    await state.record({ at: now(), type: "builder_started", packetId, detail: { mode: request.mode } });
+    const at = deps.clock.nowMs();
+    let result: BuilderResult;
+    try { result = await deps.builder.run(request, { timeoutMs, sessionKey: runOptions.sessionKey }); }
+    catch (error) {
+      if (error instanceof ExecutionFault) throw error;
+      result = { outcome: "failed", sessionId: "unavailable", summary: errorMessage(error) };
+    }
+    await state.record({ at: now(), type: "builder_finished", packetId,
+      detail: { ...result, durationMs: Math.max(0, deps.clock.nowMs() - at) } });
+    if (result.referenceImages) await state.record({ at: now(), type: "builder_reference_images", packetId, detail: result.referenceImages });
+    return result;
+  };
+  const runnable = async (): Promise<CandidateEvidence | undefined> => {
+    const app = await deps.appLifecycle.start(options.outputDir, options.platformContract);
+    try { await app.assertUnchanged?.(); }
+    finally { await app.stop(); }
+    await app.assertUnchanged?.();
+    if (app.candidate) await deps.candidate?.assertCurrent(app.candidate);
+    return app.candidate;
+  };
+  const checkpoint = async (ids: string[], reason: string, candidate?: CandidateEvidence): Promise<void> => {
+    if (candidate) await deps.candidate?.assertCurrent(candidate);
+    const sha = await deps.git.captureAccepted(`shallow: checkpoint ${reason}`);
+    if (candidate) await deps.candidate?.assertCurrent(candidate);
+    state.setAcceptedSha(sha);
+    if (candidate) deps.candidate?.recordAccepted(candidate);
+    await state.record({ at: now(), type: "checkpoint_saved", detail: { requirementIds: ids, reason, candidate } });
+    await emitArc(deps, state, arc => arc.commitHistorySignal("git_commit"));
+  };
+  const audit = async (name: PipelinePhase, previous = results): Promise<Map<string, AuditResult>> => {
+    const audited = new Map<string, AuditResult>();
+    // Previously passed paths are checked first after edits, so regressions stop repairs early.
+    const ordered = [...packets].sort((a, b) => Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
+    for (const packet of ordered) {
+      if (!packet.requirementIds.every(id => implemented.has(id))) continue;
+      const result = budget.remaining(name) <= 0
+        ? { status: "inconclusive" as const, plan: previous.get(packet.id)?.plan, reason: "audit phase budget exhausted" }
+        : await auditPacket(packet, previous.get(packet.id)?.plan, options, deps, state, () => budget.remaining(name));
+      audited.set(packet.id, result);
+    }
+    return audited;
+  };
+  const publish = async (): Promise<void> => {
+    for (const packet of packets) {
+      const result = results.get(packet.id);
+      if (!result) continue;
+      state.markRequirements(packet.requirementIds, result.status);
+      await state.record({ at: now(), type: "audit_result", packetId: packet.id,
+        detail: { requirementIds: packet.requirementIds, status: result.status, reason: result.reason } });
+      // The platform has no inconclusive status: leave implementation completed, never claim passed.
+      for (const id of packet.requirementIds) {
+        if (result.status !== "inconclusive") await emitArc(deps, state, arc => arc.requirementState(id, "test", result.status === "verified" ? "passed" : "failed"));
+        else await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
+      }
+    }
+  };
+
   await state.record({ at: now(), type: "pipeline_started", detail: {
-    requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs,
-    port: options.platformContract.port, ...deps.runMetadata,
-  } });
-  await emitArc(deps, state, (arc) => arc.runnerState("running", "pipeline started"));
-  const arcRows = buildArcRequirementRows(catalog.tree);
-  await emitArc(deps, state, (arc) =>
-    arc.storeRequirementTree(arcRows.requirementRows, arcRows.scenarioRows),
-  );
+    requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port, ...deps.runMetadata } });
+  await emitArc(deps, state, arc => arc.runnerState("running", "module-first pipeline started"));
+  const rows = buildArcRequirementRows(catalog.tree);
+  await emitArc(deps, state, arc => arc.storeRequirementTree(rows.requirementRows, rows.scenarioRows));
   try {
-    while (!state.shouldEnterDelivery(deps.clock.nowMs())) {
-      const packet = selectNextPacket(catalog);
-      if (!packet) break;
+    await phase("implementation");
+    for (const packet of implementationPackets(catalog)) {
+      if (budget.remaining("implementation") <= 0) break;
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
-        detail: { requirementIds: packet.requirementIds, names: packet.requirements.map((item) => item.name) } });
-      await executePacket(packet, options, deps, state, catalog);
+        detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
+      for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
+      const result = await build({ mode: "implement", packet, outputDir: options.outputDir,
+        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey: `implementation-${conversation}` });
+      let candidate: CandidateEvidence | undefined;
+      let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
+      if (!reason) {
+        try { candidate = await runnable(); }
+        catch (error) { reason = errorMessage(error); }
+      }
+      if (reason !== undefined) {
+        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+        conversation += 1;
+        state.markRequirements(packet.requirementIds, "blocked");
+        await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
+        for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+        continue;
+      }
+      await checkpoint(packet.requirementIds, packet.id, candidate);
+      for (const id of packet.requirementIds) {
+        implemented.add(id);
+        await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
+      }
     }
 
+    await phase("audit");
+    results = await audit("audit");
+    await publish();
+    for (let round = 1; round <= 2 && budget.remaining("repair") > 0; round++) {
+      const failures = packets.filter(packet => results.get(packet.id)?.status === "failed");
+      if (!failures.length) break;
+      await phase("repair", round);
+      const packet = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
+      const reports = failures.map(item => results.get(item.id)!.report!);
+      const observation = toBuilderShadowObservation({ packetId: packet.id, verdict: "fail", passedCases: [],
+        failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
+      await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: packet.requirementIds } });
+      // Leave at least half the remaining repair phase for independent regression checks.
+      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(240_000, budget.remaining("repair") / 2)));
+      const result = await build({ mode: "repair", packet, projectContext: buildBuilderProjectContext(packet, catalog, implemented),
+        outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
+        "repair", { timeoutMs: repairTimeoutMs });
+      let reason = result.outcome === "completed" ? "" : result.summary || result.outcome;
+      let candidate: CandidateEvidence | undefined;
+      if (!reason) {
+        try { candidate = await runnable(); } catch (error) { reason = errorMessage(error); }
+      }
+      let next = results;
+      if (!reason) {
+        next = await audit("repair");
+        const regressed = [...results].some(([id, prior]) => prior.status === "verified" && next.get(id)?.status !== "verified");
+        const improved = failures.some(item => next.get(item.id)?.status === "verified");
+        if (regressed) reason = "previously verified behavior was lost or could not be reverified";
+        else if (!improved) reason = "repair produced no independently verified improvement";
+      }
+      if (reason) {
+        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+        await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: false, reason } });
+        break;
+      }
+      await checkpoint(packet.requirementIds, packet.id, candidate);
+      results = next;
+      await publish();
+      await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true, reason: "verified improvement with regression coverage" } });
+    }
+
+    await phase("delivery");
     await state.record({ at: now(), type: "delivery_started" });
     await deps.candidate?.assertAcceptedInput();
     let finalReport = await runFinalVerifier(options, deps, state);
-    // Keep repairing delivery until it passes. There is no attempt-count cap: the first
-    // repair always runs (delivery reserve) and later rounds require remaining budget.
-    let deliveryRepairRound = 0;
-    while (!finalReport.ok) {
-      deliveryRepairRound += 1;
-      if (deliveryRepairRound > 1 && !state.withinBudget(deps.clock.nowMs())) break;
-      await state.record({
-        at: now(),
-        type: "delivery_repair_started",
-        detail: { stage: finalReport.stage, message: finalReport.message, round: deliveryRepairRound },
-      });
-      await state.record({
-        at: now(),
-        type: "builder_started",
-        packetId: "delivery-repair",
-      });
-      let builderResult: BuilderResult;
-      try {
-        builderResult = await deps.builder.run({
-          mode: "delivery_repair",
-          outputDir: options.outputDir,
-          platformContract: options.platformContract,
-          deliveryFailure: {
-            stage: finalReport.stage,
-            expected: expectedByStage[finalReport.stage],
-            actual: sanitizeDiagnosticText(finalReport.message, deps.diagnosticSecrets),
-          },
-        });
-      } catch (error) {
-        if (error instanceof ExecutionFault) throw error;
-        builderResult = {
-          sessionId: "unavailable",
-          outcome: "failed",
-          summary: errorMessage(error),
-        };
-      }
-      state.setPacketAttempt("delivery-repair", 3);
-      await state.record({
-        at: now(),
-        type: "builder_finished",
-        packetId: "delivery-repair",
-        detail: {
-          outcome: builderResult.outcome,
-          sessionId: builderResult.sessionId,
-          summary: builderResult.summary,
-        },
-      });
-      finalReport = await runFinalVerifier(options, deps, state);
-      if (finalReport.ok && builderResult.outcome === "completed") {
-        if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
-        const acceptedSha = await deps.git.captureAccepted(
-          "shallow: accept delivery repair",
-        );
-        if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
-        state.setAcceptedSha(acceptedSha);
-        if (finalReport.candidate) deps.candidate?.recordAccepted(finalReport.candidate);
-        await state.record({
-          at: now(),
-          type: "delivery_repair_accepted",
-          packetId: "delivery-repair",
-          ...(finalReport.candidate ? { detail: { candidate: finalReport.candidate } } : {}),
-        });
-        await emitArc(deps, state, (arc) => arc.commitHistorySignal("git_commit"));
+    if (!finalReport.ok && budget.remaining("delivery") > 0) {
+      await state.record({ at: now(), type: "delivery_repair_started", detail: { stage: finalReport.stage, message: finalReport.message, round: 1 } });
+      const result = await build({ mode: "delivery_repair", outputDir: options.outputDir,
+        platformContract: options.platformContract, deliveryFailure: { stage: finalReport.stage,
+          expected: expectedByStage[finalReport.stage], actual: sanitizeDiagnosticText(finalReport.message, deps.diagnosticSecrets) } }, "delivery");
+      const repaired = await runFinalVerifier(options, deps, state);
+      if (result.outcome === "completed" && repaired.ok) {
+        await checkpoint([...implemented], "delivery-repair", repaired.candidate);
+        // Runtime repair changed the delivered source: old feature passes are not evidence for it.
+        results = await audit("delivery");
+        await publish();
+        finalReport = repaired;
+        await state.record({ at: now(), type: "delivery_repair_accepted" });
       } else {
         await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-        if (finalReport.ok) {
-          finalReport = {
-            ok: false,
-            stage: "complete",
-            message: `Delivery repair was not completed (${builderResult.outcome}); restored accepted state`,
-          };
-        }
-        await state.record({ at: now(), type: "delivery_repair_restored", detail: { round: deliveryRepairRound } });
+        await state.record({ at: now(), type: "delivery_repair_restored", detail: { round: 1 } });
+        finalReport = await runFinalVerifier(options, deps, state);
       }
     }
-    if (finalReport.ok) {
-      if (finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
-      await deps.candidate?.assertAcceptedInput();
-    }
-    await state.record({
-      at: now(),
-      type: "delivery_finished",
-      detail: {
-        ok: finalReport.ok,
-        stage: finalReport.stage,
-        message: finalReport.message,
-      },
-    });
-
-    const snapshot = state.snapshot;
-    const verifiedRequirementIds = idsWithStatus(snapshot.statusByRequirementId, "verified");
-    const blockedRequirementIds = idsWithStatus(snapshot.statusByRequirementId, "blocked");
-    const summary: RunSummary = {
-      status: finalReport.ok
-        ? verifiedRequirementIds.length < catalog.requirements.length
-          ? "partial"
-          : "delivered"
-        : "failed",
-      verifiedRequirementIds,
-      blockedRequirementIds,
-      acceptedSha: snapshot.acceptedSha,
-    };
-    await emitArc(deps, state, (arc) =>
-      arc.runnerState(
-        finalReport.ok ? "completed" : "failed",
-        `summary ${summary.status}`,
-      ),
-    );
-    await state.record({ at: now(), type: "pipeline_finished", detail: {
-      ...summary,
-      pendingRequirementIds: Object.entries(snapshot.statusByRequirementId)
-        .filter(([, status]) => status === "todo").map(([id]) => id),
-    } });
+    await deps.candidate?.assertAcceptedInput();
+    if (finalReport.ok && finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
+    await state.record({ at: now(), type: "delivery_finished", detail: finalReport });
+    const statuses = state.snapshot.statusByRequirementId;
+    const ids = (status: typeof statuses[string]) => catalog.requirements.filter(item => statuses[item.id] === status).map(item => item.id);
+    const verifiedRequirementIds = ids("verified");
+    const summary: RunSummary = { status: !finalReport.ok ? "failed" : verifiedRequirementIds.length === catalog.requirements.length ? "delivered" : "partial",
+      acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented], verifiedRequirementIds,
+      blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive") };
+    await state.record({ at: now(), type: "pipeline_finished", detail: { ...summary, pendingRequirementIds: ids("todo") } });
+    await emitArc(deps, state, arc => arc.runnerState(finalReport.ok ? "completed" : "failed", `summary ${summary.status}`));
     return summary;
   } catch (error) {
-    // Unexpected runner/process failures must not leave an unaccepted candidate.
-    try {
-      await closeBuilder();
-    } finally {
-      await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-    }
-    await state.record({ at: now(), type: "pipeline_failed", detail: error instanceof ExecutionFault
-      ? { message: error.message, source: error.source, code: error.code, retryable: error.retryable }
-      : plannerFailureDetail(error) });
-    await emitArc(deps, state, (arc) => arc.runnerState("failed", "pipeline failed"));
+    await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+    await state.record({ at: now(), type: "pipeline_failed", detail: { message: errorMessage(error) } });
+    await emitArc(deps, state, arc => arc.runnerState("failed", sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets)));
     throw error;
   } finally {
-    await closeBuilder();
+    await deps.builder.close();
   }
-}
-
-async function executePacket(
-  selected: WorkPacket,
-  options: PipelineOptions,
-  deps: PipelineDeps,
-  state: RunStateStore,
-  catalog: RequirementCatalog,
-): Promise<void> {
-  const catalogStatus = catalog.statusById;
-  let attempt: 1 | 2 | 3 = 1;
-  let previousReport: ShadowReport | undefined;
-  let plan: ProbePlan | undefined;
-  let iteration = 0;
-  const recovery = { browserRetries: 0, locatorRefinements: 0 };
-
-  while (true) {
-    iteration += 1;
-    if (iteration > MAX_PACKET_ITERATIONS) {
-      await blockPacket(
-        deps,
-        state,
-        { ...selected, attempt },
-        catalogStatus,
-        "packet iteration cap exceeded",
-      );
-      return;
-    }
-
-    const packet: WorkPacket = { ...selected, attempt };
-    if (state.shouldEnterDelivery(deps.clock.nowMs())) {
-      await blockPacket(deps, state, packet, catalogStatus, "packet budget exhausted");
-      return;
-    }
-    state.setPacketAttempt(packet.id, attempt);
-    for (const requirementId of packet.requirementIds) {
-      await emitArc(deps, state, (arc) =>
-        arc.requirementState(requirementId, "implement", "running"),
-      );
-    }
-
-    const mode = packetBuilderMode(attempt);
-    let builderRequest: BuilderRequest;
-    if (mode === "implement") {
-      builderRequest = {
-        mode,
-        packet,
-        projectContext: buildBuilderProjectContext(packet, catalog),
-        outputDir: options.outputDir,
-        platformContract: options.platformContract,
-      };
-    } else {
-      if (!previousReport) {
-        throw new Error(`Packet ${packet.id} entered ${mode} without a shadow report`);
-      }
-      builderRequest = {
-        mode,
-        packet,
-        projectContext: buildBuilderProjectContext(packet, catalog),
-        shadowObservation: toBuilderShadowObservation(previousReport, deps.diagnosticSecrets),
-        outputDir: options.outputDir,
-        platformContract: options.platformContract,
-      };
-    }
-
-    await state.record({ at: now(), type: "builder_started", packetId: packet.id, detail: { attempt, mode } });
-    const builderStartedAt = deps.clock.nowMs();
-    let builderResult: BuilderResult;
-    try {
-      builderResult = await deps.builder.run(builderRequest);
-    } catch (error) {
-      if (error instanceof ExecutionFault) throw error;
-      builderResult = {
-        sessionId: "unavailable",
-        outcome: "failed",
-        summary: errorMessage(error),
-      };
-    }
-    await state.record({
-      at: now(),
-      type: "builder_finished",
-      packetId: packet.id,
-      detail: {
-        outcome: builderResult.outcome,
-        sessionId: builderResult.sessionId,
-        summary: builderResult.summary,
-        attempt,
-        durationMs: Math.max(0, deps.clock.nowMs() - builderStartedAt),
-      },
-    });
-    if (builderResult.referenceImages) {
-      await state.record({
-        at: now(), type: "builder_reference_images", packetId: packet.id,
-        detail: builderResult.referenceImages,
-      });
-    }
-
-    let report: ShadowReport;
-    if (builderResult.outcome !== "completed") {
-      report = builderFailureReport(packet.id, builderResult.summary);
-    } else {
-      if (!plan) {
-        plan = await planProbe(packet, options, deps, state);
-        if (!plan) {
-          await blockPacket(deps, state, packet, catalogStatus, "probe planner failed");
-          return;
-        }
-        await state.record({
-          at: now(),
-          type: "probe_planned",
-          packetId: packet.id,
-          detail: { cases: plan.cases.length },
-        });
-      }
-      let probeOutcome: ProbeOutcome;
-      try {
-        probeOutcome = await runShadowProbes(packet, plan, options, deps, state, recovery);
-      } catch (error) {
-        if (!(error instanceof ExecutionFault) || !error.retryable) throw error;
-        await blockPacket(deps, state, packet, catalogStatus, "browser infrastructure retries exhausted or budget exhausted");
-        return;
-      }
-      plan = probeOutcome.plan;
-      report = probeOutcome.report;
-      if (probeOutcome.source === "probe" && report.verdict !== "pass" &&
-        report.failures.every((failure) => failure.category === "locator" || failure.category === "runner")) {
-        await blockPacket(deps, state, packet, catalogStatus, "judge could not establish valid behavior evidence");
-        return;
-      }
-    }
-
-    const decision = decideAfterReport(report, attempt);
-    if (decision.kind === "accept") {
-      if (report.candidate) await deps.candidate?.assertCurrent(report.candidate);
-      const acceptedSha = await deps.git.captureAccepted(`shallow: accept ${packet.id}`);
-      if (report.candidate) await deps.candidate?.assertCurrent(report.candidate);
-      state.setAcceptedSha(acceptedSha);
-      if (report.candidate) deps.candidate?.recordAccepted(report.candidate);
-      state.markRequirements(packet.requirementIds, "verified");
-      setCatalogStatus(catalogStatus, packet.requirementIds, "verified");
-      await state.record({ at: now(), type: "packet_accepted", packetId: packet.id,
-        ...(report.candidate ? { detail: { candidate: report.candidate } } : {}) });
-      for (const requirementId of packet.requirementIds) {
-        await emitArc(deps, state, (arc) =>
-          arc.requirementState(requirementId, "implement", "completed"),
-        );
-        await emitArc(deps, state, (arc) =>
-          arc.requirementState(requirementId, "test", "passed"),
-        );
-      }
-      await emitArc(deps, state, (arc) => arc.commitHistorySignal("git_commit"));
-      return;
-    }
-    if (decision.kind === "repair") {
-      await state.record({ at: now(), type: "repair_scheduled", packetId: packet.id,
-        detail: { nextAttempt: decision.nextAttempt, rootCauseFirst: decision.requireRootCauseFirst,
-          verdict: report.verdict, failures: report.failures.map((failure) => failure.category) } });
-      previousReport = report;
-      attempt = decision.nextAttempt;
-      continue;
-    }
-
-    await blockPacket(deps, state, packet, catalogStatus, "shadow attempts exhausted");
-    return;
-  }
-}
-
-interface ProbeOutcome {
-  source: "application" | "probe";
-  report: ShadowReport;
-  plan: ProbePlan;
-}
-
-function packetBuilderMode(attempt: 1 | 2 | 3): "implement" | "repair" | "root_cause_repair" {
-  if (attempt === 1) return "implement";
-  return attempt === 2 ? "repair" : "root_cause_repair";
 }
 
 function buildBuilderProjectContext(
   packet: WorkPacket,
   catalog: RequirementCatalog,
+  implemented: ReadonlySet<string>,
 ): BuilderProjectContext {
   const first = packet.requirements[0];
   if (!first) throw new Error(`Packet ${packet.id} has no requirements`);
@@ -460,7 +315,7 @@ function buildBuilderProjectContext(
       packet.requirements.flatMap((item) => item.ancestors),
     ),
     satisfiedDependencies: catalog.requirements
-      .filter((item) => dependencyIds.has(item.id))
+      .filter((item) => dependencyIds.has(item.id) && implemented.has(item.id))
       .map((item) => ({ id: item.id, name: item.name, contract: item.text })),
   };
 }
@@ -487,201 +342,6 @@ const expectedByStage = {
   complete: "完整交付验证成功",
 } satisfies Record<FinalVerificationReport["stage"], string>;
 
-async function runShadowProbes(
-  packet: WorkPacket,
-  plan: ProbePlan,
-  options: PipelineOptions,
-  deps: PipelineDeps,
-  state: RunStateStore,
-  recovery: { browserRetries: number; locatorRefinements: number },
-): Promise<ProbeOutcome> {
-  await state.record({ at: now(), type: "application_starting", packetId: packet.id });
-  let application: Awaited<ReturnType<AppLifecycle["start"]>>;
-  try {
-    application = await deps.appLifecycle.start(
-      options.outputDir,
-      options.platformContract,
-    );
-  } catch (error) {
-    await state.record({
-      at: now(),
-      type: "application_start_failed",
-      packetId: packet.id,
-      detail: { message: errorMessage(error) },
-    });
-    return { source: "application", report: applicationFailureReport(packet.id, error), plan };
-  }
-
-  try {
-    await state.record({ at: now(), type: "application_ready", packetId: packet.id,
-      detail: { baseUrl: application.baseUrl, ...(application.candidate ? { candidate: application.candidate } : {}) } });
-    let currentPlan = plan;
-    const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
-    const run = async (): Promise<ShadowReport> => {
-      while (true) {
-        const startedAt = deps.clock.nowMs();
-        await state.record({ at: now(), type: "probe_started", packetId: packet.id,
-          detail: { cases: currentPlan.cases.length, retryCount: recovery.browserRetries,
-            planSha256: probePlanSha256(currentPlan) } });
-        try {
-          const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions });
-          await application.assertUnchanged?.();
-          if (application.candidate) report.candidate = application.candidate;
-          const evidenceId = await state.saveEvidence(report, currentPlan);
-          await state.record({ at: now(), type: "probe_finished", packetId: packet.id,
-            detail: { verdict: report.verdict, refined: recovery.locatorRefinements > 0, passed: report.passedCases.length,
-              failed: report.failures.length, durationMs: Math.max(0, deps.clock.nowMs() - startedAt),
-              categories: report.failures.map((failure) => failure.category), evidenceId,
-              ...(report.candidate ? { candidate: report.candidate } : {}) } });
-          return report;
-        } catch (error) {
-          if (!(error instanceof ExecutionFault)) throw error;
-          const retry = error.retryable && recovery.browserRetries < 1 &&
-            !state.shouldEnterDelivery(deps.clock.nowMs());
-          await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
-            detail: { source: error.source, code: error.code, retryable: error.retryable,
-              retry, attempt: packet.attempt, retryCount: recovery.browserRetries } });
-          if (!retry) throw error;
-          recovery.browserRetries += 1;
-        }
-      }
-    };
-    let report = await run();
-
-    let feedback: ProbePlannerFeedback | undefined;
-    while (report.verdict === "inconclusive" &&
-      report.failures.length > 0 && report.failures.every((failure) => failure.category === "locator") &&
-      report.failures.some((failure) => failure.locatorSnapshot) &&
-      recovery.locatorRefinements < MAX_LOCATOR_REFINEMENTS &&
-      !state.shouldEnterDelivery(deps.clock.nowMs())) {
-      const refinementAttempt = ++recovery.locatorRefinements;
-      const beforePlanSha256 = probePlanSha256(currentPlan);
-      let refined: ProbePlan;
-      try {
-        // Pass a copy so a planner implementation cannot mutate the behavior being checked.
-        refined = parseProbePlan(await deps.planner.refineLocators(
-          structuredClone(currentPlan), structuredClone(report.failures), feedback,
-        ));
-        assertLocatorOnlyRefinement(currentPlan, refined, report.failures);
-      } catch (error) {
-        if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
-        const detail = plannerFailureDetail(error);
-        feedback = {
-          validationError: String(detail.validationError ?? detail.message),
-          ...(typeof detail.contentPreview === "string" ? { contentPreview: detail.contentPreview } : {}),
-        };
-        await state.record({ at: now(), type: "probe_refinement_failed", packetId: packet.id,
-          detail: { ...detail, refinementAttempt, planSha256: beforePlanSha256 } });
-        continue;
-      }
-      if (state.shouldEnterDelivery(deps.clock.nowMs())) break;
-      currentPlan = refined;
-      feedback = undefined;
-      await state.record({ at: now(), type: "probe_refined", packetId: packet.id,
-        detail: { refinementAttempt, beforePlanSha256, planSha256: probePlanSha256(currentPlan) } });
-      // Browser failures use their own shared quota, outside the planner error handler.
-      report = await run();
-    }
-    return { source: "probe", report, plan: currentPlan };
-  } finally {
-    await application.stop();
-    await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
-  }
-}
-
-const MAX_PACKET_ITERATIONS = 6;
-const MAX_LOCATOR_REFINEMENTS = 2;
-
-async function planProbe(
-  packet: WorkPacket,
-  options: PipelineOptions,
-  deps: PipelineDeps,
-  state: RunStateStore,
-): Promise<ProbePlan | undefined> {
-  await state.record({ at: now(), type: "probe_planning", packetId: packet.id });
-  let feedback: ProbePlannerFeedback | undefined;
-  try {
-    return parseProbePlan(await deps.planner.plan(packet), packet);
-  } catch (error) {
-    if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema")) {
-      feedback = {
-        validationError: error.diagnostics.validationError ?? error.diagnostics.message,
-        contentPreview: error.diagnostics.contentPreview,
-      };
-    }
-    await state.record({
-      at: now(),
-      type: error instanceof ProbePlannerError && error.fatal ? "probe_planner_failed" : "probe_planner_retry",
-      packetId: packet.id,
-      detail: { ...plannerFailureDetail(error), attempt: packet.attempt, retryCount: 0 },
-    });
-    if (error instanceof ProbePlannerError && error.fatal) throw error;
-  }
-  if (state.shouldEnterDelivery(deps.clock.nowMs())) return undefined;
-  const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;
-  if (retryDelayMs > 0) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, retryDelayMs));
-  }
-  if (state.shouldEnterDelivery(deps.clock.nowMs())) return undefined;
-  try {
-    return parseProbePlan(await deps.planner.plan(packet, feedback), packet);
-  } catch (error) {
-    await state.record({
-      at: now(),
-      type: "probe_planner_failed",
-      packetId: packet.id,
-      detail: plannerFailureDetail(error),
-    });
-    if (error instanceof ProbePlannerError && error.fatal) throw error;
-    return undefined;
-  }
-}
-
-function plannerFailureDetail(error: unknown): Record<string, unknown> {
-  return error instanceof ProbePlannerError
-    ? { source: "planner", ...error.diagnostics }
-    : { message: errorMessage(error) };
-}
-
-async function blockPacket(
-  deps: PipelineDeps,
-  state: RunStateStore,
-  packet: WorkPacket,
-  catalogStatus: Record<string, "todo" | "verified" | "blocked">,
-  reason: string,
-): Promise<void> {
-  await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-  state.markRequirements(packet.requirementIds, "blocked");
-  setCatalogStatus(catalogStatus, packet.requirementIds, "blocked");
-  await state.record({
-    at: now(),
-    type: "packet_blocked",
-    packetId: packet.id,
-    detail: { reason },
-  });
-  for (const requirementId of packet.requirementIds) {
-    await emitArc(deps, state, (arc) =>
-      arc.requirementState(requirementId, "implement", "failed"),
-    );
-  }
-}
-
-function applicationFailureReport(packetId: string, error: unknown): ShadowReport {
-  return {
-    packetId,
-    verdict: "fail",
-    passedCases: [],
-    failures: [
-      {
-        caseId: "<application>",
-        stepIndex: -1,
-        category: "runner",
-        message: errorMessage(error),
-      },
-    ],
-  };
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -699,22 +359,6 @@ async function emitArc(
   }
 }
 
-function builderFailureReport(packetId: string, message: string): ShadowReport {
-  return {
-    packetId,
-    verdict: "fail",
-    passedCases: [],
-    failures: [
-      {
-        caseId: "<builder>",
-        stepIndex: -1,
-        category: "runner",
-        message,
-      },
-    ],
-  };
-}
-
 async function runFinalVerifier(
   options: PipelineOptions,
   deps: PipelineDeps,
@@ -730,11 +374,7 @@ async function runFinalVerifier(
       return report;
     } catch (error) {
       if (error instanceof ExecutionFault) {
-        // No retry-count cap: keep retrying retryable infrastructure faults while a
-        // finite budget allows it. The first retry always runs so delivery is never
-        // abandoned when the packet phase already consumed the budget.
-        const retry = error.retryable &&
-          (retryCount === 0 || state.withinBudget(deps.clock.nowMs()));
+        const retry = error.retryable && retryCount === 0;
         await state.record({ at: now(), type: "execution_fault", packetId: "final-verification",
           detail: { source: error.source, code: error.code, retryable: error.retryable, retry, retryCount } });
         if (retry) continue;
@@ -745,23 +385,5 @@ async function runFinalVerifier(
   }
 }
 
-function setCatalogStatus(
-  statuses: Record<string, "todo" | "verified" | "blocked">,
-  ids: string[],
-  status: "verified" | "blocked",
-): void {
-  for (const id of ids) statuses[id] = status;
-}
 
-function idsWithStatus(
-  statuses: Record<string, "todo" | "verified" | "blocked">,
-  status: "verified" | "blocked",
-): string[] {
-  return Object.entries(statuses)
-    .filter(([, value]) => value === status)
-    .map(([id]) => id);
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
+function now(): string { return new Date().toISOString(); }
