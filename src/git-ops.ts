@@ -25,15 +25,17 @@ export class GitCliOps implements GitOps {
     const requested = resolve(outputDirectory);
     await mkdir(requested, { recursive: true });
     const canonical = await realpath(requested);
-    let rootResult = await runGit(canonical, ["rev-parse", "--show-toplevel"], true);
-    const hadRepository = rootResult.code === 0;
+    const rootResult = await runGit(canonical, ["rev-parse", "--show-toplevel"], true);
+    const existingRoot = rootResult.code === 0 ? await realpath(rootResult.stdout.trim()) : undefined;
+    // A parent repository (such as the ShallowCode workspace) is never the output
+    // repository: only a directory that is its own top level counts as one.
+    const hadRepository = existingRoot !== undefined && samePath(existingRoot, canonical);
     if (!hadRepository) {
       await requireEmptyOutputDirectory(canonical);
       await requireGit(canonical, ["init"]);
-      rootResult = await requireGit(canonical, ["rev-parse", "--show-toplevel"]);
     }
-    const actualRoot = await realpath(rootResult.stdout.trim());
-    if (!samePath(actualRoot, canonical)) {
+    const actualRoot = await requireGit(canonical, ["rev-parse", "--show-toplevel"]);
+    if (!samePath(await realpath(actualRoot.stdout.trim()), canonical)) {
       throw new Error(`Output directory must be a Git repository root: ${canonical}`);
     }
     if (hadRepository) {

@@ -197,6 +197,42 @@ test("GitOps open initializes over pre-seeded platform scaffold entries", async 
   });
 });
 
+test("GitOps open initializes an independent repository nested inside another repository", async () => {
+  await withTempDir("shallow-git-", async (parent) => {
+    await initRepoWithRootCommit(parent, "parent baseline");
+    const parentHead = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: parent })).stdout.trim();
+    const nested = join(parent, "output");
+    await mkdir(nested);
+
+    const git = await GitCliOps.open(nested);
+    await git.captureAccepted("shallow: initial state");
+
+    const nestedRoot = (await execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: nested })).stdout.trim();
+    assert.equal(nestedRoot.replaceAll("\\", "/").toLowerCase(), nested.replaceAll("\\", "/").toLowerCase());
+    assert.equal(
+      (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: parent })).stdout.trim(),
+      parentHead,
+    );
+    assert.equal(await readFile(join(parent, "app.txt"), "utf8"), "committed");
+    assert.equal(await readFile(join(parent, ".gitignore"), "utf8"), "node_modules/\n");
+  });
+});
+
+test("GitOps open still refuses a non-empty directory nested inside another repository", async () => {
+  await withTempDir("shallow-git-", async (parent) => {
+    await initRepoWithRootCommit(parent, "parent baseline");
+    const nested = join(parent, "output");
+    await mkdir(nested);
+    await writeFile(join(nested, "stray.txt"), "stray", "utf8");
+
+    await assert.rejects(
+      GitCliOps.open(nested),
+      /must be empty before the first run/,
+    );
+    assert.equal(await readFile(join(nested, "stray.txt"), "utf8"), "stray");
+  });
+});
+
 test("GitOps open refuses a fresh directory that is not empty", async () => {
   await withTempDir("shallow-git-", async (directory) => {
     const stray = join(directory, "stray.txt");
