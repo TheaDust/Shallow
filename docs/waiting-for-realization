@@ -1,5 +1,5 @@
-全局builder视角（跨packet回归）=
+全局builder视角（跨packet回归）
 动态调整packet大小 =
 docs\2026-09-11-arc-reference-analysis.md =
 增量编译 =
-6 opencode内存占用过大 = 
+opencode内存占用过大 = 
