@@ -4,7 +4,8 @@
 // summarize. Design: docs/superpowers/specs/2026-09-12-local-e2e-eval-script-design.md
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync } from "node:fs";
+import { createServer } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,10 +13,11 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const benchmarkRoot = join(repoRoot, "benchmarks", "arc-bench");
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
-const pythonCmd = isWindows ? "python" : "python3";
-const DEFAULT_PORT = 3301;
+const defaultPythonCmd = isWindows ? "python" : "python3";
 const HEALTH_TIMEOUT_MS = 60_000;
 const POLL_MS = 500;
+const INSTALL_LOCK_TIMEOUT_MS = 15 * 60_000;
+const INSTALL_LOCK_PATH = join(benchmarkRoot, ".eval-install.lock");
 
 const colorEnabled = Boolean(process.stdout.isTTY) && !process.env.NO_COLOR;
 const paint = (code) => (text) => (colorEnabled ? `\u001b[${code}m${text}\u001b[0m` : text);
@@ -40,8 +42,17 @@ const HELP = `用法：
 
 选项：
   --test-app <name>             通用入口下指定官方测试 app
-  --output-dir <dir>            产物目录（缺省 tmp/eval-local/<agent>[/<app>]）
-  --port <n>                    本地评测端口（缺省 3301）
+  --agent-dir <dir>             agent 目录，入口用该目录下的 main.py
+                                （缺省仓库根，baseline 缺省仓库根/baseline）
+  --python <cmd>                生成阶段使用的 Python 解释器（缺省 python/python3，
+                                可指向 venv，如 tmp/agent/.venv/Scripts/python.exe）
+  --gen-arg <arg>               追加到生成命令的参数，可重复（用于外部 agent 的
+                                不同参数，如 --gen-arg --port --gen-arg 3301）
+  --no-web-port                 不注入默认的 --web-port <port>
+  --run-id <id>                 本次运行标识（缺省自动生成，用于隔离并行运行）
+  --output-dir <dir>            产物目录（缺省 tmp/eval-local/<agent>[/<app>]/<run-id>）
+  --artifacts-dir <dir>         Playwright 报告/结果目录（缺省 tmp/eval-local/artifacts/<run-id>）
+  --port <n>                    本地评测端口（缺省 0：自动挑选空闲端口）
   --budget-ms <ms>              生成预算，透传 SHALLOW_BUDGET_MS（缺省 0 不限）
   --health-path <path>          健康检查路径（缺省 /health）
   --generate-only               只生成，不构建/启动/测试
@@ -57,7 +68,12 @@ const HELP = `用法：
 示例：
   npm run eval:local -- --agent main --app keep
   npm run eval:local -- --agent baseline --app keep
-  npm run eval:local -- --agent main --eval-only --output-dir tmp/eval-local/main/keep --test-app keep`;
+  npm run eval:local -- --agent main --agent-dir tmp/agent-variant --app keep
+  npm run eval:local -- --agent main --eval-only --output-dir tmp/eval-local/main/keep --test-app keep
+
+并行（缺省自动隔离端口、产物与报告目录；可多次同时启动）：
+  npm run eval:local -- --agent main --agent-dir tmp/agent-arc-based --app keep
+  npm run eval:local -- --agent main --agent-dir tmp/agent-codex-based --app keep`;
 
 function printHelp() {
   console.log(HELP);
@@ -66,11 +82,17 @@ function printHelp() {
 function parseArgs(argv) {
   const options = {
     agent: "",
+    agentDir: "",
+    python: "",
+    genArgs: [],
+    noWebPort: false,
     app: "",
     requirementsDir: "",
     testApp: "",
+    runId: "",
     outputDir: "",
-    port: DEFAULT_PORT,
+    artifactsDir: "",
+    port: 0,
     budgetMs: 0,
     healthPath: "/health",
     generateOnly: false,
@@ -92,10 +114,20 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") options.help = true;
     else if (arg === "--agent") options.agent = take(index++, arg);
+    else if (arg === "--agent-dir") options.agentDir = take(index++, arg);
+    else if (arg === "--python") options.python = take(index++, arg);
+    else if (arg === "--gen-arg") {
+      if (index + 1 >= argv.length) throw new Error("--gen-arg 需要一个值");
+      options.genArgs.push(argv[index + 1]);
+      index += 1;
+    }
+    else if (arg === "--no-web-port") options.noWebPort = true;
     else if (arg === "--app") options.app = take(index++, arg);
     else if (arg === "--requirements-dir") options.requirementsDir = take(index++, arg);
     else if (arg === "--test-app") options.testApp = take(index++, arg);
+    else if (arg === "--run-id") options.runId = take(index++, arg);
     else if (arg === "--output-dir") options.outputDir = take(index++, arg);
+    else if (arg === "--artifacts-dir") options.artifactsDir = take(index++, arg);
     else if (arg === "--port") options.port = Number(take(index++, arg));
     else if (arg === "--budget-ms") options.budgetMs = Number(take(index++, arg));
     else if (arg === "--health-path") options.healthPath = take(index++, arg);
@@ -118,6 +150,58 @@ function loadApps() {
   return JSON.parse(readFileSync(path, "utf8")).apps ?? {};
 }
 
+function generateRunId() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  const stamp = [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join("") + "-" + [pad(now.getHours()), pad(now.getMinutes()), pad(now.getSeconds())].join("");
+  const rand = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+  return `${stamp}-${rand}`;
+}
+
+function findFreePort() {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const server = createServer();
+    server.unref();
+    server.on("error", rejectPromise);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => {
+        if (port) resolvePromise(port);
+        else rejectPromise(new Error("无法挑选空闲端口"));
+      });
+    });
+  });
+}
+
+async function acquireBenchmarkInstallLock() {
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      mkdirSync(INSTALL_LOCK_PATH);
+      return {
+        release: () => {
+          try {
+            rmdirSync(INSTALL_LOCK_PATH);
+          } catch {
+            // already released
+          }
+        },
+      };
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    if (Date.now() - startedAt > INSTALL_LOCK_TIMEOUT_MS) {
+      throw new Error(`等待 benchmark 安装锁超时（${INSTALL_LOCK_TIMEOUT_MS}ms）：${INSTALL_LOCK_PATH}`);
+    }
+    await delay(POLL_MS);
+  }
+}
+
 function resolveConfig(options) {
   if (!options.agent) throw new Error("--agent 必填（main 或 baseline）");
   if (!["main", "baseline"].includes(options.agent)) {
@@ -132,8 +216,11 @@ function resolveConfig(options) {
   if (!options.app && !options.testApp) {
     throw new Error("需要 --app <name> 或 --test-app <name> 指定官方测试");
   }
-  if (!Number.isInteger(options.port) || options.port <= 0 || options.port > 65535) {
-    throw new Error("--port 必须是 1-65535 的整数");
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
+    throw new Error("--port 必须是 0-65535 的整数（0 表示自动挑选空闲端口）");
+  }
+  if (options.runId && /[\\/]/.test(options.runId)) {
+    throw new Error("--run-id 不能包含路径分隔符");
   }
   if (options.generateOnly && options.evalOnly) {
     throw new Error("--generate-only 与 --eval-only 不能同时使用");
@@ -158,10 +245,26 @@ function resolveConfig(options) {
   }
 
   const testDir = join(benchmarkRoot, "arc-bench", "webapp", testApp, "tests");
+  const runId = options.runId || generateRunId();
   const outputDir = resolve(
-    options.outputDir || join(repoRoot, "tmp", "eval-local", options.agent, ...(options.app ? [options.app] : [])),
+    options.outputDir
+      || join(repoRoot, "tmp", "eval-local", options.agent, ...(options.app ? [options.app] : []), runId),
+  );
+  const artifactsDir = resolve(
+    options.artifactsDir || join(repoRoot, "tmp", "eval-local", "artifacts", runId),
   );
   const healthPath = options.healthPath.startsWith("/") ? options.healthPath : `/${options.healthPath}`;
+
+  const agentRoot = options.agentDir
+    ? resolve(options.agentDir)
+    : options.agent === "baseline" ? join(repoRoot, "baseline") : repoRoot;
+  const adapter = join(agentRoot, "main.py");
+  if (!options.evalOnly && !existsSync(adapter)) {
+    throw new Error(`找不到 agent 入口：${adapter}`);
+  }
+  const pythonCmd = options.python
+    ? /[\\/]/.test(options.python) ? resolve(options.python) : options.python
+    : defaultPythonCmd;
 
   if (requirementDir && !existsSync(join(requirementDir, "requirements.yaml"))) {
     throw new Error(`找不到需求文件：${join(requirementDir, "requirements.yaml")}`);
@@ -174,16 +277,20 @@ function resolveConfig(options) {
     throw new Error(`--eval-only 需要已有产物（缺 ${join(outputDir, "backend")}）`);
   }
 
-  return { ...options, healthPath, requirementDir, testApp, testDir, outputDir };
+  return { ...options, runId, healthPath, requirementDir, testApp, testDir, outputDir, artifactsDir, agentRoot, adapter, pythonCmd };
 }
 
 function banner(config) {
   console.log("");
   console.log(bold("ShallowCode 本地 E2E 评测"));
   console.log(`  agent        : ${agentPaint[config.agent](config.agent)}`);
+  console.log(`  agent 入口   : ${config.adapter}`);
+  console.log(`  python       : ${config.pythonCmd}`);
   console.log(`  模式         : ${config.generateOnly ? "仅生成" : config.evalOnly ? "仅评测（复用产物）" : "完整链路"}`);
   console.log(`  需求目录     : ${config.requirementDir || "（仅评测，无需需求目录）"}`);
+  console.log(`  运行标识     : ${config.runId}`);
   console.log(`  产物目录     : ${config.outputDir}`);
+  console.log(`  评测产物     : ${config.artifactsDir}`);
   console.log(`  官方测试 app : ${config.testApp}`);
   console.log(`  端口         : ${config.port}（健康检查 ${config.healthPath}）`);
   if (config.budgetMs > 0) console.log(`  生成预算     : ${config.budgetMs} ms`);
@@ -335,7 +442,9 @@ function countOfficialTests(dir) {
 
 function summarize(config, testCode) {
   const total = countOfficialTests(config.testDir);
-  const lastRunPath = join(benchmarkRoot, "test-results", config.testApp, ".last-run.json");
+  const resultDir = join(config.artifactsDir, config.testApp, "test-results");
+  const reportDir = join(config.artifactsDir, config.testApp, "playwright-report");
+  const lastRunPath = join(resultDir, ".last-run.json");
   let failed = null;
   try {
     const lastRun = JSON.parse(readFileSync(lastRunPath, "utf8"));
@@ -356,8 +465,8 @@ function summarize(config, testCode) {
     console.log(`  官方用例 : ${passed}/${total} 通过，${verdict}`);
   }
   console.log(`  产物目录 : ${config.outputDir}`);
-  console.log(`  测试报告 : ${join(benchmarkRoot, "playwright-report", "index.html")}`);
-  console.log(`  失败证据 : ${join(benchmarkRoot, "test-results", config.testApp)}`);
+  console.log(`  测试报告 : ${join(reportDir, "index.html")}`);
+  console.log(`  失败证据 : ${resultDir}`);
 }
 
 async function main() {
@@ -369,6 +478,7 @@ async function main() {
       return 0;
     }
     config = resolveConfig(options);
+    if (config.port === 0) config.port = await findFreePort();
   } catch (error) {
     console.error(red(`[eval-local] ${error.message}`));
     console.error(dim("运行 `node scripts/eval-local.mjs --help` 查看用法。"));
@@ -392,15 +502,16 @@ async function main() {
   try {
     if (!config.evalOnly) {
       stage();
-      const adapter = config.agent === "baseline"
-        ? join(repoRoot, "baseline", "main.py")
-        : join(repoRoot, "main.py");
       const genEnv = config.budgetMs > 0 ? { SHALLOW_BUDGET_MS: String(config.budgetMs) } : {};
+      const genArgs = [config.adapter, config.requirementDir, "--output-dir", config.outputDir, "--type", "web"];
+      if (!config.noWebPort) genArgs.push("--web-port", String(config.port));
+      genArgs.push(...config.genArgs);
       const code = await runStreaming({
         label: `gen:${config.agent}`,
         color: agentPaint[config.agent],
-        command: pythonCmd,
-        args: [adapter, config.requirementDir, "--output-dir", config.outputDir, "--type", "web", "--web-port", String(config.port)],
+        command: config.pythonCmd,
+        args: genArgs,
+        cwd: config.agentRoot,
         env: genEnv,
       });
       if (code !== 0) {
@@ -427,14 +538,35 @@ async function main() {
 
     stage();
     if (!existsSync(join(benchmarkRoot, "node_modules"))) {
-      if (await runStreaming({ label: "test", color: yellow, command: npmCmd, args: ["install"], cwd: benchmarkRoot })) return 1;
-      if (await runStreaming({ label: "test", color: yellow, command: npmCmd, args: ["run", "test:install"], cwd: benchmarkRoot })) return 1;
+      const lock = await acquireBenchmarkInstallLock();
+      let installCode = 0;
+      try {
+        if (!existsSync(join(benchmarkRoot, "node_modules"))) {
+          installCode = await runStreaming({ label: "test", color: yellow, command: npmCmd, args: ["install"], cwd: benchmarkRoot });
+          if (installCode === 0) {
+            installCode = await runStreaming({ label: "test", color: yellow, command: npmCmd, args: ["run", "test:install"], cwd: benchmarkRoot });
+          }
+        }
+      } finally {
+        lock.release();
+      }
+      if (installCode) return 1;
     }
     const testArgs = ["scripts/run-playwright.js", "--app", config.testApp, "--target-url", `http://127.0.0.1:${config.port}`];
     if (config.playwrightTimeout > 0) testArgs.push("--timeout", String(config.playwrightTimeout));
     if (config.expectTimeout > 0) testArgs.push("--expect-timeout", String(config.expectTimeout));
     if (config.grep) testArgs.push("--grep", config.grep);
-    const testCode = await runStreaming({ label: "test", color: yellow, command: "node", args: testArgs, cwd: benchmarkRoot });
+    const testCode = await runStreaming({
+      label: "test",
+      color: yellow,
+      command: "node",
+      args: testArgs,
+      cwd: benchmarkRoot,
+      env: {
+        PLAYWRIGHT_OUTPUT_ROOT: config.artifactsDir,
+        PLAYWRIGHT_REPORT_ROOT: config.artifactsDir,
+      },
+    });
     console.log("");
     summarize(config, testCode);
     return testCode;

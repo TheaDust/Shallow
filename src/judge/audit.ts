@@ -121,7 +121,7 @@ async function runShadowProbes(
         // Pass a copy so a planner implementation cannot mutate the behavior being checked.
         refined = parseProbePlan(await deps.planner.refineLocators(
           structuredClone(currentPlan), structuredClone(report.failures.filter(failure => failure.category === "locator")), feedback,
-          { timeoutMs: Math.max(1, Math.min(45_000, remaining())) },
+          { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) },
         ));
         assertLocatorOnlyRefinement(currentPlan, refined, report.failures.filter(failure => failure.category === "locator"));
       } catch (error) {
@@ -154,6 +154,10 @@ async function runShadowProbes(
 
 const MAX_LOCATOR_REFINEMENTS = 2;
 
+// Reasoning models behind the gateway can spend well over a minute on a full
+// plan; a 45s cap timed out every larger packet while small ones succeeded.
+const PLANNER_ATTEMPT_TIMEOUT_MS = 180_000;
+
 async function planProbe(
   packet: WorkPacket,
   options: PipelineOptions,
@@ -164,7 +168,7 @@ async function planProbe(
   await state.record({ at: now(), type: "probe_planning", packetId: packet.id });
   let feedback: ProbePlannerFeedback | undefined;
   try {
-    return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, Math.min(45_000, remaining())) }), packet);
+    return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) }), packet);
   } catch (error) {
     if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema")) {
       feedback = {
@@ -187,7 +191,7 @@ async function planProbe(
   }
   if (remaining() <= 0) return undefined;
   try {
-    return parseProbePlan(await deps.planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(45_000, remaining())) }), packet);
+    return parseProbePlan(await deps.planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) }), packet);
   } catch (error) {
     await state.record({
       at: now(),
