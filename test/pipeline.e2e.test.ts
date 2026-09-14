@@ -10,19 +10,19 @@ import { FakeBuilder } from "./fakes/fake-builder.js";
 import { startFixtureServer } from "./helpers/fixture-server.js";
 import { withModulePipeline, fail, pass } from "./helpers/module-pipeline.js";
 
-test("Pipeline builds full modules before independent atomic audit and reports checkpoint/verification separately", async () => {
+test("Pipeline checks module paths before the full atomic audit and keeps verification separate", async () => {
   await withModulePipeline(async f => {
     const calls: string[] = [];
-    f.deps.planner.plan = async packet => {
+    f.deps.planner.plan = async (packet, _feedback, options) => {
       calls.push(packet.id);
-      assert.equal(f.builder.requests.length, 2);
+      if (options?.purpose !== "module_feedback") assert.equal(f.builder.requests.length, 2);
       const { testPlan } = await import("./helpers/module-pipeline.js");
       return testPlan(packet);
     };
     const summary = await f.run();
     assert.equal(summary.status, "delivered");
     assert.deepEqual(f.builder.requests.map(item => "packet" in item ? item.packet.requirementIds : []), [["A", "B"], ["C"]]);
-    assert.deepEqual(calls, ["packet-a", "packet-b", "packet-c"]);
+    assert.deepEqual(calls, ["feedback-packet-a", "feedback-packet-c", "packet-a", "packet-b", "packet-c"]);
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(f.git.restoredShas, []);
@@ -59,6 +59,7 @@ test("Audit replays a business failure in a fresh application before requesting 
   await withModulePipeline(async f => {
     const calls = new Map<string, number>();
     f.deps.runner.run = async plan => {
+      if (plan.packetId.startsWith("feedback-")) return pass(plan);
       calls.set(plan.packetId, (calls.get(plan.packetId) ?? 0) + 1);
       const repairing = f.builder.requests.some(item => item.mode === "repair");
       return !repairing && plan.packetId !== "packet-c" ? fail(plan) : pass(plan);

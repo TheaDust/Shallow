@@ -4,12 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import {
-  OpenCodeSdkBuilder,
-  type OpenCodePromptInput,
-  type OpenCodeRuntime,
-  type OpenCodeServerExit,
-} from "../src/builder/opencode-sdk.js";
 import { compileBuilderPrompt } from "../src/builder/prompt.js";
 import type {
   BuilderPromptInput,
@@ -26,32 +20,18 @@ import { FakeBuilder } from "./fakes/fake-builder.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 import { ExecutionFault } from "../src/execution-fault.js";
 
-test("Builder exposes runtime startup failure as terminal infrastructure", async () => {
-  const runtime = new RecordingRuntime();
-  runtime.start = async () => { throw Object.assign(new Error("missing opencode"), { code: "ENOENT" }); };
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1000 });
-  try {
-    await assert.rejects(builder.run(builderRequest(1)), (error: unknown) => {
-      assert.ok(error instanceof ExecutionFault);
-      assert.equal(error.code, "builder_start");
-      assert.equal(error.retryable, false);
-      return true;
-    });
-  } finally { await builder.close(); }
-});
-
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
 
   assert.match(compiled.systemPrompt, /唯一代码实现者/);
-  assert.match(compiled.systemPrompt, /Builder 浏览器自测/);
-  assert.match(compiled.systemPrompt, /至多进行一轮/);
+  assert.match(compiled.systemPrompt, /Builder 开发检查/);
+  assert.match(compiled.systemPrompt, /传统测试/);
   assert.match(compiled.systemPrompt, /保留种子数据/);
-  assert.match(compiled.systemPrompt, /释放实例及端口/);
-  assert.match(compiled.systemPrompt, /`candidate` MCP 的 `prepare`/);
+  assert.match(compiled.systemPrompt, /释放进程/);
+  assert.doesNotMatch(compiled.systemPrompt, /MCP/);
   assert.match(compiled.systemPrompt, /SHALLOW_DATA_DIR/);
   assert.match(compiled.systemPrompt, /持续增量扩展/);
-  assert.match(compiled.systemPrompt, /必要的关键路径检查/);
+  assert.match(compiled.systemPrompt, /必要的开发检查/);
   assert.match(compiled.taskPrompt, /浏览器未执行/);
   assert.match(compiled.taskPrompt, /未执行/);
   assert.doesNotMatch(compiled.systemPrompt, /REQ-PROFILE/);
@@ -89,7 +69,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
 test("Module and consolidated repair prompts bound self-test and keep implementation notes optional", () => {
   for (const request of [implementRequest(), repairRequest("repair")]) {
     const compiled = compileBuilderPrompt(request);
-    assert.match(compiled.systemPrompt, /至多进行一轮/);
+    assert.match(compiled.systemPrompt, /传统测试/);
     assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
     assert.match(compiled.taskPrompt, /不超过十行/);
     assert.doesNotMatch(compiled.taskPrompt, /再重新 `prepare` 并完成关键路径检查/);
@@ -174,81 +154,6 @@ test("Startup failures append the delivery contract on top of the product base",
   assert.match(compiled.taskPrompt, /Application exited before readiness/);
 });
 
-test("Builder sends the system contract and task prompt through separate runtime channels", async () => {
-  const runtime = new RecordingRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
-
-  const first = await builder.run(builderRequest(1));
-  const second = await builder.run(builderRequest(2));
-  await builder.close();
-
-  assert.deepEqual(runtime.startedDirectories, ["C:\\candidate-app"]);
-  assert.deepEqual(runtime.createdTitles, [
-    "packet-req-profile implement",
-    "packet-req-profile repair",
-  ]);
-  assert.equal(runtime.prompts.length, 2);
-  assert.match(runtime.prompts[0].input.systemPrompt, /唯一代码实现者/);
-  assert.match(runtime.prompts[0].input.taskPrompt, /当前工作包/);
-  assert.doesNotMatch(runtime.prompts[0].input.systemPrompt, /REQ-PROFILE/);
-  assert.match(runtime.prompts[1].input.taskPrompt, /集中修复已确认的业务失败/);
-  assert.equal(first.sessionId, "session-1");
-  assert.equal(second.sessionId, "session-2");
-  assert.equal(first.outcome, "completed");
-  assert.equal(runtime.closeCount, 1);
-});
-
-test("Builder attaches only the current packet's readable requirement images", async () => {
-  await withTempDir("shallow-builder-images-", async (directory) => {
-    await mkdir(join(directory, "reference"));
-    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64");
-    await writeFile(join(directory, "reference", "profile.png"), png);
-    const runtime = new RecordingRuntime();
-    const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000, requirementsDir: directory });
-    const result = await builder.run(builderRequest(1));
-    await builder.close();
-    assert.equal(result.outcome, "completed");
-    assert.equal(runtime.prompts[0].input.images?.length, 1);
-    assert.equal(runtime.prompts[0].input.images?.[0].dataUrl, `data:image/png;base64,${png.toString("base64")}`);
-    assert.match(runtime.prompts[0].input.taskPrompt, /已附加图片/);
-    assert.doesNotMatch(JSON.stringify(result), /data:image|base64/);
-  });
-});
-
-test("Builder aborts the active session when its prompt times out", async () => {
-  const runtime = new RecordingRuntime();
-  runtime.promptResult = new Promise(() => undefined);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "timed_out");
-  assert.deepEqual(runtime.abortedSessions, ["session-1"]);
-});
-
-test("Builder terminates an unsettled runtime before returning and restarts it for repair", async () => {
-  const runtime = new RecordingRuntime();
-  runtime.promptResult = new Promise(() => undefined);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
-  assert.equal((await builder.run(builderRequest(1))).outcome, "timed_out");
-  assert.equal(runtime.closeCount, 1);
-  runtime.promptResult = Promise.resolve("repaired");
-  assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
-  assert.equal(runtime.startedDirectories.length, 2);
-  await builder.close();
-});
-
-test("Builder forcibly closes its runtime when the abort endpoint hangs", async () => {
-  const runtime = new RecordingRuntime();
-  runtime.promptResult = new Promise(() => undefined);
-  runtime.abort = () => new Promise(() => undefined);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 10 });
-  assert.equal((await builder.run(builderRequest(1))).outcome, "failed");
-  assert.equal(runtime.closeCount, 1);
-  await builder.close();
-});
-
 test("Builder distinguishes the evaluation default from the probe port", () => {
   const request = implementRequest();
   request.platformContract.port = 3210;
@@ -256,199 +161,6 @@ test("Builder distinguishes the evaluation default from the probe port", () => {
   const compiled = compileBuilderPrompt(request);
   assert.match(compiled.taskPrompt, /未设置时使用 3000/);
   assert.match(compiled.taskPrompt, /PORT=3210/);
-});
-
-test("Builder aborts the orphan session when the prompt call fails", async () => {
-  const runtime = new GhostRuntime();
-  runtime.failPrompt = new TypeError("fetch failed");
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.match(result.summary, /fetch failed/);
-  assert.deepEqual(runtime.events, ["prompt-start", "abort"]);
-});
-
-test("Builder keeps the root cause in the failure summary", async () => {
-  const runtime = new GhostRuntime();
-  runtime.failPrompt = Object.assign(new TypeError("fetch failed"), {
-    cause: new Error("Headers Timeout Error (headers timeout: 300000ms)"),
-  });
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.match(result.summary, /fetch failed/);
-  assert.match(result.summary, /Headers Timeout Error/);
-});
-
-test("Builder reports the original failure when the orphan abort also fails", async () => {
-  const runtime = new GhostRuntime();
-  runtime.failPrompt = new TypeError("fetch failed");
-  runtime.failAbort = true;
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.match(result.summary, /fetch failed/);
-  assert.match(result.summary, /OpenCode session abort failed/);
-  assert.deepEqual(runtime.events, ["prompt-start", "abort"]);
-});
-
-test("Builder waits for the prompt to settle after abort before returning timed_out", async () => {
-  const runtime = new GhostRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  runtime.events.push("returned");
-  await builder.close();
-
-  assert.equal(result.outcome, "timed_out");
-  assert.deepEqual(runtime.events, ["prompt-start", "abort", "prompt-settled", "returned"]);
-});
-
-test("Builder reports failure when the abort call itself fails", async () => {
-  const runtime = new GhostRuntime();
-  runtime.failAbort = true;
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.equal(result.summary, "OpenCode session abort failed");
-});
-
-test("Builder restarts the runtime and re-issues the task after the server was killed", async () => {
-  const runtime = new KilledServerRuntime(1);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "completed");
-  assert.equal(runtime.startedDirectories.length, 2);
-  assert.equal(runtime.prompts.length, 2);
-  assert.deepEqual(runtime.prompts[0].input, runtime.prompts[1].input);
-  assert.equal(result.sessionId, "session-2");
-});
-
-test("Builder stops restarting after the server-death budget is exhausted", async () => {
-  const runtime = new KilledServerRuntime(Number.POSITIVE_INFINITY);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.equal(runtime.startedDirectories.length, 3);
-  assert.equal(runtime.prompts.length, 3);
-});
-
-test("Builder replaces a reused server that exited between calls", async () => {
-  const runtime = new KilledServerRuntime(0);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
-  try {
-    assert.equal((await builder.run(builderRequest(1))).outcome, "completed");
-    let exit: OpenCodeServerExit | undefined = { code: null, signal: "SIGKILL" };
-    runtime.serverExit = () => exit;
-    const start = runtime.start.bind(runtime);
-    runtime.start = async directory => { exit = undefined; await start(directory); };
-    assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
-    assert.equal(runtime.startedDirectories.length, 2);
-    assert.equal(runtime.prompts.length, 2);
-  } finally {
-    await builder.close();
-  }
-});
-
-test("Builder does not re-issue a task when server recovery uses the remaining timeout", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: 0 });
-  const runtime = new KilledServerRuntime(1);
-  const start = runtime.start.bind(runtime);
-  runtime.start = async directory => {
-    await start(directory);
-    if (runtime.startedDirectories.length === 2) t.mock.timers.setTime(1_001);
-  };
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
-  try {
-    assert.equal((await builder.run(builderRequest(1))).outcome, "timed_out");
-    assert.equal(runtime.prompts.length, 1);
-  } finally {
-    await builder.close();
-  }
-});
-
-test("Builder does not restart a live server after an ordinary prompt failure", async () => {
-  const runtime = new KilledServerRuntime(0, 1);
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 2_000 });
-
-  const result = await builder.run(builderRequest(1));
-  await builder.close();
-
-  assert.equal(result.outcome, "failed");
-  assert.equal(runtime.startedDirectories.length, 1);
-});
-
-test("Builder reuses the runtime across calls and closes it at shutdown", async () => {
-  const runtime = new RecordingRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
-
-  assert.equal((await builder.run(builderRequest(1))).outcome, "completed");
-  assert.equal(runtime.closeCount, 0);
-  assert.equal((await builder.run(builderRequest(2))).outcome, "completed");
-  assert.equal(runtime.closeCount, 0);
-  assert.equal(runtime.startedDirectories.length, 1);
-  assert.equal(runtime.createdTitles.length, 2);
-  await builder.close();
-  assert.equal(runtime.closeCount, 1);
-});
-
-test("Implementation conversation is reused by key and repair gets a fresh session", async () => {
-  const runtime = new RecordingRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 1_000 });
-  try {
-    const first = await builder.run(builderRequest(1), { sessionKey: "implementation-0" });
-    const second = await builder.run(builderRequest(1), { sessionKey: "implementation-0" });
-    const repair = await builder.run(builderRequest(2));
-    assert.equal(second.sessionId, first.sessionId);
-    assert.notEqual(repair.sessionId, first.sessionId);
-    assert.equal(runtime.createdTitles.length, 2);
-    const afterRollback = await builder.run(builderRequest(1), { sessionKey: "implementation-1" });
-    assert.notEqual(afterRollback.sessionId, first.sessionId);
-  } finally { await builder.close(); }
-});
-
-test("Failed calls discard their reusable conversation and respect the smaller call timeout", async () => {
-  const runtime = new RecordingRuntime();
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 60_000, promptSettleTimeoutMs: 5 });
-  try {
-    const first = await builder.run(builderRequest(1), { sessionKey: "implementation" });
-    runtime.promptResult = new Promise(() => {});
-    const timed = await builder.run(builderRequest(1), { sessionKey: "implementation", timeoutMs: 5 });
-    assert.equal(timed.outcome, "timed_out");
-    runtime.promptResult = Promise.resolve("done");
-    const next = await builder.run(builderRequest(1), { sessionKey: "implementation" });
-    assert.notEqual(next.sessionId, first.sessionId);
-  } finally { await builder.close(); }
-});
-
-test("Builder does not re-issue a task when the runtime reports no environment exit", async () => {
-  const runtime = new RecordingRuntime();
-  runtime.abort = async () => { throw new Error("abort endpoint down"); };
-  runtime.promptResult = Promise.reject(new Error("fetch failed; other side closed"));
-  const builder = new OpenCodeSdkBuilder(runtime, { timeoutMs: 5_000 });
-
-  const result = await builder.run(builderRequest(1));
-  assert.equal(result.outcome, "failed");
-  assert.equal(runtime.prompts.length, 1);
-  await builder.close();
 });
 
 test("FakeBuilder copies only the test fixture app into output", async () => {
@@ -470,122 +182,6 @@ test("FakeBuilder copies only the test fixture app into output", async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
-
-class RecordingRuntime implements OpenCodeRuntime {
-  startedDirectories: string[] = [];
-  createdTitles: string[] = [];
-  prompts: Array<{ sessionId: string; input: OpenCodePromptInput }> = [];
-  abortedSessions: string[] = [];
-  closeCount = 0;
-  promptResult: Promise<string> = Promise.resolve("implemented");
-
-  async start(directory: string): Promise<void> {
-    this.startedDirectories.push(directory);
-  }
-
-  async createSession(title: string): Promise<string> {
-    this.createdTitles.push(title);
-    return `session-${this.createdTitles.length}`;
-  }
-
-  async prompt(
-    sessionId: string,
-    input: OpenCodePromptInput,
-  ): Promise<string> {
-    this.prompts.push({ sessionId, input });
-    return this.promptResult;
-  }
-
-  async abort(sessionId: string): Promise<void> {
-    this.abortedSessions.push(sessionId);
-  }
-
-  async close(): Promise<void> {
-    this.closeCount += 1;
-  }
-}
-
-class GhostRuntime implements OpenCodeRuntime {
-  events: string[] = [];
-  failAbort = false;
-  failPrompt?: Error;
-  private rejectPrompt?: (error: Error) => void;
-
-  async start(): Promise<void> {}
-
-  async createSession(): Promise<string> {
-    return "session-1";
-  }
-
-  async prompt(): Promise<string> {
-    this.events.push("prompt-start");
-    if (this.failPrompt) {
-      return Promise.reject(this.failPrompt);
-    }
-    return new Promise((_resolve, reject) => {
-      this.rejectPrompt = reject;
-    });
-  }
-
-  async abort(): Promise<void> {
-    this.events.push("abort");
-    if (this.failAbort) throw new Error("abort endpoint down");
-    const reject = this.rejectPrompt;
-    if (reject) {
-      queueMicrotask(() => {
-        reject(new Error("session aborted"));
-        this.events.push("prompt-settled");
-      });
-    }
-  }
-
-  async close(): Promise<void> {}
-}
-
-class KilledServerRuntime implements OpenCodeRuntime {
-  startedDirectories: string[] = [];
-  createdSessions: string[] = [];
-  prompts: Array<{ sessionId: string; input: OpenCodePromptInput }> = [];
-  private exit?: OpenCodeServerExit;
-  private promptCount = 0;
-
-  constructor(
-    private readonly killedPrompts: number,
-    private readonly failingPrompts = 0,
-  ) {}
-
-  async start(directory: string): Promise<void> {
-    this.startedDirectories.push(directory);
-    this.exit = undefined;
-  }
-
-  async createSession(): Promise<string> {
-    const id = `session-${this.createdSessions.length + 1}`;
-    this.createdSessions.push(id);
-    return id;
-  }
-
-  async prompt(sessionId: string, input: OpenCodePromptInput): Promise<string> {
-    this.prompts.push({ sessionId, input });
-    this.promptCount += 1;
-    if (this.promptCount <= this.killedPrompts) {
-      this.exit = { code: null, signal: "SIGKILL" };
-      throw new TypeError("fetch failed");
-    }
-    if (this.promptCount <= this.killedPrompts + this.failingPrompts) {
-      throw new TypeError("fetch failed");
-    }
-    return "implemented";
-  }
-
-  async abort(): Promise<void> {}
-
-  async close(): Promise<void> {}
-
-  serverExit(): OpenCodeServerExit | undefined {
-    return this.exit;
-  }
-}
 
 function implementRequest(): BuilderPromptInput {
   return {

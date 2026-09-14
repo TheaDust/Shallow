@@ -1,10 +1,10 @@
 # ShallowCode
 
-ShallowCode 是 OpenCode 之外的一层轻量比赛控制器，面向 GOSIM Factory 2026 / ARC-Bench。它的边界只有一句话：
+ShallowCode 是 coding agent 之外的一层轻量比赛控制器，面向 GOSIM Factory 2026 / ARC-Bench。它的边界只有一句话：
 
-> 只实现 OpenCode 因为不知道整场比赛的全局状态而无法可靠实现的部分。
+> 只实现 coding agent 因为不知道整场比赛的全局状态而无法可靠实现的部分。
 
-OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、按完整模块组织实现、用独立 LLM 生成黑盒探针、用真实浏览器验收、分别维护可运行检查点与功能验证状态，并完成最终交付验证。当前设计见 [模块优先重构](docs/2026-09-13-module-first-refactor.md)；早期设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
+Pi coding-agent（`@mariozechner/pi-coding-agent`）负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、按完整模块组织实现、用独立 LLM 生成黑盒探针、用真实浏览器验收、分别维护可运行检查点与功能验证状态，并完成最终交付验证。当前设计见 [模块优先重构](docs/2026-09-13-module-first-refactor.md)；引擎替换与模块反馈见 [Pi SDK 重构](docs/2026-09-14-pi-sdk-refactor-plan.md)；早期设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
 
 ## 快速开始
 
@@ -12,17 +12,17 @@ OpenCode 负责创建和修改目标应用、选择技术栈、局部构建与�
 npm ci
 ```
 
-配置三个网关变量（OpenCode Builder 与 Probe Planner 共用同一网关）：
+配置三个网关变量（Pi Builder 与 Probe Planner 共用同一网关）：
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `OPENAI_API_KEY` | 网关 API key，交给 Planner 请求头与 OpenCode provider 配置 |
+| `OPENAI_API_KEY` | 网关 API key，由 Planner 请求头与 Pi Worker 在进程内注入 provider |
 | `OPENAI_BASE_URL` | OpenAI-compatible 网关地址 |
 | `MODEL` | 网关接受的完整模型 ID（含 `/` 时原样传递） |
 
 三个变量可以写入仓库根目录的 `.env` 文件（模板见 `.env.example`，`.env` 不会入库），真实环境变量优先于文件值；credential smoke 同样读取 `.env`。
 
-OpenCode 使用控制器显式配置的 `shallow-gateway` provider，主模型和辅助模型均走上述网关；SDK 服务使用随机空闲端口。运行环境须提供 Node.js/npm、Git、`opencode` 可执行程序与 Playwright Chromium（可用 `npx playwright install chromium` 安装）。
+Pi 在独立 Worker 子进程中把网关注册为进程内 `shallow-gateway` provider（Chat Completions），模型走上述网关；网关密钥经 IPC 传递，不落命令行或模型配置文件。运行环境须提供 Node.js/npm（>= 20.18.1）、Git 与 Playwright Chromium（可用 `npx playwright install chromium` 安装），无需全局安装 Pi CLI 或其它 coding agent。
 
 启动一次完整运行：
 
@@ -52,9 +52,9 @@ Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网
 
 `delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
-## Raw OpenCode baseline
+## Raw Pi baseline
 
-baseline 通过 `baseline/main.py` 或 `baseline/index.ts` 运行，用于比较直接驱动 OpenCode 的效果：
+baseline 通过 `baseline/main.py` 或 `baseline/index.ts` 运行，用于比较直接驱动同一 Pi 执行层（raw Pi）的效果：
 
 ```powershell
 python baseline/main.py data/sheet --output-dir tmp/baseline --type web
@@ -66,12 +66,12 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 | 工作单元 | 完整 ROOT 子树，按依赖排序；相互依赖模块合并 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
 | 会话 | 实现阶段复用会话；集中修复使用新会话 | 一次运行复用同一个会话 |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
-| 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | OpenCode 调用结果；Python 入口另检查 frontend/backend 目录 |
+| 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | Pi 调用结果；Python 入口另检查 frontend/backend 目录 |
 | 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |
 
 baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。
 
-baseline 单模块调用不限总预算时上限为3小时，显式预算时按预算缩放（见“预算与超时”）。超时后先 abort，再等待旧请求结束，两阶段各最多 5 秒；清理失败会终止本轮运行并关闭运行时，清理成功后继续处理下一模块。
+baseline 单模块调用不限总预算时上限为3小时，显式预算时按预算缩放（见“预算与超时”）。每次调用结束后父进程回收该调用拥有的进程组/作业并等待退出确认；清理失败会终止本轮运行，清理成功后继续处理下一模块。
 
 ## 运行流程总览
 
@@ -98,25 +98,23 @@ flowchart LR
 
 `acceptedSha` 保留字段名，但现在表示可运行检查点；`verifiedRequirementIds` 才表示当前版本独立探针通过的需求。初始空状态只用于首次回滚。Planner/定位错误不会删除已保存的实现。
 
-## Builder 浏览器自测
+## Builder 开发检查与模块反馈
 
-主线在每次 Builder 请求中提供官方 `@playwright/mcp` 的浏览器工具。工具随 harness 依赖安装，使用固定版本和绝对入口路径，复用 `npx playwright install chromium` 安装的 Chromium；目标应用无需额外安装自测依赖。baseline 保持原有工具装配。
+Pi Builder 只持有文件（read/edit/write）与 shell 工具，按需编写和运行传统测试、类型检查或短命令检查；它**不**再持有常驻浏览器/MCP 自测工具。控制器在每次调用结束、进程释放之后执行安装、构建与独立浏览器检查，并把白名单失败观测反馈给 Builder。
 
-Builder 按需调用 `candidate.prepare` 在私有应用副本中安装、构建、启动，使用返回的 baseUrl 自测。每个模块或修复调用至多进行一轮关键路径检查，发现实际产品问题后可修复并再检查一次；CandidateRuntime 每调用最多允许两次 prepare。结束时关闭浏览器并调用 stop，清理自己创建的临时业务数据，保留种子数据。
+具体地，每个模块实现并保存可运行检查点之前，控制器在模块边界选择最多两条独立探针路径——一条当前模块路径，加一条既有模块的回归路径——用新数据目录启动私有应用实例执行。这条路径不授予整条需求 `verified`；只有完整原子验收（见下）才记 verified。模块反馈通过可复现业务失败时，若共享修复额度允许，控制器生成新会话做一次反馈修复；反馈路径出现既有回归且修复失败时，恢复到该模块之前的检查点。反馈修复与末尾集中修复共享每 run 至多两轮的上限，交付修复仍独立至多一次。
 
-MCP 仍按调用连接、检查、断开；控制器负责兜底停止自测应用。迟到连接不能派发模型调用，清理告警不覆盖 Builder 已完成的结果。简短回执报告实际检查或未执行原因，不能作为独立验收证据。文档按需更新，不要求每个原子需求都重复撰写、构建、验证。
+### 候选构建复用与数据隔离
 
-### 候选构建复用
-
-Judge 在控制器应用副本中另启实例，复用匹配的构建产物；Builder 未调用 `prepare` 时，控制器在验收前准备。源码、新建文件、产物或依赖安装状态变化会使构建凭据失效。浏览器重试及定位器精化复用本次候选；最终交付验证也复用匹配产物。报告、探针完成事件和接受事件关联 `candidateId`、`buildId`、`runtimeId`、输入摘要及产物摘要；接受 Git 提交前后再次复核，变更时回滚。
+Judge 在控制器应用副本中另启实例，复用匹配的构建产物；控制器在验收前准备。源码、新建文件、产物或依赖安装状态变化会使构建凭据失效。浏览器重试及定位器精化复用本次候选；最终交付验证也复用匹配产物。报告、探针完成事件和接受事件关联 `candidateId`、`buildId`、`runtimeId`、输入摘要及产物摘要；接受 Git 提交前后再次复核，变更时回滚。
 
 输入摘要覆盖输出目录所有普通文件，包括未跟踪和被 Git 忽略的业务文件；排除根 `.git`、`.arc` 和 `node_modules`。应用符号链接/junction 当前会被拒绝。私有副本重新准备时清理旧应用文件，保留有效的控制器依赖。依赖声明、锁文件、npm 配置、平台合同和进程环境参与安装键；安装生命周期脚本、本地依赖或 workspaces 存在时，源文件变化也触发重装。依赖目录用文件元数据检查通常的修改/删除，不逐次读取全部依赖内容；仅在当前运行复用。
 
-运行数据必须写入 `SHALLOW_DATA_DIR` 指定目录（本地生成期为 `candidate/data/`），未设置该变量时由应用使用缺省数据目录。种子数据保留为应用输入，由应用初始化到数据目录。数据不参与构建摘要，也不会因重启自动重置；本功能不实现 roadmap 第 5 节的数据隔离。私有构建、依赖和运行数据不会回写输出目录；交付仍由平台按输出源码执行安装与构建。
+运行数据必须写入 `SHALLOW_DATA_DIR` 指定目录，未设置该变量时由应用使用缺省数据目录。种子数据保留为应用输入，由应用初始化到数据目录。每次独立探针执行在控制器私有 workspace 下用 `mkdtemp` 建立全新数据目录，由应用按种子数据初始化；同一 case 内刷新、新浏览器上下文及需要验证的重启继续用同一数据目录，失败确认用另一个全新目录。数据由该执行生命周期清理，不混入源码摘要，不回写交付应用，也不接触官方评估数据。
 
-`candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。详见[实施方案与边界](docs/2026-09-08-candidate-build-reuse.md)。
+`candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。
 
-`test/builder-self-test.test.ts` 使用真实 MCP 和 Chromium 验证页面输入、保存、重新加载及浏览器关闭；SDK 连接、取消和清理由 `test/opencode-runtime.test.ts` 验证。真实模型是否遵循自测流程，需要显式启用凭证冒烟后另行验证。
+Pi Worker、会话续接、进程组/作业回收、图片回退与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；模块反馈的选择、额度与回滚由 `test/module-feedback.test.ts` 与 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
 
 ## 需求证据与模型输入
 
@@ -163,7 +161,7 @@ Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_r
 
 `diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
 
-`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。OpenCode runtime 通过内联 config（优先级高于 Builder 可写的项目 `opencode.json`）注入工具级 deny：`read`/`edit` 拒绝 `.arc` 路径、bash 命令文本含 `.arc` 被拒、外部目录访问一律拒绝（同时消除 SDK 无头模式下 `external_directory` 默认 ask 的挂起风险）。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
+`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。Pi Worker 通过受控 ResourceLoader 与显式工具装配限制路径：`read`/`edit`/`write` 拒绝 `.arc` 路径与越界访问，shell 命令文本含 `.arc`、`run-ledger`、`run-log`、`/workspace/tests`、`.codex`、`.pi` 或 `../` 越界即拒绝；工具子进程继承最小环境变量（PATH、系统根、临时目录等），不继承网关密钥或任意宿主配置。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
 
 GitOps（`src/git-ops.ts`）细节：
 
@@ -185,8 +183,8 @@ GitOps（`src/git-ops.ts`）细节：
 | Locator 失败（包括混合报告） | 在 Judge 内最多两轮定位精化；失败记 inconclusive |
 | 浏览器执行故障 | 每次原子验收最多重试一次；仍失败记 inconclusive |
 | Planner 鉴权/协议故障 | 当前验收记 inconclusive，不触发应用编辑或回滚 |
-| OpenCode server 意外退出 | 同次调用剩余额度内最多重启两次，新 server 使用新会话 |
-| Builder 运行时启动故障 | 停止运行并恢复检查点 |
+| Pi Worker 启动故障 | 停止运行并恢复检查点 |
+| Pi Worker 调用结束/超时 | 父进程回收拥有的进程组/作业并等待退出确认；清理失败按执行故障终止本轮 |
 | 最终验证基础设施故障 | 最多一次重试；代码交付修复另限一次 |
 
 验收报告的原始类别仍保留；只有 `audit_result` 中的 failed 才表示已复现、可用于集中修复。应用实例的业务数据由 CandidateRuntime 分次初始化，浏览器 context 隔离本身不代表服务端数据隔离。
@@ -200,8 +198,8 @@ GitOps（`src/git-ops.ts`）细节：
 | 模块实现 | 不限总时长时1小时；正预算时10分钟 |
 | 集中修复 | 4分钟，且最多使用剩余修复阶段的一半，留出复验时间 |
 | 交付修复 | 2分钟 |
-| Planner / locator 精化 | 45秒 |
-| Builder abort / 请求落地等待 | 各5秒 |
+| Planner / locator 精化 | 180秒 |
+| Pi Worker 进程组回收 | 5秒 |
 | git 单命令 | 30秒 |
 | 探针单步 / case | 2秒 / 15秒；case 受阶段剩余时间约束 |
 | 构建 / 启动 | 180秒 / 30秒 |
@@ -220,7 +218,7 @@ baseline 保留原有预算行为：总预算缺省0，单模块调用正预算�
 
 端口 3000 是评测端口：平台在评测阶段用它访问网站，生成期占用会被 SIGTERM。因此 ShallowCode 在生成与验证阶段使用独立探针端口——每次运行随机挑选空闲端口，可用环境变量或 `.env` 中的 `SHALLOW_PROBE_PORT` 显式指定（拒绝 3000）；Builder prompt 中会写明这两个端口语义。
 
-无论 OpenCode 选择什么框架，Builder 按此形态产出，判定与交付按此形态验证，保证跨 WorkPacket 的可复现判定。
+无论 Pi 选择什么框架，Builder 按此形态产出，判定与交付按此形态验证，保证跨 WorkPacket 的可复现判定。
 
 ## ARC-Bench 提交（适配包契约）
 
@@ -273,9 +271,9 @@ npm run test:all         # 以上全部
 
 无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`，并以真实 Git、候选运行时和 Chromium 验证模块实现顺序、Judge 故障保留代码、集中修复与回归恢复、候选一致性、定位精化、阶段预算和最终交付。基于假模型的测试不证明真实模型的耗时或正确率改善；固定模型/题目/机器资源的15、30、45分钟对照实验用于后续实测。
 
-种子数据与图片链路另覆盖：全量提示词注入、目录越界及链接检查、SDK 附件序列化、拒图后纯文本回退、回退次数与超时限制、诊断落盘。请求格式通过真实 SDK 配合模拟响应验证；真实网关的图片消费能力需单独实测。
+种子数据与图片链路另覆盖：全量提示词注入、目录越界及链接检查、附件编码、拒图后纯文本回退、回退次数与超时限制、诊断落盘。请求与图片附件由真实 Pi SDK 在 Worker 中装配，真实网关的图片消费能力需单独实测。
 
-真实 OpenCode / LLM 集成由 credential smoke 覆盖：
+真实 Pi / LLM 集成由 credential smoke 覆盖：
 
 ```powershell
 npm run smoke:credentials
@@ -313,7 +311,11 @@ src/
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
   builder/
     port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
-    opencode-sdk.ts            OpenCode SDK 适配：实现会话复用、修复新会话、超时 abort + 落地等待
+    execution-port.ts          引擎无关的 CodingAgent 端口（controller 与 raw baseline 共用）
+    prompt-builder.ts          PromptBuilder：编译 prompt、驱动 CodingAgentPort、拒图文本回退
+    pi-worker-client.ts        Pi Worker 子进程：IPC、会话文件映射、进程组/作业回收、退出确认
+    pi-worker.ts               唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、结果判定
+    pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
     prompt-assets.ts           prompts/ 资产加载与 {{占位符}} 模板填充
@@ -321,9 +323,12 @@ src/
     shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
   judge/
     audit.ts                   Judge 故障恢复、业务失败复现与独立验收结果
+    module-feedback.ts         模块边界抽样路径选择（当前路径 + 既有回归路径）
     probe-schema.ts            显式 assertion、单层 scope 与 locator-only refinement 校验
     llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
+  process-lifecycle.ts        Pi Worker 进程组/作业所有权、回收确认与工具最小环境
+  memory-snapshot.ts           Linux cgroup 内存诊断采样（memory.current/peak/max/events）
 test/
   *.test.ts                    单元/集成测试（含无凭证全链路 e2e）
   browser/                     真实 Chromium 测试
@@ -334,8 +339,8 @@ data/github、data/sheet        初赛需求树、种子数据及参考图片
 
 ## 设计边界
 
-- 生产路径只有一个业务代码 Builder：OpenCode SDK；ShallowCode 不新增第二套源码编辑工具。
+- 生产路径只有一个业务代码 Builder：Pi coding-agent（独立 Worker 子进程）；ShallowCode 不新增第二套源码编辑工具。
 - Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），代码只负责组装与填充。
-- Probe Planner 依据需求证据工作，与目标应用源码、diff 及 OpenCode 对话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
+- Probe Planner 依据需求证据工作，与目标应用源码、diff 及 Builder 会话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
 - Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
 - 失败次数有硬上限（集中修复至多两轮，交付阶段至多一次修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。

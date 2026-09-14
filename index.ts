@@ -5,15 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import {
-  OpenCodeSdkBuilder,
-  SdkOpenCodeRuntime,
-} from "./src/builder/opencode-sdk.js";
+import { PromptBuilder } from "./src/builder/prompt-builder.js";
+import { PiWorkerClient } from "./src/builder/pi-worker-client.js";
 import { ArcEventSink } from "./src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "./src/cli.js";
 import { FinalVerifier } from "./src/final-verifier.js";
 import { CandidateRuntime } from "./src/candidate-runtime.js";
-import { startCandidateMcp } from "./src/builder/candidate-mcp.js";
 import { GitCliOps } from "./src/git-ops.js";
 import { HumanRunFormatter } from "./src/human-log.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
@@ -109,13 +106,8 @@ async function executeProduction(
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
-  const candidateMcp = await startCandidateMcp(candidate, [gateway.apiKey]);
   try {
-    const runtime = new SdkOpenCodeRuntime(gateway, undefined, {
-      baseUrl: pipelineOptions.platformContract.baseUrl,
-      artifactsDir: join(dirname(pipelineOptions.ledgerFile), "builder-self-test"),
-    }, { runtime: candidate, config: candidateMcp.config });
-    const builder = new OpenCodeSdkBuilder(runtime, {
+    const builder = new PromptBuilder(new PiWorkerClient(gateway, join(dirname(runLogFile), "pi-sessions")), {
       timeoutMs: modelTimeouts.builderTimeoutMs,
       requirementsDir: dirname(pipelineOptions.requirementsFile),
     });
@@ -165,7 +157,7 @@ async function executeProduction(
       await arcEvents.rebuild().catch(projectionWarning);
     }
   } finally {
-    await candidateMcp.close();
+    await candidate.close();
   }
 }
 

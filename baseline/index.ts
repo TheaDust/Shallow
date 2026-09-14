@@ -3,8 +3,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 
-import { SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
-import type { OpenCodePromptInput, OpenCodeRuntime } from "../src/builder/opencode-sdk.js";
+import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
+import { tmpdir } from "node:os";
 import { ArcEventSink } from "../src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "../src/cli.js";
 import {
@@ -48,7 +48,7 @@ export async function baselineMain(
 
   const startedAt = Date.now();
   const perPromptTimeoutMs = deriveBaselinePromptTimeoutMs(cli.budgetMs);
-  const runtime = new SdkOpenCodeRuntime(gateway);
+  const runtime = new PiWorkerClient(gateway, join(tmpdir(), "shallowcode-runs", `baseline-${process.pid}-${startedAt}`, "pi-sessions"));
   const arcEvents = new ArcEventSink(cli.outputDir);
   await arcEvents.init();
   await arcEvents.runnerState("running", "baseline started");
@@ -56,8 +56,6 @@ export async function baselineMain(
   const failed: string[] = [];
 
   try {
-    await runtime.start(cli.outputDir);
-    const sessionId = await runtime.createSession("baseline");
     log(`模型 ${gateway.model}，共 ${modules.length} 个 ROOT 子树，单次调用上限 ${Math.round(perPromptTimeoutMs / 1000)}s`);
     for (const module of modules) {
       if (cli.budgetMs > 0 && Date.now() - startedAt >= cli.budgetMs) {
@@ -66,12 +64,10 @@ export async function baselineMain(
       }
       log(`实现 ${module.index}/${module.total}：${module.id} - ${module.name}`);
       await arcEvents.requirementState(module.id, "implement", "running");
-      const outcome = await promptWithTimeout(
-        runtime,
-        sessionId,
-        { systemPrompt, taskPrompt: modulePrompt(module, cli.requirementsDir, completed) },
-        perPromptTimeoutMs,
-      );
+      const { outcome } = await runtime.run({ systemPrompt,
+        taskPrompt: modulePrompt(module, cli.requirementsDir, completed), outputDir: cli.outputDir,
+        sessionKey: "baseline", timeoutMs: cli.budgetMs > 0
+          ? Math.min(perPromptTimeoutMs, Math.max(1, cli.budgetMs - (Date.now() - startedAt))) : perPromptTimeoutMs });
       if (outcome === "completed") {
         completed.push(module.id);
         await arcEvents.requirementState(module.id, "implement", "completed");
@@ -102,63 +98,9 @@ export async function baselineMain(
   return 0;
 }
 
-type PromptOutcome = "completed" | "timed_out" | "failed";
-
 export function deriveBaselinePromptTimeoutMs(budgetMs: number): number {
-  // A ROOT subtree contains many atomic requirements; main packets contain at most three.
   // Budgeted runs stay within 80% of the budget; unlimited runs cap a module at 3h.
   return deriveModelTimeouts(budgetMs).builderTimeoutMs * (budgetMs > 0 ? 2 : 3);
-}
-
-export async function promptWithTimeout(
-  runtime: Pick<OpenCodeRuntime, "prompt" | "abort">,
-  sessionId: string,
-  input: OpenCodePromptInput,
-  timeoutMs: number,
-  settleTimeoutMs = 5_000,
-): Promise<PromptOutcome> {
-  let timer: NodeJS.Timeout | undefined;
-  let timedOut = false;
-  try {
-    const promptPromise = runtime.prompt(sessionId, input);
-    const outcome = await Promise.race([
-      promptPromise.then(
-        () => "completed" as const,
-        (error: unknown) => {
-          if (!timedOut) log(`OpenCode 调用失败：${formatError(error)}`);
-          return "failed" as const;
-        },
-      ),
-      new Promise<"timed_out">((resolveTimeout) => {
-        timer = setTimeout(() => {
-          timedOut = true;
-          resolveTimeout("timed_out");
-        }, timeoutMs);
-      }),
-    ]);
-    if (outcome === "timed_out") {
-      log(`OpenCode 调用达到 ${Math.round(timeoutMs / 1000)}s 上限，正在终止并等待请求结束`);
-      await settleCleanup(runtime.abort(sessionId), settleTimeoutMs, "abort");
-      await settleCleanup(promptPromise.then(() => undefined, () => undefined), settleTimeoutMs, "prompt");
-    }
-    return outcome;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function settleCleanup(promise: Promise<void>, timeoutMs: number, phase: string): Promise<void> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      promise,
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`baseline ${phase} cleanup timed out; stopping run`)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 export function loadRootModules(document: unknown): RootModule[] {

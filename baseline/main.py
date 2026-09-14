@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ARC-Bench baseline adapter: raw OpenCode without ShallowCode orchestration.
+"""ARC-Bench baseline adapter: raw Pi without ShallowCode orchestration.
 
 Same entrypoint contract as the ShallowCode adapter (see
 https://github.com/octos-org/arc-adapter):
@@ -7,7 +7,7 @@ https://github.com/octos-org/arc-adapter):
     python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 The Python layer resolves paths, prepares the Node runtime, and drives
-`baseline/index.ts`, which feeds one ROOT-child subtree at a time to OpenCode in
+`baseline/index.ts`, which feeds one ROOT-child subtree at a time to Pi in
 a single session (mirroring the official codex reference implementation). No
 probes, no judge, no repair loop, no git checkpoints.
 
@@ -171,21 +171,6 @@ def ensure_node_runtime(root: Path) -> None:
             run([npm_cmd(), "install", "--no-audit", "--no-fund"], root)
     else:
         log("node_modules present, skipping npm ci")
-    ensure_opencode_cli(root)
-
-
-def ensure_opencode_cli(root: Path) -> None:
-    bin_dir = root / "node_modules" / ".bin"
-    if bin_dir.is_dir():
-        os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
-    for platform_bin in sorted((root / "node_modules").glob("opencode-*/bin")):
-        os.environ["PATH"] = str(platform_bin) + os.pathsep + os.environ.get("PATH", "")
-    if shutil.which("opencode") is None:
-        raise RuntimeError(
-            "opencode CLI not found; expected node_modules/.bin/opencode "
-            "from the opencode-ai package after npm ci"
-        )
-    log("opencode CLI found")
 
 
 def check_template(output_dir: Path) -> bool:

@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { join } from "node:path";
 
-import {
-  OpenCodeSdkBuilder,
-  SdkOpenCodeRuntime,
-} from "../src/builder/opencode-sdk.js";
+import { PromptBuilder } from "../src/builder/prompt-builder.js";
+import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
 import { CommandAppLifecycle, FinalVerifier } from "../src/final-verifier.js";
 import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
@@ -25,18 +23,13 @@ const skipReason = enabled
   : `set RUN_CREDENTIAL_SMOKE=1 and ${required.join(", ")} (missing: ${missing.join(", ") || "opt-in"})`;
 
 test(
-  "credential smoke uses real OpenCode, LLM planning, and Playwright",
+  "credential smoke uses real Pi, LLM planning, and Playwright",
   { skip: skipReason },
   async () => {
     await withTempDir("shallow-credential-", async (outputDir) => {
       const contract = createArcPlatformContract(process.platform, await pickFreePort());
       const packet = smokePacket();
-      const builder = new OpenCodeSdkBuilder(
-        new SdkOpenCodeRuntime(readGatewayConfig(process.env), undefined, {
-          baseUrl: contract.baseUrl, artifactsDir: join(outputDir, ".builder-self-test"),
-        }),
-        { timeoutMs: 240_000 },
-      );
+      const builder = new PromptBuilder(new PiWorkerClient(readGatewayConfig(process.env), join(outputDir, "..", `pi-smoke-${process.pid}`)), { timeoutMs: 240_000 });
       try {
         const built = await builder.run({
           mode: "implement",

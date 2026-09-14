@@ -33,7 +33,7 @@ SHA 表示最后保存的可运行检查点，不代表 Builder 正在编辑的�
 
 运行目录由操作者归档、清理，没有自动过期任务；需要长期运行时再增加保留期限与总目录容量策略。脱敏规则无法保证识别所有未标记敏感内容，私有目录不应作为公开下载目录。
 
-主线装配在运行前检查日志目录既不位于候选输出之下，也不通过符号链接/Windows junction 解析到候选之内。POSIX 新建目录/私有文件采用 0700/0600；不会重写已有目录权限。OpenCode runtime 启动时经 `OPENCODE_CONFIG_CONTENT` 注入工具级 deny（内联 config 优先级高于 Builder 可写的项目 `opencode.json`）：`read`/`edit` 拒绝 `.arc` 路径（相对/绝对、正反斜杠模式均覆盖），bash 命令文本含 `.arc` 即拒绝，`external_directory` 整体设为 `deny`（同时消除无头模式下默认 `ask` 的挂起风险）。已用真实 `opencode serve` 回读 `/config` 验证规则被接受。这是工具层限制而非 OS 隔离：命令文本变换、自定义 subagent 权限合并等路径仍可能绕过，Windows ACL、只读 `.arc` 挂载与容器隔离尚需部署侧验证。
+主线装配在运行前检查日志目录既不位于候选输出之下，也不通过符号链接/Windows junction 解析到候选之内。POSIX 新建目录/私有文件采用 0700/0600；不会重写已有目录权限。Pi Worker 采用受控 ResourceLoader（禁用扩展、技能、模板、主题与项目上下文文件），并显式装配 `read`/`edit`/`write`/`shell` 工具：文件工具经 `assertToolPath` 解析相对/绝对路径、符号链接与 Windows junction，拒绝越界与任何 `.arc` 段；shell 后端经 `assertToolCommand` 拒绝命令文本含 `.arc`、`run-ledger`、`run-log`、`/workspace/tests`、`.codex`、`.pi` 或 `../` 越界的命令，工作目录同样受路径限制；工具子进程继承最小环境（PATH、系统根、临时目录等），不继承网关密钥或任意宿主配置。这是工具层限制而非 OS 隔离：命令文本变换、自定义 subagent 权限合并等路径仍可能绕过，Windows ACL、只读 `.arc` 挂载与容器隔离尚需部署侧验证。
 
 ## 4. ARC 官方参考与映射
 

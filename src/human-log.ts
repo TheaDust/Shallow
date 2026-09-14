@@ -68,6 +68,8 @@ function describe(type: string, event: RunEvent): string | null {
       return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮集中修复；需求 ${strings(detail?.requirementIds).join("、")}`;
+    case "module_feedback":
+      return `模块反馈 ${strings(detail?.requirementIds).join(", ")}：${detail?.status}；已用修复 ${detail?.repairCount}/2`;
     case "repair_batch_finished":
       return `第 ${detail?.round} 轮集中修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
     case "pipeline_started":

@@ -10,8 +10,9 @@ import {
   type ProbePlan,
 } from "./probe-schema.js";
 
+export interface ProbePlanOptions { timeoutMs: number; purpose?: "module_feedback" }
 export interface ProbePlanner {
-  plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan>;
+  plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<ProbePlan>;
   refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan>;
 }
 
@@ -87,7 +88,7 @@ export class LlmProbePlanner implements ProbePlanner {
     private readonly fetchFn: typeof fetch = globalThis.fetch,
   ) {}
 
-  async plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan> {
+  async plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<ProbePlan> {
     const messages: Array<{ role: "system" | "user"; content: string }> = [
       {
         role: "system",
@@ -118,6 +119,7 @@ export class LlmProbePlanner implements ProbePlanner {
         }),
       },
     ];
+    if (options?.purpose === "module_feedback") messages.push({ role: "user", content: "Purpose: module_feedback. Return exactly ONE complete primary user-flow case for this requirement. This is a sampled development check; the full independent audit runs later. Preserve all setup and the final assertion. Do not add extra boundary cases in this plan." });
     if (feedback) {
       messages.push({
         role: "user",
@@ -131,7 +133,9 @@ export class LlmProbePlanner implements ProbePlanner {
       });
     }
     const content = await this.complete(messages, options?.timeoutMs);
-    return this.parse(content, packet);
+    const plan = this.parse(content, packet);
+    if (options?.purpose === "module_feedback" && plan.cases.length !== 1) throw new ProbePlannerError("schema", "Module feedback requires exactly one complete case");
+    return plan;
   }
 
   async refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan> {

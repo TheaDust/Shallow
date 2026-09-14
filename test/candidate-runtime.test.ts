@@ -1,17 +1,12 @@
 import assert from "node:assert/strict";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, readdir, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { createOpencodeClient } from "@opencode-ai/sdk";
-import { SdkOpenCodeRuntime } from "../src/builder/opencode-sdk.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CandidateRuntime } from "../src/candidate-runtime.js";
 import { runPipeline } from "../src/pipeline.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { FakeGitOps } from "./fakes/fake-git-ops.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
-import { startCandidateMcp } from "../src/builder/candidate-mcp.js";
 import { CommandAppLifecycle, FinalVerifier } from "../src/final-verifier.js";
 import type { PlatformContract, RunEvent } from "../src/types.js";
 import { reservePort } from "./helpers/fixture-server.js";
@@ -49,12 +44,11 @@ res.end(req.url === '/health' ? 'ok' : fs.readFileSync('dist/index.html'));}).li
   });
 }
 
-test("one owned build serves Builder self-test, Judge and final Chromium smoke", async () => {
+test("one owned build serves independent module checks, Judge and final Chromium smoke", async () => {
   await fixture(async ({ output, workspace, candidate, contract, counts, events }) => {
-    candidate.beginBuilder();
-    const selfTest = await candidate.builderPrepare();
+    const selfTest = await candidate.start(output, contract);
     assert.match(await (await fetch(selfTest.baseUrl)).text(), /current/);
-    await candidate.endBuilder();
+    await selfTest.stop();
     await assert.rejects(fetch(selfTest.baseUrl));
     const judged = await candidate.start(output, contract);
     assert.match(await (await fetch(judged.baseUrl)).text(), /current/);
@@ -65,7 +59,7 @@ test("one owned build serves Builder self-test, Judge and final Chromium smoke",
     assert.equal(report.candidate?.buildId, judged.candidate?.buildId);
     assert.notEqual(report.candidate?.runtimeId, judged.candidate?.runtimeId);
     assert.equal(await counts(), "install\nbuild\n");
-    assert.equal(await readFile(join(workspace, "data/requests.txt"), "utf8"), "data");
+    assert.deepEqual(await readdir(join(workspace, "data")), []);
     assert.equal(events.filter((event) => event.type === "candidate_prepared" && event.detail?.reused).length, 2);
   });
 });
@@ -156,21 +150,6 @@ test("failed build cannot create a reusable credential", async () => {
   });
 });
 
-test("Builder cancellation stops in-flight preparation and rejects late tool calls", async () => {
-  await fixture(async ({ output, candidate, contract, counts }) => {
-    await writeFile(join(output, "build.cjs"), "setInterval(() => {}, 1000)");
-    candidate.beginBuilder();
-    const preparation = candidate.builderPrepare();
-    const rejected = assert.rejects(preparation, /abort|cancel/i);
-    const deadline = Date.now() + 5_000;
-    while (!(await counts()).includes("install") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
-    await candidate.endBuilder();
-    await rejected;
-    await assert.rejects(candidate.builderPrepare(), /inactive/);
-    await assert.rejects(fetch(contract.baseUrl));
-  });
-});
-
 test("late source writes during a build cannot produce a credential", async () => {
   await fixture(async ({ output, candidate }) => {
     const build = await readFile(join(output, "build.cjs"), "utf8");
@@ -187,58 +166,6 @@ test("an old healthy process occupying the target port cannot pass verification"
       await assert.rejects(candidate.start(output, contract), /already occupied/);
       assert.equal((await fetch(`${contract.baseUrl}/health`)).ok, true, "unowned process must not be killed");
     } finally { await old.stop(); }
-  });
-});
-
-test("real MCP client can only prepare during Builder phase and does not receive verification identity", async () => {
-  await fixture(async ({ candidate, counts }) => {
-    const bridge = await startCandidateMcp(candidate);
-    const client = new Client({ name: "candidate-test", version: "1" });
-    try {
-      assert.equal((await fetch(bridge.config.url, { method: "POST" })).status, 401);
-      await client.connect(new StreamableHTTPClientTransport(new URL(bridge.config.url), { requestInit: { headers: bridge.config.headers } }));
-      const listed = await client.listTools();
-      assert.deepEqual(listed.tools.map((tool) => tool.name), ["prepare", "stop"]);
-      assert.equal((await client.callTool({ name: "prepare", arguments: {} })).isError, true);
-      candidate.beginBuilder();
-      const result = await client.callTool({ name: "prepare", arguments: {} });
-      assert.notEqual(result.isError, true, JSON.stringify(result));
-      assert.match(JSON.stringify(result), /baseUrl/);
-      assert.doesNotMatch(JSON.stringify(result), /candidateId|buildId|inputDigest|applicationDigest|probe/);
-      assert.notEqual((await client.callTool({ name: "stop", arguments: {} })).isError, true);
-      await candidate.endBuilder();
-      assert.equal((await client.callTool({ name: "prepare", arguments: {} })).isError, true);
-      assert.equal(await counts(), "install\nbuild\n");
-    } finally { await client.close(); await bridge.close(); }
-  });
-});
-
-test("SDK connects both MCPs and closes candidate admission and processes after the prompt", async () => {
-  await fixture(async ({ output, candidate, contract, workspace }) => {
-    const bridge = await startCandidateMcp(candidate);
-    const calls: string[] = [];
-    const runtime = new SdkOpenCodeRuntime({ apiKey: "test", baseUrl: "http://gateway.invalid", model: "test" }, async (options) => {
-      assert.deepEqual(options.config?.mcp?.candidate, bridge.config);
-      return { server: { url: "http://localhost:1", close() {} }, client: createOpencodeClient({
-        baseUrl: "http://localhost:1", fetch: async (input) => {
-          const path = new URL((input as Request).url).pathname;
-          calls.push(path);
-          if (path === "/mcp") return Response.json({ playwright: { status: "connected" }, candidate: { status: "connected" } });
-          if (path.endsWith("/connect") || path.endsWith("/disconnect")) return Response.json(true);
-          await candidate.builderPrepare();
-          return Response.json({ info: {}, parts: [{ type: "text", text: "done" }] });
-        },
-      }) };
-    }, { baseUrl: contract.baseUrl, artifactsDir: join(workspace, "browser") }, { runtime: candidate, config: bridge.config });
-    try {
-      await runtime.start(output);
-      assert.equal(await runtime.prompt("fixture", { systemPrompt: "test", taskPrompt: "test" }), "done");
-      assert.ok(calls.includes("/mcp/candidate/connect"));
-      assert.ok(calls.includes("/mcp/candidate/disconnect"));
-      assert.ok(calls.includes("/mcp/playwright/disconnect"));
-      await assert.rejects(candidate.builderPrepare(), /inactive/);
-      await assert.rejects(fetch(contract.baseUrl));
-    } finally { await runtime.close(); await bridge.close(); }
   });
 });
 
@@ -270,12 +197,9 @@ children:
         ledgerFile, totalBudgetMs: 0, platformContract: contract }, {
         builder: {
           async run() {
-            candidate.beginBuilder();
-            try { await candidate.builderPrepare(); }
-            finally { await candidate.endBuilder(); }
-            return { sessionId: "fixture-session", outcome: "completed", summary: "self-test prepared" };
+            return { sessionId: "fixture-session", outcome: "completed", summary: "fixture ready" };
           },
-          async close() { await candidate.endBuilder(); },
+          async close() {},
         },
         planner: new FakeProbePlanner([{ packetId: "packet-req-profile", cases: [{ id: "main", requirementIds: ["REQ-PROFILE"],
           purpose: "happy_path", steps: [{ op: "goto", path: "/" }, { op: "expectText", locator: { by: "role", role: "main" }, text: "current" }] }] }]),
@@ -313,17 +237,3 @@ children:
 }
 
 
-test("Builder browser preparation has a per-call limit and resets for the next module", async () => {
-  await fixture(async ({ candidate }) => {
-    candidate.beginBuilder();
-    try {
-      await candidate.builderPrepare();
-      await candidate.builderStop();
-      await candidate.builderPrepare();
-      await assert.rejects(candidate.builderPrepare(), /limit reached/);
-    } finally { await candidate.endBuilder(); }
-    candidate.beginBuilder();
-    try { await candidate.builderPrepare(); }
-    finally { await candidate.endBuilder(); }
-  });
-});

@@ -101,12 +101,13 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
   httpStatus?: number; attempt?: number; retryCount?: number; retry?: boolean };
 
 interface RunEventDetails {
-  phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number };
+  phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number; memory?: Record<string, unknown> };
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string };
+  module_feedback: { requirementIds: string[]; status: "passed" | "failed" | "inconclusive"; version: string; repairCount: number; planSha256?: string };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
@@ -114,7 +115,7 @@ interface RunEventDetails {
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;
-    attempt?: number; durationMs?: number };
+    attempt?: number; durationMs?: number; execution?: Record<string, unknown> };
   builder_reference_images: { mode: string; attachedCount: number; skipped: Array<{ reference: string; reason: string }> };
   candidate_prepared: Omit<CandidateEvidence, "runtimeId"> & { reused: boolean; installed: boolean;
     durationMs: number; installMs: number; buildMs: number };
@@ -144,7 +145,7 @@ interface RunEventDetails {
   verification_started: { retryCount: number };
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];
-    blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string };
+    blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string; memory?: Record<string, unknown> };
   pipeline_failed: DiagnosticDetail;
   arc_projection_failed: DiagnosticDetail;
   evidence_write_failed: Record<string, never>;

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, lstat, mkdir, readFile, readdir, readlink, realpath, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CommandAppLifecycle, CandidatePreparationError, runCommand } from "./final-verifier.js";
@@ -18,9 +18,7 @@ export class CandidateRuntime {
   private installedState?: string;
   private acceptedInputDigest?: string;
   private application?: RunningApp;
-  private builderEpoch = 0;
-  private builderOpen = false;
-  private builderPreparations = 0;
+  private dataDirectory?: string;
   private queue: Promise<unknown> = Promise.resolve();
   private recorder?: (event: RunEvent) => Promise<void>;
   private commandAbort?: AbortController;
@@ -39,50 +37,7 @@ export class CandidateRuntime {
 
   setRecorder(recorder: (event: RunEvent) => Promise<void>): void { this.recorder = recorder; }
 
-  beginBuilder(): number {
-    if (this.builderOpen) throw new Error("Builder candidate tools already active");
-    this.builderOpen = true;
-    this.builderPreparations = 0;
-    this.builderEpoch++;
-    return this.builderEpoch;
-  }
-
-  async endBuilder(epoch?: number): Promise<void> {
-    if (epoch !== undefined && epoch !== this.builderEpoch) return;
-    this.builderOpen = false;
-    this.builderEpoch++;
-    this.commandAbort?.abort();
-    await this.queue.catch(() => {});
-    await this.stop();
-  }
-
-  async builderPrepare(): Promise<{ baseUrl: string }> {
-    const epoch = this.builderEpoch;
-    if (!this.builderOpen) throw new Error("Candidate tools are inactive outside a Builder call");
-    if (this.builderPreparations >= 2) throw new Error("Builder browser preparation limit reached (2 per call); report remaining checks in the receipt");
-    this.builderPreparations++;
-    return this.serial(async () => {
-      this.checkBuilder(epoch);
-      await this.stop();
-      await this.prepareBuild();
-      this.checkBuilder(epoch);
-      const application = await this.launch();
-      if (!this.builderOpen || epoch !== this.builderEpoch) {
-        await this.stop();
-        throw new Error("Candidate preparation cancelled");
-      }
-      return { baseUrl: application.baseUrl };
-    });
-  }
-
-  async builderStop(): Promise<void> {
-    const epoch = this.builderEpoch;
-    if (!this.builderOpen) throw new Error("Candidate tools are inactive outside a Builder call");
-    return this.serial(async () => { this.checkBuilder(epoch); await this.stop(); });
-  }
-
   async prepare(): Promise<void> {
-    if (this.builderOpen) throw new Error("Cannot verify while Builder tools are active");
     await this.serial(async () => { await this.stop(); await this.prepareBuild(); });
   }
 
@@ -114,12 +69,16 @@ export class CandidateRuntime {
       await application.stop();
       this.application = undefined;
     }
+    if (this.dataDirectory) {
+      await rm(this.dataDirectory, { recursive: true, force: true });
+      this.dataDirectory = undefined;
+    }
   }
 
-  async close(): Promise<void> { await this.endBuilder(); }
-
-  private checkBuilder(epoch: number): void {
-    if (!this.builderOpen || epoch !== this.builderEpoch) throw new Error("Candidate preparation cancelled");
+  async close(): Promise<void> {
+    this.commandAbort?.abort();
+    await this.queue.catch(() => {});
+    await this.stop();
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -221,9 +180,16 @@ export class CandidateRuntime {
 
   private async launch(): Promise<RunningApp> {
     const build = this.build!;
-    const dataDirectory = join(resolve(this.workspace), "data");
-    await mkdir(dataDirectory, { recursive: true });
-    const application = await this.lifecycle.start(this.directory, { ...this.contract, dataDirectory });
+    const dataRoot = join(resolve(this.workspace), "data");
+    await mkdir(dataRoot, { recursive: true });
+    if (!inside(await realpath(this.workspace), await realpath(dataRoot)) || (await lstat(dataRoot)).isSymbolicLink()) {
+      throw new Error("Candidate data directory must remain inside its private workspace");
+    }
+    const dataDirectory = await mkdtemp(join(dataRoot, "execution-"));
+    this.dataDirectory = dataDirectory;
+    let application: RunningApp;
+    try { application = await this.lifecycle.start(this.directory, { ...this.contract, dataDirectory }); }
+    catch (error) { await this.stop(); throw error; }
     this.application = application;
     const candidate: CandidateEvidence = { ...this.publicBuild(build), runtimeId: randomUUID() };
     try { await this.assertCurrent(candidate); } catch (error) { await this.stop(); throw error; }

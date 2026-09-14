@@ -17,12 +17,9 @@
     "start": "tsx index.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "@opencode-ai/sdk": "1.18.27",
-    "@playwright/mcp": "0.0.80",
+    "@mariozechner/pi-coding-agent": "0.73.1",
     "@playwright/test": "1.54.0",
-    "opencode-ai": "^1.18.27",
-    "undici": "^7.29.1",
+    "koffi": "2.16.3",
     "yaml": "2.9.0"
   },
   "devDependencies": {
@@ -32,6 +29,6 @@
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
-    "opencode-ai@1.18.27": true
+    "koffi@2.16.3": true
   }
 }

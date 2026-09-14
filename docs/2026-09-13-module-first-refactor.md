@@ -1,5 +1,7 @@
 # Module-first pipeline
 
+> 本文记录模块优先重构的设计。后续引擎已由 OpenCode 替换为 Pi coding-agent（`docs/2026-09-14-pi-sdk-refactor-plan.md`），文中“OpenCode 作为应用写入者”的表述现由 Pi 承担；模块调度、独立验收与集中修复流程不变。
+
 ## Approved direction
 
 Replace main's atomic implement/grade/rollback loop with module implementation, independent audit, and bounded consolidated repair. Baseline remains the control. OpenCode is the sole application writer; Judge receives requirements and browser observations only. No official tests or scores enter the harness.

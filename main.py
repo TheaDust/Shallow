@@ -203,21 +203,6 @@ def ensure_node_runtime(root: Path) -> None:
         log("node_modules present, skipping npm ci")
     if not try_run([npx_cmd(), "playwright", "install", "chromium"], root):
         log("playwright install failed; continuing (browsers may already exist)")
-    ensure_opencode_cli(root)
-
-
-def ensure_opencode_cli(root: Path) -> None:
-    bin_dir = root / "node_modules" / ".bin"
-    if bin_dir.is_dir():
-        os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
-    for platform_bin in sorted((root / "node_modules").glob("opencode-*/bin")):
-        os.environ["PATH"] = str(platform_bin) + os.pathsep + os.environ.get("PATH", "")
-    if shutil.which("opencode") is None:
-        raise RuntimeError(
-            "opencode CLI not found; expected node_modules/.bin/opencode "
-            "from the opencode-ai package after npm ci"
-        )
-    log("opencode CLI found")
 
 
 def check_template(output_dir: Path) -> bool:

@@ -32,7 +32,7 @@ Evaluator-facing contract (https://github.com/octos-org/arc-adapter):
     python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 Delegates to the baseline adapter implementation under baseline/; this package
-drives raw OpenCode per ROOT subtree without the ShallowCode orchestration.
+drives raw Pi per ROOT subtree without the ShallowCode orchestration.
 """
 
 import sys
