@@ -68,6 +68,10 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /Profile name \| Save/);
   assert.match(compiled.taskPrompt, /type="text"/);
   assert.match(compiled.taskPrompt, /绝不能依赖 HTML5 required 或 pattern/);
+  assert.match(compiled.taskPrompt, /不得共用完全相同的可访问名/);
+  assert.match(compiled.taskPrompt, /默认收起/);
+  assert.match(compiled.taskPrompt, /真正的 checkbox/);
+  assert.match(compiled.taskPrompt, /背景内容不得再被点击或聚焦/);
   assert.match(compiled.taskPrompt, /npm --prefix frontend run build/);
   assert.match(compiled.taskPrompt, /http:\/\/127\.0\.0\.1:3000/);
   assert.match(compiled.taskPrompt, /PORT/);
