@@ -96,7 +96,11 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadBuilderPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
   const platform = loadBuilderPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
-  for (const key of ["PROBE_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {
+  assert.match(platform, /3301/);
+  assert.match(platform, /ARC_EXTRA_PORTS/);
+  assert.match(platform, /<main>/);
+  assert.match(platform, /\/api\/health/);
+  for (const key of ["PROBE_PORT", "EVAL_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {
     assert.ok(platform.includes(`{{${key}}}`));
   }
   assert.ok(

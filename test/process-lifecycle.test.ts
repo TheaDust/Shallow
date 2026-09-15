@@ -37,3 +37,20 @@ test("Tool environments retain runtime paths but exclude gateway credentials", (
     assert.ok(Object.keys(env).some(key => key.toLowerCase() === "path"));
   } finally { if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior; }
 });
+
+test("Tool environments inherit npm/Playwright mirror settings set by the adapter entry", () => {
+  const priorRegistry = process.env.npm_config_registry;
+  const priorHost = process.env.PLAYWRIGHT_DOWNLOAD_HOST;
+  process.env.npm_config_registry = "https://registry.npmmirror.com";
+  process.env.PLAYWRIGHT_DOWNLOAD_HOST = "https://npmmirror.com/mirrors/playwright";
+  try {
+    const env = toolEnvironment();
+    assert.equal(env.npm_config_registry, "https://registry.npmmirror.com");
+    assert.equal(env.PLAYWRIGHT_DOWNLOAD_HOST, "https://npmmirror.com/mirrors/playwright");
+  } finally {
+    if (priorRegistry === undefined) delete process.env.npm_config_registry;
+    else process.env.npm_config_registry = priorRegistry;
+    if (priorHost === undefined) delete process.env.PLAYWRIGHT_DOWNLOAD_HOST;
+    else process.env.PLAYWRIGHT_DOWNLOAD_HOST = priorHost;
+  }
+});

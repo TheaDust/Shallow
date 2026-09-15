@@ -31,7 +31,7 @@ require('node:http').createServer((req,res) => {res.setHeader('content-type','te
 fs.writeFileSync(path.join(process.env.SHALLOW_DATA_DIR, 'requests.txt'), 'data');
 res.end(req.url === '/health' ? 'ok' : fs.readFileSync('dist/index.html'));}).listen(Number(process.env.PORT),'127.0.0.1');`);
     const port = await reservePort();
-    const contract: PlatformContract = { port, baseUrl: `http://127.0.0.1:${port}`, healthPath: "/health",
+    const contract: PlatformContract = { port, baseUrl: `http://127.0.0.1:${port}`, evaluationPort: 3000, healthPath: "/health",
       installCommands: [{ executable: process.execPath, args: ["install.cjs"], cwd: "output" }],
       buildCommands: [{ executable: process.execPath, args: ["build.cjs"], cwd: "output" }],
       startCommand: { executable: process.execPath, args: ["server.cjs"], cwd: "output" },

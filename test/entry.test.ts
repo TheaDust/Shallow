@@ -95,6 +95,54 @@ test("Agent entry picks a non-3000 probe port when the override is absent", asyn
   });
 });
 
+test("Agent entry honors SHALLOW_EVAL_PORT and keeps the probe port off it", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return { status: "delivered", verifiedRequirementIds: [], blockedRequirementIds: [], acceptedSha: "sha" };
+    };
+
+    await main(
+      ["--requirements-dir", requirementsDir, "--output-dir", join(directory, "output"), "--budget-ms", "0"],
+      { ...gatewayEnv(), SHALLOW_EVAL_PORT: "43100" },
+      execute,
+      null,
+    );
+
+    const contract = received?.pipelineOptions.platformContract;
+    assert.equal(contract?.evaluationPort, 43100);
+    assert.notEqual(contract?.port, 43100);
+    assert.notEqual(contract?.port, 3000);
+  });
+});
+
+test("Agent entry rejects a probe port equal to the evaluation port", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    await assert.rejects(
+      main(
+        ["--requirements-dir", requirementsDir, "--output-dir", join(directory, "output"), "--budget-ms", "0"],
+        { ...gatewayEnv(), SHALLOW_EVAL_PORT: "43100", SHALLOW_PROBE_PORT: "43100" },
+        async () => { throw new Error("must not execute"); },
+        null,
+      ),
+      /evaluation port 43100/,
+    );
+  });
+});
+
 test("Agent entry rejects a missing requirements.yaml before execution", async () => {
   await withTempDir("shallow-entry-", async (directory) => {
     let calls = 0;

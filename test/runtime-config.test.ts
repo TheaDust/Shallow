@@ -7,6 +7,7 @@ import { test } from "node:test";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseEvaluationPort,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -131,6 +132,24 @@ test("Runtime config picks a free loopback port for probe binding", async () => 
   const port = await pickFreePort();
   assert.ok(Number.isInteger(port));
   assert.ok(port > 0 && port <= 65_535);
+});
+
+test("Runtime config reads the evaluation port from the environment", () => {
+  assert.equal(parseEvaluationPort({}), null);
+  assert.equal(parseEvaluationPort({ SHALLOW_EVAL_PORT: "  " }), null);
+  assert.equal(parseEvaluationPort({ SHALLOW_EVAL_PORT: "43100" }), 43100);
+  assert.equal(parseEvaluationPort({ SHALLOW_EVAL_PORT: "3000" }), 3000);
+  assert.throws(() => parseEvaluationPort({ SHALLOW_EVAL_PORT: "0" }), /SHALLOW_EVAL_PORT/);
+  assert.throws(() => parseEvaluationPort({ SHALLOW_EVAL_PORT: "abc" }), /SHALLOW_EVAL_PORT/);
+});
+
+test("Runtime config never picks an excluded port", async () => {
+  const first = await pickFreePort();
+  const port = await pickFreePort([first]);
+  assert.notEqual(port, first);
+  const contract = createArcPlatformContract("linux", 3100, 43100);
+  assert.equal(contract.evaluationPort, 43100);
+  assert.equal(createArcPlatformContract("linux", 3100).evaluationPort, 3000);
 });
 
 test("Runtime config parses an env file and tolerates a missing one", async () => {

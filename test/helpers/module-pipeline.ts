@@ -30,7 +30,7 @@ export async function withModulePipeline(callback: (fixture: PipelineFixture) =>
       { id: "SECOND", name: "Second", type: "FOLDER", dependencies: [], children: [atom("C", ["B"])] },
     ] }));
     const options: PipelineOptions = { requirementsFile, outputDir: join(directory, "output"), ledgerFile: join(directory, "logs", "ledger.jsonl"),
-      totalBudgetMs: 60_000, plannerRetryDelayMs: 0, platformContract: { port: 43210, baseUrl: "http://127.0.0.1:43210",
+      totalBudgetMs: 60_000, plannerRetryDelayMs: 0, platformContract: { port: 43210, baseUrl: "http://127.0.0.1:43210", evaluationPort: 3000,
         installCommands: [], buildCommands: [], startCommand: { executable: "node", args: ["server.mjs"], cwd: "output" }, healthPath: "/health", buildTimeoutMs: 5_000, startTimeoutMs: 5_000 } };
     const builder = new FakeBuilder();
     const git = new FakeGitOps(["initial", "first", "second", "repair-one", "repair-two"]);

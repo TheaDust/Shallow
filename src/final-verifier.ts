@@ -113,7 +113,10 @@ export class CommandAppLifecycle implements AppLifecycle {
     await assertPortFree(contract);
     const child = spawnCommand(outputDir, contract.startCommand, {
       ...process.env,
+      // Probes run on the private probe port only: never bind the evaluation
+      // port (or spec-hardcoded extra ports like 3301) during generation.
       PORT: String(contract.port),
+      ARC_EXTRA_PORTS: "0",
       ...(contract.dataDirectory ? { SHALLOW_DATA_DIR: contract.dataDirectory } : {}),
     });
     let spawnError: Error | undefined;

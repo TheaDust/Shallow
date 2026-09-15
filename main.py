@@ -84,6 +84,21 @@ def load_env_file(root: Path) -> dict[str, str]:
 
 GATEWAY_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL")
 
+# The evaluation container's path to registry.npmjs.org / playwright CDN is slow;
+# default to npmmirror. Real environment variables always win.
+MIRROR_ENV_DEFAULTS = {
+    "npm_config_registry": "https://registry.npmmirror.com",
+    "NPM_CONFIG_REGISTRY": "https://registry.npmmirror.com",
+    "PLAYWRIGHT_DOWNLOAD_HOST": "https://npmmirror.com/mirrors/playwright",
+}
+
+
+def ensure_mirror_env() -> None:
+    for key, value in MIRROR_ENV_DEFAULTS.items():
+        if not (os.environ.get(key) or "").strip():
+            os.environ[key] = value
+
+
 CGROUP_MEMORY_FILES = (
     "/sys/fs/cgroup/memory.max",
     "/sys/fs/cgroup/memory.current",
@@ -156,8 +171,12 @@ def probe_model_endpoint(env: dict[str, str]) -> None:
 
 
 def run(command: list[str], cwd: Path) -> None:
+    run_with_env(command, cwd, None)
+
+
+def run_with_env(command: list[str], cwd: Path, env: dict[str, str] | None) -> None:
     log(f"run: {' '.join(command)} (cwd={cwd})")
-    completed = subprocess.run(command, cwd=str(cwd), check=False)
+    completed = subprocess.run(command, cwd=str(cwd), check=False, env=env)
     if completed.returncode != 0:
         raise RuntimeError(
             f"command failed with exit code {completed.returncode}: {' '.join(command)}"
@@ -186,7 +205,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--type", default="web", help="task type (accepted, unused)")
     parser.add_argument(
         "--web-port",
-        default=(os.environ.get("ARCBENCH_WEB_PORT") or str(ARC_EVAL_PORT)).strip(),
+        default=(os.environ.get("ARCBENCH_WEB_PORT") or os.environ.get("ARC_WEB_PORT")
+                 or str(ARC_EVAL_PORT)).strip(),
         help="port the platform uses to reach the site at evaluation time",
     )
     return parser.parse_args()
@@ -235,6 +255,7 @@ def main() -> int:
         return 2
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    ensure_mirror_env()
     log(f"eval port is {args.web_port}; generation never binds it")
     memory = cgroup_memory_summary()
     if memory:
@@ -249,6 +270,8 @@ def main() -> int:
         return 1
 
     budget = (os.environ.get("SHALLOW_BUDGET_MS") or "0").strip() or "0"
+    env = dict(os.environ)
+    env["SHALLOW_EVAL_PORT"] = str(args.web_port)
     command = [
         npx_cmd(),
         "tsx",
@@ -261,7 +284,7 @@ def main() -> int:
         budget,
     ]
     try:
-        run(command, root)
+        run_with_env(command, root, env)
         exit_code = 0
     except RuntimeError as error:
         log(str(error))

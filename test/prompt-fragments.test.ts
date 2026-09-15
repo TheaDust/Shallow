@@ -228,6 +228,7 @@ function platformContract(): PlatformContract {
   return {
     baseUrl: "http://127.0.0.1:3000",
     port: 3000,
+    evaluationPort: 3000,
     installCommands: [],
     buildCommands: [],
     startCommand: { executable: "npm", args: ["run", "start"], cwd: "backend" },

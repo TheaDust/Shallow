@@ -76,6 +76,8 @@ export interface PlatformContract {
   dataDirectory?: string;
   baseUrl: string;
   port: number;
+  /** Port the grader reaches at evaluation time; generation must never bind it. */
+  evaluationPort: number;
   installCommands: ProcessCommand[];
   buildCommands: ProcessCommand[];
   startCommand: ProcessCommand;

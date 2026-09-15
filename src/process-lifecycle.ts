@@ -56,6 +56,6 @@ export async function ownProcessTree(child: ChildProcess): Promise<{ stop(): Pro
 
 /** Tools inherit runtime basics, never model credentials or arbitrary host configuration. */
 export function toolEnvironment(): NodeJS.ProcessEnv {
-  const allowed = /^(path|pathext|systemroot|windir|comspec|temp|tmp|tmpdir|home|userprofile|localappdata|appdata|lang|lc_all|term|npm_config_cache)$/i;
+  const allowed = /^(path|pathext|systemroot|windir|comspec|temp|tmp|tmpdir|home|userprofile|localappdata|appdata|lang|lc_all|term|npm_config_cache|npm_config_registry|playwright_download_host|playwright_browsers_path)$/i;
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.test(key)));
 }

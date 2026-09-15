@@ -211,6 +211,7 @@ function renderFailures(observation: BuilderShadowObservation): string {
 function platformContractSection(contract: PlatformContract): string {
   return fillTemplate(loadBuilderPrompt("system", "platform-contract"), {
     PROBE_PORT: String(contract.port),
+    EVAL_PORT: String(contract.evaluationPort),
     INSTALL_COMMANDS: contract.installCommands.map(renderCommand).join("\n") || "无",
     BUILD_COMMANDS: contract.buildCommands.map(renderCommand).join("\n") || "无",
     START_COMMAND: renderCommand(contract.startCommand),

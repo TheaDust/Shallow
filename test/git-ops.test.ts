@@ -245,3 +245,62 @@ test("GitOps open refuses a fresh directory that is not empty", async () => {
     assert.equal(await readFile(stray, "utf8"), "stray");
   });
 });
+
+async function writeDeliveredApp(directory: string): Promise<void> {
+  await mkdir(join(directory, "frontend"), { recursive: true });
+  await writeFile(join(directory, "frontend", "package.json"), '{"scripts":{"build":"true"}}\n', "utf8");
+  await mkdir(join(directory, "backend"), { recursive: true });
+  await writeFile(join(directory, "backend", "package.json"), '{"scripts":{"start":"true"}}\n', "utf8");
+}
+
+test("GitOps open accepts an evolution template that already holds frontend/ and backend/", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await writeDeliveredApp(directory);
+    await writeFile(join(directory, "README.md"), "template\n", "utf8");
+
+    const git = await GitCliOps.open(directory);
+    const baseline = await git.captureAccepted("shallow: initial state");
+
+    assert.match(baseline, /^[0-9a-f]{40}$/);
+    const tracked = await execFileAsync("git", ["ls-files"], { cwd: directory });
+    assert.match(tracked.stdout, /frontend\/package\.json/);
+    assert.match(tracked.stdout, /backend\/package\.json/);
+    assert.match(tracked.stdout, /README\.md/);
+  });
+});
+
+test("GitOps open keeps dependency and build output out of an evolution baseline", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await writeDeliveredApp(directory);
+    await mkdir(join(directory, "frontend", "node_modules", "left-pad"), { recursive: true });
+    await writeFile(join(directory, "frontend", "node_modules", "left-pad", "index.js"), "module\n", "utf8");
+    await mkdir(join(directory, "frontend", "dist"), { recursive: true });
+    await writeFile(join(directory, "frontend", "dist", "index.html"), "<main></main>\n", "utf8");
+
+    const git = await GitCliOps.open(directory);
+    await git.captureAccepted("shallow: initial state");
+
+    const tracked = await execFileAsync("git", ["ls-files"], { cwd: directory });
+    assert.doesNotMatch(tracked.stdout, /node_modules/);
+    assert.doesNotMatch(tracked.stdout, /frontend\/dist\//);
+    assert.match(tracked.stdout, /backend\/package\.json/);
+  });
+});
+
+test("GitOps open adopts a dirty foreign repository that holds a delivered app", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    await initRepoWithRootCommit(directory, "template baseline");
+    await writeDeliveredApp(directory);
+    const scratch = join(directory, "scratch.txt");
+    await writeFile(scratch, "template scratch", "utf8");
+
+    const git = await GitCliOps.open(directory);
+    const baseline = await git.captureAccepted("shallow: initial state");
+
+    assert.match(baseline, /^[0-9a-f]{40}$/);
+    assert.equal(await readFile(scratch, "utf8"), "template scratch");
+    const tracked = await execFileAsync("git", ["ls-files"], { cwd: directory });
+    assert.match(tracked.stdout, /scratch\.txt/);
+    assert.match(tracked.stdout, /frontend\/package\.json/);
+  });
+});

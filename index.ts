@@ -26,6 +26,7 @@ import { PROBE_PLAN_JSON_SCHEMA } from "./src/judge/probe-schema.js";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseEvaluationPort,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -64,14 +65,19 @@ export async function main(
   }
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
-  const probePort = parseProbePortOverride(mergedEnv) ?? (await pickFreePort());
+  const evaluationPort = parseEvaluationPort(mergedEnv) ?? 3000;
+  const probePortOverride = parseProbePortOverride(mergedEnv);
+  if (probePortOverride !== null && probePortOverride === evaluationPort) {
+    throw new Error(`SHALLOW_PROBE_PORT must differ from the evaluation port ${evaluationPort}`);
+  }
+  const probePort = probePortOverride ?? (await pickFreePort([evaluationPort]));
   const runDir = parseRunDirOverride(mergedEnv) ?? join(tmpdir(), "shallowcode-runs");
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
     ledgerFile: join(runDir, runId, "run-ledger.jsonl"),
     totalBudgetMs: cli.budgetMs,
-    platformContract: createArcPlatformContract(process.platform, probePort),
+    platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort),
   };
   const summary = await execute({
     gateway,

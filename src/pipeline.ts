@@ -22,7 +22,7 @@ import type {
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
-import { implementationPackets, auditPackets, makePacket } from "./scheduler.js";
+import { implementationPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { selectModuleFeedback } from "./judge/module-feedback.js";
@@ -189,13 +189,35 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   await emitArc(deps, state, arc => arc.runnerState("running", "module-first pipeline started"));
   const rows = buildArcRequirementRows(catalog.tree);
   await emitArc(deps, state, arc => arc.storeRequirementTree(rows.requirementRows, rows.scenarioRows));
+  const folderMap = folderDescendants(catalog);
+  // The platform counts FOLDER nodes as requirements too; derive their state
+  // from their atomic descendants so the functional-rate denominator is covered.
+  const emitFolderRollup = async (): Promise<void> => {
+    const statuses = state.snapshot.statusByRequirementId;
+    const folders = [...folderMap].sort(([, left], [, right]) => left.length - right.length);
+    for (const [folderId, leaves] of folders) {
+      if (!leaves.length) continue;
+      const implementedLeaves = leaves.filter(id => implemented.has(id));
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "design", "running"));
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "design", "completed"));
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", "running"));
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", implementedLeaves.length ? "completed" : "failed"));
+      const allVerified = leaves.every(id => statuses[id] === "verified");
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "test", allVerified ? "passed" : "failed"));
+    }
+  };
   try {
     await phase("implementation");
     for (const packet of implementationPackets(catalog)) {
       if (budget.remaining("implementation") <= 0) break;
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
         detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
-      for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
+      for (const id of packet.requirementIds) {
+        // Design is folded into the implementation turn; keep the platform's phase trace complete.
+        await emitArc(deps, state, arc => arc.requirementState(id, "design", "running"));
+        await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
+        await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
+      }
       const result = await build({ mode: "implement", packet, outputDir: options.outputDir,
         platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey: `implementation-${conversation}` });
       let candidate: CandidateEvidence | undefined;
@@ -354,12 +376,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented], verifiedRequirementIds,
       blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive") };
     await state.record({ at: now(), type: "pipeline_finished", detail: { ...summary, pendingRequirementIds: ids("todo"), memory: await memorySnapshot() } });
+    await emitFolderRollup();
     await emitArc(deps, state, arc => arc.runnerState(finalReport.ok ? "completed" : "failed", `summary ${summary.status}`));
     return summary;
   } catch (error) {
     // An uncontained writer must never race a checkout. Stop the run for host cleanup.
     if (!(error instanceof ExecutionFault && error.code === "builder_cleanup")) await deps.git.restoreAccepted(state.snapshot.acceptedSha);
     await state.record({ at: now(), type: "pipeline_failed", detail: { message: errorMessage(error) } });
+    await emitFolderRollup();
     await emitArc(deps, state, arc => arc.runnerState("failed", sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets)));
     throw error;
   } finally {

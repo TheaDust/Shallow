@@ -144,6 +144,7 @@ function contractFor(
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     port,
+    evaluationPort: 3000,
     installCommands,
     buildCommands,
     startCommand: {

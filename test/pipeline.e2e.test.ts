@@ -259,3 +259,50 @@ test("ARC/log failures do not change checkpoints and private Judge data stays ou
     assert.ok((await f.events()).some(item => item.type === "arc_projection_failed"));
   });
 });
+
+test("Folder nodes receive derived design/implement/test states for the platform requirement denominator", async () => {
+  await withModulePipeline(async f => {
+    const states: Array<{ id: string; phase: string; status: string }> = [];
+    f.deps.arcEvents = {
+      runnerState: async () => {},
+      requirementState: async (id, phase, status) => { states.push({ id, phase, status }); },
+      commitHistorySignal: async () => {},
+      storeRequirementTree: async () => {},
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    const sequence = (id: string) => states.filter(item => item.id === id).map(item => `${item.phase}:${item.status}`);
+    assert.deepEqual(sequence("A"),
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:passed"]);
+    for (const folder of ["FIRST", "SECOND", "ROOT"]) {
+      assert.deepEqual(sequence(folder),
+        ["design:running", "design:completed", "implement:running", "implement:completed", "test:passed"], folder);
+    }
+  });
+});
+
+test("Folder rollup reflects blocked and failed descendants", async () => {
+  await withModulePipeline(async f => {
+    const states: Array<{ id: string; phase: string; status: string }> = [];
+    f.deps.arcEvents = {
+      runnerState: async () => {},
+      requirementState: async (id, phase, status) => { states.push({ id, phase, status }); },
+      commitHistorySignal: async () => {},
+      storeRequirementTree: async () => {},
+    };
+    f.deps.builder = new FakeBuilder(["completed", "failed"]);
+    f.deps.runner.run = async plan => plan.packetId === "packet-b" ? fail(plan) : pass(plan);
+    const summary = await f.run();
+    assert.equal(summary.status, "partial");
+    const sequence = (id: string) => states.filter(item => item.id === id).map(item => `${item.phase}:${item.status}`);
+    // FIRST: A implemented+verified, B implemented but failed audit -> implement completed, test failed.
+    assert.deepEqual(sequence("FIRST"),
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
+    // SECOND: C blocked at implementation -> implement failed, test failed.
+    assert.deepEqual(sequence("SECOND"),
+      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
+    // ROOT aggregates the whole tree: partially implemented, not fully verified.
+    assert.deepEqual(sequence("ROOT"),
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
+  });
+});

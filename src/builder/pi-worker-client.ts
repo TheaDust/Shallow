@@ -50,6 +50,12 @@ export class PiWorkerClient implements CodingAgentPort {
     child.stderr?.on("data", chunk => { stderr = (stderr + String(chunk)).slice(-4_000); });
     let result: PiWorkerResult;
     let cleanupMs = 0;
+    // The evaluation runner kills silent processes: keep a heartbeat on stderr
+    // for the whole call (worker output stays buffered for diagnostics only).
+    const heartbeat = setInterval(() => {
+      process.stderr.write(`[ShallowCode] builder call still running (${Math.floor((Date.now() - started) / 1000)}s elapsed)\n`);
+    }, 30_000);
+    heartbeat.unref();
     try {
       const completed = new Promise<PiWorkerResult>((res, rej) => {
         child.once("error", rej);
@@ -65,6 +71,7 @@ export class PiWorkerClient implements CodingAgentPort {
     } catch (error) {
       throw new ExecutionFault("builder", "builder_start", false, { cause: error });
     } finally {
+      clearInterval(heartbeat);
       if (timer) clearTimeout(timer);
       const cleanupStarted = Date.now();
       try {
