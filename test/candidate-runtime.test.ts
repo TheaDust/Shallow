@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { access, readdir, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import { CandidateRuntime } from "../src/candidate-runtime.js";
 import { runPipeline } from "../src/pipeline.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
@@ -105,6 +107,31 @@ for (const mutation of ["source", "artifact", "dependency", "new-file"] as const
     });
   });
 }
+
+const execFileAsync = promisify(execFile);
+
+test("ignored output artifacts do not invalidate accepted input evidence", async () => {
+  await fixture(async ({ output, candidate, contract }) => {
+    await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\ndata/\n");
+    await execFileAsync("git", ["-C", output, "init"]);
+    await execFileAsync("git", ["-C", output, "add", "."]);
+    await execFileAsync("git", ["-C", output, "-c", "user.name=ShallowCode", "-c", "user.email=shallowcode@local.invalid", "commit", "-m", "base"]);
+    const app = await candidate.start(output, contract);
+    candidate.recordAccepted(app.candidate!);
+    // Ignored runtime/build drift (as left by a rolled-back repair) must not fail delivery.
+    await mkdir(join(output, "data"), { recursive: true });
+    await mkdir(join(output, "dist"), { recursive: true });
+    await writeFile(join(output, "data/notes.json"), "runtime");
+    await writeFile(join(output, "dist/late.html"), "stale");
+    await candidate.assertAcceptedInput();
+    await app.assertUnchanged?.();
+    // Tracked source drift must still fail.
+    await writeFile(join(output, "view.txt"), "changed");
+    await assert.rejects(candidate.assertAcceptedInput(), /evidence is invalid/);
+    await assert.rejects(candidate.assertCurrent(app.candidate!), /evidence is invalid/);
+    await app.stop();
+  });
+});
 
 test("deleted source and old private artifacts are removed on rebuild", async () => {
   await fixture(async ({ output, candidate }) => {

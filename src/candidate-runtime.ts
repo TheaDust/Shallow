@@ -3,6 +3,7 @@ import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath,
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CommandAppLifecycle, CandidatePreparationError, runCommand } from "./final-verifier.js";
+import { runGit } from "./git-ops.js";
 import type { AppLifecycle } from "./pipeline.js";
 import type { CandidateEvidence, PlatformContract, RunEvent } from "./types.js";
 
@@ -58,7 +59,7 @@ export class CandidateRuntime {
   recordAccepted(evidence: CandidateEvidence): void { this.acceptedInputDigest = evidence.inputDigest; }
 
   async assertAcceptedInput(): Promise<void> {
-    if (this.acceptedInputDigest && digestSnapshot(await snapshot(this.outputDir)) !== this.acceptedInputDigest) {
+    if (this.acceptedInputDigest && await restorableInputDigest(this.outputDir) !== this.acceptedInputDigest) {
       throw new CandidatePreparationError("candidate", "Accepted candidate changed before delivery; verification evidence is invalid");
     }
   }
@@ -111,7 +112,8 @@ export class CandidateRuntime {
       }
       this.build = undefined;
       const inputs = await snapshot(this.outputDir);
-      const inputDigest = digestSnapshot(inputs);
+      const fullInputDigest = digestSnapshot(inputs);
+      const inputDigest = await restorableInputDigest(this.outputDir);
       const installKey = await dependencyKey(this.outputDir, inputs, this.contract);
       const dependencies = await dependencyState(this.directory);
       const reuseInstall = this.installedKey === installKey && this.installedState === dependencies;
@@ -122,8 +124,8 @@ export class CandidateRuntime {
         await mkdir(dirname(target), { recursive: true });
         await copyFile(join(this.outputDir, path), target);
       }
-      if (digestSnapshot(await snapshot(this.directory)) !== inputDigest ||
-        digestSnapshot(await snapshot(this.outputDir)) !== inputDigest) {
+      if (digestSnapshot(await snapshot(this.directory)) !== fullInputDigest ||
+        digestSnapshot(await snapshot(this.outputDir)) !== fullInputDigest) {
         throw new Error("Candidate changed while copying build inputs");
       }
       signal.throwIfAborted();
@@ -146,7 +148,7 @@ export class CandidateRuntime {
       const buildMs = Date.now() - buildAt;
       signal.throwIfAborted();
       stage = "candidate";
-      if (digestSnapshot(await snapshot(this.outputDir)) !== inputDigest) throw new Error("Candidate changed during preparation");
+      if (digestSnapshot(await snapshot(this.outputDir)) !== fullInputDigest) throw new Error("Candidate changed during preparation");
       const applicationDigest = digestSnapshot(await snapshot(this.directory));
       const currentDependencies = await dependencyState(this.directory);
       this.installedKey = installKey;
@@ -172,7 +174,7 @@ export class CandidateRuntime {
 
   private async matches(build: Build): Promise<boolean> {
     const inputs = await snapshot(this.outputDir);
-    return digestSnapshot(inputs) === build.inputDigest &&
+    return await restorableInputDigest(this.outputDir) === build.inputDigest &&
       await dependencyKey(this.outputDir, inputs, this.contract) === this.installedKey &&
       digestSnapshot(await snapshot(this.directory)) === build.applicationDigest &&
       await dependencyState(this.directory) === build.dependencyState;
@@ -227,6 +229,46 @@ async function snapshot(root: string): Promise<Snapshot> {
 
 function hash(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 function digestSnapshot(files: Snapshot): string { return hash(JSON.stringify([...files])); }
+
+/**
+ * Digest over exactly the files a Git rollback can restore: tracked files plus
+ * untracked-but-not-ignored files. Ignored runtime/build artifacts (dist, data,
+ * dependencies) cannot be rolled back, so they must not be part of acceptance
+ * evidence; otherwise a failed repair leaves drift the rollback cannot clear.
+ * Falls back to the full snapshot when the output directory is not its own
+ * repository root (unit-test fixtures).
+ */
+async function restorableInputDigest(root: string): Promise<string> {
+  try {
+    const canonical = await realpath(root);
+    const toplevel = await runGit(canonical, ["rev-parse", "--show-toplevel"], true);
+    if (toplevel.code === 0 && samePathish(await realpath(toplevel.stdout.trim()), canonical)) {
+      const listed = await runGit(canonical, ["ls-files", "-c", "-o", "--exclude-standard", "-z"], true);
+      if (listed.code === 0) {
+        const files: Snapshot = new Map();
+        for (const path of listed.stdout.split("\0").filter(p => p && p !== ".arc" && !p.startsWith(".arc/")).sort()) {
+          const absolute = join(canonical, path);
+          const before = await lstat(absolute).catch(() => undefined);
+          if (!before?.isFile()) continue;
+          const content = await readFile(absolute);
+          const after = await lstat(absolute).catch(() => undefined);
+          if (!after || before.ctimeMs !== after.ctimeMs || before.size !== after.size) {
+            throw new Error("Application changed while hashing");
+          }
+          files.set(path, { digest: hash(content), mode: before.mode & 0o111 });
+        }
+        return digestSnapshot(files);
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "Application changed while hashing") throw error;
+  }
+  return digestSnapshot(await snapshot(root));
+}
+
+function samePathish(left: string, right: string): boolean {
+  return left.replace(/[\\/]$/, "").toLowerCase() === right.replace(/[\\/]$/, "").toLowerCase();
+}
 
 async function clearApplication(directory: string, keepDependencies: boolean): Promise<void> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
