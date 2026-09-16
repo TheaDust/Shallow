@@ -106,6 +106,8 @@ interface RunEventDetails {
   phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number; memory?: Record<string, unknown> };
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
+  module_rescued: { requirementIds: string[]; reason: string };
+  module_regression_kept: { requirementIds: string[]; regressedRequirementIds: string[] };
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string };

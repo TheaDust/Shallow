@@ -92,21 +92,24 @@ export class GitCliOps implements GitOps {
     if (commit.code !== 0) {
       throw new Error(`${sha} is not a commit in the output repository`);
     }
-    const ancestor = await runGit(
-      this.repositoryRoot,
-      ["merge-base", "--is-ancestor", sha, "HEAD"],
-      true,
-    );
-    if (ancestor.code !== 0) {
-      throw new Error(`${sha} is not an accepted ancestor of the output repository`);
-    }
-    // Audit events describe the whole run, including rejected candidates. Keep
-    // them in the worktree while restoring application files and moving HEAD.
-    await requireGit(this.repositoryRoot, ["reset", "--mixed", sha]);
+    // Rejected attempts stay reachable: sync index and worktree back to the
+    // accepted tree (excluding .arc, which holds run-wide audit records), then
+    // record the rewind as a forward-moving recovery commit instead of
+    // deleting history.
     await requireGit(this.repositoryRoot, [
-      "restore", "--worktree", "--", ".", ":(top,exclude).arc",
+      "restore", "--source", sha, "--staged", "--worktree", "--", ".", ":(top,exclude).arc",
     ]);
     await requireGit(this.repositoryRoot, ["clean", "-fd", "-e", ".arc/"]);
+    await requireGit(this.repositoryRoot, [
+      "-c",
+      "user.name=ShallowCode",
+      "-c",
+      "user.email=shallowcode@local.invalid",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "shallow: restore accepted state",
+    ]);
   }
 
   private async validateRoot(): Promise<void> {

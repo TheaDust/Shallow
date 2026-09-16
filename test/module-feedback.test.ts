@@ -14,14 +14,33 @@ test("Sampled module passes do not replace full audit plans or publish full requ
   });
 });
 
-test("A reproducible old-path regression restores A when its one boundary repair fails", async () => {
+test("A reproducible old-path regression keeps the new module when its one boundary repair fails", async () => {
   await withModulePipeline(async f => {
-    f.deps.runner.run = async plan => plan.packetId === "feedback-packet-a" && f.builder.requests.length >= 2 ? fail(plan) : pass(plan);
+    f.deps.runner.run = async plan => {
+      const moduleCStarted = f.builder.requests.some(item => "packet" in item && item.packet.requirementIds.includes("C"));
+      if (plan.packetId === "feedback-packet-a") return moduleCStarted ? fail(plan) : pass(plan);
+      if (plan.packetId === "packet-a") {
+        const consolidatedRepair = f.builder.requests.some(item => item.mode === "repair" && "packet" in item && item.packet.id.startsWith("repair-round"));
+        return consolidatedRepair ? pass(plan) : fail(plan);
+      }
+      return pass(plan);
+    };
     const summary = await f.run();
-    assert.deepEqual(summary.implementedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
-    assert.equal(f.builder.requests.filter(r => r.mode === "repair").length, 1);
-    assert.equal(f.git.restoredShas.at(-1), "first");
+    // The new module C is kept instead of reverted to A: it is implemented, and
+    // the consolidated repair later fixes the regressed path A.
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.blockedRequirementIds, []);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    // One boundary repair attempt (feedback-repair), then one consolidated repair.
+    assert.equal(f.builder.requests.filter(r => r.mode === "repair").length, 2);
+    // Only the failed boundary repair is rewound to the pre-repair state; the
+    // previous module checkpoint is never restored.
+    assert.deepEqual(f.git.restoredShas, ["second"]);
+    const events = await f.events();
+    const kept = events.filter(item => item.type === "module_regression_kept");
+    assert.equal(kept.length, 1);
+    assert.deepEqual(kept[0].detail?.requirementIds, ["C"]);
+    assert.deepEqual(kept[0].detail?.regressedRequirementIds, ["A"]);
   });
 });
 

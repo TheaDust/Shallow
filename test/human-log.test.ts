@@ -262,6 +262,16 @@ test("HumanRunFormatter covers remaining planner, refinement, and delivery event
 });
 
 
+test("Human logs report rescued modules and kept regressions in Chinese", () => {
+  const formatter = new HumanRunFormatter();
+  assert.match(formatLine(formatter, eventLine("2026-09-15T00:00:00Z", "module_rescued", {
+    packetId: "packet-a", detail: { requirementIds: ["A", "B"], reason: "timed_out" },
+  })), /Builder 未完成回执，但写出的应用可运行，已保存为可运行版本.*A、B.*timed_out/);
+  assert.match(formatLine(formatter, eventLine("2026-09-15T00:00:01Z", "module_regression_kept", {
+    packetId: "packet-c", detail: { requirementIds: ["C"], regressedRequirementIds: ["A"] },
+  })), /新模块引起既有路径回归，保留可运行成果并转入修复队列.*C.*A/);
+});
+
 test("Human logs distinguish runnable checkpoints, unknown audits, and retained repairs", () => {
   const formatter = new HumanRunFormatter();
   const checkpoint = formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "checkpoint_saved", {

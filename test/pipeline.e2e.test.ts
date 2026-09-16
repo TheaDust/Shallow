@@ -136,13 +136,69 @@ test("Broken module startup restores its checkpoint, resets conversation, and co
   });
 });
 
-test("A failed Builder receipt cannot create an implementation checkpoint", async () => {
+test("A failed Builder receipt is rescued when the written application is runnable", async () => {
+  await withModulePipeline(async f => {
+    const builder = new FakeBuilder(["failed", "completed"]);
+    f.deps.builder = builder;
+    const summary = await f.run();
+    assert.deepEqual(summary.blockedRequirementIds, []);
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(f.git.restoredShas, []);
+    // initial + attempt snapshot for the rescued packet + two checkpoints.
+    assert.equal(f.git.captureMessages.length, 4);
+    // The failed receipt poisons its session: the next module starts a new one.
+    assert.ok(builder.runOptions[0]?.sessionKey);
+    assert.notEqual(builder.runOptions[0]?.sessionKey, builder.runOptions[1]?.sessionKey);
+    const events = await f.events();
+    const rescued = events.filter(item => item.type === "module_rescued");
+    assert.equal(rescued.length, 1);
+    assert.deepEqual(rescued[0].detail?.requirementIds, ["A", "B"]);
+  });
+});
+
+test("A failed Builder receipt with unrunnable code stays blocked and restores the checkpoint", async () => {
   await withModulePipeline(async f => {
     f.deps.builder = new FakeBuilder(["failed", "completed"]);
+    let starts = 0;
+    f.deps.appLifecycle.start = async () => {
+      if (++starts === 1) throw new Error("broken build");
+      return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
+    };
     const summary = await f.run();
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
     assert.deepEqual(summary.implementedRequirementIds, ["C"]);
-    assert.equal(f.git.captureMessages.length, 2);
+    assert.deepEqual(f.git.restoredShas, ["initial"]);
+  });
+});
+
+test("Module feedback regression keeps the new runnable module instead of reverting it", async () => {
+  await withModulePipeline(async f => {
+    f.deps.runner.run = async plan => {
+      const moduleCStarted = f.builder.requests.some(item => "packet" in item && item.packet.requirementIds.includes("C"));
+      if (plan.packetId === "feedback-packet-a") return moduleCStarted ? fail(plan) : pass(plan);
+      if (plan.packetId === "packet-a") {
+        // The regression persists through the audit until a consolidated repair fixes it.
+        const consolidatedRepair = f.builder.requests.some(item => item.mode === "repair" && "packet" in item && item.packet.id.startsWith("repair-round"));
+        return consolidatedRepair ? pass(plan) : fail(plan);
+      }
+      return pass(plan);
+    };
+    const summary = await f.run();
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    // A regressed once, then the consolidated repair fixed it while the new
+    // module was kept (previously the whole new module would be discarded).
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.failedRequirementIds, []);
+    assert.deepEqual(summary.blockedRequirementIds, []);
+    // Only the failed feedback repair is rewound to the pre-repair state; the
+    // previous module checkpoint is never restored.
+    assert.deepEqual(f.git.restoredShas, ["second"]);
+    const events = await f.events();
+    const kept = events.filter(item => item.type === "module_regression_kept");
+    assert.equal(kept.length, 1);
+    assert.deepEqual(kept[0].detail?.requirementIds, ["C"]);
+    assert.deepEqual(kept[0].detail?.regressedRequirementIds, ["A"]);
   });
 });
 
@@ -248,6 +304,24 @@ test("Real Git discards a regression repair and restores original application fi
   });
 });
 
+test("Real Git keeps a blocked module's rejected attempt reachable in history", async () => {
+  await withModulePipeline(async f => {
+    f.deps.git = await GitCliOps.open(f.options.outputDir);
+    let starts = 0;
+    f.deps.appLifecycle.start = async () => {
+      if (++starts === 1) throw new Error("broken build");
+      return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
+    };
+    const summary = await f.run();
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.implementedRequirementIds, ["C"]);
+    const log = (await import("node:child_process")).execFileSync;
+    const subjects = log("git", ["log", "--format=%s"], { cwd: f.options.outputDir }).toString();
+    assert.match(subjects, /attempt/);
+    assert.match(await readFile(join(f.options.outputDir, "server.mjs"), "utf8"), /createServer/);
+  });
+});
+
 test("ARC/log failures do not change checkpoints and private Judge data stays outside Builder input", async () => {
   await withModulePipeline(async f => {
     f.deps.logSink = { write() { throw new Error("sink failed"); } };
@@ -298,10 +372,10 @@ test("Folder rollup reflects blocked and failed descendants", async () => {
     // FIRST: A implemented+verified, B implemented but failed audit -> implement completed, test failed.
     assert.deepEqual(sequence("FIRST"),
       ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
-    // SECOND: C blocked at implementation -> implement failed, test failed.
+    // SECOND: C's Builder receipt failed, but the runnable code was rescued -> implement completed, test passed.
     assert.deepEqual(sequence("SECOND"),
-      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
-    // ROOT aggregates the whole tree: partially implemented, not fully verified.
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:passed"]);
+    // ROOT aggregates the whole tree: fully implemented, not fully verified.
     assert.deepEqual(sequence("ROOT"),
       ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
   });

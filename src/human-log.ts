@@ -64,6 +64,10 @@ function describe(type: string, event: RunEvent): string | null {
       return `保存可运行检查点；${pickString(detail, "reason")}；需求 ${strings(detail?.requirementIds).join("、")}；SHA ${event.acceptedSha ?? ""}（功能验收状态单独记录）`;
     case "module_failed":
       return `模块实现未形成可运行版本，已恢复检查点（${packetId}）${reason ? `：${reason}` : ""}`;
+    case "module_rescued":
+      return `Builder 未完成回执，但写出的应用可运行，已保存为可运行版本（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}${reason ? `；回执原因：${reason}` : ""}`;
+    case "module_regression_kept":
+      return `新模块引起既有路径回归，保留可运行成果并转入修复队列（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}；回归需求 ${strings(detail?.regressedRequirementIds).join("、")}`;
     case "audit_result":
       return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
     case "repair_batch_started":

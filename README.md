@@ -168,7 +168,7 @@ GitOps（`src/git-ops.ts`）细节：
 - 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**；已有文件（包括空文件）保持原样，读取错误直接报告。
 - 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置的 `.arc/`、`requirements/`；其他残留会被拒绝。重新打开既有仓库时，GitOps 按根提交标题识别 ShallowCode 仓库：匹配 `shallow: initial state` 或 `chore: add ShallowCode ignore rules` 后，自动清理应用的未提交改动并删除旧 `runner-events.jsonl`；其他仓库有未提交应用改动时会拒绝打开。复用输出目录前应备份人工修改及需要保留的运行记录。
-- 回滚先 `reset --mixed <acceptedSha>`，再恢复除 `.arc` 外的已跟踪文件，并 `clean -fd -e .arc/`。应用回到 accepted 状态，`.arc` 保留完整运行事件和当前溯源记录，不加入忽略规则。
+- 回滚不再移动 HEAD：`restore --source <acceptedSha> --staged --worktree -- . :(top,exclude).arc` 同步索引与工作区（会删除被拒尝试引入的源码文件），`clean -fd -e .arc/` 清掉未跟踪残留，然后以 `--allow-empty` 提交恢复提交。失败尝试保留在历史中永远可达，`.arc` 保留完整运行事件和当前溯源记录，不加入忽略规则。
 - 单条 git 命令默认 30s 超时，超时杀死子进程并等其退出后报错，避免悬挂与目录句柄泄漏。
 
 ## 预算与超时
@@ -177,7 +177,8 @@ GitOps（`src/git-ops.ts`）细节：
 
 | 来源 | 处理 |
 | --- | --- |
-| 模块未完成或无法构建/启动 | 恢复检查点，标记模块失败，使用新会话继续其他模块 |
+| Builder 回执失败/超时但应用可运行 | 保存尝试，接受为可运行版本（独立验收仍单独进行）；会话重置后继续 |
+| 模块未完成或无法构建/启动 | 保存失败尝试，恢复检查点，标记模块失败，使用新会话继续其他模块 |
 | 可复现业务失败 | 保留实现，汇总后至多两轮集中修复；复查既有通过项 |
 | Planner JSON/schema 错误 | 一次带反馈的修正；失败记 inconclusive |
 | Locator 失败（包括混合报告） | 在 Judge 内最多两轮定位精化；失败记 inconclusive |

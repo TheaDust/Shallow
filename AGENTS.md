@@ -152,7 +152,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 - 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。
 - 修改脱敏、证据或 ARC 投影时，先读 `docs/2026-09-07-observability-arc-projection.md`：官方固定提交与字段、投影重建范围和安全限制均在此。验证 `test/observability.test.ts`、`test/arc-protocol.test.ts`、`test/human-log.test.ts`、`test/pipeline.e2e.test.ts`；目录链接检查不代表 OS 隔离。
 - `RunSummary.delivered` 要求当前交付版本全部原子需求 verified 且最终验证通过；todo/blocked/failed/inconclusive 均为 partial。implementedRequirementIds 表示模块完成且构建/启动检查通过，不代表功能正确。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
-- 回滚先 `reset --mixed <acceptedSha>`，再 `restore --worktree -- . :(top,exclude).arc` 和 `clean -fd -e .arc/`，保留 `.arc` 中包括失败在内的完整审计记录。
+- 回滚不再移动 HEAD：`restore --source <acceptedSha> --staged --worktree -- . :(top,exclude).arc` 同步索引与工作区（会删除被拒尝试引入的源码文件），`clean -fd -e .arc/` 清掉未跟踪残留，然后以 `--allow-empty` 提交一个恢复提交。失败尝试保留在历史中永远可达，`.arc` 保留包括失败在内的完整审计记录。
 
 ## 架构不变量
 
@@ -160,7 +160,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。
 2. **模块实现**：完整 ROOT 子树按跨模块依赖排序，相互依赖模块合并。所有模块先实现，再验收；实现阶段复用同一会话，回滚/运行时重启后使用新会话。模块内部依赖和未 verified 的外部依赖不阻塞实现。
-3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码；模块未完成或无法构建/启动才恢复检查点。
+3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 回执失败/超时先保存尝试再实测：代码可运行则直接接受为可运行版本（`module_rescued`，会话重置）；确实无法构建/启动才恢复上一检查点并标 blocked（`module_failed`），被拒尝试保留在历史中。
 4. **集中修复**：纯业务失败须在新应用实例中复现，再按需求汇总交给 Builder；每次运行至多两轮。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。
 5. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。精化仅改 locator，固定操作、输入与预期。混合失败先处理带快照的 locator 部分；每次原子验收至多两轮精化、一次浏览器基础设施重试。业务失败复现共享这些额度。
 6. **交付**：最终验证为安装/构建/就绪/浏览器 smoke，至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。

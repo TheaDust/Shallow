@@ -222,17 +222,36 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey: `implementation-${conversation}` });
       let candidate: CandidateEvidence | undefined;
       let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
-      if (!reason) {
+      if (reason !== undefined) {
+        // Save the attempt first, then check what actually runs: a missing
+        // receipt must not discard runnable code.
+        await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
+        const receiptFailure = reason;
+        try { candidate = await runnable(); reason = undefined; }
+        catch (error) { reason = errorMessage(error); }
+        if (reason === undefined) {
+          conversation += 1;
+          await state.record({ at: now(), type: "module_rescued", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason: receiptFailure } });
+        } else {
+          await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+          conversation += 1;
+          state.markRequirements(packet.requirementIds, "blocked");
+          await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
+          for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+          continue;
+        }
+      } else {
         try { candidate = await runnable(); }
         catch (error) { reason = errorMessage(error); }
-      }
-      if (reason !== undefined) {
-        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-        conversation += 1;
-        state.markRequirements(packet.requirementIds, "blocked");
-        await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
-        for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
-        continue;
+        if (reason !== undefined) {
+          await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
+          await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+          conversation += 1;
+          state.markRequirements(packet.requirementIds, "blocked");
+          await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
+          for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+          continue;
+        }
       }
       const selected = selectModuleFeedback(packet, packets, implemented, feedbackHistory);
       const feedbackPackets = selected.map(item => ({ ...item, id: `feedback-${item.id}` }));
@@ -285,13 +304,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           retained: retainedRepair, reason: retainedRepair ? "module feedback improved with selected regression coverage" : "module feedback did not establish an improvement" } });
       }
       if (regression && !retainedRepair) {
-        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-        conversation++;
-        state.markRequirements(packet.requirementIds, "blocked");
-        for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
-        await state.record({ at: now(), type: "module_failed", packetId: packet.id,
-          detail: { requirementIds: packet.requirementIds, reason: "reproducible regression in a previously passed module path" } });
-        continue;
+        // Keep the runnable new module; the regression becomes a repair-queue
+        // item handled by the consolidated repair rounds instead of reverting B.
+        await state.record({ at: now(), type: "module_regression_kept", packetId: packet.id,
+          detail: { requirementIds: packet.requirementIds,
+            regressedRequirementIds: selected.filter(item => implemented.has(item.requirementIds[0]) && feedback.get(item.id)?.status === "failed").flatMap(item => item.requirementIds) } });
       }
       for (const [id, result] of feedback) if (result.status === "verified") feedbackHistory.set(id, result);
       await checkpoint(packet.requirementIds, packet.id, candidate);

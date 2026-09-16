@@ -57,22 +57,66 @@ test("runGit kills the child and rejects when the command exceeds its timeout", 
   });
 });
 
-test("GitOps captures changes and restores the accepted ancestor", async () => {
+test("GitOps restores the accepted state via a recovery commit that keeps the attempt reachable", async () => {
   await withTempDir("shallow-git-", async (directory) => {
     const git = await GitCliOps.open(directory);
-    const baseline = await git.captureAccepted("shallow: baseline");
     const tracked = join(directory, "app.txt");
     await writeFile(tracked, "accepted");
     const accepted = await git.captureAccepted("shallow: accepted");
     await writeFile(tracked, "broken");
+    const attempt = await git.captureAccepted("shallow: broken attempt");
     const untracked = join(directory, "candidate.tmp");
     await writeFile(untracked, "candidate");
 
     await git.restoreAccepted(accepted);
 
-    assert.notEqual(accepted, baseline);
     assert.equal(await readFile(tracked, "utf8"), "accepted");
     await assert.rejects(access(untracked));
+    const head = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim();
+    assert.notEqual(head, accepted);
+    assert.notEqual(head, attempt);
+    // The attempt stays reachable in history; HEAD moved forward, not back.
+    await execFileAsync("git", ["merge-base", "--is-ancestor", attempt, "HEAD"], { cwd: directory });
+    assert.equal(
+      (await execFileAsync("git", ["log", "-1", "--format=%s", "HEAD"], { cwd: directory })).stdout.trim(),
+      "shallow: restore accepted state",
+    );
+  });
+});
+
+test("GitOps restore truly deletes source files introduced by a rejected attempt", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    const git = await GitCliOps.open(directory);
+    await writeFile(join(directory, "app.txt"), "accepted");
+    const accepted = await git.captureAccepted("shallow: accepted");
+    await writeFile(join(directory, "app.txt"), "broken");
+    await writeFile(join(directory, "extra.txt"), "from failed attempt");
+    await git.captureAccepted("shallow: failed attempt");
+
+    await git.restoreAccepted(accepted);
+
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "accepted");
+    await assert.rejects(access(join(directory, "extra.txt")));
+  });
+});
+
+test("GitOps supports restoring the same accepted state across repeated failed attempts", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    const git = await GitCliOps.open(directory);
+    await writeFile(join(directory, "app.txt"), "accepted");
+    const accepted = await git.captureAccepted("shallow: accepted");
+    await writeFile(join(directory, "app.txt"), "first attempt");
+    await git.captureAccepted("shallow: first");
+    await git.restoreAccepted(accepted);
+    await writeFile(join(directory, "app.txt"), "second attempt");
+    await git.captureAccepted("shallow: second");
+
+    await git.restoreAccepted(accepted);
+
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "accepted");
+    const subjects = (await execFileAsync("git", ["log", "--format=%s"], { cwd: directory })).stdout;
+    assert.match(subjects, /first/);
+    assert.match(subjects, /second/);
   });
 });
 
@@ -101,9 +145,12 @@ test("GitOps rollback retains tracked and untracked ARC audit records while rest
     await writeFile(join(arc, "latest.json"), "{}");
     await writeFile(join(directory, "app.txt"), "broken");
     await writeFile(join(directory, "candidate.txt"), "new");
-    await git.captureAccepted("simulated builder commit");
+    const attempt = await git.captureAccepted("simulated builder commit");
     await git.restoreAccepted(accepted);
-    assert.equal((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim(), accepted);
+    // History moves forward: HEAD is a recovery commit, not the accepted sha,
+    // and the rejected attempt remains reachable.
+    assert.notEqual((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim(), accepted);
+    await execFileAsync("git", ["merge-base", "--is-ancestor", attempt, "HEAD"], { cwd: directory });
     assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "accepted");
     assert.equal(await readFile(events, "utf8"), "accepted event\nfailed candidate event\n");
     await access(join(arc, "latest.json"));
