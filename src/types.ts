@@ -121,7 +121,7 @@ interface RunEventDetails {
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string };
-  module_feedback: { requirementIds: string[]; status: "passed" | "failed" | "inconclusive"; version: string; repairCount: number; planSha256?: string };
+  module_feedback: { requirementIds: string[]; status: "passed" | "failed" | "inconclusive"; version: string; boundaryRepairCount: number; planSha256?: string };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;

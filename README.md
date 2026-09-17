@@ -114,7 +114,7 @@ Judge 在控制器应用副本中另启实例，复用匹配的构建产物；�
 
 `candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。
 
-Pi Worker、会话续接、进程组/作业回收、图片回退与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块反馈的选择、额度与回滚由 `test/module-feedback.test.ts` 与 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
+Pi Worker、会话续接、进程组/作业回收、图片回退与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块边界审计的额度与回滚由 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
 
 ## 需求证据与模型输入
 
@@ -295,6 +295,7 @@ prompts/
   system/                      Builder 系统合同、四类任务模板（实现/修复/根因修复/交付修复）、action 与 receipt 资产
                                seed-data 与 reference-images* 输入说明资产
   fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
+  judge/                       Probe Planner 系统提示词（计划生成与 locator 精化，英文）
 src/
   types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
   cli.ts                       严格 CLI 参数解析
@@ -310,6 +311,7 @@ src/
   runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口
   process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
+  prompt-assets.ts             prompts/ 资产加载与 {{占位符}} 模板填充
   builder/
     port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
     execution-port.ts          引擎无关的 CodingAgent 端口（controller 与 raw baseline 共用）
@@ -319,12 +321,10 @@ src/
     pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
-    prompt-assets.ts           prompts/ 资产加载与 {{占位符}} 模板填充
     prompt-fragments.ts        产品词典 → fragments 选择
     shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
   judge/
     audit.ts                   Judge 故障恢复、业务失败复现与独立验收结果
-    module-feedback.ts         模块边界抽样路径选择（当前路径 + 既有回归路径）
     probe-schema.ts            显式 assertion、单层 scope 与 locator-only refinement 校验
     llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
@@ -341,7 +341,7 @@ data/github、data/sheet        初赛需求树、种子数据及参考图片
 ## 设计边界
 
 - 生产路径只有一个业务代码 Builder：Pi coding-agent（独立 Worker 子进程）；ShallowCode 不新增第二套源码编辑工具。
-- Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），代码只负责组装与填充。
+- Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），Probe Planner 系统提示词外置在 `prompts/judge/` 英文资产中，代码只负责组装与填充。
 - Probe Planner 依据需求证据工作，与目标应用源码、diff 及 Builder 会话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
 - Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
 - 失败次数有硬上限（集中修复至多两轮，交付阶段至多一次修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。

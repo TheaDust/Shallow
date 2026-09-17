@@ -7,15 +7,15 @@ export class PromptAssetError extends Error {}
 
 const cache = new Map<string, string>();
 
-export function loadBuilderPrompt(
-  category: "system" | "fragments",
+export function loadPrompt(
+  category: "system" | "fragments" | "judge",
   name: string,
 ): string {
   const key = `${category}/${name}`;
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
   const assetPath = fileURLToPath(
-    new URL(`../../prompts/${category}/${name}.md`, import.meta.url),
+    new URL(`../prompts/${category}/${name}.md`, import.meta.url),
   );
   let raw: string;
   try {

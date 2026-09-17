@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fillTemplate, loadBuilderPrompt } from "../src/builder/prompt-assets.js";
+import { fillTemplate, loadPrompt } from "../src/prompt-assets.js";
 import { PROMPT_FRAGMENTS } from "../src/builder/prompt-fragments.js";
 import { readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -39,33 +39,33 @@ test("fillTemplate deduplicates residual placeholder names", () => {
   });
 });
 
-test("loadBuilderPrompt reads an asset verbatim with LF endings", () => {
+test("loadPrompt reads an asset verbatim with LF endings", () => {
   assert.equal(
-    loadBuilderPrompt("fragments", "repository-collaboration"),
+    loadPrompt("fragments", "repository-collaboration"),
     "【仓库协作业务】\n仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态必须一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
   );
 });
 
-test("loadBuilderPrompt normalizes CRLF line endings", async () => {
+test("loadPrompt normalizes CRLF line endings", async () => {
   const probe = fileURLToPath(
     new URL("../prompts/fragments/__crlf-probe__.md", import.meta.url),
   );
   await writeFile(probe, "第一行\r\n第二行\r\n", "utf8");
   try {
-    assert.equal(loadBuilderPrompt("fragments", "__crlf-probe__"), "第一行\n第二行");
+    assert.equal(loadPrompt("fragments", "__crlf-probe__"), "第一行\n第二行");
   } finally {
     await rm(probe, { force: true });
   }
 });
 
-test("loadBuilderPrompt caches by category and name", () => {
-  const first = loadBuilderPrompt("fragments", "repository-collaboration");
-  assert.ok(first === loadBuilderPrompt("fragments", "repository-collaboration"));
+test("loadPrompt caches by category and name", () => {
+  const first = loadPrompt("fragments", "repository-collaboration");
+  assert.ok(first === loadPrompt("fragments", "repository-collaboration"));
 });
 
-test("loadBuilderPrompt throws a locating error for missing assets", () => {
+test("loadPrompt throws a locating error for missing assets", () => {
   assert.throws(
-    () => loadBuilderPrompt("system", "does-not-exist"),
+    () => loadPrompt("system", "does-not-exist"),
     /system\/does-not-exist/,
   );
 });
@@ -86,15 +86,15 @@ test("each prompt fragment id maps to exactly one file and there are no orphans"
 });
 
 test("fixed system assets keep their Chinese anchors", () => {
-  const seedData = loadBuilderPrompt("system", "seed-data");
+  const seedData = loadPrompt("system", "seed-data");
   assert.match(seedData, /内置或可复现/);
   assert.ok(seedData.includes("{{SEED_DATA}}"));
-  const images = loadBuilderPrompt("system", "reference-images");
+  const images = loadPrompt("system", "reference-images");
   assert.match(images, /已附加图片/);
   assert.ok(images.includes("{{ATTACHED_REFERENCES}}"));
   assert.ok(images.includes("{{UNAVAILABLE_REFERENCES}}"));
-  assert.match(loadBuilderPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
-  const platform = loadBuilderPrompt("system", "platform-contract");
+  assert.match(loadPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
+  const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /3301/);
   assert.match(platform, /ARC_EXTRA_PORTS/);
@@ -104,35 +104,35 @@ test("fixed system assets keep their Chinese anchors", () => {
     assert.ok(platform.includes(`{{${key}}}`));
   }
   assert.ok(
-    loadBuilderPrompt("system", "builder-system").includes("唯一代码实现者"),
+    loadPrompt("system", "builder-system").includes("唯一代码实现者"),
   );
-  assert.match(loadBuilderPrompt("system", "builder-system"), /持续增量扩展/);
-  assert.match(loadBuilderPrompt("system", "builder-system"), /不为通过当前检查引入一次性变通/);
+  assert.match(loadPrompt("system", "builder-system"), /持续增量扩展/);
+  assert.match(loadPrompt("system", "builder-system"), /不为通过当前检查引入一次性变通/);
   assert.ok(
-    loadBuilderPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
+    loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
   assert.ok(
-    loadBuilderPrompt("system", "receipt").includes("{{主要变更}}"),
+    loadPrompt("system", "receipt").includes("{{主要变更}}"),
   );
 });
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
-  const selfTest = loadBuilderPrompt("system", "self-test");
+  const selfTest = loadPrompt("system", "self-test");
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
-  const implement = loadBuilderPrompt("system", "action-implement");
+  const implement = loadPrompt("system", "action-implement");
   assert.match(implement, /完整模块/);
   assert.match(implement, /ARCHITECTURE\.md/);
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
   assert.match(implement, /逐条覆盖本包需求与验收场景/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
-  const repair = loadBuilderPrompt("system", "action-repair");
+  const repair = loadPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
   assert.ok(repair.includes("{{FAILURES}}"));
   assert.match(repair, /一次集中修复/);
-  const delivery = loadBuilderPrompt("system", "action-delivery-repair");
+  const delivery = loadPrompt("system", "action-delivery-repair");
   for (const key of ["FAILURE_STAGE", "FAILURE_COMMAND", "FAILURE_EXPECTED", "FAILURE_ACTUAL", "PLATFORM_CONTRACT"]) {
     assert.ok(delivery.includes(`{{${key}}}`));
   }
@@ -154,27 +154,36 @@ test("task templates carry their placeholders", () => {
     "task-repair",
     "task-root-cause-repair",
   ]) {
-    const template = loadBuilderPrompt("system", name);
+    const template = loadPrompt("system", name);
     for (const placeholder of packetPlaceholders) {
       assert.ok(template.includes(placeholder), `${name} missing ${placeholder}`);
     }
   }
-  const delivery = loadBuilderPrompt("system", "task-delivery-repair");
+  const delivery = loadPrompt("system", "task-delivery-repair");
   for (const placeholder of ["{{OUTPUT_DIR}}", "{{ACTION}}", "{{FRAGMENTS}}"]) {
     assert.ok(delivery.includes(placeholder), `missing ${placeholder}`);
   }
   assert.ok(!delivery.includes("{{PACKET_ID}}"));
 });
 
+test("judge probe prompt assets keep their contracts", () => {
+  const planner = loadPrompt("judge", "probe-planner");
+  assert.match(planner, /## Test design principles/);
+  assert.match(planner, /setup prerequisites → navigate/);
+  assert.match(planner, /expectCount with count 0/);
+  assert.match(planner, /Each case runs in a fresh browser context/);
+  assert.match(loadPrompt("judge", "probe-refinement"), /Adjust locator objects only/);
+});
+
 test("prompt assets contain no CR characters", async () => {
-  const categories = ["system", "fragments"] as const;
+  const categories = ["system", "fragments", "judge"] as const;
   for (const category of categories) {
     const directory = fileURLToPath(
       new URL(`../prompts/${category}`, import.meta.url),
     );
     for (const file of await readdir(directory)) {
       if (!file.endsWith(".md") || file === "__crlf-probe__.md") continue;
-      const text = loadBuilderPrompt(category, file.slice(0, -3));
+      const text = loadPrompt(category, file.slice(0, -3));
       assert.ok(!text.includes("\r"), `CR found in ${category}/${file}`);
     }
   }

@@ -1,4 +1,4 @@
-import { loadBuilderPrompt } from "./prompt-assets.js";
+import { loadPrompt } from "../prompt-assets.js";
 import type {
   BuilderPromptInput,
   BuilderShadowObservation,
@@ -23,18 +23,18 @@ const FRAGMENT_ORDER: PromptFragmentId[] = [
 ];
 
 export const PROMPT_FRAGMENTS: Record<PromptFragmentId, string> = {
-  accessible_web_controls: loadBuilderPrompt(
+  accessible_web_controls: loadPrompt(
     "fragments",
     "accessible-web-controls",
   ),
-  server_persistence: loadBuilderPrompt("fragments", "server-persistence"),
-  auth_and_permission: loadBuilderPrompt("fragments", "auth-and-permission"),
-  repository_collaboration: loadBuilderPrompt(
+  server_persistence: loadPrompt("fragments", "server-persistence"),
+  auth_and_permission: loadPrompt("fragments", "auth-and-permission"),
+  repository_collaboration: loadPrompt(
     "fragments",
     "repository-collaboration",
   ),
-  spreadsheet_grid: loadBuilderPrompt("fragments", "spreadsheet-grid"),
-  delivery_contract: loadBuilderPrompt("fragments", "delivery-contract"),
+  spreadsheet_grid: loadPrompt("fragments", "spreadsheet-grid"),
+  delivery_contract: loadPrompt("fragments", "delivery-contract"),
 };
 
 const PRODUCT_BASE_FRAGMENTS: Record<ProductKind, PromptFragmentId[]> = {

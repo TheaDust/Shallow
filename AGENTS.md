@@ -34,7 +34,7 @@ baseline/
   index.ts                      loadRootModules / baselineMain：ROOT 子树顺序执行、复用单会话、模块状态
   system.md                     baseline 系统提示词与平台合同
 
-prompts/                        Builder prompt 资产（全部中文 Markdown，改文案改这里，不改 TS）
+prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 英文 Markdown；改文案改这里，不改 TS）
   system/builder-system.md      Builder 固定系统合同
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
@@ -44,6 +44,8 @@ prompts/                        Builder prompt 资产（全部中文 Markdown，
   system/seed-data.md           顶层 data 的种子数据段模板
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
+  judge/probe-planner.md        Judge Planner 计划生成系统提示词（英文）
+  judge/probe-refinement.md     Judge Planner locator 精化系统提示词（英文）
 
 src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
@@ -65,6 +67,7 @@ src/
   process-spawn.ts              spawnProcess：Windows .cmd/bat 经 cmd.exe 启动并拒绝 shell 元字符；其余直接 spawn
   execution-fault.ts            ExecutionFault：浏览器执行故障、Builder 运行时启动故障；与 Shadow 判词分离
   human-log.ts                  HumanRunFormatter：RunEvent JSON → 中文日志行（[本地时间 +耗时] 描述），未知类型返回 null
+  prompt-assets.ts              loadPrompt（读 prompts/ 资产，LF 归一+缓存）、fillTemplate（{{占位符}} 校验）
   builder/
     port.ts                     BuilderPort / BuilderResult（outcome、execution 元数据与可选 referenceImages 诊断）
     execution-port.ts           CodingAgentPort 引擎无关执行端口（controller 与 raw baseline 共用）
@@ -77,16 +80,14 @@ src/
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
     prompt.ts                   compileBuilderPrompt / buildBuilderTaskPrompt：系统合同 + 模板填充 + fragments 拼装
-    prompt-assets.ts            loadBuilderPrompt（读 prompts/ 资产，LF 归一+缓存）、fillTemplate（{{占位符}} 校验）
     prompt-fragments.ts         selectPromptFragments：产品 kind 基础集 + generic_web 关键词 lexicon + 观测扩展
     shadow-observation.ts       toBuilderShadowObservation：ShadowReport → 白名单观测（控制字符清洗、1500 截断）
   judge/
     audit.ts                    auditPacket：计划恢复、定位恢复、业务失败复现；Judge 故障返回 inconclusive
-    module-feedback.ts          selectModuleFeedback：模块边界抽样路径选择（当前路径 + 既有回归路径）
     probe-schema.ts             ProbePlan/ProbeCase schema、显式终末 assertion、单层 scope、parseProbePlan（白名单校验）、
                                 assertLocatorOnlyRefinement（refinement 只许改 locator）
     llm-probe-planner.ts        LlmProbePlanner：网关调用（json_schema）、extractJsonPayload（剥围栏/杂文提取 JSON）、
-                                plan/refineLocators（失败步骤诊断 + locator 校验；恢复额度由 pipeline 管理）
+                                plan/refineLocators（失败步骤诊断 + locator 校验；系统提示词见 prompts/judge/；恢复额度由 pipeline 管理）
     playwright-probe-runner.ts  PlaywrightProbeRunner（白名单 DSL 执行）+ deriveProbeVerdict（pass/fail/inconclusive）
   process-lifecycle.ts          ownProcessTree（Windows Job Object / POSIX 进程组回收）、toolEnvironment（工具最小环境）
   memory-snapshot.ts            memorySnapshot：Linux cgroup 内存诊断采样（memory.current/peak/max/events）
@@ -175,7 +176,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## Builder 需求输入
 
-- 开发检查与模块反馈：Builder 持文件与 shell 工具做开发检查（Windows PowerShell / Linux Bash），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界按 `src/judge/module-feedback.ts` 抽样一条当前路径和一条既有回归路径执行独立探针，反馈修复使用模块边界修复配额（每个模块独立至多两轮，与末尾集中修复的配额独立）。反馈通过不授予整条需求 verified。修改时验证 `test/module-feedback.test.ts`、`test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块反馈”。
+- 开发检查与模块反馈：Builder 持文件与 shell 工具做开发检查（Windows PowerShell / Linux Bash），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界切换时执行完整模块边界审计，使用缓存的探针计划，修复配额每个模块独立至多两轮（与末尾集中修复的配额独立）。修改时验证 `test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块反馈”。
 
 - 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。
 - 图片：生产入口把需求目录传给 `PromptBuilder.options.requirementsDir`（经 `PiWorkerClient`）；`loadReferenceImages` 仅加载当前 packet 的引用，校验解码路径、真实路径、文件签名并去重。支持本地 PNG/JPEG/WebP/GIF，单图 10 MiB、每包 30 MiB；不可用引用写入 `skipped` 并依据文字继续。SDK 使用 `file` part 的 data URL 传递附件。

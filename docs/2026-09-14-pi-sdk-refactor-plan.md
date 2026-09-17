@@ -223,11 +223,11 @@ Linux 按拥有的进程组回收，包括 Worker 已退出后的后代；Window
 | M1：Pi 执行层 | `pi-worker-client.ts`、`pi-worker.ts`、`pi-tools.ts`、`process-lifecycle.ts` | 明确 IPC、工具与配置限制、正常及异常清理、恢复与重试 | 模拟网关＋真实子进程测试通过，返回后无后台写入，无不受控工具后代 |
 | M2：main 接入 | `pi-sdk.ts`、`index.ts`、提示词、图片链路 | 接入 BuilderPort，保留原调度验收规则；移除 main 的 OpenCode/MCP 自测装配 | 同一 fake 控制器测试仍成立；真实 Pi 完成受控应用实现；取得引擎迁移对照 |
 | M3：入口与依赖统一 | `baseline/`、`main.py`、`package*.mjs`、package/lockfile | baseline 改 raw Pi；入口按固定运行时检查；清除旧依赖与启动查找 | 两个全新解包目录均可启动；不要求全局 Pi CLI 或 OpenCode；baseline 无 Judge 输入 |
-| M4：模块反馈 | `pipeline.ts`、新增 `judge/module-feedback.ts`、Planner 用途、`candidate-runtime.ts`、必要 Git 调用 | 两条抽样路径、执行数据隔离、共享修复额度、版本绑定 | 新路径失败、旧路径回归、Judge 不确定、额度耗尽和 A/B/C 回滚均有行为测试 |
+| M4：模块边界验收 | `pipeline.ts`、`judge/plan-cache.ts`、Planner 用途、`candidate-runtime.ts`、必要 Git 调用 | 并行计划生成、模块边界完整审计、独立修复配额、版本绑定 | 模块边界审计、修复额度耗尽和 A/B/C 回滚均有行为测试 |
 | M5：观测与回归 | `types.ts`、`human-log.ts`、运行元数据、相应文档和测试 | 接入引擎、会话、usage、资源记录；更新项目不变量 | `npm run test:all` 通过；公开日志无私有数据；文档反映最终实现 |
 | M6：受限完整运行 | 现有本地评估脚本与受控 Linux 测试环境 | 完整题目与异常路径的 2 GB 验证，比较正确率、耗时、峰值 | 给出可复查结果；测试缺失或内存不达标时明确列出，不能宣称迁移已稳定交付 |
 
-M2 是实验检查点，不是最终交付：移除 Builder 浏览器后，必须继续完成 M4 的模块反馈。上述阶段便于审阅和单因素比较，不自动创建提交或推送。
+M2 是实验检查点，不是最终交付：移除 Builder 浏览器后，必须继续完成 M4 的模块边界验收。上述阶段便于审阅和单因素比较，不自动创建提交或推送。
 
 最终删除 `src/builder/opencode-sdk.ts`、`src/builder/self-test.ts`、`src/builder/candidate-mcp.ts` 及只有这些通道使用的 prompt。删除 `opencode-ai`、`@opencode-ai/sdk`、`@playwright/mcp`；检查 `@modelcontextprotocol/sdk`、`undici` 的直接引用后删除失去用途的直接依赖。保留 Judge 的 Playwright 与 CandidateRuntime 构建能力。
 

@@ -15,7 +15,7 @@ import {
   selectPromptFragments,
   type PromptFragmentId,
 } from "./prompt-fragments.js";
-import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
+import { fillTemplate, loadPrompt } from "../prompt-assets.js";
 
 export interface CompiledBuilderPrompt {
   systemPrompt: string;
@@ -23,7 +23,7 @@ export interface CompiledBuilderPrompt {
   fragmentIds: PromptFragmentId[];
 }
 
-const SYSTEM_PROMPT = [loadBuilderPrompt("system", "builder-system"), loadBuilderPrompt("system", "self-test")].join("\n\n");
+const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("system", "self-test")].join("\n\n");
 
 export function buildBuilderSystemPrompt(): string {
   return SYSTEM_PROMPT;
@@ -44,7 +44,7 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
   switch (request.mode) {
     case "implement": {
       const task = fillTemplate(
-        loadBuilderPrompt("system", "task-implement"),
+        loadPrompt("system", "task-implement"),
         {
           PACKET_ID: request.packet.id,
           PACKET_ATTEMPT: String(request.packet.attempt),
@@ -62,7 +62,7 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
     case "root_cause_repair": {
       const name =
         request.mode === "repair" ? "task-repair" : "task-root-cause-repair";
-      const task = fillTemplate(loadBuilderPrompt("system", name), {
+      const task = fillTemplate(loadPrompt("system", name), {
         PACKET_ID: request.packet.id,
         PACKET_ATTEMPT: String(request.packet.attempt),
         OUTPUT_DIR: request.outputDir,
@@ -79,7 +79,7 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
     }
     case "delivery_repair": {
       const task = fillTemplate(
-        loadBuilderPrompt("system", "task-delivery-repair"),
+        loadPrompt("system", "task-delivery-repair"),
         {
           OUTPUT_DIR: request.outputDir,
           ACTION: deliveryRepairAction(
@@ -95,18 +95,18 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
 }
 
 function implementAction(): string {
-  return loadBuilderPrompt("system", "action-implement");
+  return loadPrompt("system", "action-implement");
 }
 
 function repairAction(observation: BuilderShadowObservation): string {
-  return fillTemplate(loadBuilderPrompt("system", "action-repair"), {
+  return fillTemplate(loadPrompt("system", "action-repair"), {
     PASSED_CASE_IDS: observation.passedCaseIds.join("、") || "无",
     FAILURES: renderFailures(observation),
   });
 }
 
 function rootCauseRepairAction(observation: BuilderShadowObservation): string {
-  return fillTemplate(loadBuilderPrompt("system", "action-root-cause-repair"), {
+  return fillTemplate(loadPrompt("system", "action-root-cause-repair"), {
     PASSED_CASE_IDS: observation.passedCaseIds.join("、") || "无",
     FAILURES: renderFailures(observation),
   });
@@ -116,7 +116,7 @@ function deliveryRepairAction(
   failure: DeliveryFailureObservation,
   contract: PlatformContract,
 ): string {
-  return fillTemplate(loadBuilderPrompt("system", "action-delivery-repair"), {
+  return fillTemplate(loadPrompt("system", "action-delivery-repair"), {
     FAILURE_STAGE: failure.stage,
     FAILURE_COMMAND: failure.command ?? "未提供",
     FAILURE_EXPECTED: failure.expected,
@@ -133,7 +133,7 @@ function projectContextSection(context: BuilderProjectContext): string {
     context.product.description,
     ...(context.product.seedData.length > 0 ? [
       "",
-      fillTemplate(loadBuilderPrompt("system", "seed-data"), {
+      fillTemplate(loadPrompt("system", "seed-data"), {
         SEED_DATA: context.product.seedData.map(({ category, items }) =>
           [`### ${category}`, ...items.map((item) => `- ${item}`)].join("\n"),
         ).join("\n\n"),
@@ -209,7 +209,7 @@ function renderFailures(observation: BuilderShadowObservation): string {
 }
 
 function platformContractSection(contract: PlatformContract): string {
-  return fillTemplate(loadBuilderPrompt("system", "platform-contract"), {
+  return fillTemplate(loadPrompt("system", "platform-contract"), {
     PROBE_PORT: String(contract.port),
     EVAL_PORT: String(contract.evaluationPort),
     INSTALL_COMMANDS: contract.installCommands.map(renderCommand).join("\n") || "无",
@@ -229,7 +229,7 @@ function fragmentSection(fragmentIds: PromptFragmentId[]): string {
 }
 
 function receiptSection(): string {
-  return loadBuilderPrompt("system", "receipt");
+  return loadPrompt("system", "receipt");
 }
 
 function renderCommand(command: ProcessCommand): string {

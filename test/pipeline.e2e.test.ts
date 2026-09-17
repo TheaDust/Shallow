@@ -21,9 +21,9 @@ test("Pipeline checks module paths before the full atomic audit and keeps verifi
     const summary = await f.run();
     assert.equal(summary.status, "delivered");
     assert.deepEqual(f.builder.requests.map(item => "packet" in item ? item.packet.requirementIds : []), [["A", "B"], ["C"]]);
-    // Parallel plan generation runs during implementation; feedback calls run during module feedback.
-    // Consolidated audit reads from cache (no additional planner calls).
-    assert.deepEqual(calls, ["packet-a", "packet-b", "feedback-packet-a", "packet-c", "feedback-packet-c"]);
+    // Parallel plan generation runs during implementation; module boundary audit reads from cache (no additional planner calls).
+    // Consolidated audit also reads from cache.
+    assert.deepEqual(calls, ["packet-a", "packet-b", "packet-c"]);
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(f.git.restoredShas, []);
@@ -205,31 +205,6 @@ test("A failed Builder receipt with unrunnable code stays blocked and restores t
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
     assert.deepEqual(summary.implementedRequirementIds, ["C"]);
     assert.deepEqual(f.git.restoredShas, ["initial"]);
-  });
-});
-
-test("Module feedback regression keeps the new runnable module instead of reverting it", async () => {
-  await withModulePipeline(async f => {
-    f.deps.runner.run = async plan => {
-      const moduleCStarted = f.builder.requests.some(item => "packet" in item && item.packet.requirementIds.includes("C"));
-      if (plan.packetId === "feedback-packet-a") return moduleCStarted ? fail(plan) : pass(plan);
-      if (plan.packetId === "packet-a") {
-        // The regression persists through the audit until a consolidated repair fixes it.
-        const consolidatedRepair = f.builder.requests.some(item => item.mode === "repair" && "packet" in item && item.packet.id.startsWith("repair-round"));
-        return consolidatedRepair ? pass(plan) : fail(plan);
-      }
-      return pass(plan);
-    };
-    const summary = await f.run();
-    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
-    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
-    assert.deepEqual(summary.failedRequirementIds, []);
-    assert.deepEqual(summary.blockedRequirementIds, []);
-    const events = await f.events();
-    const kept = events.filter(item => item.type === "module_regression_kept");
-    assert.equal(kept.length, 1);
-    assert.deepEqual(kept[0].detail?.requirementIds, ["C"]);
-    assert.deepEqual(kept[0].detail?.regressedRequirementIds, ["A"]);
   });
 });
 

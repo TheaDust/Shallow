@@ -5,7 +5,7 @@ import { createPiTools } from "./pi-tools.js";
 import { closeSharedBrowser } from "./pi-browser-tool.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
-import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
+import { fillTemplate, loadPrompt } from "../prompt-assets.js";
 
 // Wait for ownership to be established by the parent before executing anything.
 process.once("message", (request: PiWorkerRequest) => {
@@ -56,8 +56,8 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     ? await loadReferenceImages(input.requirementsDir, input.references) : { images: [], skipped: input.textOnly ? [] : (input.references ?? []).map(reference => ({ reference, reason: "requirements_unavailable" })) };
   const images = input.textOnly ? [] : loaded.images.map(image => ({ type: "image" as const, mimeType: image.mime, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) }));
   try {
-    const imageNote = !input.references?.length ? "" : input.textOnly ? loadBuilderPrompt("system", "reference-images-text-fallback")
-      : fillTemplate(loadBuilderPrompt("system", "reference-images"), {
+    const imageNote = !input.references?.length ? "" : input.textOnly ? loadPrompt("system", "reference-images-text-fallback")
+      : fillTemplate(loadPrompt("system", "reference-images"), {
         ATTACHED_REFERENCES: loaded.images.map(image => `- ${image.reference}`).join("\n") || "无",
         UNAVAILABLE_REFERENCES: loaded.skipped.map(item => `- ${item.reference}: ${item.reason}`).join("\n") || "无",
       });

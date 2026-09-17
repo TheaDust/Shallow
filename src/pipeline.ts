@@ -27,7 +27,6 @@ import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state
 import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
-import { selectModuleFeedback } from "./judge/module-feedback.js";
 import { probePlanSha256 } from "./judge/probe-schema.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { memorySnapshot } from "./memory-snapshot.js";
@@ -117,7 +116,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let repairCount = 0;
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
-  const feedbackHistory = new Map<string, AuditResult>();
   deps.candidate?.setRecorder(event => state.record(event));
 
   const phase = async (name: PipelinePhase, round?: number): Promise<void> => {
@@ -371,71 +369,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           continue;
         }
       }
-      const selected = selectModuleFeedback(packet, packets, implemented, feedbackHistory);
-      const feedbackPackets = selected.map(item => ({ ...item, id: `feedback-${item.id}` }));
-      const checkFeedback = async (cached: Map<string, AuditResult>, version: string) => {
-        const checked = new Map<string, AuditResult>();
-        for (let i = 0; i < selected.length; i++) {
-          const item = selected[i];
-          const result = await auditPacket(feedbackPackets[i], cached.get(item.id)?.plan, options, deps, state,
-            () => budget.remaining("implementation"), "module_feedback");
-          checked.set(item.id, result);
-          await state.record({ at: now(), type: "module_feedback", packetId: packet.id,
-            detail: { requirementIds: item.requirementIds, status: result.status === "verified" ? "passed" : result.status,
-              version, repairCount, ...(result.plan ? { planSha256: probePlanSha256(result.plan) } : {}) } });
-        }
-        return checked;
-      };
-      let feedback = await checkFeedback(feedbackHistory, candidate?.inputDigest ?? `module-${packet.id}`);
-      const regression = selected.some(item => implemented.has(item.requirementIds[0]) && feedback.get(item.id)?.status === "failed");
-      const failures = selected.filter(item => feedback.get(item.id)?.status === "failed");
-      let retainedRepair = false;
-      if (failures.length && repairCount < 2 && budget.remaining("implementation") > 0) {
-        const beforeRepair = await deps.git.captureAccepted(`shallow: feedback candidate ${packet.id}`);
-        const repairPacket = makePacket(`feedback-repair-${++repairCount}`, failures.flatMap(item => item.requirements), 2);
-        const repaired = await build({ mode: "repair", packet: repairPacket, outputDir: options.outputDir,
-          platformContract: options.platformContract,
-          projectContext: buildBuilderProjectContext(repairPacket, catalog, new Set([...implemented, ...packet.requirementIds])),
-          shadowObservation: toBuilderShadowObservation({ packetId: repairPacket.id, verdict: "fail", passedCases: [],
-            failures: failures.flatMap(item => feedback.get(item.id)!.report!.failures) }, deps.diagnosticSecrets) },
-          "implementation", { timeoutMs: Math.min(240_000, budget.remaining("implementation") / 2) });
-        let repairedCandidate: CandidateEvidence | undefined;
-        if (repaired.outcome === "completed") {
-          try { repairedCandidate = await runnable();
-            const next = await checkFeedback(feedback, repairedCandidate?.inputDigest ?? `repair-${repairCount}`);
-            retainedRepair = failures.some(item => next.get(item.id)?.status === "verified") &&
-              selected.every(item => feedback.get(item.id)?.status !== "verified" || next.get(item.id)?.status === "verified") &&
-              selected.every(item => !implemented.has(item.requirementIds[0]) || feedback.get(item.id)?.status !== "failed" || next.get(item.id)?.status === "verified");
-            if (retainedRepair) { feedback = next; candidate = repairedCandidate; }
-          } catch (error) {
-            await state.record({ at: now(), type: "module_failed", packetId: repairPacket.id,
-              detail: { requirementIds: repairPacket.requirementIds, reason: errorMessage(error) } });
-          }
-        }
-        if (!retainedRepair) {
-          await deps.git.restoreAccepted(beforeRepair);
-          // Rebuild B after restoring it; the C build is no longer evidence for B.
-          candidate = await runnable();
-        }
-        await state.record({ at: now(), type: "repair_batch_finished", detail: { round: repairCount,
-          retained: retainedRepair, reason: retainedRepair ? "module feedback improved with selected regression coverage" : "module feedback did not establish an improvement" } });
+      // Track which audit packets are eligible for module boundary audit.
+      for (const p of relatedAuditPackets) {
+        if (!pendingModuleAudit.packetIds.includes(p.id)) pendingModuleAudit.packetIds.push(p.id);
       }
-      if (regression && !retainedRepair) {
-        // Keep the runnable new module; the regression becomes a repair-queue
-        // item handled by the consolidated repair rounds instead of reverting B.
-        await state.record({ at: now(), type: "module_regression_kept", packetId: packet.id,
-          detail: { requirementIds: packet.requirementIds,
-            regressedRequirementIds: selected.filter(item => implemented.has(item.requirementIds[0]) && feedback.get(item.id)?.status === "failed").flatMap(item => item.requirementIds) } });
-      }
-      for (const [id, result] of feedback) if (result.status === "verified") feedbackHistory.set(id, result);
       await checkpoint(packet.requirementIds, packet.id, candidate);
       for (const id of packet.requirementIds) {
         implemented.add(id);
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
-      }
-      // Track which audit packets are eligible for module boundary audit.
-      for (const p of relatedAuditPackets) {
-        if (!pendingModuleAudit.packetIds.includes(p.id)) pendingModuleAudit.packetIds.push(p.id);
       }
       previousModuleId = currentModuleId;
     }
