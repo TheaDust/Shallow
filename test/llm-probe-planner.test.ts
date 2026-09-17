@@ -360,18 +360,18 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
 
   const body = bodies[0];
   assert.match(body, /exactUiStrings/);
-  assert.match(body, /regular expression/i);
-  assert.match(body, /deep link/i);
+  assert.match(body, /正则表达式/);
+  assert.match(body, /deep link/);
   assert.match(body, /exact: false/);
-  assert.match(body, /count 0/);
-  assert.match(body, /reload to verify/);
+  assert.match(body, /count 为 0/);
+  assert.match(body, /reload 验证状态/);
   assert.match(body, /newContext/);
-  assert.match(body, /boundary cases/);
-  assert.match(body, /empty values, oversized inputs, invalid formats/);
-  assert.match(body, /never assert feedback the evidence does not state/i);
-  assert.match(body, /fallbacks/);
+  assert.match(body, /边界 case/);
+  assert.match(body, /空值、超长输入、非法格式/);
+  assert.match(body, /绝不断言证据未声明的反馈/);
+  assert.match(body, /fallback/);
   assert.match(body, /anyOf/);
-  assert.match(body, /never invent alternatives/i);
+  assert.match(body, /绝不臆造替代措辞/);
 });
 
 test("Probe Planner forwards declared seed data and omits it when empty", async () => {
@@ -391,7 +391,7 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
   assert.match(seeded.messages[0].content, /seed data/i);
-  assert.match(seeded.messages[0].content, /appear verbatim/);
+  assert.match(seeded.messages[0].content, /逐字出现/);
   const seededPayload = JSON.parse(seeded.messages[1].content) as { seedData?: unknown };
   assert.deepEqual(seededPayload.seedData, seedData);
 

@@ -168,11 +168,11 @@ test("task templates carry their placeholders", () => {
 
 test("judge probe prompt assets keep their contracts", () => {
   const planner = loadPrompt("judge", "probe-planner");
-  assert.match(planner, /## Test design principles/);
-  assert.match(planner, /setup prerequisites → navigate/);
-  assert.match(planner, /expectCount with count 0/);
-  assert.match(planner, /Each case runs in a fresh browser context/);
-  assert.match(loadPrompt("judge", "probe-refinement"), /Adjust locator objects only/);
+  assert.match(planner, /## 测试设计原则/);
+  assert.match(planner, /准备前置条件 → 导航/);
+  assert.match(planner, /count 为 0 的 expectCount/);
+  assert.match(planner, /全新的 browser context/);
+  assert.match(loadPrompt("judge", "probe-refinement"), /仅调整 locator 对象/);
 });
 
 test("prompt assets contain no CR characters", async () => {

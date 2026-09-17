@@ -34,7 +34,7 @@ baseline/
   index.ts                      loadRootModules / baselineMain：ROOT 子树顺序执行、复用单会话、模块状态
   system.md                     baseline 系统提示词与平台合同
 
-prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 英文 Markdown；改文案改这里，不改 TS）
+prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 中文 Markdown；改文案改这里，不改 TS）
   system/builder-system.md      Builder 固定系统合同
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
@@ -44,8 +44,8 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/seed-data.md           顶层 data 的种子数据段模板
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
-  judge/probe-planner.md        Judge Planner 计划生成系统提示词（英文）
-  judge/probe-refinement.md     Judge Planner locator 精化系统提示词（英文）
+  judge/probe-planner.md        Judge Planner 计划生成系统提示词（中文）
+  judge/probe-refinement.md     Judge Planner locator 精化系统提示词（中文）
 
 src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
