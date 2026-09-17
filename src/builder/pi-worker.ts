@@ -26,8 +26,8 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const modelRegistry = ModelRegistry.inMemory(authStorage);
   modelRegistry.registerProvider("shallow-gateway", {
     baseUrl: input.gateway.baseUrl, api: "openai-completions", apiKey: "SHALLOW_RUNTIME_CREDENTIAL",
-    models: [{ id: input.gateway.model, name: input.gateway.model, reasoning: false,
-      input: ["text", "image"], contextWindow: 128_000, maxTokens: 16_384,
+    models: [{ id: input.gateway.model, name: input.gateway.model, reasoning: true,
+      input: ["text", "image"], contextWindow: 256_000, maxTokens: 16_384,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
         maxTokensField: "max_tokens", supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true },
@@ -44,7 +44,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const { session, modelFallbackMessage } = await createAgentSession({ cwd: input.outputDir, agentDir,
     authStorage, modelRegistry, model: modelRegistry.find("shallow-gateway", input.gateway.model),
     settingsManager, resourceLoader, sessionManager: manager,
-    tools: ["read", "edit", "write", "shell"], customTools: createPiTools(input.outputDir), thinkingLevel: "off" });
+    tools: ["read", "edit", "write", "shell"], customTools: createPiTools(input.outputDir) });
   if (modelFallbackMessage) throw new Error(modelFallbackMessage);
   let toolCalls = 0;
   let compactions = 0;

@@ -368,7 +368,7 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /reload to verify/);
   assert.match(body, /newContext/);
   assert.match(body, /boundary cases/);
-  assert.match(body, /empty, oversized, or invalid inputs/);
+  assert.match(body, /empty values, oversized inputs, invalid formats/);
   assert.match(body, /never assert feedback the evidence does not state/i);
   assert.match(body, /fallbacks/);
   assert.match(body, /anyOf/);
@@ -391,7 +391,7 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
   await planner.plan(packet(seedData));
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
-  assert.match(seeded.messages[0].content, /seedData is supplied/);
+  assert.match(seeded.messages[0].content, /seed data/i);
   assert.match(seeded.messages[0].content, /appear verbatim/);
   const seededPayload = JSON.parse(seeded.messages[1].content) as { seedData?: unknown };
   assert.deepEqual(seededPayload.seedData, seedData);
