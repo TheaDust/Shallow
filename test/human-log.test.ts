@@ -130,6 +130,15 @@ test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () =
   assert.match(formatLine(formatter, lines[7]), /^\[\d{2}:\d{2}:\d{2} \+3m0s\] 流水线结束$/);
 });
 
+test("HumanRunFormatter renders feature grouping stats at pipeline start", () => {
+  const formatter = new HumanRunFormatter();
+  const line = formatLine(formatter, eventLine("2026-09-16T00:00:00.000Z", "pipeline_started", {
+    detail: { requirements: 24, totalBudgetMs: 0, port: 43210,
+      grouping: { packets: 6, requirements: 24, maxPacketSize: 5, crossModulePackets: 0, cohesionRate: 0.347, thresholdLimitedPackets: 0 } },
+  }));
+  assert.match(line, /流水线启动；原子需求 24；预算 不限时；探针端口 43210；功能组 6$/);
+});
+
 test("HumanRunFormatter surfaces failure reasons and refined reruns", () => {
   const formatter = new HumanRunFormatter();
   const lines = [

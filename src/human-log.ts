@@ -76,8 +76,12 @@ function describe(type: string, event: RunEvent): string | null {
       return `模块反馈 ${strings(detail?.requirementIds).join(", ")}：${detail?.status}；已用修复 ${detail?.repairCount}/2`;
     case "repair_batch_finished":
       return `第 ${detail?.round} 轮集中修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
-    case "pipeline_started":
-      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}` : ""}`;
+    case "pipeline_started": {
+      const grouping = typeof detail?.grouping === "object" && detail.grouping !== null
+        ? detail.grouping as Record<string, unknown> : undefined;
+      const groups = pickNumber(grouping, "packets");
+      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}${groups !== null ? `；功能组 ${groups}` : ""}` : ""}`;
+    }
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "builder_started":

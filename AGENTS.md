@@ -49,7 +49,7 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树与 ProductContext.seedData；校验 ID 和依赖
-  scheduler.ts                  implementationPackets：完整 ROOT 子树、依赖排序与相互依赖模块合并；auditPackets：逐原子验收及前置需求文字上下文
+  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、6 条/12 场景/18k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   pipeline.ts                   编排核心：模块实现、可运行检查点、独立验收、至多两轮集中修复与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
   run-state.ts                  RunStateStore（功能状态、可运行检查点 SHA、ledger+logSink）、
@@ -156,10 +156,10 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 
 ## 架构不变量
 
-管线：`catalog → 完整模块实现 → 可运行检查点 → 原子需求独立验收 → 集中修复 → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
+管线：`catalog → 功能组实现 → 可运行检查点 → 原子需求独立验收 → 集中修复 → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。
-2. **模块实现**：完整 ROOT 子树按跨模块依赖排序，相互依赖模块合并。所有模块先实现，再验收；实现阶段复用同一会话，回滚/运行时重启后使用新会话。模块内部依赖和未 verified 的外部依赖不阻塞实现。
+2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 6 条/12 场景/18,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。所有功能组先实现，再验收；实现阶段复用同一会话，回滚/运行时重启后使用新会话。组内依赖和未 verified 的外部依赖不阻塞实现。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 回执失败/超时先保存尝试再实测：代码可运行则直接接受为可运行版本（`module_rescued`，会话重置）；确实无法构建/启动才恢复上一检查点并标 blocked（`module_failed`），被拒尝试保留在历史中。
 4. **集中修复**：纯业务失败须在新应用实例中复现，再按需求汇总交给 Builder；每次运行至多两轮。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。
 5. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。精化仅改 locator，固定操作、输入与预期。混合失败先处理带快照的 locator 部分；每次原子验收至多两轮精化、一次浏览器基础设施重试。业务失败复现共享这些额度。
@@ -168,7 +168,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 8. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 只持文件与 shell 工具做开发检查，不持常驻浏览器/MCP。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
 9. **运行时恢复**：git 单命令30s；Pi Worker 进程组/作业回收最多5s。每次调用结束后父进程回收拥有的进程组并等待退出确认，启动故障终止运行并恢复检查点，清理失败按执行故障终止本轮。Judge 故障保留应用并报告不确定。cgroup 计数仅用于诊断。新增事件同步 types/human-log；源码或构建发生变化会使候选证据失效。接受输入 digest 只覆盖 Git 回滚能还原的文件（tracked + 未被忽略的 untracked），被忽略的运行/构建产物（dist、data、依赖）不计入，否则失败修复留下的产物会让回滚口径对不上。
 
-Catalog 继续展开并验证原子依赖，保留完整原文与树。修改模块排序验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
+Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功能分组验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
 
 ## Builder 需求输入
 

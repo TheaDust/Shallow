@@ -216,7 +216,7 @@ children:
       const capture = git.captureAccepted.bind(git);
       git.captureAccepted = async (message) => {
         const sha = await capture(message);
-        if (mutation === "commit" && message.includes("checkpoint module")) await writeFile(join(output, "late.txt"), "late");
+        if (mutation === "commit" && message.includes("checkpoint")) await writeFile(join(output, "late.txt"), "late");
         return sha;
       };
       const browser = new PlaywrightProbeRunner();

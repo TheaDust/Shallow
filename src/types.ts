@@ -45,6 +45,16 @@ export interface RequirementCatalog {
   statusById: Record<string, RequirementStatus>;
 }
 
+/** Read-only statistics about a grouping of requirements into feature packets. */
+export interface GroupingStats {
+  packets: number;
+  requirements: number;
+  maxPacketSize: number;
+  crossModulePackets: number;
+  cohesionRate: number;
+  thresholdLimitedPackets: number;
+}
+
 /** Original hierarchy for platform projection; scheduling uses expanded atomics. */
 export interface RequirementNode {
   id: string;
@@ -115,6 +125,7 @@ interface RunEventDetails {
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
+    grouping?: GroupingStats;
     usage?: { status: "unavailable" } };
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };

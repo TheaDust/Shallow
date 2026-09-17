@@ -22,7 +22,7 @@ import type {
 import type { ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
-import { implementationPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
+import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { selectModuleFeedback } from "./judge/module-feedback.js";
@@ -108,6 +108,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     totalBudgetMs: options.totalBudgetMs }, options.ledgerFile, deps.logSink ?? null, deps.diagnosticSecrets);
   const implemented = new Set<string>();
   const packets = auditPackets(catalog);
+  const featureGrouping = featureGroupPackets(catalog);
   let results = new Map<string, AuditResult>();
   let conversation = 0;
   let repairCount = 0;
@@ -185,8 +186,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
 
   await state.record({ at: now(), type: "pipeline_started", detail: {
-    requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port, ...deps.runMetadata } });
-  await emitArc(deps, state, arc => arc.runnerState("running", "module-first pipeline started"));
+    requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port,
+    grouping: featureGrouping.stats, ...deps.runMetadata } });
+  await emitArc(deps, state, arc => arc.runnerState("running", "feature-group pipeline started"));
   const rows = buildArcRequirementRows(catalog.tree);
   await emitArc(deps, state, arc => arc.storeRequirementTree(rows.requirementRows, rows.scenarioRows));
   const folderMap = folderDescendants(catalog);
@@ -208,7 +210,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   try {
     await phase("implementation");
-    for (const packet of implementationPackets(catalog)) {
+    for (const packet of featureGrouping.packets) {
       if (budget.remaining("implementation") <= 0) break;
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
         detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
