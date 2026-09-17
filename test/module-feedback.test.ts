@@ -55,14 +55,15 @@ test("Unhelpful new-path repair retains runnable B and early repairs share the g
   });
 });
 
-test("An independent feedback repair that fixes the failed path is retained and resets implementation conversation", async () => {
+test("An independent feedback repair that fixes the failed path is retained; implementation packets use fresh sessions", async () => {
   await withModulePipeline(async f => {
     f.deps.runner.run = async plan => plan.packetId === "feedback-packet-a" && f.builder.requests.length === 1 ? fail(plan) : pass(plan);
     const summary = await f.run();
     assert.equal(summary.status, "delivered");
     assert.equal(f.builder.requests[1].mode, "repair");
+    assert.equal(f.builder.runOptions[0]?.sessionKey, undefined);
     assert.equal(f.builder.runOptions[1]?.sessionKey, undefined);
-    assert.notEqual(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[2]?.sessionKey);
+    assert.equal(f.builder.runOptions[2]?.sessionKey, undefined);
     assert.equal(f.git.restoredShas.length, 0);
   });
 });

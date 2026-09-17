@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { AuthStorage, ModelRegistry, SessionManager, SettingsManager, DefaultResourceLoader, createAgentSession } from "@mariozechner/pi-coding-agent";
 import { createPiTools } from "./pi-tools.js";
+import { closeSharedBrowser } from "./pi-browser-tool.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadBuilderPrompt } from "./prompt-assets.js";
@@ -69,5 +70,5 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && /\b(?:image(?:_url| input|s)?|vision|multimodal)\b.{0,60}\b(?:not supported|unsupported)\b|\b(?:model|endpoint|provider)\b.{0,40}\b(?:does not support|cannot accept)\b.{0,30}\bimage/i.test(summary),
       ...(input.references?.length ? { referenceImages: { mode: input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable", attachedCount: images.length, skipped: loaded.skipped } as const } : {}),
     };
-  } finally { unsubscribe(); session.dispose(); }
+  } finally { unsubscribe(); session.dispose(); await closeSharedBrowser(); }
 }

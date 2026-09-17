@@ -118,12 +118,15 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadBuilderPrompt("system", "self-test");
-  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名"]) {
+  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
   const implement = loadBuilderPrompt("system", "action-implement");
   assert.match(implement, /完整模块/);
   assert.match(implement, /ARCHITECTURE\.md/);
+  assert.match(implement, /先写计划，再写代码/);
+  assert.match(implement, /实施计划/);
+  assert.match(implement, /逐条覆盖本包需求与验收场景/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadBuilderPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));

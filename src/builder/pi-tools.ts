@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createReadToolDefinition, createEditToolDefinition, createWriteToolDefinition, createBashToolDefinition, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { toolEnvironment } from "../process-lifecycle.js";
+import { createBrowserTool } from "./pi-browser-tool.js";
 
 export async function assertToolPath(root: string, input: string): Promise<string> {
   const canonicalRoot = await realpath(root);
@@ -70,6 +71,6 @@ export function createPiTools(cwd: string): ToolDefinition[] {
   } });
   // Retain the SDK schema and output truncation, replace only the execution backend.
   shell.name = "shell";
-  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches and targeted tests. Do not start persistent servers.`;
-  return [...guarded, shell as unknown as ToolDefinition];
+  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and targeted tests. Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed.`;
+  return [...guarded, shell as unknown as ToolDefinition, createBrowserTool()];
 }

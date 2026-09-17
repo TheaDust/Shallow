@@ -26,7 +26,9 @@ test("Pipeline checks module paths before the full atomic audit and keeps verifi
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(f.git.restoredShas, []);
-    assert.equal(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
+    // Every implementation packet runs in a fresh session.
+    assert.equal(f.builder.runOptions[0]?.sessionKey, undefined);
+    assert.equal(f.builder.runOptions[1]?.sessionKey, undefined);
     assert.equal(f.builder.closeCount, 1);
     const events = await f.events();
     assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
@@ -121,7 +123,7 @@ test("Progressive improvements have at most two consolidated repair rounds even 
   });
 });
 
-test("Broken module startup restores its checkpoint, resets conversation, and continues the next module", async () => {
+test("Broken module startup restores its checkpoint and the next packet starts a fresh session", async () => {
   await withModulePipeline(async f => {
     let starts = 0;
     f.deps.appLifecycle.start = async () => {
@@ -132,7 +134,8 @@ test("Broken module startup restores its checkpoint, resets conversation, and co
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["C"]);
     assert.deepEqual(f.git.restoredShas, ["initial"]);
-    assert.notEqual(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
+    assert.equal(f.builder.runOptions[0]?.sessionKey, undefined);
+    assert.equal(f.builder.runOptions[1]?.sessionKey, undefined);
   });
 });
 
@@ -147,9 +150,9 @@ test("A failed Builder receipt is rescued when the written application is runnab
     assert.deepEqual(f.git.restoredShas, []);
     // initial + attempt snapshot for the rescued packet + two checkpoints.
     assert.equal(f.git.captureMessages.length, 4);
-    // The failed receipt poisons its session: the next module starts a new one.
-    assert.ok(builder.runOptions[0]?.sessionKey);
-    assert.notEqual(builder.runOptions[0]?.sessionKey, builder.runOptions[1]?.sessionKey);
+    // Implementation packets always run in fresh sessions.
+    assert.equal(builder.runOptions[0]?.sessionKey, undefined);
+    assert.equal(builder.runOptions[1]?.sessionKey, undefined);
     const events = await f.events();
     const rescued = events.filter(item => item.type === "module_rescued");
     assert.equal(rescued.length, 1);

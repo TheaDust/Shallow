@@ -110,7 +110,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const packets = auditPackets(catalog);
   const featureGrouping = featureGroupPackets(catalog);
   let results = new Map<string, AuditResult>();
-  let conversation = 0;
   let repairCount = 0;
   const feedbackHistory = new Map<string, AuditResult>();
   deps.candidate?.setRecorder(event => state.record(event));
@@ -220,8 +219,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
       }
+      // Every packet is implemented in a fresh session; handoff across packets
+      // goes through the project itself (code, tests, ARCHITECTURE.md).
       const result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey: `implementation-${conversation}` });
+        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation");
       let candidate: CandidateEvidence | undefined;
       let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
       if (reason !== undefined) {
@@ -232,11 +233,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         try { candidate = await runnable(); reason = undefined; }
         catch (error) { reason = errorMessage(error); }
         if (reason === undefined) {
-          conversation += 1;
           await state.record({ at: now(), type: "module_rescued", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason: receiptFailure } });
         } else {
           await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-          conversation += 1;
           state.markRequirements(packet.requirementIds, "blocked");
           await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
           for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
@@ -248,7 +247,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         if (reason !== undefined) {
           await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
           await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-          conversation += 1;
           state.markRequirements(packet.requirementIds, "blocked");
           await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
           for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
@@ -283,7 +281,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           shadowObservation: toBuilderShadowObservation({ packetId: repairPacket.id, verdict: "fail", passedCases: [],
             failures: failures.flatMap(item => feedback.get(item.id)!.report!.failures) }, deps.diagnosticSecrets) },
           "implementation", { timeoutMs: Math.min(240_000, budget.remaining("implementation") / 2) });
-        conversation++;
         let repairedCandidate: CandidateEvidence | undefined;
         if (repaired.outcome === "completed") {
           try { repairedCandidate = await runnable();
