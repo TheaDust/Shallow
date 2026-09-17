@@ -166,7 +166,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const ordered = [...packets].sort((a, b) => Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
     for (const packet of ordered) {
       if (!packet.requirementIds.every(id => implemented.has(id))) continue;
-      const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet.id);
+      const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
       const result = budget.remaining(name) <= 0
         ? { status: "inconclusive" as const, plan: cached, reason: "audit phase budget exhausted" }
         : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name));
@@ -207,7 +207,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const boundaryResults = new Map<string, AuditResult>();
     for (const packet of ordered) {
       if (!packet.requirementIds.every(id => implemented.has(id))) continue;
-      const cached = results.get(packet.id)?.plan ?? await planCache.read(packet.id);
+      const cached = results.get(packet.id)?.plan ?? await planCache.read(packet);
       if (budget.remaining("audit") <= 0) {
         boundaryResults.set(packet.id, { status: "inconclusive", plan: cached, reason: "module boundary audit budget exhausted" });
         continue;
@@ -229,6 +229,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const failures = targetPackets.filter(p => results.get(p.id)?.status === "failed");
       if (!failures.length) break;
       const round = ++boundaryRepairCount;
+      for (const item of failures) state.setPacketAttempt(item.id, round + 1);
       await phase("repair", round);
       const repairPacket = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
       const reports = failures.map(item => results.get(item.id)!.report!);
@@ -246,20 +247,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       let nextResults = results;
       if (!reason) {
-        // Re-audit the failed packets with cached plans.
-        const reAudit = new Map<string, AuditResult>();
-        for (const packet of failures) {
-          const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet.id);
-          const r = budget.remaining("repair") <= 0
-            ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
-            : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
-          reAudit.set(packet.id, r);
+        // A boundary repair may break a module path that already passed. Recheck
+        // this module's verified packets first and discard the repair on the first
+        // loss; only then look for improvement across the failed packets.
+        let regressed = false;
+        for (const packet of targetPackets) {
+          if (results.get(packet.id)?.status !== "verified") continue;
+          if (budget.remaining("repair") <= 0) { regressed = true; break; }
+          const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
+          const recheck = await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
+          if (recheck.status !== "verified") { regressed = true; break; }
         }
-        const regressed = failures.some(item => {
-          const prior = results.get(item.id);
-          const after = reAudit.get(item.id);
-          return prior?.status === "verified" && after?.status !== "verified";
-        });
+        const reAudit = new Map<string, AuditResult>();
+        if (!regressed) {
+          // Re-audit the failed packets with cached plans.
+          for (const packet of failures) {
+            const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
+            const r = budget.remaining("repair") <= 0
+              ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
+              : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
+            reAudit.set(packet.id, r);
+          }
+        }
         const improved = failures.some(item => reAudit.get(item.id)?.status === "verified");
         if (regressed) reason = "previously verified behavior was lost or could not be reverified";
         else if (!improved) reason = "repair produced no independently verified improvement";
@@ -329,6 +338,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       // Spawn plan generation in parallel with Builder execution.
       // The corresponding audit packets get their plans pre-computed.
       const relatedAuditPackets = packets.filter(p => packet.requirementIds.some(id => p.requirementIds.includes(id)));
+      // Judge events and evidence correlate back to the build attempt that produced the code.
+      for (const auditPacket of relatedAuditPackets) state.setPacketAttempt(auditPacket.id, packet.attempt);
       const planTimeoutMs = budget.callTimeout("implementation", 180_000);
       const planPromises = relatedAuditPackets
         .filter(p => !results.has(p.id))
@@ -392,6 +403,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const failures = packets.filter(packet => results.get(packet.id)?.status === "failed");
       if (!failures.length) break;
       const round = ++repairCount;
+      for (const item of failures) state.setPacketAttempt(item.id, round + 1);
       await phase("repair", round);
       const packet = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
       const reports = failures.map(item => results.get(item.id)!.report!);

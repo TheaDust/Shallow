@@ -121,6 +121,39 @@ for (const regression of [true, false]) {
   });
 }
 
+test("A module boundary repair that breaks a verified path is discarded instead of kept", async () => {
+  await withModulePipeline(async f => {
+    f.deps.runner.run = async plan => {
+      if (plan.packetId === "packet-c") return pass(plan);
+      const repairing = f.builder.requests.some(item => item.mode === "repair");
+      const target = plan.packetId === "packet-a";
+      // The repair fixes A but regresses the verified B.
+      return repairing === target ? pass(plan) : fail(plan);
+    };
+    const summary = await f.run();
+    const events = await f.events();
+    const batches = events.filter(item => item.type === "repair_batch_finished");
+    assert.equal(batches[0]?.detail?.retained, false);
+    assert.match(String(batches[0]?.detail?.reason), /previously verified behavior was lost/);
+    // The regressing boundary repair is never checkpointed; only the two module
+    // checkpoints remain, and the verified pass the repair broke is never given up.
+    assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "C"]);
+    assert.deepEqual(summary.failedRequirementIds, ["B"]);
+    assert.equal(summary.status, "partial");
+  });
+});
+
+test("Judge events carry the build attempt that produced the audited code", async () => {
+  await withModulePipeline(async f => {
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    const judge = (await f.events()).filter(item => item.type === "probe_started" || item.type === "probe_finished");
+    assert.ok(judge.length > 0);
+    assert.ok(judge.every(item => item.attempt === 1));
+  });
+});
+
 test("Per-module boundary repair quota: each module gets independent repair rounds", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;

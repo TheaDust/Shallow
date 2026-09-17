@@ -3,7 +3,7 @@ import { access, cp, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
-import { FinalVerifier } from "../src/final-verifier.js";
+import { FinalVerifier, runCommand } from "../src/final-verifier.js";
 import type { PlatformContract, ProcessCommand } from "../src/types.js";
 import { reservePort } from "./helpers/fixture-server.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -95,6 +95,44 @@ test("Final Verifier reports a missing start executable as a readiness failure",
     assert.equal(report.ok, false);
     assert.equal(report.stage, "readiness");
     assert.match(report.message, /ENOENT/);
+  });
+});
+
+test("Install/build commands never inherit the controller's gateway credentials", async () => {
+  await withTempDir("shallow-final-", async (outputDir) => {
+    const prior = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "do-not-leak";
+    try {
+      await runCommand(outputDir, {
+        executable: process.execPath,
+        args: ["-e", "require('node:fs').writeFileSync('seen.txt', process.env.OPENAI_API_KEY ?? 'absent')"],
+        cwd: "output",
+      }, 5_000);
+      assert.equal(await readFile(join(outputDir, "seen.txt"), "utf8"), "absent");
+    } finally {
+      if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior;
+    }
+  });
+});
+
+test("The candidate runtime process never inherits the controller's gateway credentials", async () => {
+  await withTempDir("shallow-final-", async (outputDir) => {
+    const prior = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "do-not-leak";
+    try {
+      const port = await reservePort();
+      const contract = contractFor(port, [], []);
+      contract.startCommand = {
+        executable: process.execPath,
+        args: ["-e", "require('node:fs').writeFileSync('app-env.txt', process.env.OPENAI_API_KEY ?? 'absent'); require('node:http').createServer((req,res) => { res.setHeader('content-type', 'text/html'); res.end(req.url === '/health' ? 'ok' : '<main>ready</main>'); }).listen(Number(process.env.PORT), '127.0.0.1')"],
+        cwd: "output",
+      };
+      const report = await new FinalVerifier().verify(outputDir, contract);
+      assert.equal(report.ok, true, report.message);
+      assert.equal(await readFile(join(outputDir, "app-env.txt"), "utf8"), "absent");
+    } finally {
+      if (prior === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = prior;
+    }
   });
 });
 

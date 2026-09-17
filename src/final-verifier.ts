@@ -6,6 +6,7 @@ import type { CandidateEvidence } from "./types.js";
 
 import type { AppLifecycle } from "./pipeline.js";
 import { spawnProcess } from "./process-spawn.js";
+import { runtimeEnvironment } from "./process-lifecycle.js";
 import { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import type { PlatformContract, ProcessCommand } from "./types.js";
 
@@ -111,14 +112,13 @@ export class FinalVerifier implements FinalVerifierPort {
 export class CommandAppLifecycle implements AppLifecycle {
   async start(outputDir: string, contract: PlatformContract) {
     await assertPortFree(contract);
-    const child = spawnCommand(outputDir, contract.startCommand, {
-      ...process.env,
+    const child = spawnCommand(outputDir, contract.startCommand, runtimeEnvironment({
       // Probes run on the private probe port only: never bind the evaluation
       // port (or spec-hardcoded extra ports like 3301) during generation.
       PORT: String(contract.port),
       ARC_EXTRA_PORTS: "0",
       ...(contract.dataDirectory ? { SHALLOW_DATA_DIR: contract.dataDirectory } : {}),
-    });
+    }));
     let spawnError: Error | undefined;
     let stderr = "";
     child.on("error", (error) => { spawnError = error; });
@@ -155,7 +155,7 @@ export async function runCommand(
   signal?: AbortSignal,
 ): Promise<void> {
   signal?.throwIfAborted();
-  const child = spawnCommand(outputDir, command, process.env);
+  const child = spawnCommand(outputDir, command, runtimeEnvironment());
   let abortCleanup: Promise<void> | undefined;
   const onAbort = () => {
     abortCleanup = stopProcess(child);

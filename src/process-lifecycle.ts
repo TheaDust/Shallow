@@ -59,3 +59,25 @@ export function toolEnvironment(): NodeJS.ProcessEnv {
   const allowed = /^(path|pathext|systemroot|windir|comspec|temp|tmp|tmpdir|home|userprofile|localappdata|appdata|lang|lc_all|term|npm_config_cache|npm_config_registry|playwright_download_host|playwright_browsers_path)$/i;
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => allowed.test(key)));
 }
+
+/**
+ * Credential-shaped keys the controller must never hand to the candidate, its
+ * install/build scripts, or its runtime process. Mirrors the redaction
+ * vocabulary used for diagnostics; npm config keys can contain `.` and `/`,
+ * so the marker is matched anywhere in the name.
+ */
+const CREDENTIAL_ENV_KEY = /openai_|api[_-]?key|token|secret|password|credential/i;
+
+/**
+ * Environment for candidate processes: the host environment is inherited so
+ * npm, Node and platform tooling keep working (proxies, registry settings,
+ * temp paths), minus gateway credentials the application has no use for.
+ */
+export function runtimeEnvironment(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined || CREDENTIAL_ENV_KEY.test(key)) continue;
+    environment[key] = value;
+  }
+  return { ...environment, ...extra };
+}

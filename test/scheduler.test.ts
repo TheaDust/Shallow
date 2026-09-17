@@ -96,6 +96,14 @@ test("Within one tier, dependency affinity breaks ties before declaration order"
     crossModulePackets: 0, cohesionRate: 1 / 3, thresholdLimitedPackets: 1 });
 });
 
+test("Audit packets stay distinct when lossy slugs collide", () => {
+  const catalog = makeCatalog([requirement("A.1", 0), requirement("A_1", 1)]);
+  const packets = auditPackets(catalog);
+  assert.deepEqual(packets.map(item => item.id), ["packet-a-1", "packet-a-1-2"]);
+  assert.equal(new Set(packets.map(item => item.id)).size, packets.length);
+  assert.deepEqual(packets.map(item => item.requirementIds), [["A.1"], ["A_1"]]);
+});
+
 test("Atomic audit covers every requirement and carries transitive textual prerequisites", () => {
   const catalog = makeCatalog([requirement("A", 0), requirement("B", 1, { dependencies: ["A"] }), requirement("C", 2, { dependencies: ["B"] })]);
   const packets = auditPackets(catalog);

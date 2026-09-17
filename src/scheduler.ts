@@ -158,18 +158,25 @@ function groupIdsHas(group: SchedulableRequirement[], id: string): boolean {
 
 /** Audit atomics independently, with textual prerequisites but no application source. */
 export function auditPackets(catalog: RequirementCatalog): WorkPacket[] {
+  // `slugify` is lossy (`A.1` and `A_1` collapse), so ids are de-duplicated to
+  // keep requirement results, plan-cache entries, and evidence keyed apart.
+  const usedIds = new Set<string>();
   return catalog.requirements.map(requirement => {
+    const baseId = `packet-${slugify(requirement.id)}`;
+    let id = baseId;
+    for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${baseId}-${suffix}`;
+    usedIds.add(id);
     const dependencies = new Set<string>();
     const visit = (item: AtomicRequirement): void => {
-      for (const id of item.dependencyIds) {
-        if (dependencies.has(id)) continue;
-        dependencies.add(id);
-        const dependency = catalog.requirements.find(candidate => candidate.id === id);
+      for (const capability of item.dependencyIds) {
+        if (dependencies.has(capability)) continue;
+        dependencies.add(capability);
+        const dependency = catalog.requirements.find(candidate => candidate.id === capability);
         if (dependency) visit(dependency);
       }
     };
     visit(requirement);
-    return { ...makePacket(`packet-${slugify(requirement.id)}`, [requirement]),
+    return { ...makePacket(id, [requirement]),
       prerequisites: catalog.requirements.filter(item => dependencies.has(item.id)) };
   });
 }
