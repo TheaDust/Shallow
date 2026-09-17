@@ -43,6 +43,35 @@ test("Pi SDK executes tools and resumes persisted history in a new worker", { ti
   });
 });
 
+test("Pi worker advertises every guarded tool, including the browser tool, to the model", { timeout: 30_000 }, async () => {
+  await withTempDir("shallow-pi-tools-", async root => {
+    const app = join(root, "app"); await mkdir(app);
+    let advertised: string[] | undefined;
+    const server = createServer(async (req, res) => {
+      let body = ""; for await (const chunk of req) body += chunk;
+      const request = JSON.parse(body) as { tools?: Array<{ function?: { name?: string } }> };
+      advertised = (request.tools ?? []).map(tool => tool.function?.name ?? "").filter(Boolean);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+      res.end("data: [DONE]\n\n");
+    });
+    await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    const client = new PiWorkerClient({ apiKey: "test-secret", baseUrl: `http://127.0.0.1:${port}/v1`, model: "test/model" }, join(root, "sessions"));
+    try {
+      const result = await client.run({ outputDir: app, systemPrompt: "Finish immediately.", taskPrompt: "finish", timeoutMs: 20_000 });
+      assert.equal(result.outcome, "completed", result.summary);
+      assert.ok(advertised, "worker never issued a model request");
+      // The SDK treats `tools` as an allowlist that also filters custom tools:
+      // a name omitted here silently disables that tool for the whole session.
+      for (const expected of ["read", "edit", "write", "shell", "browser"]) {
+        assert.ok(advertised.includes(expected), `Pi tool "${expected}" is not advertised (got: ${advertised.join(", ")})`);
+      }
+    } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
+  });
+});
+
 test("Pi credential smoke performs file editing, shell checks, and session resume", { skip: process.env.RUN_CREDENTIAL_SMOKE !== "1", timeout: 180_000 }, async () => {
   await withTempDir("shallow-pi-gateway-", async root => {
     const app = join(root, "app"); await mkdir(app);

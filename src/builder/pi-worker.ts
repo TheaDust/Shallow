@@ -44,7 +44,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const { session, modelFallbackMessage } = await createAgentSession({ cwd: input.outputDir, agentDir,
     authStorage, modelRegistry, model: modelRegistry.find("shallow-gateway", input.gateway.model),
     settingsManager, resourceLoader, sessionManager: manager,
-    tools: ["read", "edit", "write", "shell"], customTools: createPiTools(input.outputDir) });
+    tools: ["read", "edit", "write", "shell", "browser"], customTools: createPiTools(input.outputDir) });
   if (modelFallbackMessage) throw new Error(modelFallbackMessage);
   let toolCalls = 0;
   let compactions = 0;
