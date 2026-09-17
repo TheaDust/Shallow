@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+
 import type {
   BuilderPort,
   BuilderRequest,
@@ -27,6 +29,7 @@ import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { selectModuleFeedback } from "./judge/module-feedback.js";
 import { probePlanSha256 } from "./judge/probe-schema.js";
+import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { memorySnapshot } from "./memory-snapshot.js";
 import { ExecutionFault } from "./execution-fault.js";
 import type { CandidateRuntime } from "./candidate-runtime.js";
@@ -109,8 +112,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const implemented = new Set<string>();
   const packets = auditPackets(catalog);
   const featureGrouping = featureGroupPackets(catalog);
+  const planCache = new PlanCache(dirname(options.ledgerFile));
   let results = new Map<string, AuditResult>();
   let repairCount = 0;
+  let boundaryRepairCount = 0;
+  let currentBoundaryModule: string | undefined;
   const feedbackHistory = new Map<string, AuditResult>();
   deps.candidate?.setRecorder(event => state.record(event));
 
@@ -162,9 +168,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const ordered = [...packets].sort((a, b) => Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
     for (const packet of ordered) {
       if (!packet.requirementIds.every(id => implemented.has(id))) continue;
+      const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet.id);
       const result = budget.remaining(name) <= 0
-        ? { status: "inconclusive" as const, plan: previous.get(packet.id)?.plan, reason: "audit phase budget exhausted" }
-        : await auditPacket(packet, previous.get(packet.id)?.plan, options, deps, state, () => budget.remaining(name));
+        ? { status: "inconclusive" as const, plan: cached, reason: "audit phase budget exhausted" }
+        : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name));
+      // Persist refined plans so future audits skip the LLM call.
+      if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
+        await planCache.write(packet.id, result.plan).catch(() => {});
+      }
       audited.set(packet.id, result);
     }
     return audited;
@@ -181,6 +192,94 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         if (result.status !== "inconclusive") await emitArc(deps, state, arc => arc.requirementState(id, "test", result.status === "verified" ? "passed" : "failed"));
         else await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
       }
+    }
+  };
+  const runModuleBoundaryAudit = async (packetIds: string[], moduleId: string, moduleName: string | undefined): Promise<void> => {
+    if (budget.remaining("audit") <= 0) return;
+    // Reset per-module boundary repair quota when switching modules.
+    if (currentBoundaryModule !== moduleId) {
+      boundaryRepairCount = 0;
+      currentBoundaryModule = moduleId;
+    }
+    await state.record({ at: now(), type: "phase_started", detail: { phase: "audit" as const,
+      round: undefined, memory: await memorySnapshot(),
+      ...(Number.isFinite(budget.remaining("audit")) ? { remainingMs: budget.remaining("audit") } : {}) } });
+    const targetPackets = packets.filter(p => packetIds.includes(p.id));
+    const ordered = [...targetPackets].sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
+    const boundaryResults = new Map<string, AuditResult>();
+    for (const packet of ordered) {
+      if (!packet.requirementIds.every(id => implemented.has(id))) continue;
+      const cached = results.get(packet.id)?.plan ?? await planCache.read(packet.id);
+      if (budget.remaining("audit") <= 0) {
+        boundaryResults.set(packet.id, { status: "inconclusive", plan: cached, reason: "module boundary audit budget exhausted" });
+        continue;
+      }
+      const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"));
+      if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
+        await planCache.write(packet.id, result.plan).catch(() => {});
+      }
+      boundaryResults.set(packet.id, result);
+    }
+    // Merge boundary results into the main results map (final audit_result events come from publish).
+    for (const [id, result] of boundaryResults) {
+      results.set(id, result);
+    }
+    await state.record({ at: now(), type: "module_boundary_audit_finished",
+      detail: { moduleId, moduleName, packetIds, results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
+    // Inline repair for module boundary failures, using per-module repair budget.
+    while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
+      const failures = targetPackets.filter(p => results.get(p.id)?.status === "failed");
+      if (!failures.length) break;
+      const round = ++boundaryRepairCount;
+      await phase("repair", round);
+      const repairPacket = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
+      const reports = failures.map(item => results.get(item.id)!.report!);
+      const observation = toBuilderShadowObservation({ packetId: repairPacket.id, verdict: "fail", passedCases: [],
+        failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
+      await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
+      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(240_000, budget.remaining("repair") / 2)));
+      const repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
+        outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
+        "repair", { timeoutMs: repairTimeoutMs });
+      let reason = repairResult.outcome === "completed" ? "" : repairResult.summary || repairResult.outcome;
+      let candidate: CandidateEvidence | undefined;
+      if (!reason) {
+        try { candidate = await runnable(); } catch (error) { reason = errorMessage(error); }
+      }
+      let nextResults = results;
+      if (!reason) {
+        // Re-audit the failed packets with cached plans.
+        const reAudit = new Map<string, AuditResult>();
+        for (const packet of failures) {
+          const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet.id);
+          const r = budget.remaining("repair") <= 0
+            ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
+            : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
+          reAudit.set(packet.id, r);
+        }
+        const regressed = failures.some(item => {
+          const prior = results.get(item.id);
+          const after = reAudit.get(item.id);
+          return prior?.status === "verified" && after?.status !== "verified";
+        });
+        const improved = failures.some(item => reAudit.get(item.id)?.status === "verified");
+        if (regressed) reason = "previously verified behavior was lost or could not be reverified";
+        else if (!improved) reason = "repair produced no independently verified improvement";
+        else {
+          for (const [id, r] of reAudit) {
+            nextResults = new Map(nextResults);
+            nextResults.set(id, r);
+          }
+        }
+      }
+      if (reason) {
+        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+        await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: false, reason } });
+        break;
+      }
+      await checkpoint(repairPacket.requirementIds, repairPacket.id, candidate);
+      results = nextResults;
+      await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true, reason: "verified improvement with regression coverage" } });
     }
   };
 
@@ -209,8 +308,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   try {
     await phase("implementation");
-    for (const packet of featureGrouping.packets) {
+    let previousModuleId: string | undefined;
+    const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
+    for (let packetIndex = 0; packetIndex < featureGrouping.packets.length; packetIndex++) {
+      const packet = featureGrouping.packets[packetIndex];
       if (budget.remaining("implementation") <= 0) break;
+      const currentModuleId = packet.requirements[0]?.folderPath[1] ?? packet.requirements[0]?.id;
+      // Module boundary: run full audit on the previous module before starting the next one.
+      if (previousModuleId !== undefined && currentModuleId !== previousModuleId && pendingModuleAudit.packetIds.length > 0) {
+        await runModuleBoundaryAudit(pendingModuleAudit.packetIds, pendingModuleAudit.moduleId, previousModuleId);
+        pendingModuleAudit.packetIds = [];
+      }
+      pendingModuleAudit.moduleId = currentModuleId;
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
         detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
       for (const id of packet.requirementIds) {
@@ -219,10 +328,19 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
       }
+      // Spawn plan generation in parallel with Builder execution.
+      // The corresponding audit packets get their plans pre-computed.
+      const relatedAuditPackets = packets.filter(p => packet.requirementIds.some(id => p.requirementIds.includes(id)));
+      const planTimeoutMs = budget.callTimeout("implementation", 180_000);
+      const planPromises = relatedAuditPackets
+        .filter(p => !results.has(p.id))
+        .map(p => spawnPlanGeneration(p, p.id, deps.planner, planCache, planTimeoutMs));
       // Every packet is implemented in a fresh session; handoff across packets
       // goes through the project itself (code, tests, ARCHITECTURE.md).
       const result = await build({ mode: "implement", packet, outputDir: options.outputDir,
         platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation");
+      // Plans are generated in the background; await them here to ensure they are persisted.
+      await Promise.allSettled(planPromises);
       let candidate: CandidateEvidence | undefined;
       let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
       if (reason !== undefined) {
@@ -315,6 +433,15 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         implemented.add(id);
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
       }
+      // Track which audit packets are eligible for module boundary audit.
+      for (const p of relatedAuditPackets) {
+        if (!pendingModuleAudit.packetIds.includes(p.id)) pendingModuleAudit.packetIds.push(p.id);
+      }
+      previousModuleId = currentModuleId;
+    }
+    // Final module boundary audit for the last module.
+    if (pendingModuleAudit.packetIds.length > 0) {
+      await runModuleBoundaryAudit(pendingModuleAudit.packetIds, pendingModuleAudit.moduleId, previousModuleId);
     }
 
     await phase("audit");

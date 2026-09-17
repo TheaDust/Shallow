@@ -167,6 +167,15 @@ function describe(type: string, event: RunEvent): string | null {
         ? `交付完成${stageSuffix}`
         : `交付失败${stageSuffix}${message ? `：${message}` : ""}`;
     }
+    case "module_boundary_audit_finished": {
+      const results = typeof detail?.results === "object" && detail.results !== null
+        ? detail.results as Record<string, string> : {};
+      const counts = { verified: 0, failed: 0, inconclusive: 0 };
+      for (const status of Object.values(results)) {
+        if (status === "verified" || status === "failed" || status === "inconclusive") counts[status]++;
+      }
+      return `模块边界验收完成（${pickString(detail, "moduleId") ?? ""}）；通过 ${counts.verified}，失败 ${counts.failed}，无法判断 ${counts.inconclusive}`;
+    }
     case "pipeline_finished":
       return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
     default:

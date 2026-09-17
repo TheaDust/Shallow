@@ -157,6 +157,8 @@ interface RunEventDetails {
   delivery_repair_accepted: { candidate?: CandidateEvidence };
   delivery_repair_restored: { round?: number };
   delivery_finished: { ok: boolean; stage: string; message: string };
+  module_boundary_audit_finished: { moduleId: string; moduleName?: string; packetIds: string[];
+    results: Record<string, "verified" | "failed" | "inconclusive"> };
   verification_started: { retryCount: number };
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];

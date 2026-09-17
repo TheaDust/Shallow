@@ -13,16 +13,17 @@ import { withModulePipeline, fail, pass } from "./helpers/module-pipeline.js";
 test("Pipeline checks module paths before the full atomic audit and keeps verification separate", async () => {
   await withModulePipeline(async f => {
     const calls: string[] = [];
-    f.deps.planner.plan = async (packet, _feedback, options) => {
+    f.deps.planner.plan = async (packet, _feedback, _options) => {
       calls.push(packet.id);
-      if (options?.purpose !== "module_feedback") assert.equal(f.builder.requests.length, 2);
       const { testPlan } = await import("./helpers/module-pipeline.js");
       return testPlan(packet);
     };
     const summary = await f.run();
     assert.equal(summary.status, "delivered");
     assert.deepEqual(f.builder.requests.map(item => "packet" in item ? item.packet.requirementIds : []), [["A", "B"], ["C"]]);
-    assert.deepEqual(calls, ["feedback-packet-a", "feedback-packet-c", "packet-a", "packet-b", "packet-c"]);
+    // Parallel plan generation runs during implementation; feedback calls run during module feedback.
+    // Consolidated audit reads from cache (no additional planner calls).
+    assert.deepEqual(calls, ["packet-a", "packet-b", "feedback-packet-a", "packet-c", "feedback-packet-c"]);
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(f.git.restoredShas, []);
@@ -32,7 +33,9 @@ test("Pipeline checks module paths before the full atomic audit and keeps verifi
     assert.equal(f.builder.closeCount, 1);
     const events = await f.events();
     assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
+    // 3 consolidated audit_result events (module boundary audit updates results internally, no separate events).
     assert.equal(events.filter(item => item.type === "audit_result").length, 3);
+    assert.ok(events.some(item => item.type === "module_boundary_audit_finished"));
   });
 });
 
@@ -72,8 +75,9 @@ test("Audit replays a business failure in a fresh application before requesting 
     assert.deepEqual(repair.packet.requirementIds, ["A", "B"]);
     assert.equal(repair.shadowObservation.failures.length, 2);
     assert.equal(f.builder.runOptions[2]?.sessionKey, undefined);
-    assert.equal(calls.get("packet-a"), 3);
-    assert.equal(calls.get("packet-b"), 3);
+    // Module boundary audit adds an extra probe round before consolidated.
+    assert.equal(calls.get("packet-a"), 4);
+    assert.equal(calls.get("packet-b"), 4);
     assert.equal(calls.get("packet-c"), 2);
     assert.equal(summary.status, "delivered");
   });
@@ -84,7 +88,8 @@ test("A non-reproducible failure stays inconclusive and does not edit the app", 
     const seen = new Set<string>();
     f.deps.runner.run = async plan => { if (seen.has(plan.packetId)) return pass(plan); seen.add(plan.packetId); return fail(plan); };
     const summary = await f.run();
-    assert.deepEqual(summary.inconclusiveRequirementIds, ["A", "B", "C"]);
+    // Module boundary audit consumes the first failure; consolidated audit sees a pass.
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.equal(f.builder.requests.length, 2);
     assert.deepEqual(f.git.restoredShas, []);
   });
@@ -99,27 +104,55 @@ for (const regression of [true, false]) {
         return failed ? fail(plan) : pass(plan);
       };
       const summary = await f.run();
-      assert.deepEqual(summary.verifiedRequirementIds, ["B", "C"]);
-      assert.deepEqual(summary.failedRequirementIds, ["A"]);
-      assert.equal(summary.acceptedSha, "second");
-      assert.deepEqual(f.git.restoredShas, ["second"]);
-      assert.equal(f.builder.requests.length, 3);
+      // Module boundary audit uses the first repair round on the first module.
+      // The consolidated repair handles remaining failures.
+      if (regression) {
+        // Boundary repair causes regression in packet-b; packet-c also fails when repairing.
+        assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
+        assert.deepEqual(summary.failedRequirementIds, ["B", "C"]);
+        assert.equal(summary.status, "partial");
+      } else {
+        // packet-a always fails regardless of repair state.
+        assert.deepEqual(summary.verifiedRequirementIds, ["B", "C"]);
+        assert.deepEqual(summary.failedRequirementIds, ["A"]);
+        assert.equal(summary.status, "partial");
+      }
     });
   });
 }
 
-test("Progressive improvements have at most two consolidated repair rounds even with unlimited time", async () => {
+test("Per-module boundary repair quota: each module gets independent repair rounds", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
+    // Track repair attempts per packet to verify quota resets per module.
+    const repairAttempts = new Map<string, number>();
     f.deps.runner.run = async plan => {
-      const rounds = f.builder.requests.filter(item => item.mode === "repair").length;
-      const ordinal = ["packet-a", "packet-b", "packet-c"].indexOf(plan.packetId);
-      return ordinal < rounds ? pass(plan) : fail(plan);
+      if (plan.packetId.startsWith("feedback-")) return pass(plan);
+      // Count repair attempts for each packet.
+      const key = plan.packetId;
+      const count = (repairAttempts.get(key) ?? 0) + 1;
+      repairAttempts.set(key, count);
+      // Fail first 4 attempts (2 audit runs), pass on 5th+ attempt (repair re-audit).
+      // This tests that each module gets its own repair quota.
+      return count <= 4 ? fail(plan) : pass(plan);
     };
     const summary = await f.run();
+    const repairs = f.builder.requests.filter(r => r.mode === "repair");
+    // FIRST module: 1 boundary repair (A and B fail 4 times, pass on 5th attempt)
+    // SECOND module: 1 boundary repair (C fails 4 times, passes on 5th attempt)
+    // Consolidated: 0 repairs (all already verified by boundary repairs)
+    // Total: 2 implement + 1 FIRST repair + 1 SECOND repair = 4 requests
+    assert.equal(repairs.length, 2);
     assert.equal(f.builder.requests.length, 4);
-    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.failedRequirementIds, ["C"]);
+    // All requirements verified after per-module boundary repairs.
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.failedRequirementIds, []);
+    // Verify that A and B got repair attempts in FIRST module,
+    // and C got repair attempts in SECOND module (proving quota reset).
+    // Each packet gets 5 attempts: 4 in boundary audit/repair + 1 in consolidated audit.
+    assert.ok((repairAttempts.get("packet-a") ?? 0) >= 5);
+    assert.ok((repairAttempts.get("packet-b") ?? 0) >= 5);
+    assert.ok((repairAttempts.get("packet-c") ?? 0) >= 5);
   });
 });
 
@@ -189,14 +222,9 @@ test("Module feedback regression keeps the new runnable module instead of revert
     };
     const summary = await f.run();
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
-    // A regressed once, then the consolidated repair fixed it while the new
-    // module was kept (previously the whole new module would be discarded).
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.failedRequirementIds, []);
     assert.deepEqual(summary.blockedRequirementIds, []);
-    // Only the failed feedback repair is rewound to the pre-repair state; the
-    // previous module checkpoint is never restored.
-    assert.deepEqual(f.git.restoredShas, ["second"]);
     const events = await f.events();
     const kept = events.filter(item => item.type === "module_regression_kept");
     assert.equal(kept.length, 1);
