@@ -23,6 +23,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -30,6 +31,11 @@ from pathlib import Path
 ARC_EVAL_PORT = 3000
 DEFAULT_OUTPUT_SUBDIR = "shallowcode-local/main"
 MIN_NODE_VERSION = (20, 18, 1)
+# The gateway is shared and can be slow to answer its first request; keep the
+# preflight bounded but tolerant enough that a cold start does not kill the run.
+PROBE_ATTEMPTS = 3
+PROBE_TIMEOUT_SECONDS = 60
+PROBE_BACKOFF_SECONDS = 5
 
 
 def npm_cmd() -> str:
@@ -158,15 +164,27 @@ def probe_model_endpoint(env: dict[str, str]) -> None:
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            log(f"model endpoint reachable: {url} -> HTTP {response.status}")
-    except urllib.error.HTTPError as error:
-        # Any HTTP response proves the endpoint is reachable; auth or model
-        # errors surface later with full detail from the real calls.
-        log(f"model endpoint reachable: {url} -> HTTP {error.code}")
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        raise RuntimeError(f"model endpoint unreachable: {url} ({error})")
+    last_error: BaseException | None = None
+    for attempt in range(1, PROBE_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=PROBE_TIMEOUT_SECONDS) as response:
+                log(f"model endpoint reachable: {url} -> HTTP {response.status}")
+            return
+        except urllib.error.HTTPError as error:
+            # Any HTTP response proves the endpoint is reachable; auth or model
+            # errors surface later with full detail from the real calls.
+            log(f"model endpoint reachable: {url} -> HTTP {error.code}")
+            return
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            last_error = error
+            if attempt >= PROBE_ATTEMPTS:
+                break
+            delay = PROBE_BACKOFF_SECONDS * attempt
+            log(f"model endpoint probe attempt {attempt}/{PROBE_ATTEMPTS} failed: {error}; retrying in {delay}s")
+            time.sleep(delay)
+    raise RuntimeError(
+        f"model endpoint unreachable after {PROBE_ATTEMPTS} attempts: {url} ({last_error})"
+    )
 
 
 def run(command: list[str], cwd: Path) -> None:

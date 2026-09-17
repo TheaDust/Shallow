@@ -1,5 +1,8 @@
-全局builder视角（跨packet回归）
-动态调整packet大小 =
-docs\2026-09-11-arc-reference-analysis.md =
-增量编译 =
-opencode内存占用过大 = 
+真实 token/usage；
+自定义compact；
+多轮驱动同一会话；
+hooks；
+自定义工具；
+
+部分日志，probeplan落入产物目录；
+evolution模式（增量开发）；
