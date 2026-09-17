@@ -25,10 +25,6 @@ export interface CompiledBuilderPrompt {
 
 const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("system", "self-test")].join("\n\n");
 
-export function buildBuilderSystemPrompt(): string {
-  return SYSTEM_PROMPT;
-}
-
 export function compileBuilderPrompt(
   request: BuilderPromptInput,
 ): CompiledBuilderPrompt {

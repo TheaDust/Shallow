@@ -117,11 +117,9 @@ interface RunEventDetails {
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
   module_rescued: { requirementIds: string[]; reason: string };
-  module_regression_kept: { requirementIds: string[]; regressedRequirementIds: string[] };
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string };
-  module_feedback: { requirementIds: string[]; status: "passed" | "failed" | "inconclusive"; version: string; boundaryRepairCount: number; planSha256?: string };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
@@ -149,9 +147,7 @@ interface RunEventDetails {
   application_start_failed: DiagnosticDetail;
   application_stopped: Record<string, never>;
   execution_fault: DiagnosticDetail;
-  repair_scheduled: { nextAttempt: number; rootCauseFirst: boolean; verdict: ShadowReport["verdict"]; failures: ProbeFailure["category"][] };
   packet_accepted: { candidate?: CandidateEvidence };
-  packet_blocked: { reason: string };
   delivery_started: Record<string, never>;
   delivery_repair_started: { stage: string; message: string; round?: number };
   delivery_repair_accepted: { candidate?: CandidateEvidence };

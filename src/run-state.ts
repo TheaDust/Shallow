@@ -173,6 +173,6 @@ function eventPhase(event: RunEvent): RunEvent["phase"] {
   if (event.type.startsWith("delivery_") || event.type.startsWith("verification_")) return "delivery";
   if (event.type.startsWith("probe_plan") || event.type.startsWith("probe_refin")) return "planner";
   if (event.type.startsWith("probe_")) return "probe";
-  if (event.type.startsWith("packet_") || event.type === "repair_scheduled") return "decision";
+  if (event.type.startsWith("packet_")) return "decision";
   return "pipeline";
 }

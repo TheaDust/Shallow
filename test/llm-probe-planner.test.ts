@@ -9,7 +9,6 @@ import {
   assertLocatorOnlyRefinement,
   parseProbePlan,
   PROBE_PLAN_JSON_SCHEMA,
-  type ProbePlan,
 } from "../src/judge/probe-schema.js";
 import type { ProbeFailure, SeedDataCategory, WorkPacket } from "../src/types.js";
 

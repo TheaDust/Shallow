@@ -52,8 +52,6 @@ const PRODUCT_BASE_FRAGMENTS: Record<ProductKind, PromptFragmentId[]> = {
   generic_web: ["accessible_web_controls"],
 };
 
-const GENERIC_FALLBACK_LEXICON_VERSION = "2026-09-04";
-
 const GENERIC_FALLBACK_LEXICON: Array<{
   fragment: PromptFragmentId;
   keywords: string[];
@@ -180,5 +178,3 @@ function selectGenericFallbackFragments(
   }
   return [...selected];
 }
-
-export { GENERIC_FALLBACK_LEXICON_VERSION };

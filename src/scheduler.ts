@@ -42,7 +42,6 @@ export function featureGroupPackets(
   }));
   const scheduled = new Set<string>();
   const packets: WorkPacket[] = [];
-  const packetOf = new Map<string, number>();
   let crossModulePackets = 0;
   let thresholdLimitedPackets = 0;
   let intraGroupEdges = 0;

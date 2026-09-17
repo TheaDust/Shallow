@@ -66,14 +66,10 @@ function describe(type: string, event: RunEvent): string | null {
       return `模块实现未形成可运行版本，已恢复检查点（${packetId}）${reason ? `：${reason}` : ""}`;
     case "module_rescued":
       return `Builder 未完成回执，但写出的应用可运行，已保存为可运行版本（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}${reason ? `；回执原因：${reason}` : ""}`;
-    case "module_regression_kept":
-      return `新模块引起既有路径回归，保留可运行成果并转入修复队列（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}；回归需求 ${strings(detail?.regressedRequirementIds).join("、")}`;
     case "audit_result":
       return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮集中修复；需求 ${strings(detail?.requirementIds).join("、")}`;
-    case "module_feedback":
-      return `模块反馈 ${strings(detail?.requirementIds).join(", ")}：${detail?.status}；已用修复 ${detail?.repairCount}/2`;
     case "repair_batch_finished":
       return `第 ${detail?.round} 轮集中修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
     case "pipeline_started": {
@@ -102,8 +98,6 @@ function describe(type: string, event: RunEvent): string | null {
       return `候选应用已停止（${packetId}）`;
     case "probe_started":
       return `开始执行 ${pickNumber(detail, "cases") ?? 0} 个黑盒探针（${packetId}）；基础设施重试 ${pickNumber(detail, "retryCount") ?? 0}`;
-    case "repair_scheduled":
-      return `安排第 ${pickNumber(detail, "nextAttempt")} 次 Builder 尝试（${packetId}），${detail?.rootCauseFirst ? "先分析根因再修复" : "依据失败观测修复"}；失败分类：${strings(detail?.failures).join("、")}`;
     case "verification_started":
       return `开始交付验证（安装→构建→启动→健康检查→浏览器冒烟）；基础设施重试 ${pickNumber(detail, "retryCount") ?? 0}`;
     case "verification_finished":
@@ -146,8 +140,6 @@ function describe(type: string, event: RunEvent): string | null {
       }；Builder 尝试 ${pickNumber(detail, "attempt") ?? 0}`;
     case "packet_accepted":
       return `需求包验收通过（${packetId}）${event.acceptedSha ? `；接受 SHA ${event.acceptedSha}` : ""}`;
-    case "packet_blocked":
-      return `需求包已阻塞并回滚（${packetId}）${reason ? `：${reason}` : ""}`;
     case "delivery_started":
       return "进入交付窗口，开始最终验收";
     case "delivery_repair_started":

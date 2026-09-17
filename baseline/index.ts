@@ -11,7 +11,6 @@ import {
   deriveModelTimeouts,
   readEnvFile,
   readGatewayConfig,
-  type GatewayConfig,
 } from "../src/runtime-config.js";
 
 export interface RootModule {

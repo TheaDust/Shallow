@@ -16,14 +16,12 @@ export interface AuditResult {
 /** Only reproducible business failures are eligible for application repair. */
 export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefined,
   options: PipelineOptions, deps: PipelineDeps, state: RunStateStore, remaining: () => number,
-  purpose?: "module_feedback",
 ): Promise<AuditResult> {
   let plan = cached;
   try {
     if (remaining() <= 0) return { status: "inconclusive", plan, reason: "audit budget exhausted" };
-    plan ??= await planProbe(packet, options, deps, state, remaining, purpose);
+    plan ??= await planProbe(packet, options, deps, state, remaining);
     if (!plan) return { status: "inconclusive", reason: "probe planner failed" };
-    if (purpose === "module_feedback" && plan.cases.length !== 1) throw new Error("Module feedback requires exactly one complete case");
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
     const first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining);
@@ -166,12 +164,11 @@ async function planProbe(
   deps: PipelineDeps,
   state: RunStateStore,
   remaining: () => number,
-  purpose?: "module_feedback",
 ): Promise<ProbePlan | undefined> {
   await state.record({ at: now(), type: "probe_planning", packetId: packet.id });
   let feedback: ProbePlannerFeedback | undefined;
   try {
-    return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())), purpose }), packet);
+    return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) }), packet);
   } catch (error) {
     if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema")) {
       feedback = {
@@ -194,7 +191,7 @@ async function planProbe(
   }
   if (remaining() <= 0) return undefined;
   try {
-    return parseProbePlan(await deps.planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())), purpose }), packet);
+    return parseProbePlan(await deps.planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) }), packet);
   } catch (error) {
     await state.record({
       at: now(),

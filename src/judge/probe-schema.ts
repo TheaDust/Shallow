@@ -53,8 +53,6 @@ export interface ProbePlan {
   cases: ProbeCase[];
 }
 
-export type { ShadowReport } from "../types.js";
-
 const MAX_CASES = 6;
 const MAX_STEPS = 30;
 const MAX_STRING = 2_000;

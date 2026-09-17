@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { WorkPacket } from "../types.js";
+import type { ProbePlanner } from "./llm-probe-planner.js";
 import { parseProbePlan, type ProbePlan } from "./probe-schema.js";
 
 /**
@@ -48,7 +49,7 @@ function sanitise(value: string): string {
 export function spawnPlanGeneration(
   packet: WorkPacket,
   auditPacketId: string,
-  planner: { plan(packet: WorkPacket, feedback?: undefined, options?: { timeoutMs: number; purpose?: "module_feedback" }): Promise<ProbePlan> },
+  planner: Pick<ProbePlanner, "plan">,
   cache: PlanCache,
   timeoutMs: number,
 ): Promise<ProbePlan | undefined> {

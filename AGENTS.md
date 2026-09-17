@@ -176,7 +176,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## Builder 需求输入
 
-- 开发检查与模块反馈：Builder 持文件与 shell 工具做开发检查（Windows PowerShell / Linux Bash），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界切换时执行完整模块边界审计，使用缓存的探针计划，修复配额每个模块独立至多两轮（与末尾集中修复的配额独立）。修改时验证 `test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块反馈”。
+- 开发检查与模块边界审计：Builder 持文件与 shell 工具做开发检查（Windows PowerShell / Linux Bash），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界切换时执行完整模块边界审计，使用缓存的探针计划，修复配额每个模块独立至多两轮（与末尾集中修复的配额独立）。修改时验证 `test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块边界审计”。
 
 - 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。
 - 图片：生产入口把需求目录传给 `PromptBuilder.options.requirementsDir`（经 `PiWorkerClient`）；`loadReferenceImages` 仅加载当前 packet 的引用，校验解码路径、真实路径、文件签名并去重。支持本地 PNG/JPEG/WebP/GIF，单图 10 MiB、每包 30 MiB；不可用引用写入 `skipped` 并依据文字继续。SDK 使用 `file` part 的 data URL 传递附件。

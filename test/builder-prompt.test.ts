@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -17,8 +17,6 @@ import type {
   WorkPacket,
 } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
-import { withTempDir } from "./helpers/temp-dir.js";
-import { ExecutionFault } from "../src/execution-fault.js";
 
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
