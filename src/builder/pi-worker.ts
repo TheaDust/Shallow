@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { AuthStorage, ModelRegistry, SessionManager, SettingsManager, DefaultResourceLoader, createAgentSession } from "@mariozechner/pi-coding-agent";
 import { createPiTools } from "./pi-tools.js";
 import { installSseCapture } from "./sse-capture.js";
+import { installSseResilience } from "./sse-resilience.js";
 import { closeSharedBrowser } from "./pi-browser-tool.js";
 import { PiExecutionCollector } from "./pi-execution-stats.js";
 import { loadReferenceImages } from "./reference-images.js";
@@ -63,7 +64,10 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const loaded = !input.textOnly && input.requirementsDir && input.references?.length
     ? await loadReferenceImages(input.requirementsDir, input.references) : { images: [], skipped: input.textOnly ? [] : (input.references ?? []).map(reference => ({ reference, reason: "requirements_unavailable" })) };
   const images = input.textOnly ? [] : loaded.images.map(image => ({ type: "image" as const, mimeType: image.mime, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) }));
+  // Install capture first so it tees the raw body, then resilience outermost so
+  // the client reads a repaired stream while diagnostics keep the original bytes.
   const capture = input.sseCaptureDir ? installSseCapture(input.sseCaptureDir, input.sessionKey ?? "builder") : undefined;
+  const resilience = installSseResilience(raw => process.stderr.write(`[ShallowCode] 网关 SSE 事件截断，已丢弃并继续本轮：${raw}\n`));
   try {
     const imageNote = !input.references?.length ? "" : input.textOnly ? loadPrompt("system", "reference-images-text-fallback")
       : fillTemplate(loadPrompt("system", "reference-images"), {
@@ -81,5 +85,5 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && /\b(?:image(?:_url| input|s)?|vision|multimodal)\b.{0,60}\b(?:not supported|unsupported)\b|\b(?:model|endpoint|provider)\b.{0,40}\b(?:does not support|cannot accept)\b.{0,30}\bimage/i.test(summary),
       ...(input.references?.length ? { referenceImages: { mode: input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable", attachedCount: images.length, skipped: loaded.skipped } as const } : {}),
     };
-  } finally { unsubscribe(); session.dispose(); await capture?.uninstall(); await closeSharedBrowser(); }
+  } finally { unsubscribe(); session.dispose(); resilience.uninstall(); await capture?.uninstall(); await closeSharedBrowser(); }
 }

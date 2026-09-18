@@ -76,6 +76,7 @@ src/
     prompt-builder.ts           PromptBuilder：实现 BuilderPort、编译 prompt、拒图纯文本回退、驱动 CodingAgentPort
     pi-worker-client.ts         PiWorkerClient：fork 独立 Node Worker、IPC、会话文件映射、进程组/作业回收与退出确认
     pi-worker.ts                唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、SDK 事件与终态判定
+    sse-resilience.ts           始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]，内容/工具事件截断则报可重试错误
     pi-tools.ts                 read/edit/write 路径限制与 shell 命令白名单后端（复用 SDK schema/截断，替换执行后端）；
                                 装配会话内 browser 工具
     pi-browser-tool.ts          Builder 会话内 browser 工具：惰性启动 Chromium、脚本执行、输出截断，Worker 结束时关闭
@@ -123,7 +124,7 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 - `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
 - `SHALLOW_EVAL_PORT`：评测端口（缺省 3000，由适配入口按 `--web-port`/`ARCBENCH_WEB_PORT`/`ARC_WEB_PORT` 写入）；探针选端口时排除它，显式探针端口与它相同即报错。
 - `SHALLOW_RUN_DIR`：环境变量或 `.env` 指定运行日志目录（run-ledger.jsonl 与 run-log.txt；缺省 `%TMP%/shallowcode-runs/<pid>-<ts>/`，设置后仍按运行 ID 分子目录）。
-- `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。
+- `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。抓捕开关独立于容错：`src/builder/sse-resilience.ts` 始终启用，先于客户端丢弃截断事件并补 `[DONE]`；抓包在容错内层，仍记录网关原始字节。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `ARCBENCH_TESTS_DIR`（评测由 runner 注入；本地可无）：验收 spec 目录。入口只用于按 `http://127.0.0.1:<port>`/`localhost:<port>` 字面量发现额外端口（排除评测端口），spec 内容不进入 Builder/Judge。缺省再尝试 `/workspace/tests`，都没有则回退 `[3301]`。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：主线和 baseline 的 Python 适配入口读取真实环境。

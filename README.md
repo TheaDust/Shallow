@@ -123,7 +123,7 @@ Judge 在控制器应用副本中另启实例，复用匹配的构建产物；�
 
 `candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。
 
-Pi Worker、会话续接、进程组/作业回收、图片回退与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块边界审计的额度与回滚由 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
+Pi Worker、会话续接、进程组/作业回收、图片回退、网关 SSE 容错与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/sse-resilience.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块边界审计的额度与回滚由 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
 
 ## 需求证据与模型输入
 
@@ -329,6 +329,7 @@ src/
     pi-worker.ts               唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、结果判定
     pi-execution-stats.ts      Pi 会话事件聚合：token 用量与模型/工具耗时分布
     sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
+    sse-resilience.ts          始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]、内容截断走重试
     pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
