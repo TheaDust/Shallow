@@ -83,6 +83,12 @@ export class CandidateRuntime {
     await this.stop();
   }
 
+  /** Close the runtime, then delete its private build workspace (audit artifacts live outside it). */
+  async dispose(): Promise<void> {
+    await this.close();
+    await rm(resolve(this.workspace), { recursive: true, force: true });
+  }
+
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.queue.then(operation, operation);
     this.queue = next.catch(() => {});

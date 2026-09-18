@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, readdir, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { CandidateRuntime } from "../src/candidate-runtime.js";
@@ -63,6 +63,18 @@ test("one owned build serves independent module checks, Judge and final Chromium
     assert.equal(await counts(), "install\nbuild\n");
     assert.deepEqual(await readdir(join(workspace, "data")), []);
     assert.equal(events.filter((event) => event.type === "candidate_prepared" && event.detail?.reused).length, 2);
+  });
+});
+
+test("dispose removes only the private build workspace and is idempotent", async () => {
+  await fixture(async ({ workspace, candidate }) => {
+    await candidate.prepare();
+    const audit = join(dirname(workspace), "run-ledger.jsonl");
+    await writeFile(audit, "audit\n");
+    await candidate.dispose();
+    await assert.rejects(access(workspace));
+    assert.equal(await readFile(audit, "utf8"), "audit\n");
+    await candidate.dispose();
   });
 });
 

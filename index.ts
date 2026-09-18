@@ -175,7 +175,12 @@ async function executeProduction(
       await arcEvents.rebuild().catch(projectionWarning);
     }
   } finally {
-    await candidate.close();
+    try {
+      await candidate.dispose();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[ShallowCode] 候选工作区清理失败：${sanitizeDiagnosticText(message, [gateway.apiKey])}\n`);
+    }
   }
 }
 
