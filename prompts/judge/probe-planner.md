@@ -50,7 +50,7 @@
 当 exactUiStrings 为空时，优先使用不带猜测 name 的结构化 role，例如主工作区用 main，唯一输入框用 textbox。要求展示首页的需求描述的是页面状态，而不是字面文本 Home 或一个 Home 按钮：导航到 / 并断言所需区域可见。绝不把描述性词汇变成必需的 UI label，也不臆造 seed 记录。
 
 ## Step 模式
-每个 case 以 goto 开始，指向场景所需的路由，包括证据中声明的 deep link。用 click 触发需求要求的可见入口点。用 fill 和 select 填入已声明的有效数据，用 press 测试键盘行为，用 reload 验证状态在页面刷新后存活，仅在切换到不同 actor 或 session 时使用 newContext。
+每个 case 以 goto 开始，指向场景所需的路由，包括证据中声明的 deep link。用 click 触发需求要求的可见入口点；当操作位于列表项、卡片或行内，且证据暗示次要操作默认收起时，先用 hover 指向承载它的行/卡片 scope 使控件显现，再 click，必要时用 doubleClick。用 fill 和 select 填入已声明的有效数据，用 press 测试键盘行为，用 reload 验证状态在页面刷新后存活，仅在切换到不同 actor 或 session 时使用 newContext。
 
 ## 断言模式
 expectText 匹配完整的可见文本，除非 exact: false（此时匹配子串）；用简短稳定的子串加 exact: false 断言消息。当证据为同一条消息声明了多种措辞时，用 expectText 的 anyOf 逐字列出这些候选；绝不臆造替代措辞。用 expectValue 断言输入状态，用 count 为 0 的 expectCount 断言不存在，例如没有已登录 session 或没有已创建的记录。对于被拒绝的操作，断言必需的可见反馈以及成功效果不存在。绝不臆造证据未声明的 operation、locator 或行为。

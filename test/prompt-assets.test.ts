@@ -93,6 +93,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(images, /已附加图片/);
   assert.ok(images.includes("{{ATTACHED_REFERENCES}}"));
   assert.ok(images.includes("{{UNAVAILABLE_REFERENCES}}"));
+  assert.match(images, /以需求原文和验收场景为准/);
   assert.match(loadPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
@@ -114,9 +115,8 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
-  assert.ok(
-    loadPrompt("system", "receipt").includes("{{主要变更}}"),
-  );
+  assert.match(loadPrompt("system", "receipt"), /变更：用一到两条说明主要变更/);
+  assert.doesNotMatch(loadPrompt("system", "receipt"), /\{\{主要变更\}\}/);
 });
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
@@ -175,6 +175,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /准备前置条件 → 导航/);
   assert.match(planner, /count 为 0 的 expectCount/);
   assert.match(planner, /全新的 browser context/);
+  assert.match(planner, /hover/);
+  assert.match(planner, /doubleClick/);
   assert.match(loadPrompt("judge", "probe-refinement"), /仅调整 locator 对象/);
 });
 
