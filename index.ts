@@ -31,6 +31,7 @@ import {
   parseRunDirOverride,
   pickFreePort,
   readEnvFile,
+  resolveSseCaptureDir,
   readGatewayConfig,
   type GatewayConfig,
 } from "./src/runtime-config.js";
@@ -42,6 +43,8 @@ export interface AgentExecutionContext {
     builderTimeoutMs: number;
     plannerTimeoutMs: number;
   };
+  /** Opt-in raw SSE capture directory for the Pi worker (`SHALLOW_CAPTURE_SSE`). */
+  sseCaptureDir?: string | null;
 }
 
 export type AgentExecution = (
@@ -72,6 +75,7 @@ export async function main(
   }
   const probePort = probePortOverride ?? (await pickFreePort([evaluationPort]));
   const runDir = parseRunDirOverride(mergedEnv) ?? join(tmpdir(), "shallowcode-runs");
+  const sseCaptureDir = resolveSseCaptureDir(mergedEnv, join(runDir, runId, "sse-capture"));
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
@@ -83,6 +87,7 @@ export async function main(
     gateway,
     pipelineOptions,
     modelTimeouts: deriveModelTimeouts(cli.budgetMs),
+    sseCaptureDir,
   }).catch((error: unknown) => {
     throw new Error(sanitizeDiagnosticText(error instanceof Error ? error.message : String(error), [gateway.apiKey]));
   });
@@ -106,14 +111,15 @@ async function mergeGatewayEnv(
 async function executeProduction(
   context: AgentExecutionContext,
 ): Promise<RunSummary> {
-  const { gateway, pipelineOptions, modelTimeouts } = context;
+  const { gateway, pipelineOptions, modelTimeouts, sseCaptureDir } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
+  if (sseCaptureDir) process.stderr.write(`[ShallowCode] SSE 抓包已启用（仅诊断用途）：${sseCaptureDir}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
   try {
-    const builder = new PromptBuilder(new PiWorkerClient(gateway, join(dirname(runLogFile), "pi-sessions")), {
+    const builder = new PromptBuilder(new PiWorkerClient(gateway, join(dirname(runLogFile), "pi-sessions"), sseCaptureDir ?? undefined), {
       timeoutMs: modelTimeouts.builderTimeoutMs,
       requirementsDir: dirname(pipelineOptions.requirementsFile),
     });
@@ -156,7 +162,6 @@ async function executeProduction(
         runMetadata: { model: gateway.model, ...modelTimeouts,
           promptSha256: promptHash.digest("hex"),
           probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
-          usage: { status: "unavailable" },
         },
       });
     } finally {

@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import type { CandidateRuntime } from "./candidate-runtime.js";
 import type { CandidateEvidence } from "./types.js";
 
@@ -93,20 +95,131 @@ export class FinalVerifier implements FinalVerifierPort {
         };
       }
       await application.assertUnchanged?.();
-      // Stop before the final identity check, since shutdown hooks may write files.
-      if (application.candidate) {
-        await application.stop();
-        await application.assertUnchanged?.();
-      }
-      return { ok: true, stage: "complete", message: "Final verification passed",
-        ...(application.candidate ? { candidate: application.candidate } : {}) };
     } catch (error) {
       if (!(error instanceof CandidatePreparationError)) throw error;
       return { ok: false, stage: "candidate", message: compactError(error) };
     } finally {
+      // Stop before the grader-like start and the final identity check, since
+      // shutdown hooks may write files and the probe port must be free again.
       await application.stop();
     }
+
+    // The platform sets only PORT, so ports the acceptance specs hard-code are
+    // bound during grading; verify that layout separately from the private probe.
+    const grader = await verifyGraderLikeStart(outputDir, contract);
+    if (!grader.ok) return grader;
+    try {
+      await application.assertUnchanged?.();
+    } catch (error) {
+      if (!(error instanceof CandidatePreparationError)) throw error;
+      return { ok: false, stage: "candidate", message: compactError(error) };
+    }
+    return { ok: true, stage: "complete", message: "Final verification passed",
+      ...(application.candidate ? { candidate: application.candidate } : {}) };
   }
+}
+
+const EXTRA_PORT_TIMEOUT_MS = 5_000;
+/** Paths a browser or grader may request; the server must answer and stay alive. */
+const ROBUSTNESS_PATHS = ["/favicon.ico", "/this-path-does-not-exist", "/api/this-route-does-not-exist"];
+
+/**
+ * Start the application exactly as the platform does: only PORT is set, so any
+ * port the acceptance specs hard-code (for example 3301) is bound too, unknown
+ * paths must return a response, and the process must never die on them.
+ */
+export async function verifyGraderLikeStart(
+  outputDir: string,
+  contract: PlatformContract,
+): Promise<FinalVerificationReport> {
+  const extraPorts = contract.extraPorts ?? [];
+  if (extraPorts.length === 0) {
+    return { ok: true, stage: "complete", message: "Grader-like extra ports not configured" };
+  }
+  const preoccupied = new Set<number>();
+  for (const port of extraPorts) if (!await isPortFree(port)) preoccupied.add(port);
+  const required = extraPorts.filter((port) => !preoccupied.has(port));
+  const dataDirectory = contract.dataDirectory ?? await mkdtemp(join(tmpdir(), "shallow-grader-"));
+  const environment = runtimeEnvironment({ PORT: String(contract.port), SHALLOW_DATA_DIR: dataDirectory });
+  // The grader never sets ARC_EXTRA_PORTS, so the extra listeners must bind.
+  delete environment.ARC_EXTRA_PORTS;
+  const child = spawnCommand(outputDir, contract.startCommand, environment);
+  let spawnError: Error | undefined;
+  let stderr = "";
+  child.on("error", (error) => { spawnError = error; });
+  // Drain both pipes: a verbose server can otherwise block before readiness.
+  child.stdout?.resume();
+  child.stderr?.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8_000); });
+  const failure = (): string | undefined => spawnError?.message ?? (child.exitCode !== null || child.signalCode !== null
+    ? `Application exited during grader-like startup: ${stderr || child.exitCode || child.signalCode}` : undefined);
+  try {
+    await waitForReadiness(`${contract.baseUrl}${contract.healthPath}`, contract.startTimeoutMs, failure);
+    const missing = await waitForExtraPorts(required, contract, failure);
+    if (missing.length) {
+      return { ok: false, stage: "readiness", message:
+        `PORT CONTRACT violated: the acceptance specs default to http://127.0.0.1:${missing.join(", ")} while the ` +
+        `grader starts the backend with only PORT=${contract.port}; the backend bound PORT but not ${missing.join(", ")}. ` +
+        "Serve the same handler on each port with a separate http.createServer(handler).listen(port) unless ARC_EXTRA_PORTS=0." };
+    }
+    await robustnessProbe(contract, failure);
+    return { ok: true, stage: "complete", message: "Grader-like startup verified" };
+  } catch (error) {
+    return { ok: false, stage: "readiness", message: compactError(error) };
+  } finally {
+    await stopProcess(child);
+    if (!contract.dataDirectory) await rm(dataDirectory, { recursive: true, force: true });
+  }
+}
+
+async function waitForExtraPorts(
+  ports: number[],
+  contract: PlatformContract,
+  failure: () => string | undefined,
+): Promise<number[]> {
+  const deadline = Date.now() + EXTRA_PORT_TIMEOUT_MS;
+  let missing = [...ports];
+  while (missing.length && Date.now() < deadline) {
+    const message = failure();
+    if (message) throw new Error(message);
+    const stillMissing: number[] = [];
+    for (const port of missing) if (!await answersHttp(port, contract.healthPath)) stillMissing.push(port);
+    missing = stillMissing;
+    if (missing.length) await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  return missing;
+}
+
+async function robustnessProbe(contract: PlatformContract, failure: () => string | undefined): Promise<void> {
+  for (const path of ROBUSTNESS_PATHS) {
+    const before = failure();
+    if (before) throw new Error(before);
+    try {
+      await fetch(`${contract.baseUrl}${path}`, { signal: AbortSignal.timeout(2_000) });
+    } catch {
+      const after = failure();
+      throw new Error(`GET ${path} got no HTTP response; unknown paths must return 404 and the process must stay alive${after ? ` (${after})` : ""}`);
+    }
+    const after = failure();
+    if (after) throw new Error(`GET ${path} killed the application: ${after}`);
+  }
+}
+
+async function answersHttp(port: number, path: string): Promise<boolean> {
+  try {
+    await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(1_000) });
+    return true;
+  } catch { return false; }
+}
+
+async function isPortFree(port: number): Promise<boolean> {
+  const server = createServer();
+  try {
+    await new Promise<void>((resolvePromise, reject) => {
+      server.once("error", reject);
+      server.listen(port, "127.0.0.1", () => server.close((error) => error ? reject(error) : resolvePromise()));
+    });
+    return true;
+  } catch { return false; }
 }
 
 export class CommandAppLifecycle implements AppLifecycle {

@@ -193,6 +193,33 @@ test("HumanRunFormatter surfaces failure reasons and refined reruns", () => {
   );
 });
 
+test("HumanRunFormatter breaks Builder time into model and tool and reports tokens", () => {
+  const formatter = new HumanRunFormatter();
+  const detailed = formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+    packetId: "p",
+    detail: {
+      outcome: "completed",
+      durationMs: 1_471_000,
+      execution: {
+        toolCalls: 29,
+        usage: { status: "available", input: 1000, output: 200, cacheRead: 300, cacheWrite: 0, total: 1500 },
+        timing: { turns: 12, modelMsTotal: 1_082_000, toolMsTotal: 389_000,
+          longestTools: [{ name: "shell", durationMs: 130_000 }, { name: "read", durationMs: 63_000 }] },
+      },
+    },
+  }));
+  assert.match(detailed, /耗时分布 模型 18m2s \/ 工具 6m29s/);
+  assert.match(detailed, /轮次 12/);
+  assert.match(detailed, /工具调用 29（最慢 shell 2m10s、read 1m3s）/);
+  assert.match(detailed, /tokens 入 1000 \/ 出 200 \/ 缓存读 300 \/ 总计 1500/);
+  assert.match(detailed, /本阶段耗时 24m31s/);
+
+  const partial = formatLine(formatter, eventLine("2026-09-17T00:00:01.000Z", "builder_finished", {
+    packetId: "p", detail: { outcome: "failed", execution: { usage: { status: "unavailable" } } },
+  }));
+  assert.match(partial, /Builder 失败（p）$/);
+});
+
 test("HumanRunFormatter ignores garbage lines and unknown event types", () => {
   const formatter = new HumanRunFormatter();
   assert.equal(formatter.format("not json\n"), null);

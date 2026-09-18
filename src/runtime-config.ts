@@ -79,6 +79,9 @@ export function createArcPlatformContract(
       cwd: "backend",
     },
     healthPath: "/health",
+    // Some acceptance specs hard-code http://127.0.0.1:3301 while the grader
+    // sets only PORT, so a graded start must also bind this port.
+    extraPorts: [3301],
     buildTimeoutMs: 180_000,
     startTimeoutMs: 30_000,
   };
@@ -116,6 +119,21 @@ export function parseRunDirOverride(
 ): string | null {
   const raw = env["SHALLOW_RUN_DIR"]?.trim();
   if (!raw) return null;
+  return resolve(raw);
+}
+
+/**
+ * Opt-in SSE capture destination for the Pi worker. Unset/off disables the tap;
+ * a bare truthy flag writes to `<defaultDir>`, any other value is a path.
+ */
+export function resolveSseCaptureDir(
+  env: Record<string, string | undefined>,
+  defaultDir: string,
+): string | null {
+  const raw = env["SHALLOW_CAPTURE_SSE"]?.trim();
+  if (!raw) return null;
+  if (/^(0|false|no|off)$/i.test(raw)) return null;
+  if (/^(1|true|yes|on)$/i.test(raw)) return resolve(defaultDir);
   return resolve(raw);
 }
 

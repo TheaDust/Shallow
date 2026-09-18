@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import type { GatewayConfig } from "../runtime-config.js";
 import type { CodingAgentRequest, CodingAgentResult, CodingAgentPort } from "./execution-port.js";
+import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
 import { ownProcessTree, toolEnvironment } from "../process-lifecycle.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sanitizeDiagnosticText } from "../diagnostics.js";
@@ -13,6 +14,8 @@ export interface PiWorkerRequest extends CodingAgentRequest {
   gateway: GatewayConfig;
   sessionDir: string;
   sessionFile?: string;
+  /** Debug-only destination for raw SSE bodies; see `SHALLOW_CAPTURE_SSE`. */
+  sseCaptureDir?: string;
 }
 export interface PiWorkerResult extends CodingAgentResult {
   sessionFile?: string;
@@ -20,6 +23,8 @@ export interface PiWorkerResult extends CodingAgentResult {
   toolCalls?: number;
   compactions?: number;
   peakRssBytes?: number;
+  usage?: ExecutionUsage;
+  timing?: ExecutionTiming;
 }
 
 /** One child per prompt. Never imports the SDK in the long-lived controller. */
@@ -27,7 +32,7 @@ export class PiWorkerClient implements CodingAgentPort {
   private sessions = new Map<string, { file: string; cwd: string }>();
   private active?: { child: ChildProcess; finished: Promise<void> };
   private closed = false;
-  constructor(private gateway: GatewayConfig, private sessionDir: string) {}
+  constructor(private gateway: GatewayConfig, private sessionDir: string, private sseCaptureDir?: string) {}
 
   async run(input: CodingAgentRequest): Promise<PiWorkerResult> {
     const started = Date.now();
@@ -66,7 +71,8 @@ export class PiWorkerClient implements CodingAgentPort {
         timer = setTimeout(() => res({ ...fallback, outcome: "timed_out", summary: "Pi call deadline reached" }), Math.max(1, input.timeoutMs));
       });
       tree = await ownProcessTree(child);
-      child.send({ ...input, gateway: this.gateway, sessionDir: this.sessionDir, sessionFile: prior?.file } satisfies PiWorkerRequest);
+      child.send({ ...input, gateway: this.gateway, sessionDir: this.sessionDir, sessionFile: prior?.file,
+        ...(this.sseCaptureDir ? { sseCaptureDir: this.sseCaptureDir } : {}) } satisfies PiWorkerRequest);
       result = await completed;
     } catch (error) {
       throw new ExecutionFault("builder", "builder_start", false, { cause: error });
@@ -84,7 +90,8 @@ export class PiWorkerClient implements CodingAgentPort {
     result.summary = sanitizeDiagnosticText(result.summary, [this.gateway.apiKey]);
     result.execution = { engine: "pi", version: "0.73.1", nodeVersion: process.version, workerPid: child.pid!,
       resumed: Boolean(prior), durationMs: Date.now() - started, cleanupMs, toolCalls: result.toolCalls,
-      compactions: result.compactions, peakRssBytes: result.peakRssBytes, usage: { status: "unavailable" } };
+      compactions: result.compactions, peakRssBytes: result.peakRssBytes,
+      usage: result.usage ?? { status: "unavailable" }, ...(result.timing ? { timing: result.timing } : {}) };
     if (input.sessionKey) {
       if (result.outcome === "completed" && result.sessionFile) this.sessions.set(input.sessionKey, { file: result.sessionFile, cwd: resolve(input.outputDir) });
       else this.sessions.delete(input.sessionKey);

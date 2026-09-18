@@ -39,6 +39,9 @@ import type {
   WorkPacket,
 } from "./types.js";
 
+const BOUNDARY_REPAIR_CALL_CEILING_MS = 1_800_000;
+const FINAL_REPAIR_CALL_CEILING_MS = 3_600_000;
+
 export interface AppLifecycle {
   start(
     outputDir: string,
@@ -126,7 +129,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
     const packetId = "packet" in request ? request.packet.id : "delivery-repair";
-    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? 240_000 : 120_000;
+    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? FINAL_REPAIR_CALL_CEILING_MS : 120_000;
     const timeoutMs = budget.callTimeout(name, Math.min(ceiling, runOptions.timeoutMs ?? ceiling));
     if (timeoutMs <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
     state.setPacketAttempt(packetId, "packet" in request ? request.packet.attempt : 1);
@@ -236,7 +239,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const observation = toBuilderShadowObservation({ packetId: repairPacket.id, verdict: "fail", passedCases: [],
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
-      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(240_000, budget.remaining("repair") / 2)));
+      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
       const repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
         outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs });
@@ -411,7 +414,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: packet.requirementIds } });
       // Leave at least half the remaining repair phase for independent regression checks.
-      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(240_000, budget.remaining("repair") / 2)));
+      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(FINAL_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
       const result = await build({ mode: "repair", packet, projectContext: buildBuilderProjectContext(packet, catalog, implemented),
         outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs });
@@ -525,7 +528,7 @@ const expectedByStage = {
   candidate: "验收与接受对应同一份未变化的候选文件和构建产物",
   install: "平台安装命令成功退出",
   build: "平台构建命令成功退出并生成生产构建产物",
-  readiness: "应用使用随机端口启动且健康检查返回成功",
+  readiness: "应用使用随机端口启动且健康检查返回成功；只设置 PORT 时额外端口也必须绑定，未知路径必须返回响应且进程不退出",
   browser: "根页面可访问并显示主要内容区域",
   complete: "完整交付验证成功",
 } satisfies Record<FinalVerificationReport["stage"], string>;

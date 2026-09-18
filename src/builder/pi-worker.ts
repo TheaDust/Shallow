@@ -2,7 +2,9 @@ import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { AuthStorage, ModelRegistry, SessionManager, SettingsManager, DefaultResourceLoader, createAgentSession } from "@mariozechner/pi-coding-agent";
 import { createPiTools } from "./pi-tools.js";
+import { installSseCapture } from "./sse-capture.js";
 import { closeSharedBrowser } from "./pi-browser-tool.js";
+import { PiExecutionCollector } from "./pi-execution-stats.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
@@ -48,13 +50,20 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   if (modelFallbackMessage) throw new Error(modelFallbackMessage);
   let toolCalls = 0;
   let compactions = 0;
+  const collector = new PiExecutionCollector();
   const unsubscribe = session.subscribe(event => {
-    if (event.type === "tool_execution_start") toolCalls++;
+    const atMs = Date.now();
+    if (event.type === "tool_execution_start") { toolCalls++; collector.toolStarted(event.toolCallId, event.toolName, atMs); }
+    else if (event.type === "tool_execution_end") collector.toolEnded(event.toolCallId, atMs);
+    else if (event.type === "turn_end") collector.turnEnded();
+    else if (event.type === "message_start" && event.message.role === "assistant") collector.modelStarted(atMs);
+    else if (event.type === "message_end" && event.message.role === "assistant") collector.modelEnded(atMs);
     if (event.type === "compaction_end") compactions++;
   });
   const loaded = !input.textOnly && input.requirementsDir && input.references?.length
     ? await loadReferenceImages(input.requirementsDir, input.references) : { images: [], skipped: input.textOnly ? [] : (input.references ?? []).map(reference => ({ reference, reason: "requirements_unavailable" })) };
   const images = input.textOnly ? [] : loaded.images.map(image => ({ type: "image" as const, mimeType: image.mime, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) }));
+  const capture = input.sseCaptureDir ? installSseCapture(input.sseCaptureDir, input.sessionKey ?? "builder") : undefined;
   try {
     const imageNote = !input.references?.length ? "" : input.textOnly ? loadPrompt("system", "reference-images-text-fallback")
       : fillTemplate(loadPrompt("system", "reference-images"), {
@@ -65,10 +74,12 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     const last = session.messages.at(-1);
     const success = last?.role === "assistant" && last.stopReason === "stop";
     const summary = last?.role === "assistant" ? last.errorMessage || last.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "Pi did not reach a terminal assistant response";
+    const stats = collector.summarize(session.getSessionStats().tokens);
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       outcome: success ? "completed" : "failed", summary: summary.slice(-8_000), toolCalls, compactions, peakRssBytes: process.resourceUsage().maxRSS * 1024,
+      usage: stats.usage, timing: stats.timing,
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && /\b(?:image(?:_url| input|s)?|vision|multimodal)\b.{0,60}\b(?:not supported|unsupported)\b|\b(?:model|endpoint|provider)\b.{0,40}\b(?:does not support|cannot accept)\b.{0,30}\bimage/i.test(summary),
       ...(input.references?.length ? { referenceImages: { mode: input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable", attachedCount: images.length, skipped: loaded.skipped } as const } : {}),
     };
-  } finally { unsubscribe(); session.dispose(); await closeSharedBrowser(); }
+  } finally { unsubscribe(); session.dispose(); await capture?.uninstall(); await closeSharedBrowser(); }
 }

@@ -13,6 +13,7 @@ import {
   pickFreePort,
   readEnvFile,
   readGatewayConfig,
+  resolveSseCaptureDir,
 } from "../src/runtime-config.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
@@ -61,6 +62,7 @@ test("Runtime config expresses the ARC frontend and backend process contract", (
   });
   assert.equal(linux.baseUrl, "http://127.0.0.1:3000");
   assert.equal(linux.healthPath, "/health");
+  assert.deepEqual(linux.extraPorts, [3301]);
   assert.equal(windows.startCommand.executable, "npm.cmd");
 });
 
@@ -125,6 +127,22 @@ test("Runtime config resolves the run directory override from the environment", 
   assert.equal(
     parseRunDirOverride({ SHALLOW_RUN_DIR: join(tmpdir(), "shallow-logs") }),
     join(tmpdir(), "shallow-logs"),
+  );
+});
+
+test("Runtime config resolves the opt-in SSE capture destination", () => {
+  const fallback = join(tmpdir(), "shallow-runs", "run-1", "sse-capture");
+  assert.equal(resolveSseCaptureDir({}, fallback), null);
+  assert.equal(resolveSseCaptureDir({ SHALLOW_CAPTURE_SSE: "   " }, fallback), null);
+  for (const off of ["0", "false", "no", "OFF"]) {
+    assert.equal(resolveSseCaptureDir({ SHALLOW_CAPTURE_SSE: off }, fallback), null);
+  }
+  for (const on of ["1", "true", "YES", " on "]) {
+    assert.equal(resolveSseCaptureDir({ SHALLOW_CAPTURE_SSE: on }, fallback), resolve(fallback));
+  }
+  assert.equal(
+    resolveSseCaptureDir({ SHALLOW_CAPTURE_SSE: " tmp/sse " }, fallback),
+    resolve("tmp/sse"),
   );
 });
 

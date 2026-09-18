@@ -95,6 +95,11 @@ MIRROR_ENV_DEFAULTS = {
     "npm_config_registry": "https://registry.npmmirror.com",
     "NPM_CONFIG_REGISTRY": "https://registry.npmmirror.com",
     "PLAYWRIGHT_DOWNLOAD_HOST": "https://npmmirror.com/mirrors/playwright",
+    # `playwright install` garbage-collects browsers it considers unused. The
+    # shared /ms-playwright store is also what the platform's own Playwright
+    # uses at evaluation time, so pruning it can delete the evaluator's browser
+    # and fail every test with "Executable doesn't exist".
+    "PLAYWRIGHT_SKIP_BROWSER_GC": "1",
 }
 
 

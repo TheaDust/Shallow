@@ -98,6 +98,8 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /3301/);
   assert.match(platform, /ARC_EXTRA_PORTS/);
+  assert.match(platform, /ERR_SERVER_ALREADY_LISTEN/);
+  assert.match(platform, /0\.0\.0\.0/);
   assert.match(platform, /<main>/);
   assert.match(platform, /\/api\/health/);
   for (const key of ["PROBE_PORT", "EVAL_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {

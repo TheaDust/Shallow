@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -43,6 +43,44 @@ test("Pi SDK executes tools and resumes persisted history in a new worker", { ti
   });
 });
 
+test("Pi worker reports token usage and where Builder time went", { timeout: 60_000 }, async () => {
+  await withTempDir("shallow-pi-stats-", async root => {
+    const app = join(root, "app"); await mkdir(app);
+    let calls = 0;
+    const server = createServer(async (req, res) => {
+      let body = ""; for await (const chunk of req) body += chunk;
+      JSON.parse(body);
+      calls += 1;
+      const tool = calls === 1;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const delta = tool
+        ? { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "write", arguments: JSON.stringify({ path: "hello.txt", content: "stats" }) } }] }
+        : { role: "assistant", content: "done" };
+      const usage = tool
+        ? { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14 }
+        : { prompt_tokens: 20, completion_tokens: 6, total_tokens: 26 };
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: tool ? "tool_calls" : "stop" }], usage })}\n\n`);
+      res.end("data: [DONE]\n\n");
+    });
+    await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    const client = new PiWorkerClient({ apiKey: "test-secret", baseUrl: `http://127.0.0.1:${port}/v1`, model: "test/model" }, join(root, "sessions"));
+    try {
+      const result = await client.run({ outputDir: app, systemPrompt: "Write the requested file.", taskPrompt: "write hello", timeoutMs: 25_000 });
+      assert.equal(result.outcome, "completed", result.summary);
+      const usage = result.execution?.usage;
+      assert.equal(usage?.status, "available");
+      assert.ok(usage?.status === "available" && usage.input > 0 && usage.output > 0 && usage.total > 0, JSON.stringify(usage));
+      const timing = result.execution?.timing;
+      assert.ok((timing?.turns ?? 0) >= 1, JSON.stringify(timing));
+      assert.ok(timing?.longestTools.some(entry => entry.name === "write"), JSON.stringify(timing));
+      assert.ok((timing?.toolMsTotal ?? -1) >= 0);
+      assert.ok((timing?.modelMsTotal ?? -1) >= 0);
+    } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
+  });
+});
+
 test("Pi worker advertises every guarded tool, including the browser tool, to the model", { timeout: 30_000 }, async () => {
   await withTempDir("shallow-pi-tools-", async root => {
     const app = join(root, "app"); await mkdir(app);
@@ -68,6 +106,36 @@ test("Pi worker advertises every guarded tool, including the browser tool, to th
       for (const expected of ["read", "edit", "write", "shell", "browser"]) {
         assert.ok(advertised.includes(expected), `Pi tool "${expected}" is not advertised (got: ${advertised.join(", ")})`);
       }
+    } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
+  });
+});
+
+test("Pi worker taps the gateway SSE stream when a capture directory is configured", { timeout: 30_000 }, async () => {
+  await withTempDir("shallow-pi-capture-", async root => {
+    const app = join(root, "app"); await mkdir(app);
+    const captureDir = join(root, "sse-capture");
+    const server = createServer(async (req, res) => {
+      let body = ""; for await (const chunk of req) body += chunk;
+      JSON.parse(body);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null }] })}\n\n`);
+      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+      res.end("data: [DONE]\n\n");
+    });
+    await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    const client = new PiWorkerClient({ apiKey: "test-secret", baseUrl: `http://127.0.0.1:${port}/v1`, model: "test/model" }, join(root, "sessions"), captureDir);
+    try {
+      const result = await client.run({ outputDir: app, sessionKey: "capture-test", systemPrompt: "Finish immediately.", taskPrompt: "finish", timeoutMs: 20_000 });
+      assert.equal(result.outcome, "completed", result.summary);
+      const captured = (await readdir(captureDir)).filter(name => name.endsWith(".sse"));
+      assert.equal(captured.length, 1, `expected one captured stream, got ${captured.join(", ") || "none"}`);
+      assert.ok(captured[0].startsWith("capture-test-"), captured[0]);
+      const raw = await readFile(join(captureDir, captured[0]), "utf8");
+      assert.ok(raw.includes('"finish_reason":"stop"'), raw);
+      const meta = JSON.parse(await readFile(join(captureDir, captured[0].replace(/\.sse$/, ".meta.json")), "utf8")) as { model?: string; anomalies: unknown[] };
+      assert.equal(meta.model, "test/model");
+      assert.deepEqual(meta.anomalies, []);
     } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
   });
 });

@@ -92,6 +92,8 @@ export interface PlatformContract {
   buildCommands: ProcessCommand[];
   startCommand: ProcessCommand;
   healthPath: string;
+  /** Ports the platform's acceptance specs hard-code (e.g. 3301); graded starts bind them. */
+  extraPorts?: number[];
   buildTimeoutMs: number;
   startTimeoutMs: number;
 }
@@ -123,8 +125,7 @@ interface RunEventDetails {
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
-    grouping?: GroupingStats;
-    usage?: { status: "unavailable" } };
+    grouping?: GroupingStats };
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;

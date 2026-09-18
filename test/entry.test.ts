@@ -291,6 +291,39 @@ test("Agent entry places run artifacts under SHALLOW_RUN_DIR when set", async ()
     const ledgerFile = received?.pipelineOptions.ledgerFile ?? "";
     assert.equal(basename(ledgerFile), "run-ledger.jsonl");
     assert.equal(dirname(dirname(ledgerFile)), runDir);
+    assert.equal(received?.sseCaptureDir, null, "SSE capture must stay off unless opted in");
+  });
+});
+
+test("Agent entry resolves the opt-in SSE capture directory next to the run log", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    const outputDir = join(directory, "output");
+    await mkdir(requirementsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+
+    await main(
+      ["--requirements-dir", requirementsDir, "--output-dir", outputDir],
+      { ...gatewayEnv(), SHALLOW_RUN_DIR: join(directory, "runs"), SHALLOW_CAPTURE_SSE: "1" },
+      execute,
+      null,
+    );
+
+    const ledgerFile = received?.pipelineOptions.ledgerFile ?? "";
+    assert.equal(received?.sseCaptureDir, join(dirname(ledgerFile), "sse-capture"));
   });
 });
 

@@ -83,7 +83,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
     case "builder_finished":
-      return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）${pickString(detail, "summary") ? `；自述回执（非验收）：${pickString(detail, "summary")}` : ""}`;
+      return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）${pickString(detail, "summary") ? `；自述回执（非验收）：${pickString(detail, "summary")}` : ""}${describeBuilderExecution(detail?.execution)}`;
     case "probe_planning":
       return `开始规划黑盒探针（${packetId}）`;
     case "application_starting":
@@ -173,6 +173,59 @@ function describe(type: string, event: RunEvent): string | null {
     default:
       return null;
   }
+}
+
+/** Bounded token/duration diagnostics attached to a Builder call; never message content. */
+function describeBuilderExecution(value: unknown): string {
+  if (typeof value !== "object" || value === null) return "";
+  const execution = value as Record<string, unknown>;
+  const timing = asRecord(execution.timing);
+  const parts: string[] = [];
+  const modelMs = asNumber(timing?.modelMsTotal);
+  const toolMs = asNumber(timing?.toolMsTotal);
+  if (modelMs !== null || toolMs !== null) {
+    const segments = [
+      modelMs === null ? null : `模型 ${renderDuration(modelMs)}`,
+      toolMs === null ? null : `工具 ${renderDuration(toolMs)}`,
+    ].filter((segment): segment is string => segment !== null);
+    parts.push(`耗时分布 ${segments.join(" / ")}`);
+  }
+  const turns = asNumber(timing?.turns);
+  if (turns !== null) parts.push(`轮次 ${turns}`);
+  const toolCalls = asNumber(execution.toolCalls);
+  const slowest = (Array.isArray(timing?.longestTools) ? timing.longestTools : [])
+    .map(item => asRecord(item))
+    .map(item => ({ name: item && typeof item.name === "string" ? sanitizeDiagnosticText(item.name) : null,
+      durationMs: asNumber(item?.durationMs) }))
+    .filter((item): item is { name: string; durationMs: number } => item.name !== null && item.durationMs !== null)
+    .map(item => `${item.name} ${renderDuration(item.durationMs)}`);
+  if (toolCalls !== null || slowest.length) {
+    parts.push(`工具调用 ${toolCalls ?? "未知"}${slowest.length ? `（最慢 ${slowest.join("、")}）` : ""}`);
+  }
+  const usage = asRecord(execution.usage);
+  if (usage?.status === "available") {
+    const cacheRead = asNumber(usage.cacheRead);
+    const tokens = [
+      tokenPart("入", usage.input), tokenPart("出", usage.output),
+      cacheRead !== null && cacheRead > 0 ? `缓存读 ${cacheRead}` : null,
+      tokenPart("总计", usage.total),
+    ].filter((token): token is string => token !== null);
+    if (tokens.length) parts.push(`tokens ${tokens.join(" / ")}`);
+  }
+  return parts.length ? `；${parts.join("；")}` : "";
+}
+
+function tokenPart(label: string, value: unknown): string | null {
+  const number = asNumber(value);
+  return number === null ? null : `${label} ${number}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function builderOutcomeText(outcome: string | null): string {

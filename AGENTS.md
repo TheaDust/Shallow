@@ -58,8 +58,8 @@ src/
                                 sanitizeDiagnosticText（诊断文本清洗）
   git-ops.ts                    GitCliOps.open（仓库校验 + .gitignore 初始化并提交）、captureAccepted/
                                 restoreAccepted（保留 .arc 的应用回滚）、runGit（单命令 30s 超时）
-  final-verifier.ts             FinalVerifier（install→build→启动→/health readiness→浏览器 smoke）与
-                                CommandAppLifecycle（平台合同进程启停）
+  final-verifier.ts             FinalVerifier（install→build→启动→/health readiness→浏览器 smoke→grader-like 复验）与
+                                CommandAppLifecycle（平台合同进程启停）、verifyGraderLikeStart（只设 PORT 时额外端口与未知路径）
   arc-protocol.ts               ArcEventSink：官方 .arc 事件、完整需求树、投影 journal 与幂等重建
   diagnostics.ts               sanitizeDiagnosticText：已知密钥及常见凭证脱敏、控制字符清理、截断
   runtime-config.ts             readGatewayConfig、readEnvFile（.env）、createArcPlatformContract、
@@ -121,6 +121,7 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 - `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
 - `SHALLOW_EVAL_PORT`：评测端口（缺省 3000，由适配入口按 `--web-port`/`ARCBENCH_WEB_PORT`/`ARC_WEB_PORT` 写入）；探针选端口时排除它，显式探针端口与它相同即报错。
 - `SHALLOW_RUN_DIR`：环境变量或 `.env` 指定运行日志目录（run-ledger.jsonl 与 run-log.txt；缺省 `%TMP%/shallowcode-runs/<pid>-<ts>/`，设置后仍按运行 ID 分子目录）。
+- `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：主线和 baseline 的 Python 适配入口读取真实环境。
 
@@ -147,7 +148,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 题目换成 `data/github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
-- 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 3301（部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`；生成期自检与控制器启动应用都传 `ARC_EXTRA_PORTS=0`，跳过 3301），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。
+- 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（缺省 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
 - `GitCliOps.open` 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置脚手架 `.arc/`、`requirements/`；其他残留会被拒绝。目录同时含 `frontend/` 与 `backend/` 时视为 evolution 模板（上一轮产物），整目录被接受：跳过空目录校验，脏的第三方仓库也直接采纳为基线，并用仓库本地的 `.git/info/exclude` 排除 `node_modules/`、`dist/` 等（不改模板自身的 `.gitignore`）。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
@@ -167,8 +168,8 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收，使用缓存的探针计划（实现阶段已并行生成并落盘，见 `src/judge/plan-cache.ts`）。发现失败时触发模块边界修复，每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。模块边界修复与末尾集中修复的配额独立。
 5. **集中修复**：所有模块实现完毕后执行最终集中验收。纯业务失败须在新应用实例中复现，再按需求汇总交给 Builder；每次运行至多两轮（`repairCount` 全局计数器）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。
 6. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。精化仅改 locator，固定操作、输入与预期。混合失败先处理带快照的 locator 部分；每次原子验收至多两轮精化、一次浏览器基础设施重试。业务失败复现共享这些额度。
-7. **交付**：最终验证为安装/构建/就绪/浏览器 smoke，至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
-8. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 不限总时长时单次实现保留1h超时；正预算时实现上限10min，集中修复4min（最多剩余修复阶段一半），交付修复2min；Planner 单次尝试上限180s；实际取阶段剩余及 runtime 配置的较小值。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
+7. **交付**：最终验证为安装/构建/就绪/浏览器 smoke/grader-like 复验（只设 `PORT`，额外端口与未知路径），至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
+8. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 不限总时长时单次实现保留1h超时；正预算时实现上限10min，模块边界修复上限30min、最终集中修复上限1h（均最多剩余修复阶段一半），交付修复2min；Planner 单次尝试上限180s；实际取阶段剩余及 runtime 配置的较小值。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
 9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 持文件、shell 与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写并运行传统测试。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
 10. **运行时恢复**：git 单命令30s；Pi Worker 进程组/作业回收最多5s。每次调用结束后父进程回收拥有的进程组并等待退出确认，启动故障终止运行并恢复检查点，清理失败按执行故障终止本轮。Judge 故障保留应用并报告不确定。cgroup 计数仅用于诊断。新增事件同步 types/human-log；源码或构建发生变化会使候选证据失效。接受输入 digest 只覆盖 Git 回滚能还原的文件（tracked + 未被忽略的 untracked），被忽略的运行/构建产物（dist、data、依赖）不计入，否则失败修复留下的产物会让回滚口径对不上。
 
@@ -181,8 +182,8 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 - 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。
 - 图片：生产入口把需求目录传给 `PromptBuilder.options.requirementsDir`（经 `PiWorkerClient`）；`loadReferenceImages` 仅加载当前 packet 的引用，校验解码路径、真实路径、文件签名并去重。支持本地 PNG/JPEG/WebP/GIF，单图 10 MiB、每包 30 MiB；不可用引用写入 `skipped` 并依据文字继续。SDK 使用 `file` part 的 data URL 传递附件。
 - 拒图回退：携图请求被明确识别为图片输入不支持、且响应没有工具或已完成步骤的执行证据时，先 abort 原会话，再用新会话发送纯文本；每次尝试至多一次，复用原超时额度，当前 Builder 实例记住文本模式。普通错误仍走失败路径，packet 尝试计数和验收门槛保持原语义。
-- 观测：`BuilderResult.referenceImages` 只保存模式、附件数量与跳过原因；`pipeline.ts` 发出 `builder_reference_images`，`human-log.ts` 渲染中文说明。图片载荷只用于模型输入。
-- 修改上述链路时，联合验证 `test/builder-prompt.test.ts`、`test/prompt-assets.test.ts`、`test/reference-images.test.ts`、`test/builder-reference-input.test.ts`、`test/pi-worker.test.ts`、`test/pi-errors.test.ts`；事件变化同步 `test/human-log.test.ts` 和 `test/pipeline.e2e.test.ts`。
+- 观测：`BuilderResult.referenceImages` 只保存模式、附件数量与跳过原因；`pipeline.ts` 发出 `builder_reference_images`，`human-log.ts` 渲染中文说明。图片载荷只用于模型输入。Builder 每次调用的 token 用量与模型/工具耗时分布保存在 `execution.usage`/`execution.timing`（由 `pi-execution-stats.ts` 聚合，只含计数与工具名，不含参数或消息内容），随 `builder_finished` 进私有台账与 run-log。
+- 修改上述链路时，联合验证 `test/builder-prompt.test.ts`、`test/prompt-assets.test.ts`、`test/reference-images.test.ts`、`test/builder-reference-input.test.ts`、`test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/pi-execution-stats.test.ts`；事件变化同步 `test/human-log.test.ts` 和 `test/pipeline.e2e.test.ts`。
 
 ## Baseline 开发范围
 

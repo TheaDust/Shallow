@@ -1,4 +1,5 @@
 import type { BuilderPromptInput } from "./prompt-input.js";
+import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
 
 export type BuilderRequest = BuilderPromptInput;
 
@@ -8,7 +9,7 @@ export interface BuilderResult {
   summary: string;
   execution?: { engine: string; version: string; nodeVersion: string; workerPid: number; resumed: boolean;
     durationMs: number; cleanupMs: number; toolCalls?: number; compactions?: number; peakRssBytes?: number;
-    usage: { status: "unavailable" } };
+    usage: ExecutionUsage; timing?: ExecutionTiming };
   referenceImages?: {
     mode: "attached" | "text_fallback" | "unavailable";
     attachedCount: number;
