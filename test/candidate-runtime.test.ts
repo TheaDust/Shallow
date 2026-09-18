@@ -133,6 +133,22 @@ test("ignored output artifacts do not invalidate accepted input evidence", async
   });
 });
 
+test("the product-visible progress journal does not invalidate accepted input evidence", async () => {
+  await fixture(async ({ output, candidate, contract }) => {
+    await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
+    await execFileAsync("git", ["-C", output, "init"]);
+    await execFileAsync("git", ["-C", output, "add", "."]);
+    await execFileAsync("git", ["-C", output, "-c", "user.name=ShallowCode", "-c", "user.email=shallowcode@local.invalid", "commit", "-m", "base"]);
+    const app = await candidate.start(output, contract);
+    candidate.recordAccepted(app.candidate!);
+    // The journal is untracked but not ignored, so it must be excluded by path.
+    await mkdir(join(output, "shallow-progress"), { recursive: true });
+    await writeFile(join(output, "shallow-progress", "progress.log"), "step 1\n");
+    await candidate.assertAcceptedInput();
+    await app.stop();
+  });
+});
+
 test("deleted source and old private artifacts are removed on rebuild", async () => {
   await fixture(async ({ output, candidate }) => {
     await writeFile(join(output, "obsolete.txt"), "old");

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CommandAppLifecycle, CandidatePreparationError, runCommand } from "./final-verifier.js";
 import { runGit } from "./git-ops.js";
+import { PROGRESS_DIR_NAME, isProgressPath } from "./progress-journal.js";
 import type { AppLifecycle } from "./pipeline.js";
 import type { CandidateEvidence, PlatformContract, RunEvent } from "./types.js";
 
@@ -209,7 +210,7 @@ async function snapshot(root: string): Promise<Snapshot> {
   const files: Snapshot = new Map();
   async function visit(directory: string, prefix = ""): Promise<void> {
     for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name < b.name ? -1 : 1)) {
-      if (entry.name === "node_modules" || (!prefix && [".git", ".arc"].includes(entry.name))) continue;
+      if (entry.name === "node_modules" || (!prefix && [".git", ".arc", PROGRESS_DIR_NAME].includes(entry.name))) continue;
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       const absolute = join(directory, entry.name);
       if (entry.isSymbolicLink()) throw new Error(`Application links are not supported: ${path}`);
@@ -246,7 +247,7 @@ async function restorableInputDigest(root: string): Promise<string> {
       const listed = await runGit(canonical, ["ls-files", "-c", "-o", "--exclude-standard", "-z"], true);
       if (listed.code === 0) {
         const files: Snapshot = new Map();
-        for (const path of listed.stdout.split("\0").filter(p => p && p !== ".arc" && !p.startsWith(".arc/")).sort()) {
+        for (const path of listed.stdout.split("\0").filter(p => p && p !== ".arc" && !p.startsWith(".arc/") && !isProgressPath(p)).sort()) {
           const absolute = join(canonical, path);
           const before = await lstat(absolute).catch(() => undefined);
           if (!before?.isFile()) continue;

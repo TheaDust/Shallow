@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { createReadToolDefinition, createEditToolDefinition, createWriteToolDefinition, createBashToolDefinition, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { toolEnvironment } from "../process-lifecycle.js";
+import { PROGRESS_DIR_NAME } from "../progress-journal.js";
 import { createBrowserTool } from "./pi-browser-tool.js";
 
 export async function assertToolPath(root: string, input: string): Promise<string> {
@@ -10,8 +11,8 @@ export async function assertToolPath(root: string, input: string): Promise<strin
   const path = resolve(canonicalRoot, input);
   const contained = (value: string) => {
     const rel = relative(canonicalRoot, value);
-    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || rel.split(/[\\/]/).some(part => part.toLowerCase() === ".arc")) {
-      throw new Error("Tool path is outside the application or accesses private .arc evidence");
+    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || rel.split(/[\\/]/).some(part => part.toLowerCase() === ".arc" || part.toLowerCase() === PROGRESS_DIR_NAME)) {
+      throw new Error("Tool path is outside the application or accesses private controller evidence");
     }
   };
   contained(path);
@@ -30,7 +31,7 @@ export async function assertToolPath(root: string, input: string): Promise<strin
 
 export function assertToolCommand(command: string): void {
   // Defense in depth, not an OS sandbox. Deployment controls filesystem visibility.
-  if (/\.arc|run-ledger|run-log|\/workspace\/tests|\.codex|\.pi[\\/]|(?:^|[\s"'])\.\.[\\/]/i.test(command)) {
+  if (/\.arc|run-ledger|run-log|shallow-progress|\/workspace\/tests|\.codex|\.pi[\\/]|(?:^|[\s"'])\.\.[\\/]/i.test(command)) {
     throw new Error("Command accesses controller/private or external paths");
   }
 }

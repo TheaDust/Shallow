@@ -13,6 +13,7 @@ import { FinalVerifier } from "./src/final-verifier.js";
 import { CandidateRuntime } from "./src/candidate-runtime.js";
 import { GitCliOps } from "./src/git-ops.js";
 import { HumanRunFormatter } from "./src/human-log.js";
+import { ProgressJournal, PROGRESS_DIR_NAME } from "./src/progress-journal.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "./src/judge/playwright-probe-runner.js";
 import {
@@ -86,6 +87,7 @@ export async function main(
     ledgerFile: join(runDir, runId, "run-ledger.jsonl"),
     totalBudgetMs: cli.budgetMs,
     platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort, extraPorts),
+    progressDir: join(cli.outputDir, PROGRESS_DIR_NAME),
   };
   const summary = await execute({
     gateway,
@@ -136,7 +138,7 @@ async function executeProduction(
     const lifecycle = candidate;
     const git = await GitCliOps.open(pipelineOptions.outputDir);
     const finalVerifier = new FinalVerifier(runner, lifecycle, candidate);
-    const logSink = createRunLogSink(runLogFile);
+    const logSink = createRunLogSink(runLogFile, new ProgressJournal(pipelineOptions.outputDir));
     const projectionWarning = (error: unknown): void => {
       try { logSink.write(`${JSON.stringify({ at: new Date().toISOString(), type: "arc_projection_failed",
         detail: { message: sanitizeDiagnosticText(String(error), [gateway.apiKey]) } })}\n`); } catch { /* Diagnostic only. */ }
@@ -187,7 +189,7 @@ export async function assertPrivateRunDirectory(outputDir: string, runDir: strin
   if (contained(await realpath(outputDir), await realpath(runDir))) throw new Error("Run diagnostics directory resolves inside the candidate output directory");
 }
 
-function createRunLogSink(runLogFile: string): LogSink {
+function createRunLogSink(runLogFile: string, journal?: ProgressJournal): LogSink {
   const runLogDir = dirname(runLogFile);
   const formatter = new HumanRunFormatter();
   return {
@@ -197,6 +199,7 @@ function createRunLogSink(runLogFile: string): LogSink {
       if (line === null) return;
       mkdirSync(runLogDir, { recursive: true });
       appendFileSync(runLogFile, `${line}\n`, "utf8");
+      journal?.appendLine(line);
     },
   };
 }

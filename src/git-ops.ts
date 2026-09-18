@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs
 import { join, resolve } from "node:path";
 
 import { spawnProcess } from "./process-spawn.js";
+import { PROGRESS_DIR_NAME } from "./progress-journal.js";
 
 export interface GitOps {
   captureAccepted(message: string): Promise<string>;
@@ -53,7 +54,9 @@ export class GitCliOps implements GitOps {
 
   async captureAccepted(message: string): Promise<string> {
     await this.validateRoot();
-    await requireGit(this.repositoryRoot, ["add", "-A"]);
+    // Keep the product-visible progress journal untracked so the platform still
+    // packages it (it only filters gitignored paths) without it entering history.
+    await requireGit(this.repositoryRoot, ["add", "-A", "--", ".", `:(top,exclude)${PROGRESS_DIR_NAME}`]);
     const head = await runGit(
       this.repositoryRoot,
       ["rev-parse", "--verify", "HEAD"],
@@ -97,9 +100,10 @@ export class GitCliOps implements GitOps {
     // record the rewind as a forward-moving recovery commit instead of
     // deleting history.
     await requireGit(this.repositoryRoot, [
-      "restore", "--source", sha, "--staged", "--worktree", "--", ".", ":(top,exclude).arc",
+      "restore", "--source", sha, "--staged", "--worktree", "--", ".",
+      ":(top,exclude).arc", `:(top,exclude)${PROGRESS_DIR_NAME}`,
     ]);
-    await requireGit(this.repositoryRoot, ["clean", "-fd", "-e", ".arc/"]);
+    await requireGit(this.repositoryRoot, ["clean", "-fd", "-e", ".arc/", "-e", `${PROGRESS_DIR_NAME}/`]);
     await requireGit(this.repositoryRoot, [
       "-c",
       "user.name=ShallowCode",
@@ -286,7 +290,7 @@ async function discardPreviousRunResidue(root: string, evolutionTemplate = false
   }
   if (dirt.length > 0) {
     await requireGit(root, ["reset", "--hard", "HEAD"]);
-    await requireGit(root, ["clean", "-fd", "-e", ".arc/"]);
+    await requireGit(root, ["clean", "-fd", "-e", ".arc/", "-e", `${PROGRESS_DIR_NAME}/`]);
   }
   await rm(join(root, ".arc", "runner-events.jsonl"), { force: true });
 }

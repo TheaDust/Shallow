@@ -22,7 +22,11 @@ type CachedPacket = Pick<WorkPacket, "id" | "requirementIds"> &
 export class PlanCache {
   private readonly directory: string;
 
-  constructor(runDirectory: string) {
+  constructor(
+    runDirectory: string,
+    /** Optional product-visible mirror so a delivered run exposes its plans. */
+    private readonly mirrorDirectory?: string,
+  ) {
     this.directory = join(runDirectory, "plans");
   }
 
@@ -37,12 +41,20 @@ export class PlanCache {
 
   async write(packetId: string, plan: ProbePlan): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    await writeFile(this.pathFor(packetId), JSON.stringify(plan), { encoding: "utf8", mode: 0o600 });
+    const payload = JSON.stringify(plan);
+    await writeFile(this.pathFor(packetId), payload, { encoding: "utf8", mode: 0o600 });
+    if (this.mirrorDirectory) {
+      await mkdir(this.mirrorDirectory, { recursive: true }).catch(() => {});
+      await writeFile(join(this.mirrorDirectory, this.fileName(packetId)), payload, { encoding: "utf8" }).catch(() => {});
+    }
   }
   private pathFor(packetId: string): string {
+    return join(this.directory, this.fileName(packetId));
+  }
+  private fileName(packetId: string): string {
     // Slugified ids are lossy (`A.1` and `A_1` collapse), so the digest keeps files distinct.
     const digest = createHash("sha256").update(packetId).digest("hex").slice(0, 16);
-    return join(this.directory, `${sanitise(packetId)}-${digest}.json`);
+    return `${sanitise(packetId)}-${digest}.json`;
   }
 }
 

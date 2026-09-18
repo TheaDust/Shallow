@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { PlanCache } from "../src/judge/plan-cache.js";
@@ -33,5 +34,17 @@ test("Cache files stay separate for packet ids that sanitise identically", async
     assert.equal((await cache.read({ id: "packet-a:1", requirementIds: ["A"] }))?.packetId, "packet-a:1");
     assert.equal((await cache.read({ id: "packet-a/1", requirementIds: ["B"] }))?.packetId, "packet-a/1");
     assert.equal((await readdir(`${directory}/plans`)).length, 2);
+  });
+});
+
+test("Plan cache mirrors writes into the product-visible directory", async () => {
+  await withTempDir("shallow-plan-cache-", async (directory) => {
+    const mirror = join(directory, "shallow-progress", "plans");
+    const cache = new PlanCache(directory, mirror);
+    await cache.write("packet-a", plan("packet-a", ["A"]));
+
+    const files = await readdir(mirror);
+    assert.equal(files.length, 1);
+    assert.equal(JSON.parse(await readFile(join(mirror, files[0]), "utf8")).packetId, "packet-a");
   });
 });

@@ -29,6 +29,7 @@ import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { probePlanSha256 } from "./judge/probe-schema.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
+import { progressPlansDirectory } from "./progress-journal.js";
 import { memorySnapshot } from "./memory-snapshot.js";
 import { ExecutionFault } from "./execution-fault.js";
 import type { CandidateRuntime } from "./candidate-runtime.js";
@@ -92,6 +93,8 @@ export interface PipelineOptions {
   totalBudgetMs: number;
   platformContract: PlatformContract;
   plannerRetryDelayMs?: number;
+  /** Product-visible journal directory (`shallow-progress`); plans mirror here. */
+  progressDir?: string;
 }
 
 export interface RunSummary {
@@ -114,7 +117,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const implemented = new Set<string>();
   const packets = auditPackets(catalog);
   const featureGrouping = featureGroupPackets(catalog);
-  const planCache = new PlanCache(dirname(options.ledgerFile));
+  const planCache = new PlanCache(dirname(options.ledgerFile),
+    options.progressDir ? progressPlansDirectory(options.progressDir) : undefined);
   let results = new Map<string, AuditResult>();
   let repairCount = 0;
   let boundaryRepairCount = 0;

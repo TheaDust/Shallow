@@ -244,6 +244,35 @@ test("GitOps open initializes over pre-seeded platform scaffold entries", async 
   });
 });
 
+test("GitOps keeps the progress journal untracked and preserves it across rollback", async () => {
+  await withTempDir("shallow-git-", async (directory) => {
+    const git = await GitCliOps.open(directory);
+    const accepted = await git.captureAccepted("shallow: baseline");
+
+    const journal = join(directory, "shallow-progress");
+    await mkdir(join(journal, "plans"), { recursive: true });
+    await writeFile(join(journal, "progress.log"), "step 1\n", "utf8");
+    const after = await git.captureAccepted("shallow: journal only");
+
+    // Untracked and excluded: a journal-only change must not create a commit.
+    assert.equal(after, accepted);
+    const tracked = await execFileAsync("git", ["ls-files"], { cwd: directory });
+    assert.doesNotMatch(tracked.stdout, /shallow-progress/);
+
+    // Application changes still commit.
+    await writeFile(join(directory, "app.txt"), "implemented");
+    const changed = await git.captureAccepted("shallow: app change");
+    assert.notEqual(changed, accepted);
+
+    // Rolling back a rejected attempt must not erase the journal.
+    await writeFile(join(directory, "app.txt"), "broken");
+    await git.captureAccepted("shallow: broken attempt");
+    await git.restoreAccepted(changed);
+    assert.equal(await readFile(join(directory, "app.txt"), "utf8"), "implemented");
+    assert.equal(await readFile(join(journal, "progress.log"), "utf8"), "step 1\n");
+  });
+});
+
 test("GitOps open initializes an independent repository nested inside another repository", async () => {
   await withTempDir("shallow-git-", async (parent) => {
     await initRepoWithRootCommit(parent, "parent baseline");
