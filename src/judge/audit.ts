@@ -145,10 +145,16 @@ async function runShadowProbes(
     }
     return { source: "probe", report, plan: currentPlan };
   } finally {
-    await application.stop();
-    await application.assertUnchanged?.();
-    if (application.candidate) await deps.candidate?.assertCurrent(application.candidate);
-    await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
+    // application_stopped pairs with application_starting/ready and must be
+    // recorded even if shutdown or the post-stop integrity check throws;
+    // otherwise the run log shows a started-but-never-stopped application.
+    try {
+      await application.stop();
+      await application.assertUnchanged?.();
+      if (application.candidate) await deps.candidate?.assertCurrent(application.candidate);
+    } finally {
+      await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
+    }
   }
 }
 

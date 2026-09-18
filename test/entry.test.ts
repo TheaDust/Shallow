@@ -327,6 +327,68 @@ test("Agent entry resolves the opt-in SSE capture directory next to the run log"
   });
 });
 
+test("Agent entry derives extra platform ports from the acceptance test bundle", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    const testsDir = join(directory, "tests");
+    await mkdir(requirementsDir);
+    await mkdir(testsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    await writeFile(
+      join(testsDir, "home.spec.ts"),
+      "await page.goto('http://127.0.0.1:3301'); await page.goto('http://localhost:4400');",
+    );
+    let received: AgentExecutionContext | undefined;
+    const execute: AgentExecution = async (context) => {
+      received = context;
+      return {
+        status: "delivered",
+        verifiedRequirementIds: [],
+        blockedRequirementIds: [],
+        acceptedSha: "sha",
+      };
+    };
+
+    await main(
+      ["--requirements-dir", requirementsDir, "--output-dir", join(directory, "output")],
+      { ...gatewayEnv(), ARCBENCH_TESTS_DIR: testsDir },
+      execute,
+      null,
+    );
+
+    const contract = received?.pipelineOptions.platformContract;
+    assert.deepEqual(contract?.extraPorts, [3301, 4400]);
+    assert.ok(!contract?.extraPorts?.includes(contract.port));
+  });
+});
+
+test("Agent entry rejects a probe port that collides with a discovered extra port", async () => {
+  await withTempDir("shallow-entry-", async (directory) => {
+    const requirementsDir = join(directory, "requirements");
+    const testsDir = join(directory, "tests");
+    await mkdir(requirementsDir);
+    await mkdir(testsDir);
+    await writeFile(
+      join(requirementsDir, "requirements.yaml"),
+      "id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\ndescription: Root\nchildren: []\n",
+    );
+    await writeFile(join(testsDir, "home.spec.ts"), "await page.goto('http://127.0.0.1:3301');");
+
+    await assert.rejects(
+      main(
+        ["--requirements-dir", requirementsDir, "--output-dir", join(directory, "output")],
+        { ...gatewayEnv(), ARCBENCH_TESTS_DIR: testsDir, SHALLOW_PROBE_PORT: "3301" },
+        async () => ({ status: "delivered", verifiedRequirementIds: [], blockedRequirementIds: [], acceptedSha: "sha" }),
+        null,
+      ),
+      /SHALLOW_PROBE_PORT/,
+    );
+  });
+});
+
 test("Agent entry keeps default run artifacts under the temp shallowcode-runs directory", async () => {
   await withTempDir("shallow-entry-", async (directory) => {
     const requirementsDir = join(directory, "requirements");

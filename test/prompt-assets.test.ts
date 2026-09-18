@@ -96,13 +96,14 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
-  assert.match(platform, /3301/);
-  assert.match(platform, /ARC_EXTRA_PORTS/);
-  assert.match(platform, /ERR_SERVER_ALREADY_LISTEN/);
-  assert.match(platform, /0\.0\.0\.0/);
   assert.match(platform, /<main>/);
   assert.match(platform, /\/api\/health/);
-  for (const key of ["PROBE_PORT", "EVAL_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL"]) {
+  const extraPorts = loadPrompt("system", "platform-extra-ports");
+  assert.ok(extraPorts.includes("{{EXTRA_PORTS}}"));
+  assert.match(extraPorts, /ARC_EXTRA_PORTS/);
+  assert.match(extraPorts, /ERR_SERVER_ALREADY_LISTEN/);
+  assert.match(extraPorts, /0\.0\.0\.0/);
+  for (const key of ["PROBE_PORT", "EVAL_PORT", "INSTALL_COMMANDS", "BUILD_COMMANDS", "START_COMMAND", "HEALTH_PATH", "BASE_URL", "EXTRA_PORTS_SECTION"]) {
     assert.ok(platform.includes(`{{${key}}}`));
   }
   assert.ok(

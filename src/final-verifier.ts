@@ -136,9 +136,6 @@ export async function verifyGraderLikeStart(
   if (extraPorts.length === 0) {
     return { ok: true, stage: "complete", message: "Grader-like extra ports not configured" };
   }
-  const preoccupied = new Set<number>();
-  for (const port of extraPorts) if (!await isPortFree(port)) preoccupied.add(port);
-  const required = extraPorts.filter((port) => !preoccupied.has(port));
   const dataDirectory = contract.dataDirectory ?? await mkdtemp(join(tmpdir(), "shallow-grader-"));
   const environment = runtimeEnvironment({ PORT: String(contract.port), SHALLOW_DATA_DIR: dataDirectory });
   // The grader never sets ARC_EXTRA_PORTS, so the extra listeners must bind.
@@ -154,7 +151,7 @@ export async function verifyGraderLikeStart(
     ? `Application exited during grader-like startup: ${stderr || child.exitCode || child.signalCode}` : undefined);
   try {
     await waitForReadiness(`${contract.baseUrl}${contract.healthPath}`, contract.startTimeoutMs, failure);
-    const missing = await waitForExtraPorts(required, contract, failure);
+    const missing = await waitForExtraPorts(extraPorts, contract, failure);
     if (missing.length) {
       return { ok: false, stage: "readiness", message:
         `PORT CONTRACT violated: the acceptance specs default to http://127.0.0.1:${missing.join(", ")} while the ` +
@@ -211,17 +208,6 @@ async function answersHttp(port: number, path: string): Promise<boolean> {
   } catch { return false; }
 }
 
-async function isPortFree(port: number): Promise<boolean> {
-  const server = createServer();
-  try {
-    await new Promise<void>((resolvePromise, reject) => {
-      server.once("error", reject);
-      server.listen(port, "127.0.0.1", () => server.close((error) => error ? reject(error) : resolvePromise()));
-    });
-    return true;
-  } catch { return false; }
-}
-
 export class CommandAppLifecycle implements AppLifecycle {
   async start(outputDir: string, contract: PlatformContract) {
     await assertPortFree(contract);
@@ -256,7 +242,19 @@ export class CommandAppLifecycle implements AppLifecycle {
       assertUnchanged: async () => {
         if (!stopped && (spawnError || child.exitCode !== null || child.signalCode !== null)) throw new CandidatePreparationError("candidate", "Owned application process exited during verification");
       },
-      stop: async () => { if (stopped) return; await stopProcess(child); await assertPortFree(contract); stopped = true; },
+      stop: async () => {
+        if (stopped) return;
+        // Mark stopped first so a slow socket release can never wedge shutdown
+        // into a retry loop or turn a completed probe into an inconclusive one.
+        stopped = true;
+        await stopProcess(child);
+        // The kernel may release the listening socket a few milliseconds after
+        // the process exits (SIGTERM handling, keep-alive sockets). Wait for the
+        // port to actually become free instead of asserting once, so the next
+        // start on this port does not race a lingering listener. Enforcement of
+        // a free port stays with the next start(); shutdown only best-effort waits.
+        await waitForPortFree(contract, PORT_RELEASE_TIMEOUT_MS);
+      },
     };
   }
 }
@@ -418,4 +416,33 @@ async function assertPortFree(contract: PlatformContract): Promise<void> {
     server.once("error", () => reject(new Error(`Application port ${contract.port} is already occupied`)));
     server.listen(contract.port, host, () => server.close((error) => error ? reject(error) : resolvePromise()));
   });
+}
+
+/** Upper bound for the kernel to release a candidate's listening socket after shutdown. */
+const PORT_RELEASE_TIMEOUT_MS = 2_000;
+
+/**
+ * Best-effort wait until the application port can be bound again after stop.
+ * Returns false on timeout instead of throwing: shutdown must not fail just
+ * because the socket is released slightly after the process exited.
+ */
+async function waitForPortFree(contract: PlatformContract, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await canBind(contract)) return true;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+  }
+  return canBind(contract);
+}
+
+async function canBind(contract: PlatformContract): Promise<boolean> {
+  const server = createServer();
+  const host = new URL(contract.baseUrl).hostname.replace(/^\[|\]$/g, "");
+  try {
+    await new Promise<void>((resolvePromise, reject) => {
+      server.once("error", reject);
+      server.listen(contract.port, host, () => server.close((error) => error ? reject(error) : resolvePromise()));
+    });
+    return true;
+  } catch { return false; }
 }

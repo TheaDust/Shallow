@@ -31,6 +31,7 @@ import {
   parseRunDirOverride,
   pickFreePort,
   readEnvFile,
+  resolvePlatformExtraPorts,
   resolveSseCaptureDir,
   readGatewayConfig,
   type GatewayConfig,
@@ -69,11 +70,14 @@ export async function main(
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
   const evaluationPort = parseEvaluationPort(mergedEnv) ?? 3000;
+  const extraPorts = await resolvePlatformExtraPorts(mergedEnv, evaluationPort);
   const probePortOverride = parseProbePortOverride(mergedEnv);
-  if (probePortOverride !== null && probePortOverride === evaluationPort) {
-    throw new Error(`SHALLOW_PROBE_PORT must differ from the evaluation port ${evaluationPort}`);
+  if (probePortOverride !== null && (probePortOverride === evaluationPort || extraPorts.includes(probePortOverride))) {
+    throw new Error(
+      `SHALLOW_PROBE_PORT must differ from the evaluation port ${evaluationPort} and the platform extra ports ${extraPorts.join(", ") || "(none)"}`,
+    );
   }
-  const probePort = probePortOverride ?? (await pickFreePort([evaluationPort]));
+  const probePort = probePortOverride ?? (await pickFreePort([evaluationPort, ...extraPorts]));
   const runDir = parseRunDirOverride(mergedEnv) ?? join(tmpdir(), "shallowcode-runs");
   const sseCaptureDir = resolveSseCaptureDir(mergedEnv, join(runDir, runId, "sse-capture"));
   const pipelineOptions: PipelineOptions = {
@@ -81,7 +85,7 @@ export async function main(
     outputDir: cli.outputDir,
     ledgerFile: join(runDir, runId, "run-ledger.jsonl"),
     totalBudgetMs: cli.budgetMs,
-    platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort),
+    platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort, extraPorts),
   };
   const summary = await execute({
     gateway,
@@ -115,6 +119,7 @@ async function executeProduction(
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
+  process.stderr.write(`[ShallowCode] 平台额外端口（由验收 spec 发现）：${pipelineOptions.platformContract.extraPorts?.join(", ") || "无"}\n`);
   if (sseCaptureDir) process.stderr.write(`[ShallowCode] SSE 抓包已启用（仅诊断用途）：${sseCaptureDir}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);

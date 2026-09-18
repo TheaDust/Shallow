@@ -170,6 +170,20 @@ test("Builder distinguishes the evaluation default from the probe port", () => {
   assert.match(compiled.taskPrompt, /PORT=3210/);
 });
 
+test("Builder receives every discovered extra port and omits the clause when there are none", () => {
+  const withoutExtra = compileBuilderPrompt(implementRequest());
+  assert.doesNotMatch(withoutExtra.taskPrompt, /额外监听/);
+  assert.doesNotMatch(withoutExtra.taskPrompt, /ERR_SERVER_ALREADY_LISTEN/);
+
+  const request = implementRequest();
+  request.platformContract.extraPorts = [3301, 4400];
+  const compiled = compileBuilderPrompt(request);
+  assert.match(compiled.taskPrompt, /3301/);
+  assert.match(compiled.taskPrompt, /4400/);
+  assert.match(compiled.taskPrompt, /ARC_EXTRA_PORTS=0/);
+  assert.match(compiled.taskPrompt, /ERR_SERVER_ALREADY_LISTEN/);
+});
+
 test("FakeBuilder copies only the test fixture app into output", async () => {
   const directory = await mkdtemp(join(tmpdir(), "shallow-fake-builder-"));
   try {

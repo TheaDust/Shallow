@@ -1,18 +1,21 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  collectSpecBasePorts,
   createArcPlatformContract,
   deriveModelTimeouts,
+  extractBasePorts,
   parseEvaluationPort,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
   readEnvFile,
   readGatewayConfig,
+  resolvePlatformExtraPorts,
   resolveSseCaptureDir,
 } from "../src/runtime-config.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -99,6 +102,58 @@ test("Runtime config keeps port 3000 as the default contract port", () => {
   const contract = createArcPlatformContract("linux");
   assert.equal(contract.port, 3000);
   assert.equal(contract.baseUrl, "http://127.0.0.1:3000");
+});
+
+test("Runtime config lets the caller replace the default extra ports", () => {
+  const contract = createArcPlatformContract("linux", 3100, 3000, [4400, 5500]);
+  assert.deepEqual(contract.extraPorts, [4400, 5500]);
+});
+
+test("Runtime config extracts base ports only from loopback spec URLs", () => {
+  const text = [
+    "const base = process.env.BASE_URL ?? 'http://127.0.0.1:3301';",
+    "await page.goto('http://localhost:4400/api');",
+    "const docs = 'https://example.com:8443/docs';",
+    "const again = 'http://127.0.0.1:3301/';",
+  ].join("\n");
+  assert.deepEqual(extractBasePorts(text), [3301, 4400]);
+  assert.deepEqual(extractBasePorts("no ports here"), []);
+});
+
+test("Runtime config collects spec ports from nested files and ignores non-TypeScript assets", async () => {
+  await withTempDir("shallow-ports-", async (directory) => {
+    await mkdir(join(directory, "nested"), { recursive: true });
+    await writeFile(join(directory, "home.spec.ts"), "goto('http://127.0.0.1:3301')");
+    await writeFile(join(directory, "nested", "helpers.ts"), "goto('http://localhost:4400')");
+    await writeFile(join(directory, "README.md"), "http://127.0.0.1:5555");
+    assert.deepEqual(await collectSpecBasePorts(directory), [3301, 4400]);
+  });
+});
+
+test("Runtime config resolves extra ports from the acceptance tests directory", async () => {
+  await withTempDir("shallow-ports-", async (directory) => {
+    await writeFile(join(directory, "home.spec.ts"), [
+      "goto('http://127.0.0.1:3301')",
+      "goto('http://127.0.0.1:3000')",
+      "goto('http://localhost:4400')",
+    ].join("\n"));
+    assert.deepEqual(
+      await resolvePlatformExtraPorts({ ARCBENCH_TESTS_DIR: directory }, 3000),
+      [3301, 4400],
+    );
+  });
+});
+
+test("Runtime config falls back to 3301 when no acceptance tests are discoverable", async () => {
+  assert.deepEqual(await resolvePlatformExtraPorts({}, 3000, null), [3301]);
+  assert.deepEqual(
+    await resolvePlatformExtraPorts(
+      { ARCBENCH_TESTS_DIR: join(tmpdir(), "shallow-absent-tests-xyz") },
+      3000,
+    ),
+    [3301],
+  );
+  assert.deepEqual(await resolvePlatformExtraPorts({}, 3301, null), []);
 });
 
 test("Runtime config reads the probe port override from the environment", () => {

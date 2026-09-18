@@ -103,7 +103,7 @@ flowchart TD
 3. 功能组完成后做安装、构建与启动检查，保存可运行检查点。它不授予功能 verified，后续功能组也不等待前序功能验收；切换模块时对上一模块执行模块边界审计，失败按模块独立配额至多两轮修复。
 4. 全部功能组实现或实现预算耗尽后，按原子需求逐项独立验收（已通过优先）；Judge 仅看需求与浏览器观察。可复现业务失败汇总为集中修复包，至多两轮，修复复查全部已实现需求，优先检查原先通过的路径。
 5. 修复后必须既有 verified 全保持且至少一个 failed 变为 verified；没有改善、出现回归或无法重新验证既有 pass 时恢复修复前版本。
-6. 最后执行 FinalVerifier（install → build → 就绪 → 浏览器 smoke），失败且有余量时至多一次交付修复并完整复验；随后生成对应交付版本的功能状态与运行结果。
+6. 最后执行 FinalVerifier（install → build → 就绪 → 浏览器 smoke → grader-like 额外端口复验），失败且有余量时至多一次交付修复并完整复验；随后生成对应交付版本的功能状态与运行结果。
 
 `acceptedSha` 保留字段名，但现在表示可运行检查点；`verifiedRequirementIds` 才表示当前版本独立探针通过的需求。初始空状态只用于首次回滚。Planner/定位错误不会删除已保存的实现。
 
@@ -302,7 +302,7 @@ baseline/
   system.md                    baseline 系统提示词与平台合同
 prompts/
   system/                      Builder 系统合同、四类任务模板（实现/修复/根因修复/交付修复）、action 与 receipt 资产
-                               seed-data 与 reference-images* 输入说明资产
+                               seed-data、reference-images* 与 platform-extra-ports 输入说明资产
   fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
   judge/                       Probe Planner 系统提示词（计划生成与 locator 精化，英文）
 src/
@@ -314,10 +314,10 @@ src/
   run-budget.ts                显式正预算的阶段预留与调用剩余额度
   run-state.ts                 验收状态、可运行检查点 SHA、脱敏 ledger 与 logSink
   git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
-  final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke）与 CommandAppLifecycle
+  final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke→grader-like 额外端口复验）与 CommandAppLifecycle
   arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
   diagnostics.ts              自由文本凭证脱敏、控制字符清理及长度限制
-  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口
+  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口、按验收 spec 发现额外端口
   process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
   prompt-assets.ts             prompts/ 资产加载与 {{占位符}} 模板填充
@@ -327,6 +327,8 @@ src/
     prompt-builder.ts          PromptBuilder：编译 prompt、驱动 CodingAgentPort、拒图文本回退
     pi-worker-client.ts        Pi Worker 子进程：IPC、会话文件映射、进程组/作业回收、退出确认
     pi-worker.ts               唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、结果判定
+    pi-execution-stats.ts      Pi 会话事件聚合：token 用量与模型/工具耗时分布
+    sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
     pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
