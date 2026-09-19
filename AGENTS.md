@@ -35,7 +35,9 @@ baseline/
   system.md                     baseline 系统提示词与平台合同
 
 prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 中文 Markdown；改文案改这里，不改 TS）
-  system/builder-system.md      Builder 固定系统合同
+  system/builder-system.md      Builder 固定系统合同（含全新项目 React+Vite+TypeScript 缺省栈：既有栈一律延续，
+                                缺省手写 hash 路由、规模需要时允许 react-router-dom 且必须 HashRouter、
+                                零依赖原生 http 后端、Vitest + @testing-library/react 角色查询测试）
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
   system/receipt.md             每次任务附带的完成回执格式

@@ -35,6 +35,11 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /复杂或边界逻辑必须编写并运行传统测试/);
   assert.match(compiled.systemPrompt, /browser 是昂贵工具/);
   assert.match(compiled.systemPrompt, /清晰稳定的模块与接口边界/);
+  assert.match(compiled.systemPrompt, /延续既有栈，不得换栈重写/);
+  assert.match(compiled.systemPrompt, /React \+ Vite \+ TypeScript/);
+  assert.match(compiled.systemPrompt, /hash 路由/);
+  assert.match(compiled.systemPrompt, /必须使用 HashRouter/);
+  assert.match(compiled.systemPrompt, /@testing-library\/react/);
   assert.match(compiled.taskPrompt, /浏览器未执行/);
   assert.match(compiled.taskPrompt, /未执行/);
   assert.match(compiled.taskPrompt, /需求核对/);
@@ -56,6 +61,13 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /type="text"/);
   assert.match(compiled.taskPrompt, /绝不能依赖 HTML5 required 或 pattern/);
   assert.match(compiled.taskPrompt, /不得共用完全相同的可访问名/);
+  assert.match(compiled.taskPrompt, /对象条目本身就是操作控件/);
+  assert.match(compiled.taskPrompt, /<h1>–<h6>/);
+  assert.match(compiled.taskPrompt, /role="menuitem"/);
+  assert.match(compiled.taskPrompt, /原生 <table>/);
+  assert.match(compiled.taskPrompt, /role="status"/);
+  assert.match(compiled.taskPrompt, /disabled 属性/);
+  assert.match(compiled.taskPrompt, /role="dialog"/);
   assert.match(compiled.taskPrompt, /默认收起/);
   assert.match(compiled.taskPrompt, /真正的 checkbox/);
   assert.match(compiled.taskPrompt, /背景内容不得再被点击或聚焦/);
@@ -65,6 +77,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /同源相对路径/);
   assert.doesNotMatch(compiled.taskPrompt, /SECRET-OTHER-REQ/);
   assert.doesNotMatch(compiled.taskPrompt, /acceptedSha|global budget|\/workspace\/tests/i);
+  // 技术栈缺省（React+Vite）只出现在固定系统合同里；任务模板不向既有项目推销换栈
   assert.doesNotMatch(compiled.taskPrompt, /use React|use Vue/i);
   assert.deepEqual(compiled.fragmentIds, [
     "accessible_web_controls",

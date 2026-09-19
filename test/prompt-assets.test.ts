@@ -112,6 +112,10 @@ test("fixed system assets keep their Chinese anchors", () => {
   );
   assert.match(loadPrompt("system", "builder-system"), /持续增量扩展/);
   assert.match(loadPrompt("system", "builder-system"), /不为通过当前检查引入一次性变通/);
+  assert.match(loadPrompt("system", "builder-system"), /React \+ Vite \+ TypeScript/);
+  assert.match(loadPrompt("system", "builder-system"), /hash 路由/);
+  assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
+  assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -177,7 +181,12 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /全新的 browser context/);
   assert.match(planner, /hover/);
   assert.match(planner, /doubleClick/);
-  assert.match(loadPrompt("judge", "probe-refinement"), /仅调整 locator 对象/);
+  assert.match(planner, /hasText.*只允许出现在 locator 的 `scope` 对象内部/);
+  const refinement = loadPrompt("judge", "probe-refinement");
+  assert.match(refinement, /仅调整 locator 对象/);
+  assert.match(refinement, /冻结字段/);
+  assert.match(refinement, /只允许重写 locator 对象本身/);
+  assert.match(refinement, /hasText.*只允许出现在 `scope` 对象内部/);
 });
 
 test("prompt assets contain no CR characters", async () => {

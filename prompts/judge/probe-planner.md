@@ -20,7 +20,8 @@
 }
 ```
 - `cases` 的每个元素都是一个对象，绝不能是字符串、数组或嵌套数组。
-- 每个 step / assertion 只能含 schema 允许的字段：`op` 加上该 op 专属的 `path` / `locator` / `text` / `value` / `count` 等。不要发明额外字段（例如给 expectVisible 加 `text`、给 goto 加 `path` 以外的键）。
+- 每个 step / assertion 只能含 schema 允许的字段：`op` 加上该 op 专属的 `path` / `locator` / `text` / `value` / `count` 等。不要发明额外字段（例如给 expectVisible 加 `text`、给 goto 加 `path` 以外的键、给 case 加 `count` 或 `op`）。
+- `hasText` 只允许出现在 locator 的 `scope` 对象内部，绝不能写在 locator、fallback 或 assertion 上；locator 与 fallback 上也不得有 `placeholder`、`css`、`value` 等任何 schema 外字段。
 - `purpose` 只能是 `happy_path` / `persistence` / `negative` / `permission` 之一。
 
 ## requirementIds 边界（最高频致命错误）
