@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { auditPacket } from "../src/judge/audit.js";
+import { auditPacket, type AuditPolicy } from "../src/judge/audit.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
 import { auditPackets } from "../src/scheduler.js";
 import { RunStateStore } from "../src/run-state.js";
@@ -14,11 +14,11 @@ import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
 import { withModulePipeline, type PipelineFixture, fail, pass, testPlan } from "./helpers/module-pipeline.js";
 
-async function audit(f: PipelineFixture, remaining: () => number = () => 60_000) {
+async function audit(f: PipelineFixture, remaining: () => number = () => 60_000, policy?: AuditPolicy) {
   const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
   const state = new RunStateStore({ statusByRequirementId: { A: "todo" }, acceptedSha: "checkpoint",
     startedAtMs: 0, totalBudgetMs: 60_000 }, f.options.ledgerFile, f.deps.logSink);
-  return auditPacket(packet, undefined, f.options, f.deps, state, remaining);
+  return auditPacket(packet, undefined, f.options, f.deps, state, remaining, policy);
 }
 function homePlan(role = "tab"): ProbePlan {
   return { packetId: "packet-a", cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
@@ -115,6 +115,20 @@ test("Mixed locator/assertion failures refine locators before confirming busines
     assert.equal(runs, 3);
     assert.equal(planner.refinements[0].failures.length, 1);
     assert.equal(planner.refinements[0].failures[0].category, "locator");
+  });
+});
+
+test("Detection-only audits skip locator refinement but still run the probes", async () => {
+  await withModulePipeline(async f => {
+    let runs = 0;
+    let refinements = 0;
+    f.deps.planner = new FakeProbePlanner([homePlan()]);
+    f.deps.planner.refineLocators = async original => { refinements++; return homePlan("button"); };
+    f.deps.runner.run = async plan => { runs++; return fail(plan, "locator"); };
+    assert.equal((await audit(f, () => 60_000, { refineLocators: false })).status, "inconclusive");
+    assert.equal(runs, 1);
+    assert.equal(refinements, 0);
+    assert.deepEqual(f.git.restoredShas, []);
   });
 });
 

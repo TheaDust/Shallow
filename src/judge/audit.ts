@@ -13,9 +13,21 @@ export interface AuditResult {
   reason?: string;
 }
 
+export interface AuditPolicy {
+  /**
+   * Module boundary audits refine locators so a probe-side mismatch cannot be
+   * mistaken for an application failure. Detection-only audits skip refinement
+   * (they still run the probes), since they publish results without repairing.
+   */
+  refineLocators: boolean;
+}
+
+const DEFAULT_AUDIT_POLICY: AuditPolicy = { refineLocators: true };
+
 /** Only reproducible business failures are eligible for application repair. */
 export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefined,
   options: PipelineOptions, deps: PipelineDeps, state: RunStateStore, remaining: () => number,
+  policy: AuditPolicy = DEFAULT_AUDIT_POLICY,
 ): Promise<AuditResult> {
   let plan = cached;
   try {
@@ -24,7 +36,7 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     if (!plan) return { status: "inconclusive", reason: "probe planner failed" };
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
-    const first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining);
+    const first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
     plan = first.plan;
     if (first.report.verdict === "pass") return { status: "verified", plan, report: first.report };
     if (first.source !== "probe" || first.report.failures.some(item => item.category === "locator" || item.category === "runner")) {
@@ -32,7 +44,7 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     }
     if (remaining() <= 0) return { status: "inconclusive", plan, reason: "failure confirmation budget exhausted" };
     // Fresh application state: failed actions may have changed server-side data.
-    const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining);
+    const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
     plan = confirmed.plan;
     const key = (report: ShadowReport) => JSON.stringify(report.failures.map(item => [item.caseId, item.stepIndex, item.category]).sort());
     const stable = confirmed.source === "probe" && confirmed.report.verdict === "fail" && key(first.report) === key(confirmed.report);
@@ -54,6 +66,7 @@ async function runShadowProbes(
   state: RunStateStore,
   recovery: { browserRetries: number; locatorRefinements: number },
   remaining: () => number,
+  policy: AuditPolicy,
 ): Promise<ProbeOutcome> {
   await state.record({ at: now(), type: "application_starting", packetId: packet.id });
   let application: Awaited<ReturnType<AppLifecycle["start"]>>;
@@ -110,7 +123,8 @@ async function runShadowProbes(
     let report = await run();
 
     let feedback: ProbePlannerFeedback | undefined;
-    while (report.verdict !== "pass" &&
+    while (policy.refineLocators &&
+      report.verdict !== "pass" &&
       report.failures.some((failure) => failure.locatorSnapshot) &&
       recovery.locatorRefinements < MAX_LOCATOR_REFINEMENTS &&
       remaining() > 0) {

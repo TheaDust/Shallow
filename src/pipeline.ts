@@ -174,8 +174,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
       const result = budget.remaining(name) <= 0
         ? { status: "inconclusive" as const, plan: cached, reason: "audit phase budget exhausted" }
-        : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name));
-      // Persist refined plans so future audits skip the LLM call.
+        : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
+      // Detection-only audits never refine; persist a freshly planned result so
+      // future audits skip the LLM call.
       if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
