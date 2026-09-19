@@ -291,4 +291,44 @@ children:
   });
 }
 
+test("grader-like delivery verification prepares the real output directory", async () => {
+  await withTempDir("shallow-grader-candidate-", async (root) => {
+    const output = join(root, "output");
+    const workspace = join(root, "runtime");
+    await mkdir(output);
+    await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
+    await execFileAsync("git", ["-C", output, "init"]);
+    await execFileAsync("git", ["-C", output, "add", "."]);
+    await execFileAsync("git", ["-C", output, "-c", "user.name=ShallowCode", "-c", "user.email=shallowcode@local.invalid", "commit", "-m", "base"]);
+    await writeFile(join(output, "install.cjs"), String.raw`const fs = require('node:fs'); fs.mkdirSync('node_modules', { recursive: true });`);
+    await writeFile(join(output, "build.cjs"), String.raw`const fs = require('node:fs'); fs.mkdirSync('dist', { recursive: true });`);
+    // The server only starts when the build artifact exists in its own cwd, so a
+    // grader-like start on raw outputDir fails unless install/build ran there.
+    const extra = await reservePort();
+    await writeFile(join(output, "server.cjs"), String.raw`const fs = require('node:fs');
+if (!fs.existsSync('dist')) process.exit(9);
+const handler = (req, res) => {
+  if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
+  res.setHeader('content-type', 'text/html'); res.writeHead(200); res.end('<main>ready</main>');
+};
+require('node:http').createServer(handler).listen(Number(process.env.PORT), '127.0.0.1');
+if (process.env.ARC_EXTRA_PORTS !== '0') require('node:http').createServer(handler).listen(${extra}, '127.0.0.1');`);
+    const port = await reservePort();
+    const contract: PlatformContract = { port, baseUrl: `http://127.0.0.1:${port}`, evaluationPort: 3000, healthPath: "/health",
+      extraPorts: [extra],
+      installCommands: [{ executable: process.execPath, args: ["install.cjs"], cwd: "output" }],
+      buildCommands: [{ executable: process.execPath, args: ["build.cjs"], cwd: "output" }],
+      startCommand: { executable: process.execPath, args: ["server.cjs"], cwd: "output" },
+      buildTimeoutMs: 5_000, startTimeoutMs: 5_000 };
+    const candidate = new CandidateRuntime(output, workspace, contract);
+    try {
+      const report = await new FinalVerifier(undefined, candidate, candidate).verify(output, contract);
+      assert.equal(report.ok, true, report.message);
+      // The candidate probe built its private copy; the grader-like start must
+      // have seen an output directory prepared by the controller.
+      await access(join(output, "dist"));
+    } finally { await candidate.close(); }
+  });
+});
+
 

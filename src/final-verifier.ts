@@ -39,21 +39,8 @@ export class FinalVerifier implements FinalVerifierPort {
     contract: PlatformContract,
   ): Promise<FinalVerificationReport> {
     if (!this.candidate) {
-      try {
-        for (const command of contract.installCommands) {
-          await runCommand(outputDir, command, contract.buildTimeoutMs);
-        }
-      } catch (error) {
-        return { ok: false, stage: "install", message: compactError(error) };
-      }
-
-      try {
-        for (const command of contract.buildCommands) {
-          await runCommand(outputDir, command, contract.buildTimeoutMs);
-        }
-      } catch (error) {
-        return { ok: false, stage: "build", message: compactError(error) };
-      }
+      const failure = await this.prepareOutputDirectory(outputDir, contract);
+      if (failure) return failure;
     }
     let application: Awaited<ReturnType<AppLifecycle["start"]>>;
     try {
@@ -104,6 +91,14 @@ export class FinalVerifier implements FinalVerifierPort {
       await application.stop();
     }
 
+    // The grader runs install/build in the delivery directory before starting
+    // it. The candidate probe above ran against a private copy, so the real
+    // output directory is still unprepared; run the contract commands there too
+    // so the grader-like start sees the same state the grader will.
+    if (this.candidate && (contract.extraPorts?.length ?? 0) > 0) {
+      const failure = await this.prepareOutputDirectory(outputDir, contract);
+      if (failure) return failure;
+    }
     // The platform sets only PORT, so ports the acceptance specs hard-code are
     // bound during grading; verify that layout separately from the private probe.
     const grader = await verifyGraderLikeStart(outputDir, contract);
@@ -116,6 +111,28 @@ export class FinalVerifier implements FinalVerifierPort {
     }
     return { ok: true, stage: "complete", message: "Final verification passed",
       ...(application.candidate ? { candidate: application.candidate } : {}) };
+  }
+
+  /** Run the platform install/build commands in the delivery directory. */
+  private async prepareOutputDirectory(
+    outputDir: string,
+    contract: PlatformContract,
+  ): Promise<FinalVerificationReport | undefined> {
+    try {
+      for (const command of contract.installCommands) {
+        await runCommand(outputDir, command, contract.buildTimeoutMs);
+      }
+    } catch (error) {
+      return { ok: false, stage: "install", message: compactError(error) };
+    }
+    try {
+      for (const command of contract.buildCommands) {
+        await runCommand(outputDir, command, contract.buildTimeoutMs);
+      }
+    } catch (error) {
+      return { ok: false, stage: "build", message: compactError(error) };
+    }
+    return undefined;
   }
 }
 
