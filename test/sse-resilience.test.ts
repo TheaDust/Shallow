@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { installSseResilience, tolerateSseStream } from "../src/builder/sse-resilience.js";
 
 const encoder = new TextEncoder();
+const terminal = 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n';
 
 function chunkedStream(chunks: string[], errorAfter?: Error): ReadableStream<Uint8Array> {
   let index = 0;
@@ -42,6 +43,7 @@ test("SSE resilience drops a truncated terminal event and still terminates the s
   const dropped: string[] = [];
   const body = [
     `data: ${JSON.stringify({ created: 1, choices: [{ delta: { content: "hi" }, index: 0 }] })}\n\n`,
+    terminal,
     'data: {"created":2,"usage":nu\n\n',
   ].join("");
   const output = await readAll(tolerateSseStream(chunkedStream([body]), (raw) => dropped.push(raw)));
@@ -73,14 +75,14 @@ test("SSE resilience reassembles events split across chunks and supports CRLF", 
   const dropped: string[] = [];
   const chunks = [
     'data: {"id":"a",',
-    '"choices":[]}\r\n',
+    '"choices":[{"index":0,"finish_reason":"stop"}]}\r\n',
     "\r\n",
     'data: {"broken":\r\n\r\n',
     "data: [DONE]\r\n\r\n",
   ];
   const output = await readAll(tolerateSseStream(chunkedStream(chunks), (raw) => dropped.push(raw)));
   const events = parseDataEvents(output);
-  assert.deepEqual(events, [JSON.stringify({ id: "a", choices: [] }), "[DONE]"]);
+  assert.deepEqual(events, [JSON.stringify({ id: "a", choices: [{ index: 0, finish_reason: "stop" }] }), "[DONE]"]);
   assert.equal(dropped.length, 1);
 });
 
@@ -109,7 +111,7 @@ test("SSE resilience fails an event that never terminates instead of buffering f
 test("SSE resilience installer transforms event-stream responses and leaves JSON untouched", async () => {
   const originalFetch = globalThis.fetch;
   const dropped: string[] = [];
-  const sseBody = 'data: {"id":"a","choices":[]}\n\ndata: {"created":1,"usage":nu\n\n';
+  const sseBody = terminal + 'data: {"created":1,"usage":nu\n\n';
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const contentType = String(input).includes("json") ? "application/json" : "text/event-stream; charset=utf-8";
     const payload = contentType.startsWith("application/json") ? '{"ok":true}' : sseBody;
@@ -118,7 +120,7 @@ test("SSE resilience installer transforms event-stream responses and leaves JSON
   const resilience = installSseResilience((raw) => dropped.push(raw));
   try {
     const repaired = await (await globalThis.fetch("http://gateway.local/sse")).text();
-    assert.deepEqual(parseDataEvents(repaired), ['{"id":"a","choices":[]}', "[DONE]"]);
+    assert.deepEqual(parseDataEvents(repaired), [...parseDataEvents(terminal), "[DONE]"]);
     assert.equal(await (await globalThis.fetch("http://gateway.local/json")).text(), '{"ok":true}');
     assert.equal(resilience.repairedEvents(), 1);
     assert.equal(dropped.length, 1);
@@ -126,4 +128,27 @@ test("SSE resilience installer transforms event-stream responses and leaves JSON
     resilience.uninstall();
     globalThis.fetch = originalFetch;
   }
+});
+
+test("SSE resilience rejects early truncation even before a choices key is visible", async () => {
+  const partial = 'data: {"choices":[{"index":0,"delta":{"content":"working"},"finish_reason":null}]}\n\n';
+  for (const tail of ['', 'data: {"id":"cut","cho', 'data: {"usage":nu\n\ndata: [DONE]\n\n']) {
+    await assert.rejects(readAll(tolerateSseStream(chunkedStream([partial, tail]))), /provider returned error/);
+  }
+  await assert.rejects(readAll(tolerateSseStream(chunkedStream([]))), /provider returned error/);
+});
+
+test("SSE resilience accepts missing DONE only after the requested choice finishes", async () => {
+  for (const reason of ['stop', 'tool_calls', 'length', 'content_filter']) {
+    const body = terminal.replace('"stop"', JSON.stringify(reason));
+    const output = await readAll(tolerateSseStream(chunkedStream([body])));
+    assert.deepEqual(parseDataEvents(output), [...parseDataEvents(body), '[DONE]']);
+  }
+  for (const body of ['data: {"choices":[]}\n\n', terminal.replace('"index":0', '"index":1')]) {
+    await assert.rejects(readAll(tolerateSseStream(chunkedStream([body]))), /provider returned error/);
+  }
+});
+
+test("SSE resilience still rejects damaged content after finish_reason", async () => {
+  await assert.rejects(readAll(tolerateSseStream(chunkedStream([terminal, 'data: {"choices":['] ))), /provider returned error/);
 });

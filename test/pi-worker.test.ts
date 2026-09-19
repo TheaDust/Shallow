@@ -162,29 +162,31 @@ test("Pi worker completes a turn despite a truncated terminal SSE event", { time
   });
 });
 
-test("Pi worker retries a truncated content-bearing SSE stream before failing", { timeout: 45_000 }, async () => {
-  await withTempDir("shallow-pi-truncated-content-", async root => {
-    const app = join(root, "app"); await mkdir(app);
-    let requests = 0;
-    const server = createServer(async (req, res) => {
-      let body = ""; for await (const chunk of req) body += chunk;
-      JSON.parse(body);
-      requests += 1;
-      res.writeHead(200, { "content-type": "text/event-stream" });
-      res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "partial" }, finish_reason: null }] })}\n\n`);
-      // Content-bearing event truncated mid-payload: must not be accepted silently.
-      res.end('data: {"choices":[{"delta":{"content":"trunca\n\n');
+for (const tail of ['data: {"choices":[{"delta":{"content":"trunca\n\n', 'data: {"id":"cut","cho']) {
+  test(`Pi worker retries a truncated SSE stream before failing (${tail})`, { timeout: 45_000 }, async () => {
+    await withTempDir("shallow-pi-truncated-content-", async root => {
+      const app = join(root, "app"); await mkdir(app);
+      let requests = 0;
+      const server = createServer(async (req, res) => {
+        let body = ""; for await (const chunk of req) body += chunk;
+        JSON.parse(body);
+        requests += 1;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ id: "test", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "partial" }, finish_reason: null }] })}\n\n`);
+        // Truncation may happen before the choices key is even visible.
+        res.end(tail);
+      });
+      await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
+      const port = (server.address() as { port: number }).port;
+      const client = new PiWorkerClient({ apiKey: "test-secret", baseUrl: `http://127.0.0.1:${port}/v1`, model: "test/model" }, join(root, "sessions"));
+      try {
+        const result = await client.run({ outputDir: app, systemPrompt: "Finish immediately.", taskPrompt: "finish", timeoutMs: 30_000 });
+        assert.equal(result.outcome, "failed", result.summary);
+        assert.ok(requests >= 2, `expected the retryable truncation to be retried, got ${requests} request(s)`);
+      } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
     });
-    await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
-    const port = (server.address() as { port: number }).port;
-    const client = new PiWorkerClient({ apiKey: "test-secret", baseUrl: `http://127.0.0.1:${port}/v1`, model: "test/model" }, join(root, "sessions"));
-    try {
-      const result = await client.run({ outputDir: app, systemPrompt: "Finish immediately.", taskPrompt: "finish", timeoutMs: 30_000 });
-      assert.equal(result.outcome, "failed", result.summary);
-      assert.ok(requests >= 2, `expected the retryable truncation to be retried, got ${requests} request(s)`);
-    } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
   });
-});
+}
 
 test("Pi credential smoke performs file editing, shell checks, and session resume", { skip: process.env.RUN_CREDENTIAL_SMOKE !== "1", timeout: 180_000 }, async () => {
   await withTempDir("shallow-pi-gateway-", async root => {

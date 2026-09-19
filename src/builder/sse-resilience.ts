@@ -12,12 +12,14 @@
  * capture, and rewrites event-stream bodies before the client sees them:
  *  - buffers complete event blocks (bounded), tolerating arbitrary chunk splits;
  *  - forwards every block whose `data:` payload is valid JSON or `[DONE]`;
- *  - drops any block whose payload is not valid JSON, reporting it to the caller;
- *  - guarantees the body ends with `[DONE]` so the client terminates cleanly.
+ *  - rejects malformed events before the completion's finish_reason;
+ *  - tolerates damaged non-content trailers after finish_reason;
+ *  - appends `[DONE]` only when finish_reason confirms completion.
  *
  * The observed truncation only ever carried the final usage trailer: all content
  * and tool deltas had already arrived in earlier valid events, so dropping it
- * recovers the turn and loses only usage accounting. A dropped event that still
+ * recovers the turn and loses only usage accounting, provided a valid terminal
+ * finish_reason has already arrived. A dropped event that still
  * looks content-bearing (a `choices`/`tool_calls` payload) is treated as an
  * incomplete response instead: the stream fails with a retryable "provider
  * returned error" message so the agent's auto-retry regenerates it rather than
@@ -76,15 +78,16 @@ export function installSseResilience(onRepair?: (raw: string) => void): SseResil
 
 /**
  * Rewrites an SSE byte stream. Valid `data:` events and `[DONE]` are forwarded;
- * a malformed event is reported and dropped, unless it still looks
- * content-bearing, in which case the stream errors with a retryable message.
- * `[DONE]` is appended when the source omitted it. Exported for focused testing.
+ * malformed events are tolerated only after finish_reason and only when they
+ * do not look content-bearing. Missing termination is a retryable error.
+ * Exported for focused testing.
  */
 export function tolerateSseStream(source: ReadableStream<Uint8Array>, onDrop?: (raw: string) => void): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let sawDone = false;
+  let sawFinish = false;
 
   const forward = (raw: string): string => {
     if (!raw.trim()) return "";
@@ -94,14 +97,21 @@ export function tolerateSseStream(source: ReadableStream<Uint8Array>, onDrop?: (
       if (data.trim() === "[DONE]") {
         sawDone = true;
       } else {
+        let event;
         try {
-          JSON.parse(data);
+          event = JSON.parse(data);
         } catch {
           onDrop?.(raw);
           // A truncated content/tool event cannot be recovered by dropping it;
           // fail with a retryable error instead of silently corrupting the turn.
-          if (CONTENT_BEARING.test(raw)) throw new Error(INCOMPLETE_MESSAGE);
+          if (!sawFinish || CONTENT_BEARING.test(raw)) throw new Error(INCOMPLETE_MESSAGE);
           return "";
+        }
+        // Pi requests one completion and consumes choice zero. Usage-only
+        // chunks (choices: []) are not evidence that it finished.
+        if (Array.isArray(event?.choices) && event.choices.some((choice: { index?: number; finish_reason?: unknown } | null) =>
+          choice?.index === 0 && typeof choice.finish_reason === "string" && choice.finish_reason.length > 0)) {
+          sawFinish = true;
         }
       }
     }
@@ -115,6 +125,7 @@ export function tolerateSseStream(source: ReadableStream<Uint8Array>, onDrop?: (
         if (done) {
           buffer += decoder.decode();
           const output = forward(buffer);
+          if (!sawDone && !sawFinish) throw new Error(INCOMPLETE_MESSAGE);
           if (output) controller.enqueue(encoder.encode(output));
           if (!sawDone) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();

@@ -67,7 +67,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   // Install capture first so it tees the raw body, then resilience outermost so
   // the client reads a repaired stream while diagnostics keep the original bytes.
   const capture = input.sseCaptureDir ? installSseCapture(input.sseCaptureDir, input.sessionKey ?? "builder") : undefined;
-  const resilience = installSseResilience(raw => process.stderr.write(`[ShallowCode] 网关 SSE 事件截断，已丢弃并继续本轮：${raw}\n`));
+  const resilience = installSseResilience(raw => process.stderr.write(`[ShallowCode] 检测到损坏的网关 SSE 事件：${raw}\n`));
   try {
     const imageNote = !input.references?.length ? "" : input.textOnly ? loadPrompt("system", "reference-images-text-fallback")
       : fillTemplate(loadPrompt("system", "reference-images"), {
