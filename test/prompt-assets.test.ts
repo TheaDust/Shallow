@@ -138,7 +138,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   const repair = loadPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
   assert.ok(repair.includes("{{FAILURES}}"));
-  assert.match(repair, /一次集中修复/);
+  assert.match(repair, /一次修复/);
   const delivery = loadPrompt("system", "action-delivery-repair");
   for (const key of ["FAILURE_STAGE", "FAILURE_COMMAND", "FAILURE_EXPECTED", "FAILURE_ACTUAL", "PLATFORM_CONTRACT"]) {
     assert.ok(delivery.includes(`{{${key}}}`));

@@ -40,8 +40,7 @@ import type {
   WorkPacket,
 } from "./types.js";
 
-const BOUNDARY_REPAIR_CALL_CEILING_MS = 1_800_000;
-const FINAL_REPAIR_CALL_CEILING_MS = 3_600_000;
+const BOUNDARY_REPAIR_CALL_CEILING_MS = 3_600_000;
 
 export interface AppLifecycle {
   start(
@@ -120,7 +119,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const planCache = new PlanCache(dirname(options.ledgerFile),
     options.progressDir ? progressPlansDirectory(options.progressDir) : undefined);
   let results = new Map<string, AuditResult>();
-  let repairCount = 0;
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
   deps.candidate?.setRecorder(event => state.record(event));
@@ -133,7 +131,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
     const packetId = "packet" in request ? request.packet.id : "delivery-repair";
-    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? FINAL_REPAIR_CALL_CEILING_MS : 120_000;
+    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : 120_000;
     const timeoutMs = budget.callTimeout(name, Math.min(ceiling, runOptions.timeoutMs ?? ceiling));
     if (timeoutMs <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
     state.setPacketAttempt(packetId, "packet" in request ? request.packet.attempt : 1);
@@ -403,48 +401,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       await runModuleBoundaryAudit(pendingModuleAudit.packetIds, pendingModuleAudit.moduleId, previousModuleId);
     }
 
+    // Final audit is detection-only: failures are published as-is instead of
+    // funneling into a late consolidated repair whose giant packet and full
+    // re-audit cost more than they recover.
     await phase("audit");
     results = await audit("audit");
     await publish();
-    while (repairCount < 2 && budget.remaining("repair") > 0) {
-      const failures = packets.filter(packet => results.get(packet.id)?.status === "failed");
-      if (!failures.length) break;
-      const round = ++repairCount;
-      for (const item of failures) state.setPacketAttempt(item.id, round + 1);
-      await phase("repair", round);
-      const packet = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
-      const reports = failures.map(item => results.get(item.id)!.report!);
-      const observation = toBuilderShadowObservation({ packetId: packet.id, verdict: "fail", passedCases: [],
-        failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
-      await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: packet.requirementIds } });
-      // Leave at least half the remaining repair phase for independent regression checks.
-      const repairTimeoutMs = Math.max(1, Math.floor(Math.min(FINAL_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
-      const result = await build({ mode: "repair", packet, projectContext: buildBuilderProjectContext(packet, catalog, implemented),
-        outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
-        "repair", { timeoutMs: repairTimeoutMs });
-      let reason = result.outcome === "completed" ? "" : result.summary || result.outcome;
-      let candidate: CandidateEvidence | undefined;
-      if (!reason) {
-        try { candidate = await runnable(); } catch (error) { reason = errorMessage(error); }
-      }
-      let next = results;
-      if (!reason) {
-        next = await audit("repair");
-        const regressed = [...results].some(([id, prior]) => prior.status === "verified" && next.get(id)?.status !== "verified");
-        const improved = failures.some(item => next.get(item.id)?.status === "verified");
-        if (regressed) reason = "previously verified behavior was lost or could not be reverified";
-        else if (!improved) reason = "repair produced no independently verified improvement";
-      }
-      if (reason) {
-        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-        await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: false, reason } });
-        break;
-      }
-      await checkpoint(packet.requirementIds, packet.id, candidate);
-      results = next;
-      await publish();
-      await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true, reason: "verified improvement with regression coverage" } });
-    }
 
     await phase("delivery");
     await state.record({ at: now(), type: "delivery_started" });

@@ -114,7 +114,7 @@ test("Builder includes all seed data in implementation and both packet repair mo
 test("Repair prompt carries only the cleaned shadow observation", () => {
   const compiled = compileBuilderPrompt(repairRequest("repair"));
 
-  assert.match(compiled.taskPrompt, /# 行动：集中修复已确认的业务失败/);
+  assert.match(compiled.taskPrompt, /# 行动：修复已确认的业务失败/);
   assert.match(compiled.taskPrompt, /已通过的用例标识/);
   assert.match(compiled.taskPrompt, /open-page/);
   assert.match(compiled.taskPrompt, /允许使用的失败观测/);

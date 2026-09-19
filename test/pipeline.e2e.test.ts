@@ -104,8 +104,8 @@ for (const regression of [true, false]) {
         return failed ? fail(plan) : pass(plan);
       };
       const summary = await f.run();
-      // Module boundary audit uses the first repair round on the first module.
-      // The consolidated repair handles remaining failures.
+      // Module boundary audit uses the repair rounds on the first module;
+      // the final audit is detection-only and never launches more repairs.
       if (regression) {
         // Boundary repair causes regression in packet-b; packet-c also fails when repairing.
         assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
@@ -173,7 +173,7 @@ test("Per-module boundary repair quota: each module gets independent repair roun
     const repairs = f.builder.requests.filter(r => r.mode === "repair");
     // FIRST module: 1 boundary repair (A and B fail 4 times, pass on 5th attempt)
     // SECOND module: 1 boundary repair (C fails 4 times, passes on 5th attempt)
-    // Consolidated: 0 repairs (all already verified by boundary repairs)
+    // Final audit only re-checks; it launches no repairs of its own.
     // Total: 2 implement + 1 FIRST repair + 1 SECOND repair = 4 requests
     assert.equal(repairs.length, 2);
     assert.equal(f.builder.requests.length, 4);
@@ -182,7 +182,7 @@ test("Per-module boundary repair quota: each module gets independent repair roun
     assert.deepEqual(summary.failedRequirementIds, []);
     // Verify that A and B got repair attempts in FIRST module,
     // and C got repair attempts in SECOND module (proving quota reset).
-    // Each packet gets 5 attempts: 4 in boundary audit/repair + 1 in consolidated audit.
+    // Each packet gets 5 attempts: 4 in boundary audit/repair + 1 in the final audit.
     assert.ok((repairAttempts.get("packet-a") ?? 0) >= 5);
     assert.ok((repairAttempts.get("packet-b") ?? 0) >= 5);
     assert.ok((repairAttempts.get("packet-c") ?? 0) >= 5);

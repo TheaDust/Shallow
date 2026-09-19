@@ -59,7 +59,7 @@ function describe(type: string, event: RunEvent): string | null {
   const reason = pickString(detail, "reason");
   switch (type) {
     case "phase_started":
-      return `进入${({ implementation: "模块实现", audit: "独立验收", repair: "集中修复", delivery: "最终交付" } as Record<string, string>)[pickString(detail, "phase") ?? ""] ?? "运行"}阶段${detail?.round ? `；第 ${detail.round} 轮` : ""}${typeof detail?.remainingMs === "number" ? `；阶段剩余 ${renderDuration(detail.remainingMs)}` : ""}`;
+      return `进入${({ implementation: "模块实现", audit: "独立验收", repair: "修复", delivery: "最终交付" } as Record<string, string>)[pickString(detail, "phase") ?? ""] ?? "运行"}阶段${detail?.round ? `；第 ${detail.round} 轮` : ""}${typeof detail?.remainingMs === "number" ? `；阶段剩余 ${renderDuration(detail.remainingMs)}` : ""}`;
     case "checkpoint_saved":
       return `保存可运行检查点；${pickString(detail, "reason")}；需求 ${strings(detail?.requirementIds).join("、")}；SHA ${event.acceptedSha ?? ""}（功能验收状态单独记录）`;
     case "module_failed":
@@ -69,9 +69,9 @@ function describe(type: string, event: RunEvent): string | null {
     case "audit_result":
       return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
     case "repair_batch_started":
-      return `开始第 ${detail?.round} 轮集中修复；需求 ${strings(detail?.requirementIds).join("、")}`;
+      return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":
-      return `第 ${detail?.round} 轮集中修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
+      return `第 ${detail?.round} 轮修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
     case "pipeline_started": {
       const grouping = typeof detail?.grouping === "object" && detail.grouping !== null
         ? detail.grouping as Record<string, unknown> : undefined;
