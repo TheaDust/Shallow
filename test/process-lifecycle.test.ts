@@ -41,17 +41,22 @@ test("Tool environments retain runtime paths but exclude gateway credentials", (
 test("Tool environments inherit npm/Playwright mirror settings set by the adapter entry", () => {
   const priorRegistry = process.env.npm_config_registry;
   const priorHost = process.env.PLAYWRIGHT_DOWNLOAD_HOST;
+  const priorGc = process.env.PLAYWRIGHT_SKIP_BROWSER_GC;
   process.env.npm_config_registry = "https://registry.npmmirror.com";
   process.env.PLAYWRIGHT_DOWNLOAD_HOST = "https://npmmirror.com/mirrors/playwright";
+  process.env.PLAYWRIGHT_SKIP_BROWSER_GC = "1";
   try {
     const env = toolEnvironment();
     assert.equal(env.npm_config_registry, "https://registry.npmmirror.com");
     assert.equal(env.PLAYWRIGHT_DOWNLOAD_HOST, "https://npmmirror.com/mirrors/playwright");
+    assert.equal(env.PLAYWRIGHT_SKIP_BROWSER_GC, "1");
   } finally {
     if (priorRegistry === undefined) delete process.env.npm_config_registry;
     else process.env.npm_config_registry = priorRegistry;
     if (priorHost === undefined) delete process.env.PLAYWRIGHT_DOWNLOAD_HOST;
     else process.env.PLAYWRIGHT_DOWNLOAD_HOST = priorHost;
+    if (priorGc === undefined) delete process.env.PLAYWRIGHT_SKIP_BROWSER_GC;
+    else process.env.PLAYWRIGHT_SKIP_BROWSER_GC = priorGc;
   }
 });
 
