@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
-import { deriveBaselinePromptTimeoutMs, loadRootModules } from "../baseline/index.js";
+import { BASELINE_CONTEXT_WINDOW, deriveBaselinePromptTimeoutMs, loadRootModules } from "../baseline/index.js";
 import { deriveModelTimeouts } from "../src/runtime-config.js";
 
 const fixture = resolve("test/fixtures/requirements.yaml");
@@ -90,4 +90,29 @@ test("loadRootModules rejects ROOT without child modules", () => {
 
 test("loadRootModules rejects children without ids", () => {
   assert.throws(() => loadRootModules({ id: "ROOT", children: [{ name: "No id" }] }), /has no id/);
+});
+
+test("baseline system prompt mirrors the shared platform contract wording", async () => {
+  const prompt = await readFile(resolve("baseline/system.md"), "utf8");
+  for (const anchor of [
+    "目标应用由 frontend 和 backend 两个目录组成。",
+    "后端必须读取 PORT 环境变量，未设置时使用 3000。",
+    "前端必须通过同源相对路径调用后端，不得在构建产物中硬编码主机或端口。",
+    "npm run build",
+    "npm run start",
+    "/health",
+    "/api/health",
+    "未知路径",
+    "404",
+    "ROOT 的一个直接子树",
+  ]) {
+    assert.ok(prompt.includes(anchor), anchor);
+  }
+  // The baseline reads the file verbatim: no template placeholders and no packet concepts.
+  assert.doesNotMatch(prompt, /\{\{/);
+  assert.doesNotMatch(prompt, /工作包|PACKET/);
+});
+
+test("baseline asks the shared worker for a 1M context window", () => {
+  assert.equal(BASELINE_CONTEXT_WINDOW, 1_000_000);
 });

@@ -10,6 +10,8 @@ export interface CodingAgentRequest {
   requirementsDir?: string;
   references?: string[];
   textOnly?: boolean;
+  /** Override the model context window; omitted runs use the shared default. */
+  contextWindow?: number;
 }
 export interface CodingAgentResult extends BuilderResult {
   imageUnsupported?: boolean;

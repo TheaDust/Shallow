@@ -6,6 +6,7 @@ import { installSseCapture } from "./sse-capture.js";
 import { installSseResilience } from "./sse-resilience.js";
 import { closeSharedBrowser } from "./pi-browser-tool.js";
 import { PiExecutionCollector } from "./pi-execution-stats.js";
+import { piProviderModel } from "./pi-model-config.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
@@ -29,12 +30,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const modelRegistry = ModelRegistry.inMemory(authStorage);
   modelRegistry.registerProvider("shallow-gateway", {
     baseUrl: input.gateway.baseUrl, api: "openai-completions", apiKey: "SHALLOW_RUNTIME_CREDENTIAL",
-    models: [{ id: input.gateway.model, name: input.gateway.model, reasoning: true,
-      input: ["text", "image"], contextWindow: 256_000, maxTokens: 16_384,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      compat: { supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: false,
-        maxTokensField: "max_tokens", supportsStrictMode: false, requiresReasoningContentOnAssistantMessages: true },
-    }],
+    models: [piProviderModel(input.gateway.model, input.contextWindow)],
   });
   const settingsManager = SettingsManager.inMemory({ retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000,
     provider: { maxRetries: 0, timeoutMs: input.timeoutMs } }, compaction: { enabled: true }, enableInstallTelemetry: false });

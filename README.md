@@ -65,11 +65,12 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 | --- | --- | --- |
 | 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，3 条/5 场景/3k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
 | 会话 | 实现阶段每个工作包使用全新会话；修复使用新会话 | 一次运行复用同一个会话 |
+| 模型上下文窗口 | 缺省 256k | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
 | 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | Pi 调用结果；Python 入口另检查 frontend/backend 目录 |
 | 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |
 
-baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。
+baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。`baseline/system.md` 的平台合同与实现措辞与 `prompts/system/platform-contract.md` 对齐，但不含主线的工作包概念。
 
 baseline 单模块调用不限总预算时上限为3小时，显式预算时按预算缩放（见“预算与超时”）。每次调用结束后父进程回收该调用拥有的进程组/作业并等待退出确认；清理失败会终止本轮运行，清理成功后继续处理下一模块。
 

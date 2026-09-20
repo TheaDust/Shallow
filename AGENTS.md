@@ -32,7 +32,7 @@ main.py                         ARC-Bench 适配入口：参数解析、Node 运
 baseline/
   main.py                       baseline 适配入口：驱动 baseline/index.ts、检查输出目录
   index.ts                      loadRootModules / baselineMain：ROOT 子树顺序执行、复用单会话、模块状态
-  system.md                     baseline 系统提示词与平台合同
+  system.md                     baseline 系统提示词与平台合同（与 prompts/system/platform-contract.md 措辞对齐，无工作包概念）
 
 prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 中文 Markdown；改文案改这里，不改 TS）
   system/builder-system.md      Builder 固定系统合同（含全新项目 React+Vite+TypeScript 缺省栈：既有栈一律延续，
@@ -79,6 +79,7 @@ src/
     prompt-builder.ts           PromptBuilder：实现 BuilderPort、编译 prompt、拒图纯文本回退、驱动 CodingAgentPort
     pi-worker-client.ts         PiWorkerClient：fork 独立 Node Worker、IPC、会话文件映射、进程组/作业回收与退出确认
     pi-worker.ts                唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、SDK 事件与终态判定
+    pi-model-config.ts          piProviderModel / DEFAULT_CONTEXT_WINDOW：网关 provider 模型描述，上下文窗口可按运行覆盖
     sse-resilience.ts           始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]，内容/工具事件截断则报可重试错误
     pi-tools.ts                 read/edit/write 路径限制与 shell 命令白名单后端（复用 SDK schema/截断，替换执行后端）；
                                 装配会话内 browser 工具
@@ -196,7 +197,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## Baseline 开发范围
 
-`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
+`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装；系统提示词与 `prompts/system/platform-contract.md` 措辞对齐（不含工作包概念），单会话请求 1M 上下文窗口（`BASELINE_CONTEXT_WINDOW` 经 `CodingAgentRequest.contextWindow` 覆盖，主线缺省 256k）。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
 
 ## 代码与测试惯例
 

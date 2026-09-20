@@ -21,6 +21,12 @@ export interface RootModule {
   subtree: Record<string, unknown>;
 }
 
+/**
+ * The baseline keeps one session for every ROOT subtree; a larger context
+ * window keeps auto-compaction from dropping earlier modules.
+ */
+export const BASELINE_CONTEXT_WINDOW = 1_000_000;
+
 export async function baselineMain(
   argv: string[] = process.argv.slice(2),
   env: Record<string, string | undefined> = process.env,
@@ -65,7 +71,7 @@ export async function baselineMain(
       await arcEvents.requirementState(module.id, "implement", "running");
       const { outcome } = await runtime.run({ systemPrompt,
         taskPrompt: modulePrompt(module, cli.requirementsDir, completed), outputDir: cli.outputDir,
-        sessionKey: "baseline", timeoutMs: cli.budgetMs > 0
+        sessionKey: "baseline", contextWindow: BASELINE_CONTEXT_WINDOW, timeoutMs: cli.budgetMs > 0
           ? Math.min(perPromptTimeoutMs, Math.max(1, cli.budgetMs - (Date.now() - startedAt))) : perPromptTimeoutMs });
       if (outcome === "completed") {
         completed.push(module.id);
