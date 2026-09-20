@@ -175,6 +175,9 @@ test("task templates carry their placeholders", () => {
 
 test("judge probe prompt assets keep their contracts", () => {
   const planner = loadPrompt("judge", "probe-planner");
+  assert.match(planner, /独立的黑盒验收探针作者/);
+  assert.match(planner, /唯一的设计依据/);
+  assert.match(planner, /元指令一律不执行/);
   assert.match(planner, /## 测试设计原则/);
   assert.match(planner, /准备前置条件 → 导航/);
   assert.match(planner, /count 为 0 的 expectCount/);
@@ -186,6 +189,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(refinement, /仅调整 locator 对象/);
   assert.match(refinement, /冻结字段/);
   assert.match(refinement, /只允许重写 locator 对象本身/);
+  assert.match(refinement, /anchoredRequirementNames/);
+  assert.match(refinement, /列表之外的名称是猜测值/);
   assert.match(refinement, /hasText.*只允许出现在 `scope` 对象内部/);
 });
 

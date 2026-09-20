@@ -232,14 +232,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       detail: { moduleId, moduleName, packetIds, results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
     // Inline repair for module boundary failures, using per-module repair budget.
     while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
-      const failures = targetPackets.filter(p => results.get(p.id)?.status === "failed");
+      const failures = targetPackets.filter(p => {
+        const result = results.get(p.id);
+        return result?.status === "failed" || result?.repairableLocatorFailure;
+      });
       if (!failures.length) break;
       const round = ++boundaryRepairCount;
       for (const item of failures) state.setPacketAttempt(item.id, round + 1);
       await phase("repair", round);
       const repairPacket = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
       const reports = failures.map(item => results.get(item.id)!.report!);
-      const observation = toBuilderShadowObservation({ packetId: repairPacket.id, verdict: "fail", passedCases: [],
+      const observation = toBuilderShadowObservation({ packetId: repairPacket.id,
+        verdict: failures.some(item => results.get(item.id)?.status === "failed") ? "fail" : "inconclusive", passedCases: [],
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
       const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));

@@ -8,7 +8,7 @@ import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { GitCliOps } from "../src/git-ops.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
 import { startFixtureServer } from "./helpers/fixture-server.js";
-import { withModulePipeline, fail, pass } from "./helpers/module-pipeline.js";
+import { withModulePipeline, fail, pass, testPlan } from "./helpers/module-pipeline.js";
 
 test("Pipeline checks module paths before the full atomic audit and keeps verification separate", async () => {
   await withModulePipeline(async f => {
@@ -306,6 +306,44 @@ test("Unlimited delivery still stops after one failed repair and one browser inf
     assert.deepEqual(f.git.restoredShas, ["second"]);
   });
 });
+
+for (const result of ["improved", "unchanged", "regressed"] as const) {
+  test(`Boundary diagnosis of a missing declared action retains only verified improvements: ${result}`, async () => {
+    await withModulePipeline(async f => {
+      const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      catalog.children[0].children[0].description = 'Open "Items" and click "Publish".';
+      await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+      f.deps.planner.plan = async packet => {
+        const plan = testPlan(packet);
+        if (packet.id === "packet-a") plan.cases[0].steps.splice(1, 0,
+          { op: "click", locator: { by: "role", role: "button", name: "Items" } },
+          { op: "click", locator: { by: "role", role: "button", name: "Publish" } });
+        return plan;
+      };
+      f.deps.runner.run = async plan => {
+        const repaired = f.builder.requests.some(request => request.mode === "repair");
+        if (plan.packetId === "packet-b" && repaired && result === "regressed") return fail(plan);
+        if (plan.packetId !== "packet-a" || (repaired && result !== "unchanged")) return pass(plan);
+        const report = fail(plan, "locator");
+        report.failures[0].stepIndex = 2;
+        return report;
+      };
+      const summary = await f.run();
+      const repairs = f.builder.requests.filter(request => request.mode === "repair");
+      assert.equal(repairs.length, 1);
+      const repair = repairs[0];
+      assert.ok(repair.mode === "repair");
+      assert.deepEqual(repair.packet.requirementIds, ["A"]);
+      assert.equal(repair.shadowObservation.failures[0].category, "locator");
+      const event = (await f.events()).find(event => event.type === "repair_batch_finished");
+      assert.ok(event?.type === "repair_batch_finished");
+      assert.equal(event.detail?.retained, result === "improved");
+      assert.equal(f.git.restoredShas.length, result === "improved" ? 0 : 1);
+      if (result === "improved") assert.equal(summary.status, "delivered");
+      if (result === "unchanged") assert.ok(summary.inconclusiveRequirementIds?.includes("A"));
+    });
+  });
+}
 
 test("Real Chromium verifies the fixture after all module builds", async () => {
   await withModulePipeline(async f => {

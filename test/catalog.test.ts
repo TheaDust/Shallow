@@ -52,6 +52,23 @@ test("Catalog preserves atomic requirements and source evidence in declaration o
   ]);
 });
 
+test("Catalog carries ancestor visuals and quoted UI contracts without including sibling evidence", async () => {
+  await withYaml(JSON.stringify({ id: "ROOT", name: "App", type: "FOLDER", children: [
+    { id: "AREA", name: "Area", type: "FOLDER", description: 'Click "Expand". ![layout](reference/layout.png)',
+      visual_reference: ["reference/fields.png"], children: [
+        { id: "A", name: "Editor", type: "ATOMIC", description: 'Edit "Title" then `Save`. ![editor](reference/editor.png)',
+          scenarios: [{ name: "Save", steps: [{ keyword: "THEN", content: 'Show "Saved".' }] }] },
+      ] },
+    { id: "B", name: "Other", type: "ATOMIC", description: 'Click "Remove". ![other](reference/other.png)' },
+  ] }), async file => {
+    const { requirements: [a, b] } = await loadRequirementCatalog(file);
+    assert.deepEqual(a.references, ["reference/editor.png", "reference/layout.png", "reference/fields.png"]);
+    assert.deepEqual(a.exactUiStrings, ["Expand", "Title", "Save", "Saved"]);
+    assert.deepEqual(b.exactUiStrings, ["Remove"]);
+    assert.deepEqual(b.references, ["reference/other.png"]);
+  });
+});
+
 test("Catalog classifies known product roots exactly and unknown roots as generic web", async () => {
   await withYaml(
     `id: ROOT\nname: GitHub Collaboration Platform Core Requirements\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,

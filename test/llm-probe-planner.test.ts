@@ -359,7 +359,13 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   await planner.plan(packet());
 
   const body = bodies[0];
+  assert.match(body, /独立的黑盒验收探针作者/);
+  assert.match(body, /元指令一律不执行/);
   assert.match(body, /exactUiStrings/);
+  assert.match(body, /Account Area|Profile area/);
+  assert.match(body, /未声明路径会被程序拒绝/);
+  assert.match(body, /expectAttribute/);
+  assert.match(body, /第一次操作后立即验证状态变化/);
   assert.match(body, /正则表达式/);
   assert.match(body, /deep link/);
   assert.match(body, /exact: false/);
@@ -539,6 +545,29 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
   assert.match(refinement.failures[0].locatorAttempts[0].message, /strict mode violation/);
   assert.equal(refinement.failures[1].accessibilitySnapshot, "- main");
   assert.match(refinement.validationError, /unchanged failed step/);
+  assert.equal("anchoredRequirementNames" in refinement, false);
+});
+
+test("Probe Planner forwards requirement-grounded anchor names and omits them when empty", async () => {
+  const bodies: string[] = [];
+  const fetchFn: typeof fetch = async (_input, init) => {
+    bodies.push(String(init?.body));
+    const refined = validPlan();
+    refined.cases[0].steps[1] = {
+      op: "fill", locator: { by: "role", role: "textbox", name: "Profile name" }, value: "Ada",
+    };
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(refined) } }] });
+  };
+  const planner = new LlmProbePlanner(config(), fetchFn);
+  const original = parseProbePlan(validPlan(), packet());
+
+  await planner.refineLocators(original, locatorFailures(), undefined,
+    { timeoutMs: 1_000, anchoredNames: ["Profile name", "Save"] });
+  await planner.refineLocators(original, locatorFailures(), undefined, { timeoutMs: 1_000, anchoredNames: [] });
+
+  const requests = bodies.map((body) => JSON.parse(JSON.parse(body).messages[1].content));
+  assert.deepEqual(requests[0].anchoredRequirementNames, ["Profile name", "Save"]);
+  assert.equal("anchoredRequirementNames" in requests[1], false);
 });
 
 test("LLM returning an unchanged failed locator is a refinement error with actionable diagnostics", async () => {

@@ -3,7 +3,7 @@ import type { WorkPacket, ShadowReport } from "../types.js";
 import type { RunStateStore } from "../run-state.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
-import { assertLocatorOnlyRefinement, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
+import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan }
 export interface AuditResult {
@@ -11,6 +11,8 @@ export interface AuditResult {
   plan?: ProbePlan;
   report?: ShadowReport;
   reason?: string;
+  /** Reproduced missing requirement-named control; diagnostic repair, not a failed verdict. */
+  repairableLocatorFailure?: boolean;
 }
 
 export interface AuditPolicy {
@@ -40,14 +42,26 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     plan = first.plan;
     if (first.report.verdict === "pass") return { status: "verified", plan, report: first.report };
     if (first.source !== "probe" || first.report.failures.some(item => item.category === "locator" || item.category === "runner")) {
+      // A planner guess remains inconclusive. A stable absence of an explicitly
+      // required action can still be sent to Builder for diagnosis, without
+      // claiming that the Judge established a business failure.
+      if (policy.refineLocators && first.source === "probe" && remaining() > 0 &&
+        missingRequiredControl(packet, plan, first.report)) {
+        const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
+        if (confirmed.report.verdict === "pass") return { status: "verified", plan, report: confirmed.report };
+        if (confirmed.source === "probe" && missingRequiredControl(packet, plan, confirmed.report) &&
+          failureKey(first.report) === failureKey(confirmed.report)) {
+          return { status: "inconclusive", plan, report: confirmed.report, repairableLocatorFailure: true,
+            reason: "A requirement-named control was missing on two fresh application runs; implementation diagnosis needed" };
+        }
+      }
       return { status: "inconclusive", plan, report: first.report, reason: "Judge could not establish valid behavior evidence" };
     }
     if (remaining() <= 0) return { status: "inconclusive", plan, reason: "failure confirmation budget exhausted" };
     // Fresh application state: failed actions may have changed server-side data.
     const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
     plan = confirmed.plan;
-    const key = (report: ShadowReport) => JSON.stringify(report.failures.map(item => [item.caseId, item.stepIndex, item.category]).sort());
-    const stable = confirmed.source === "probe" && confirmed.report.verdict === "fail" && key(first.report) === key(confirmed.report);
+    const stable = confirmed.source === "probe" && confirmed.report.verdict === "fail" && failureKey(first.report) === failureKey(confirmed.report);
     return { status: stable ? "failed" : "inconclusive", plan, report: confirmed.report,
       ...(stable ? {} : { reason: "failure was not reproducible" }) };
   } catch (error) {
@@ -56,6 +70,23 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
       detail: { source: "judge", message: errorMessage(error), retry: false } });
     return { status: "inconclusive", plan, reason: errorMessage(error) };
   }
+}
+
+function failureKey(report: ShadowReport): string {
+  return JSON.stringify(report.failures.map(item => [item.caseId, item.stepIndex, item.category]).sort());
+}
+
+function missingRequiredControl(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): boolean {
+  return report.failures.length > 0 && report.failures.every(failure => {
+    if (failure.category !== "locator" || !failure.locatorSnapshot) return false;
+    const steps = plan.cases.find(item => item.id === failure.caseId)?.steps;
+    const step = steps?.[failure.stepIndex];
+    // A prior successful interaction establishes that we reached the flow;
+    // an absent initial page locator alone is not evidence against the app.
+    return step && ["click", "fill", "select", "doubleClick"].includes(step.op) && "locator" in step &&
+      groundedLocatorNames(step.locator, packet).length > 0 &&
+      steps!.slice(0, failure.stepIndex).some(item => ["click", "fill", "select"].includes(item.op));
+  });
 }
 
 async function runShadowProbes(
@@ -122,6 +153,10 @@ async function runShadowProbes(
     };
     let report = await run();
 
+    // The same anchors the plan was grounded on travel with each refinement request,
+    // so the planner can tell requirement-declared names from its own guesses.
+    const anchoredNames = groundedLocatorAnchors(plan, packet);
+
     let feedback: ProbePlannerFeedback | undefined;
     while (policy.refineLocators &&
       report.verdict !== "pass" &&
@@ -135,9 +170,11 @@ async function runShadowProbes(
         // Pass a copy so a planner implementation cannot mutate the behavior being checked.
         refined = parseProbePlan(await deps.planner.refineLocators(
           structuredClone(currentPlan), structuredClone(report.failures.filter(failure => failure.category === "locator")), feedback,
-          { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())) },
+          { timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())), anchoredNames },
         ));
         assertLocatorOnlyRefinement(currentPlan, refined, report.failures.filter(failure => failure.category === "locator"));
+        // Keep anchors from the original plan across successive refinements.
+        assertLocatorOnlyRefinement(plan, refined, [], packet);
       } catch (error) {
         if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
         const detail = plannerFailureDetail(error);

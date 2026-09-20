@@ -193,7 +193,8 @@ function collectAtomics(
 ): void {
   if (node.type === "ATOMIC") {
     const scenarios = node.scenarios.map(formatScenario);
-    const evidenceText = [node.description, ...scenarios].join("\n");
+    const descriptions = [...ancestors.map(ancestor => ancestor.description), node.description];
+    const evidenceText = [...descriptions, ...scenarios].join("\n");
     requirements.push({
       id: node.id,
       folderPath,
@@ -202,7 +203,7 @@ function collectAtomics(
       text: node.description,
       dependencyIds: [...node.dependencies],
       scenarios,
-      references: extractReferences(node.description),
+      references: [...new Set([node, ...ancestors].flatMap(item => [...extractReferences(item.description), ...(item.visual_reference ?? [])]))],
       exactUiStrings: extractUiStrings(evidenceText),
       product,
       ancestors: ancestors.map((ancestor) => ({
@@ -236,7 +237,7 @@ function extractReferences(text: string): string[] {
 
 function extractUiStrings(text: string): string[] {
   const values: Array<{ index: number; value: string }> = [];
-  for (const pattern of [/“([^”]+)”/g, /`([^`]+)`/g]) {
+  for (const pattern of [/“([^”]+)”/g, /"([^"\n]+)"/g, /`([^`]+)`/g]) {
     for (const match of text.matchAll(pattern)) {
       values.push({ index: match.index, value: match[1] });
     }

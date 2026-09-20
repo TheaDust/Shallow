@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import { test } from "node:test";
@@ -24,6 +24,36 @@ function homePlan(role = "tab"): ProbePlan {
   return { packetId: "packet-a", cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
     steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role, name: role === "button" ? "home" : "Home",
       ...(role === "button" ? { exact: true } : { fallbacks: [{ by: "text", text: "Home" }] }) } }] }] };
+}
+
+for (const mode of ["required", "transient", "guessed", "no-navigation"] as const) {
+  test(`Missing controls remain inconclusive and only repeated grounded actions allow diagnosis: ${mode}`, async () => {
+    await withModulePipeline(async f => {
+      const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      catalog.children[0].children[0].description = 'Open "Items" and click "Publish".';
+      await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+      const plan: ProbePlan = { packetId: "packet-a", cases: [{ id: "publish", requirementIds: ["A"], purpose: "happy_path", steps: [
+        { op: "goto", path: "/" },
+        ...(mode === "no-navigation" ? [] : [{ op: "click" as const, locator: { by: "role" as const, role: "button", name: "Items" } }]),
+        { op: "click", locator: { by: "role", role: "button", name: mode === "guessed" ? "Unknown" : "Publish" } },
+        { op: "expectVisible", locator: { by: "role", role: "status" } },
+      ] }] };
+      f.deps.planner = new FakeProbePlanner([plan]);
+      f.deps.planner.refineLocators = async original => original;
+      let runs = 0;
+      f.deps.runner.run = async current => {
+        if (++runs === 2 && mode === "transient") return pass(current);
+        const report = fail(current, "locator");
+        report.failures[0].stepIndex = mode === "no-navigation" ? 1 : 2;
+        return report;
+      };
+      const result = await audit(f);
+      assert.equal(result.status, mode === "transient" ? "verified" : "inconclusive");
+      assert.equal(result.repairableLocatorFailure === true, mode === "required");
+      assert.equal(runs, mode === "required" || mode === "transient" ? 2 : 1);
+      assert.equal(f.builder.requests.length, 0);
+    });
+  });
 }
 
 for (const first of ["unchanged", "ambiguous"] as const) {
@@ -56,6 +86,20 @@ for (const first of ["unchanged", "ambiguous"] as const) {
     });
   });
 }
+
+test("Audit forwards requirement-declared anchor names to locator refinement", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = 'Show "Home" in the workspace.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const planner = new FakeProbePlanner([homePlan(), homePlan("button")]);
+    f.deps.planner = planner;
+    let runs = 0;
+    f.deps.runner.run = async plan => { runs += 1; return runs === 1 ? fail(plan, "locator") : pass(plan); };
+    assert.equal((await audit(f)).status, "verified");
+    assert.deepEqual(planner.refinements[0].anchoredNames, ["Home"]);
+  });
+});
 
 test("Unchanged, mutated behavior, and fatal refinements never rerun invalid plans", async () => {
   for (const invalid of ["unchanged", "behavior", "fatal"] as const) {

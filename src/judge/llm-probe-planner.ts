@@ -12,9 +12,14 @@ import {
 } from "./probe-schema.js";
 
 export interface ProbePlanOptions { timeoutMs: number }
+export interface ProbeRefinementOptions {
+  timeoutMs: number;
+  /** Requirement-declared names the original plan already relies on; refinement must reuse them verbatim. */
+  anchoredNames?: readonly string[];
+}
 export interface ProbePlanner {
   plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<ProbePlan>;
-  refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan>;
+  refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbeRefinementOptions): Promise<ProbePlan>;
 }
 
 export interface ProbePlannerFeedback {
@@ -100,7 +105,7 @@ export class LlmProbePlanner implements ProbePlanner {
         content: JSON.stringify({
           packetId: packet.id,
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
-            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings })),
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
             ? { seedData: packet.requirements[0].product.seedData }
             : {}),
@@ -108,6 +113,7 @@ export class LlmProbePlanner implements ProbePlanner {
             id: requirement.id,
             name: requirement.name,
             text: requirement.text,
+            ancestors: requirement.ancestors,
             scenarios: requirement.scenarios,
             references: requirement.references,
             exactUiStrings: requirement.exactUiStrings,
@@ -131,7 +137,7 @@ export class LlmProbePlanner implements ProbePlanner {
     return this.parse(content, packet);
   }
 
-  async refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: { timeoutMs: number }): Promise<ProbePlan> {
+  async refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbeRefinementOptions): Promise<ProbePlan> {
     const content = await this.complete([
       {
         role: "system",
@@ -141,6 +147,7 @@ export class LlmProbePlanner implements ProbePlanner {
         role: "user",
         content: JSON.stringify({
           original: toWireProbePlan(original),
+          ...(options?.anchoredNames?.length ? { anchoredRequirementNames: [...options.anchoredNames] } : {}),
           failures: failures.map((failure) => ({
             caseId: failure.caseId,
             stepIndex: failure.stepIndex,

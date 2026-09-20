@@ -205,6 +205,16 @@ async function executeStep(
       case "expectVisible":
         await expect(locator).toBeVisible({ timeout: timeoutMs });
         break;
+      case "expectHidden":
+        // Every alternative must be hidden: a missing primary must not hide a
+        // still-visible fallback from a negative assertion.
+        for (const candidate of locatorCandidates(step.locator)) {
+          await expect(locate(session.page, candidate)).toBeHidden({ timeout: timeoutMs });
+        }
+        break;
+      case "expectAttribute":
+        await expect(locator).toHaveAttribute(step.attribute, step.value, { timeout: timeoutMs });
+        break;
       case "expectText":
         await expectAnyText(locator, step, timeoutMs);
         break;
@@ -234,7 +244,7 @@ async function resolveLocator(
   timeoutMs: number,
 ): Promise<Locator> {
   const primary = locate(session.page, step.locator);
-  if (step.op === "expectCount") return primary;
+  if (step.op === "expectCount" || step.op === "expectHidden") return primary;
   const candidates = locatorCandidates(step.locator);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;

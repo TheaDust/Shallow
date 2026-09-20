@@ -24,6 +24,8 @@ export const PRESS_KEYS = [
   "End",
 ] as const;
 
+export const STATE_ATTRIBUTES = ["aria-expanded", "aria-pressed", "aria-selected", "aria-checked"] as const;
+
 export type ProbePressKey = (typeof PRESS_KEYS)[number];
 
 export type ProbeStep =
@@ -35,6 +37,8 @@ export type ProbeStep =
   | { op: "fill"; locator: ProbeLocator; value: string }
   | { op: "select"; locator: ProbeLocator; value: string }
   | { op: "expectVisible"; locator: ProbeLocator }
+  | { op: "expectHidden"; locator: ProbeLocator }
+  | { op: "expectAttribute"; locator: ProbeLocator; attribute: (typeof STATE_ATTRIBUTES)[number]; value: "true" | "false" | "mixed" }
   | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
@@ -116,9 +120,12 @@ const LOCATOR_REF = { $ref: "#/$defs/locator" };
 const STEP_SCHEMA = {
   anyOf: [
     objectSchema({ op: literalSchema("goto"), path: NONEMPTY_STRING_SCHEMA }),
-    ...["click", "expectVisible", "doubleClick", "hover"].map((op) => objectSchema({
+    ...["click", "expectVisible", "expectHidden", "doubleClick", "hover"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF,
     })),
+    objectSchema({ op: literalSchema("expectAttribute"), locator: LOCATOR_REF,
+      attribute: { type: "string", enum: [...STATE_ATTRIBUTES] },
+      value: { type: "string", enum: ["true", "false", "mixed"] } }),
     ...["fill", "select", "expectValue"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF, value: STRING_SCHEMA,
     })),
@@ -171,7 +178,7 @@ export const PROBE_PLAN_JSON_SCHEMA = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectText, expectValue, expectCount, reload, newContext. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings, expectText text, and anyOf entries are literal, not regular expressions; expectText matches the full text unless exact: false, and anyOf lists alternative accepted texts; expectCount count 0 asserts absence.",
+              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectHidden, expectAttribute, expectText, expectValue, expectCount, reload, newContext. expectAttribute checks only enumerated ARIA state attributes. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings, expectText text, and anyOf entries are literal, not regular expressions; expectText matches the full text unless exact: false, and anyOf lists alternative accepted texts; expectCount count 0 asserts absence.",
             items: STEP_SCHEMA,
           },
         },
@@ -212,6 +219,16 @@ export function parseProbePlan(
       const evidence = [...packet.requirements.filter(item => probeCase.requirementIds.includes(item.id)), ...(packet.prerequisites ?? [])];
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
+        if (step.op === "goto" && step.path !== "/") {
+          // A guessed server path cannot reach a hash-routed page. Only public
+          // requirement text can authorize a deep link; never infer it from a name.
+          const declaredPaths = evidence.flatMap(item => [item.text, ...item.scenarios, ...item.ancestors.map(ancestor => ancestor.description)])
+            .flatMap(value => [...value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").matchAll(/(?<![\w./])(?:https?:\/\/[^\s/]+)?(\/[^\s<>"'`，。；、（）\[\]()]+)/g)]
+              .map(match => match[1].replace(/[.,;:!?]+$/, "")));
+          if (!declaredPaths.includes(step.path)) {
+            throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: undeclared goto path ${step.path}; start at / and use visible navigation`);
+          }
+        }
         if (!("locator" in step) || step.locator.by !== "text") continue;
         const literal = step.locator.text;
         const declared = exactUiStrings.some((value) => value.toLowerCase() === literal.toLowerCase());
@@ -258,6 +275,7 @@ export function assertLocatorOnlyRefinement(
   original: ProbePlan,
   refined: ProbePlan,
   failures: readonly Pick<ProbeFailure, "caseId" | "stepIndex">[] = [],
+  packet?: Pick<WorkPacket, "requirements" | "prerequisites">,
 ): void {
   if (original.packetId !== refined.packetId || original.cases.length !== refined.cases.length) {
     throw new Error("Refinement may change only locator fields");
@@ -285,6 +303,15 @@ export function assertLocatorOnlyRefinement(
       if (JSON.stringify(beforeBehavior) !== JSON.stringify(afterBehavior)) {
         throw new Error("Refinement may change only locator fields");
       }
+      if (packet && "locator" in before && "locator" in after && JSON.stringify(before.locator) !== JSON.stringify(after.locator)) {
+        const anchors = groundedLocatorNames(before.locator, packet);
+        if (anchors.length && locatorCandidates(after.locator).some(candidate => {
+          const name = candidate.by === "role" ? candidate.name : candidate.text;
+          return !name || !anchors.some(anchor => containsTargetName(name, anchor));
+        })) {
+          throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
+        }
+      }
     }
   }
 
@@ -299,6 +326,58 @@ export function assertLocatorOnlyRefinement(
       throw new Error(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
     }
   }
+}
+
+function normalizeName(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function containsTargetName(value: string, anchor: string): boolean {
+  const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // "Publish item" still names the action; "Unpublish" does not.
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(normalizeName(value));
+}
+
+/** Requirement-declared UI names, normalized for comparison. */
+function declaredRequirementNames(packet: Pick<WorkPacket, "requirements" | "prerequisites">): Set<string> {
+  return new Set([...packet.requirements, ...(packet.prerequisites ?? [])]
+    .flatMap(item => item.exactUiStrings).map(normalizeName));
+}
+
+function candidateTargetName(candidate: ProbeLocator): string | undefined {
+  return candidate.by === "role" ? candidate.name : candidate.text;
+}
+
+/** Explicit requirement labels anchor both refinement and missing-control diagnostics. */
+export function groundedLocatorNames(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">): string[] {
+  const declared = declaredRequirementNames(packet);
+  return locatorCandidates(locator).flatMap(candidate => {
+    const name = candidateTargetName(candidate);
+    return name && declared.has(normalizeName(name)) ? [normalizeName(name)] : [];
+  });
+}
+
+/**
+ * Requirement-declared names the plan already relies on, in original casing.
+ * Refinement must reuse them verbatim; names outside this list are planner guesses.
+ */
+export function groundedLocatorAnchors(plan: ProbePlan, packet: Pick<WorkPacket, "requirements" | "prerequisites">): string[] {
+  const declared = declaredRequirementNames(packet);
+  const seen = new Set<string>();
+  const anchors: string[] = [];
+  for (const probeCase of plan.cases) {
+    for (const step of probeCase.steps) {
+      if (!("locator" in step)) continue;
+      for (const candidate of locatorCandidates(step.locator)) {
+        const name = candidateTargetName(candidate);
+        const normalized = name === undefined ? "" : normalizeName(name);
+        if (name === undefined || !declared.has(normalized) || seen.has(normalized)) continue;
+        seen.add(normalized);
+        anchors.push(name);
+      }
+    }
+  }
+  return anchors;
 }
 
 function parseCase(
@@ -372,9 +451,21 @@ function parseStep(value: unknown, location: string): ProbeStep {
     case "click":
     case "doubleClick":
     case "hover":
+    case "expectHidden":
     case "expectVisible": {
       keys(step, ["op", "locator"], location);
       return { op, locator: parseLocator(step.locator, `${location}.locator`) };
+    }
+    case "expectAttribute": {
+      keys(step, ["op", "locator", "attribute", "value"], location);
+      const attribute = step.attribute;
+      const value = step.value;
+      if (!STATE_ATTRIBUTES.includes(attribute as (typeof STATE_ATTRIBUTES)[number]) ||
+        (value !== "true" && value !== "false" && value !== "mixed")) {
+        throw new Error(`${location}: expectAttribute requires an allowed ARIA state and true/false/mixed value`);
+      }
+      return { op, locator: parseLocator(step.locator, `${location}.locator`),
+        attribute: attribute as (typeof STATE_ATTRIBUTES)[number], value };
     }
     case "press": {
       keys(step, ["op", "locator", "key"], location);
