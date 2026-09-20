@@ -7,5 +7,5 @@ import * as h from './helpers';
 test('REQ-2.7.3: Default label', async ({ page }) => {
   await h.openHome(page);
   await h.openSidebar(page);
-  await h.expectVisible(page, /^Reminders$/i);
+  await h.expectTextsVisible(page, [h.FIXTURES.labels.default]);
 });

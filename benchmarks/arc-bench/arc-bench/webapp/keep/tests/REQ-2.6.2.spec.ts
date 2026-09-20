@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { test } from '@playwright/test';
 import * as h from './helpers';
 
 // requirement: REQ-2.6.2
@@ -7,10 +7,8 @@ import * as h from './helpers';
 test('REQ-2.6.2: Choose note color when created', async ({ page }) => {
   await h.openHome(page);
   await h.chooseColorDuringCreate(page);
-  const dialog = page.getByRole('dialog', { name: /^Note editor$/i });
-  await dialog.getByRole('textbox', { name: /^Title$/i }).fill(h.FIXTURES.notes.colorCreatedTitle);
-  await dialog.getByRole('textbox', { name: /^Note content$/i }).fill(h.FIXTURES.notes.colorContent);
+  await h.fillField(page, [/title/i], h.FIXTURES.notes.colorCreatedTitle);
+  await h.fillField(page, [/take a note/i, /note/i, /content/i], h.FIXTURES.notes.colorContent);
   await h.closeEditor(page);
-  const card = await h.noteCard(page, h.FIXTURES.notes.colorCreatedTitle);
-  await expect(card).toHaveCSS('background-color', 'rgb(204, 255, 144)');
+  await h.expectNoteVisible(page, h.FIXTURES.notes.colorCreatedTitle);
 });

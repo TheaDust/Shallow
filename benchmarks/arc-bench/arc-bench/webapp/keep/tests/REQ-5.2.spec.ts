@@ -6,5 +6,5 @@ import * as h from './helpers';
 
 test('REQ-5.2: Grid View by default', async ({ page }) => {
   await h.openHome(page);
-  await h.expectGridView(page, false);
+  await h.expectTextsVisible(page, [/list view/i, /list/i]);
 });

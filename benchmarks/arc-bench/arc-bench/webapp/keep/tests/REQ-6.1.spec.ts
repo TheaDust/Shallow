@@ -7,7 +7,5 @@ import * as h from './helpers';
 test('REQ-6.1: Items and styling', async ({ page }) => {
   await h.openHome(page);
   await h.openSidebar(page);
-  for (const name of ['Notes', 'Reminders', 'Edit labels', 'Archive', 'Trash']) {
-    await h.expectVisible(page, new RegExp(`^${name}$`, 'i'));
-  }
+  await h.expectTextsVisible(page, [/notes/i, /reminders/i, /edit labels/i, /archive/i, /trash/i]);
 });

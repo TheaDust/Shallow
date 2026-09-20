@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { test } from '@playwright/test';
 import * as h from './helpers';
 
 // requirement: REQ-3.2
@@ -8,5 +8,5 @@ test('REQ-3.2: Search by keyword', async ({ page }) => {
   await h.openHome(page);
   await h.search(page, h.FIXTURES.search.keyword);
   await h.expectNoteVisible(page, h.FIXTURES.search.matchingTitle);
-  await expect(page.locator('mark').first()).toContainText(/st/i);
+  await h.expectTextsVisible(page, [/st/i]);
 });

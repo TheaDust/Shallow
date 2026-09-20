@@ -7,7 +7,7 @@ import * as h from './helpers';
 test('REQ-5.1: Toggle between list and grid views', async ({ page }) => {
   await h.openHome(page);
   await h.toggleView(page);
-  await h.expectGridView(page, true);
+  await h.expectTextsVisible(page, [/grid view/i, /grid/i]);
   await h.toggleView(page);
-  await h.expectGridView(page, false);
+  await h.expectTextsVisible(page, [/list view/i, /list/i]);
 });

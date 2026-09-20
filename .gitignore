@@ -10,6 +10,7 @@ coverage/
 Thumbs.db
 .worktrees/
 .superpowers/
+.playwright-mcp/
 runs/
 __pycache__/
 tmp/
