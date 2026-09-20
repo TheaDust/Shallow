@@ -54,7 +54,7 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树与 ProductContext.seedData；校验 ID 和依赖
-  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、6 条/12 场景/18k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
+  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、3 条/5 场景/3k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
   run-state.ts                  RunStateStore（功能状态、可运行检查点 SHA、ledger+logSink）、
@@ -171,7 +171,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。入口仅按字面量从验收 spec 提取 `http://127.0.0.1:<port>`/`localhost:<port>` 端口用于交付验证，spec 内容不进入任何 prompt 或判词。
-2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 6 条/12 场景/18,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。所有功能组先实现，再验收；实现阶段每个工作包使用全新会话，跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内依赖和未 verified 的外部依赖不阻塞实现。
+2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 3 条/5 场景/3,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。所有功能组先实现，再验收；实现阶段每个工作包使用全新会话，跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内依赖和未 verified 的外部依赖不阻塞实现。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 回执失败/超时先保存尝试再实测：代码可运行则直接接受为可运行版本（`module_rescued`）；确实无法构建/启动才恢复上一检查点并标 blocked（`module_failed`），被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收，使用缓存的探针计划（实现阶段已并行生成并落盘，见 `src/judge/plan-cache.ts`）。发现失败时触发模块边界修复，每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何 failed→verified 改善时恢复原检查点并停止修复。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。
