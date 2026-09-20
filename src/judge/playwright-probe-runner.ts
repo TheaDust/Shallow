@@ -10,6 +10,10 @@ import {
 import { locatorCandidates, type ProbeCase, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 import type { ProbeFailure, ShadowReport } from "../types.js";
 import { ExecutionFault } from "../execution-fault.js";
+import { sharedMemoryGate, type MemoryGate } from "../memory-gate.js";
+
+/** Headroom reserved before launching a probe browser (browser + renderer + page). */
+const PROBE_BROWSER_HEADROOM_BYTES = 400 * 1_048_576;
 
 export interface ProbeRunOptions {
   baseUrl: string;
@@ -47,7 +51,10 @@ export function deriveProbeVerdict(
 }
 
 export class PlaywrightProbeRunner {
-  constructor(private readonly launchBrowser: () => Promise<Browser> = () => chromium.launch({ headless: true })) {}
+  constructor(
+    private readonly launchBrowser: () => Promise<Browser> = () => chromium.launch({ headless: true }),
+    private readonly memoryGate: MemoryGate = sharedMemoryGate(),
+  ) {}
 
   async run(plan: ProbePlan, options: ProbeRunOptions): Promise<ShadowReport> {
     let browser: Browser | undefined;
@@ -56,6 +63,7 @@ export class PlaywrightProbeRunner {
 
     try {
       try {
+        await this.memoryGate.waitForHeadroom(PROBE_BROWSER_HEADROOM_BYTES);
         browser = await this.launchBrowser();
       } catch (error) {
         throw new ExecutionFault("browser", "browser_launch", false, { cause: error });

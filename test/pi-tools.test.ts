@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertToolCommand, assertToolPath } from "../src/builder/pi-tools.js";
+import { assertNotTestCommand, assertToolCommand, assertToolPath } from "../src/builder/pi-tools.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Builder tools cannot reach the product-visible progress journal", async () => {
@@ -23,4 +23,48 @@ test("Builder tools cannot reach the product-visible progress journal", async ()
     assert.throws(() => assertToolCommand("type .arc\\runner-events.jsonl"));
     assert.doesNotThrow(() => assertToolCommand("npm test"));
   });
+});
+
+test("Builder shell rejects ad-hoc test commands and points at run_tests", () => {
+  for (const command of [
+    "npm test",
+    "npm run test",
+    "npm run test:unit",
+    "npm --prefix frontend run test",
+    "npm.cmd --prefix backend test",
+    "npm exec vitest",
+    "NODE_ENV=test npm test",
+    "pnpm test",
+    "yarn run test",
+    "pnpm --filter app test",
+    "npx vitest run",
+    "bunx vitest",
+    "npx tsx --test test/app.test.ts",
+    "vitest --watch",
+    ".\\node_modules\\.bin\\vitest run",
+    "node_modules/.bin/vitest",
+    "node --test test/",
+    "node --experimental-strip-types --test test/app.test.js",
+    "cd frontend && npm test",
+  ]) {
+    assert.throws(() => assertNotTestCommand(command), /run_tests/, command);
+  }
+  for (const command of [
+    "npm run build",
+    "npm install",
+    "npm ci",
+    "npm install --save-dev vitest",
+    "npm run build -- --mode test",
+    "npm --prefix frontend run build",
+    "npx tsc --noEmit",
+    "node server.js",
+    "node scripts/seed.js",
+    "node --check server.js",
+    "grep -r vitest package.json",
+    "cat vitest.config.ts",
+    "npm ls vitest",
+    "NODE_ENV=test npm run build",
+  ]) {
+    assert.doesNotThrow(() => assertNotTestCommand(command), command);
+  }
 });

@@ -103,7 +103,7 @@ test("Pi worker advertises every guarded tool, including the browser tool, to th
       assert.ok(advertised, "worker never issued a model request");
       // The SDK treats `tools` as an allowlist that also filters custom tools:
       // a name omitted here silently disables that tool for the whole session.
-      for (const expected of ["read", "edit", "write", "shell", "browser"]) {
+      for (const expected of ["read", "edit", "write", "shell", "run_tests", "browser"]) {
         assert.ok(advertised.includes(expected), `Pi tool "${expected}" is not advertised (got: ${advertised.join(", ")})`);
       }
     } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }

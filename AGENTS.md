@@ -82,7 +82,9 @@ src/
     pi-model-config.ts          piProviderModel / DEFAULT_CONTEXT_WINDOW：网关 provider 模型描述，上下文窗口可按运行覆盖
     sse-resilience.ts           始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]，内容/工具事件截断则报可重试错误
     pi-tools.ts                 read/edit/write 路径限制与 shell 命令白名单后端（复用 SDK schema/截断，替换执行后端）；
-                                装配会话内 browser 工具
+                                shell 确定性拒绝临时测试命令并引导到 run_tests；装配 run_tests 与会话内 browser 工具
+    pi-test-tool.ts             run_tests 工具：限内存的传统测试执行（frontend Vitest 固定 --maxWorkers=1、backend
+                                node:test 固定 --test-concurrency=1、直起 node 不经 npm shim、输出尾部截断、超时/中止杀进程）
     pi-browser-tool.ts          Builder 会话内 browser 工具：惰性启动 Chromium、脚本执行、输出截断，Worker 结束时关闭
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
@@ -97,7 +99,11 @@ src/
                                 plan/refineLocators（失败步骤诊断 + locator 校验；系统提示词见 prompts/judge/；恢复额度由 pipeline 管理）
     playwright-probe-runner.ts  PlaywrightProbeRunner（白名单 DSL 执行）+ deriveProbeVerdict（pass/fail/inconclusive）
   process-lifecycle.ts          ownProcessTree（Windows Job Object / POSIX 进程组回收）、toolEnvironment（工具最小环境）
-  memory-snapshot.ts            memorySnapshot：Linux cgroup 内存诊断采样（memory.current/peak/max/events）
+  memory-snapshot.ts            memorySnapshot：Linux cgroup 内存诊断采样（memory.current/peak/max/events）；
+                                resolveCgroupMemoryMount 挂载点解析供 memory-gate 复用
+  memory-gate.ts                MemoryGate：cgroup 水位背压。重活前等待余量——候选安装(600MiB)/构建(500MiB)
+                                （candidate-runtime）与探针浏览器启动(400MiB)（playwright-probe-runner）；
+                                无 cgroup/无上限时 no-op，等待超过 maxWaitMs 放行，实际等待写 stderr 诊断行
 
 test/
   *.test.ts                     node:test 单元/集成；pipeline.e2e.test.ts 是无凭证全链路
@@ -128,6 +134,7 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 - `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
 - `SHALLOW_EVAL_PORT`：评测端口（缺省 3000，由适配入口按 `--web-port`/`ARCBENCH_WEB_PORT`/`ARC_WEB_PORT` 写入）；探针选端口时排除它，显式探针端口与它相同即报错。
 - `SHALLOW_RUN_DIR`：环境变量或 `.env` 指定运行日志目录（run-ledger.jsonl 与 run-log.txt；缺省 `%TMP%/shallowcode-runs/<pid>-<ts>/`，设置后仍按运行 ID 分子目录）。
+- `SHALLOW_MEMORY_GATE_MAX_WAIT_MS`：cgroup 内存背压的最长等待毫秒数（缺省 60000；`0` 表示不在候选安装/构建与探针浏览器启动前等待）。等待超时后放行并写 stderr 诊断行。
 - `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。抓捕开关独立于容错：`src/builder/sse-resilience.ts` 始终启用，先于客户端丢弃截断事件并补 `[DONE]`；抓包在容错内层，仍记录网关原始字节。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `ARCBENCH_TESTS_DIR`（评测由 runner 注入；本地可无）：验收 spec 目录。入口只用于按 `http://127.0.0.1:<port>`/`localhost:<port>` 字面量发现额外端口（排除评测端口），spec 内容不进入 Builder/Judge。缺省再尝试 `/workspace/tests`，都没有则回退 `[3301]`。
@@ -179,14 +186,14 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 6. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。goto 默认从 `/` 进入，非根路径须在需求文字中明示；精化仅改 locator，保留需求明示的目标名称，固定操作、输入与预期。支持 expectHidden 与有限 ARIA 状态 expectAttribute 断言，检查每次状态变化。混合失败先处理带快照的 locator 部分；会触发修复的每次原子验收至多两轮精化、一次浏览器基础设施重试（只检测审计不做精化）。业务失败复现共享这些额度。
 7. **交付**：最终验证为安装/构建/就绪/浏览器 smoke/grader-like 复验（只设 `PORT`，额外端口与未知路径），至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
 8. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 不限总时长时单次实现保留1h超时；正预算时实现上限10min，模块边界修复上限1h（最多剩余修复阶段一半），交付修复2min；Planner 单次尝试上限180s；实际取阶段剩余及 runtime 配置的较小值。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
-9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 持文件、shell 与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写并运行传统测试。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
+9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 持文件、shell、`run_tests`（限内存传统测试执行，见 `src/builder/pi-test-tool.ts`）与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写传统测试并用 run_tests 运行。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
 10. **运行时恢复**：git 单命令30s；Pi Worker 进程组/作业回收最多5s。每次调用结束后父进程回收拥有的进程组并等待退出确认，启动故障终止运行并恢复检查点，清理失败按执行故障终止本轮。Judge 故障保留应用并报告不确定。cgroup 计数仅用于诊断。新增事件同步 types/human-log；源码或构建发生变化会使候选证据失效。接受输入 digest 只覆盖 Git 回滚能还原的文件（tracked + 未被忽略的 untracked），被忽略的运行/构建产物（dist、data、依赖）不计入，否则失败修复留下的产物会让回滚口径对不上。
 
 Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功能分组验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
 
 ## Builder 需求输入
 
-- 开发检查与模块边界审计：Builder 持文件与 shell 工具做开发检查（Windows PowerShell / Linux Bash），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界切换时执行完整模块边界审计，使用缓存的探针计划，修复配额每个模块独立至多两轮。修改时验证 `test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块边界审计”。
+- 开发检查与模块边界审计：Builder 持文件、shell 与 `run_tests` 工具做开发检查（Windows PowerShell / Linux Bash；传统测试一律经 run_tests，shell 中的测试命令被拒绝），另持昂贵的会话内 browser 工具（仅特殊场景）；不持常驻浏览器/MCP；检查流程在 `prompts/system/self-test.md`。控制器在每次调用结束并回收进程后执行安装、构建与独立浏览器检查；每个模块边界切换时执行完整模块边界审计，使用缓存的探针计划，修复配额每个模块独立至多两轮。修改时验证 `test/pipeline.e2e.test.ts`、`test/builder-prompt.test.ts` 和 `test/prompt-assets.test.ts`；进程和数据清理责任见 README“Builder 开发检查与模块边界审计”。
 
 - 需求证据：catalog 保留原子及祖先中的双引号/中文引号/反引号界面文案，原子与祖先参考图均进入 Builder 图片输入；Planner 同时接收祖先文字。
 - 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。

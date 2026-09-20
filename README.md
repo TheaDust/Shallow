@@ -46,7 +46,7 @@ python main.py data/sheet --output-dir tmp/main --type web
 
 Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
 
-主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录。
+主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）。
 
 运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
 
@@ -104,7 +104,7 @@ flowchart TD
 
 ## Builder 开发检查与模块边界审计
 
-Pi Builder 持有文件（read/edit/write）、shell 工具与会话内 `browser` 工具。每个实现工作包都在全新会话中执行，会话内先规划（逐条映射需求 ID 的改动与检查方式）再实施，跨包交接只通过项目文件（代码、测试、ARCHITECTURE.md）完成；复杂或边界逻辑必须编写并运行传统测试。`browser` 工具是昂贵操作（惰性启动真实 Chromium、脚本化页面操作），仅在构建、类型检查与传统测试无法回答真实浏览器行为问题时验证关键路径；它**不**持有常驻浏览器/MCP 自测工具。控制器在每次调用结束、进程释放之后执行安装、构建与独立浏览器检查，并把白名单失败观测反馈给 Builder。
+Pi Builder 持有文件（read/edit/write）、shell 工具、`run_tests` 测试执行工具与会话内 `browser` 工具。每个实现工作包都在全新会话中执行，会话内先规划（逐条映射需求 ID 的改动与检查方式）再实施，跨包交接只通过项目文件（代码、测试、ARCHITECTURE.md）完成；复杂或边界逻辑必须编写传统测试并用 `run_tests` 运行（shell 中的测试命令会被确定性拒绝并提示改用 `run_tests`）。`browser` 工具是昂贵操作（惰性启动真实 Chromium、脚本化页面操作），仅在构建、类型检查与传统测试无法回答真实浏览器行为问题时验证关键路径；它**不**持有常驻浏览器/MCP 自测工具。控制器在每次调用结束、进程释放之后执行安装、构建与独立浏览器检查，并把白名单失败观测反馈给 Builder。
 
 具体地，每个模块实现并保存可运行检查点后，控制器在切换到下一模块时对该模块的审计包执行完整模块边界审计，复用实现阶段并行生成并落盘的缓存探针计划。边界审计发现可复现业务失败，或符合下述条件的缺失控件时触发模块边界修复，每个模块独立拥有至多两轮配额；修复后重跑缓存计划并优先复查已通过路径。边界修复失去既有 pass、无法重新验证或没有任何修复目标→verified 改善时恢复原检查点并停止。修复统一在模块边界就地发生，没有末尾集中修复；交付修复仍独立至多一次。
 
@@ -325,7 +325,8 @@ src/
     pi-execution-stats.ts      Pi 会话事件聚合：token 用量与模型/工具耗时分布
     sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
     sse-resilience.ts          始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]、内容截断走重试
-    pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端
+    pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端（测试命令引导到 run_tests）
+    pi-test-tool.ts            run_tests 工具：限内存传统测试执行（Vitest 单 worker、node:test 单并发）
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
     prompt-fragments.ts        产品词典 → fragments 选择
@@ -337,6 +338,7 @@ src/
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
   process-lifecycle.ts        Pi Worker 进程组/作业所有权、回收确认与工具最小环境
   memory-snapshot.ts           Linux cgroup 内存诊断采样（memory.current/peak/max/events）
+  memory-gate.ts               cgroup 水位背压：候选安装/构建与探针浏览器启动前等待内存余量
 test/
   *.test.ts                    单元/集成测试（含无凭证全链路 e2e）
   browser/                     真实 Chromium 测试

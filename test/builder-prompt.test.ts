@@ -32,7 +32,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /必要的开发检查/);
   assert.match(compiled.systemPrompt, /全新的独立会话/);
   assert.match(compiled.systemPrompt, /唯一交接面/);
-  assert.match(compiled.systemPrompt, /复杂或边界逻辑必须编写并运行传统测试/);
+  assert.match(compiled.systemPrompt, /复杂或边界逻辑必须编写传统测试并用 run_tests 运行/);
   assert.match(compiled.systemPrompt, /browser 是昂贵工具/);
   assert.match(compiled.systemPrompt, /清晰稳定的模块与接口边界/);
   assert.match(compiled.systemPrompt, /延续既有栈，不得换栈重写/);

@@ -125,7 +125,7 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadPrompt("system", "self-test");
-  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑"]) {
+  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
   const implement = loadPrompt("system", "action-implement");

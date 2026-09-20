@@ -5,6 +5,7 @@ import { createReadToolDefinition, createEditToolDefinition, createWriteToolDefi
 import { toolEnvironment } from "../process-lifecycle.js";
 import { PROGRESS_DIR_NAME } from "../progress-journal.js";
 import { createBrowserTool } from "./pi-browser-tool.js";
+import { createTestTool } from "./pi-test-tool.js";
 
 export async function assertToolPath(root: string, input: string): Promise<string> {
   const canonicalRoot = await realpath(root);
@@ -36,6 +37,92 @@ export function assertToolCommand(command: string): void {
   }
 }
 
+const PACKAGE_MANAGERS = new Set(["npm", "pnpm", "yarn", "bun"]);
+const BINARY_RUNNERS = new Set(["npx", "pnpx", "bunx"]);
+
+/**
+ * Test execution goes through run_tests so suite concurrency stays memory-bounded;
+ * ad-hoc test commands in shell bypass that bound and are rejected deterministically.
+ * Each pipeline segment is tokenized and anchored on the executable/subcommand, so
+ * searches (`grep vitest`) and unrelated scripts (`npm run build -- --mode test`)
+ * still work. This is a guard, not a sandbox.
+ */
+export function assertNotTestCommand(command: string): void {
+  if (pipelineSegments(command).some(isTestSegment)) {
+    throw new Error("Test commands are not allowed in shell; use the run_tests tool instead: run_tests { target: 'frontend' | 'backend' | 'all', filter?: string }");
+  }
+}
+
+function pipelineSegments(command: string): string[][] {
+  return command.split(/\|\||&&|\||;|\r?\n/).map(segment =>
+    (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(token => token.replace(/^(["'])(.*)\1$/, "$2")));
+}
+
+function stripAssignments(tokens: string[]): string[] {
+  let index = 0;
+  while (index < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[index])) index += 1;
+  return tokens.slice(index);
+}
+
+function executableName(token: string): string {
+  const name = token.replace(/\\/g, "/").split("/").pop() ?? token;
+  return name.replace(/\.(?:cmd|exe|mjs|cjs|js)$/i, "").replace(/@[^/]*$/, "").toLowerCase();
+}
+
+/** Arguments before `--`; everything after is forwarded to the script, not interpreted. */
+function leadingArguments(args: string[]): string[] {
+  const end = args.indexOf("--");
+  return end === -1 ? args : args.slice(0, end);
+}
+
+function isTestSegment(raw: string[]): boolean {
+  const tokens = stripAssignments(raw);
+  if (!tokens.length) return false;
+  const executable = executableName(tokens[0]);
+  const args = tokens.slice(1);
+  if (executable === "vitest") return true;
+  if (executable === "node") return nodeRunsTests(args);
+  if (PACKAGE_MANAGERS.has(executable)) return packageManagerRunsTests(args);
+  if (BINARY_RUNNERS.has(executable)) return binaryRunnerRunsTests(args);
+  return false;
+}
+
+function nodeRunsTests(args: string[]): boolean {
+  if (args.some(arg => arg === "--test")) return true;
+  return args.some(arg => /(?:^|\/)vitest(?:\.mjs|\.cjs|\.js)?$/i.test(arg.replace(/\\/g, "/")));
+}
+
+function packageManagerRunsTests(args: string[]): boolean {
+  const argumentsBeforeForwarding = leadingArguments(args).filter(token => token.length > 0);
+  const nonFlags = argumentsBeforeForwarding.filter(token => !token.startsWith("-"));
+  const execIndex = nonFlags.findIndex(token => ["exec", "dlx", "x"].includes(token.toLowerCase()));
+  if (execIndex !== -1) return nonFlags.slice(execIndex + 1).some(token => executableName(token) === "vitest");
+  const runIndex = nonFlags.findIndex(token => ["run", "run-script"].includes(token.toLowerCase()));
+  if (runIndex !== -1) {
+    const script = nonFlags[runIndex + 1];
+    return script !== undefined && scriptNameIsTest(script);
+  }
+  const first = nonFlags[0];
+  if (first !== undefined && (first.toLowerCase() === "t" || first.toLowerCase() === "test")) return true;
+  if (first !== undefined && executableName(first) === "vitest") return true;
+  // Flag values can precede the subcommand (e.g. `npm --prefix frontend test`).
+  const last = nonFlags.at(-1);
+  return last !== undefined && (last.toLowerCase() === "t" || last.toLowerCase() === "test");
+}
+
+function binaryRunnerRunsTests(args: string[]): boolean {
+  const tokens = leadingArguments(args);
+  const first = tokens.find(token => !token.startsWith("-"));
+  if (first !== undefined && executableName(first) === "vitest") return true;
+  return tokens.slice(1).includes("--test");
+}
+
+function scriptNameIsTest(name: string): boolean {
+  const normalized = name.toLowerCase();
+  if (normalized === "test" || normalized === "tests") return true;
+  return normalized.split(/[:.\-]/).some(part => part === "test" || part === "tests");
+}
+
 export function createPiTools(cwd: string): ToolDefinition[] {
   const files = [createReadToolDefinition(cwd), createEditToolDefinition(cwd), createWriteToolDefinition(cwd)] as unknown as ToolDefinition[];
   const guarded = files.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
@@ -46,6 +133,7 @@ export function createPiTools(cwd: string): ToolDefinition[] {
   const shell = createBashToolDefinition(cwd, { operations: {
     exec: async (command, directory, { onData, signal, timeout }) => {
       assertToolCommand(command);
+      assertNotTestCommand(command);
       await assertToolPath(cwd, directory);
       signal?.throwIfAborted();
       const windows = process.platform === "win32";
@@ -72,6 +160,6 @@ export function createPiTools(cwd: string): ToolDefinition[] {
   } });
   // Retain the SDK schema and output truncation, replace only the execution backend.
   shell.name = "shell";
-  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and targeted tests. Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed.`;
-  return [...guarded, shell as unknown as ToolDefinition, createBrowserTool()];
+  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and type checks; run tests with the run_tests tool instead. Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed.`;
+  return [...guarded, shell as unknown as ToolDefinition, createTestTool(cwd), createBrowserTool()];
 }

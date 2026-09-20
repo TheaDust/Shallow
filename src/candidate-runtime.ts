@@ -4,9 +4,14 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CommandAppLifecycle, CandidatePreparationError, runCommand } from "./final-verifier.js";
 import { runGit } from "./git-ops.js";
+import { sharedMemoryGate, type MemoryGate } from "./memory-gate.js";
 import { PROGRESS_DIR_NAME, isProgressPath } from "./progress-journal.js";
 import type { AppLifecycle } from "./pipeline.js";
 import type { CandidateEvidence, PlatformContract, RunEvent } from "./types.js";
+
+/** Headroom reserved before candidate dependency installs and production builds. */
+const CANDIDATE_INSTALL_HEADROOM_BYTES = 600 * 1_048_576;
+const CANDIDATE_BUILD_HEADROOM_BYTES = 500 * 1_048_576;
 
 type Snapshot = Map<string, { digest: string; mode: number }>;
 type RunningApp = Awaited<ReturnType<AppLifecycle["start"]>>;
@@ -30,6 +35,7 @@ export class CandidateRuntime {
     private readonly workspace: string,
     private readonly contract: PlatformContract,
     private readonly lifecycle: AppLifecycle = new CommandAppLifecycle(),
+    private readonly memoryGate: MemoryGate = sharedMemoryGate(),
   ) {
     this.directory = join(resolve(workspace), "app");
     if (inside(resolve(outputDir), resolve(workspace)) || inside(resolve(workspace), resolve(outputDir))) {
@@ -142,6 +148,7 @@ export class CandidateRuntime {
         this.installedKey = undefined;
         this.installedState = undefined;
         const at = Date.now();
+        await this.memoryGate.waitForHeadroom(CANDIDATE_INSTALL_HEADROOM_BYTES, signal);
         for (const command of this.contract.installCommands) {
           await runCommand(this.directory, command, this.contract.buildTimeoutMs, signal);
         }
@@ -149,6 +156,7 @@ export class CandidateRuntime {
       }
       stage = "build";
       const buildAt = Date.now();
+      await this.memoryGate.waitForHeadroom(CANDIDATE_BUILD_HEADROOM_BYTES, signal);
       for (const command of this.contract.buildCommands) {
         await runCommand(this.directory, command, this.contract.buildTimeoutMs, signal);
       }
