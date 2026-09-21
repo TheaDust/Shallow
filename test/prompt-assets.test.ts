@@ -116,6 +116,8 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /hash 路由/);
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
+  assert.match(loadPrompt("system", "builder-system"), /初始状态、GIVEN 所需的准备动作/);
+  assert.match(loadPrompt("system", "builder-system"), /先准备目标数据再完成视图切换/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -182,6 +184,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /准备前置条件 → 导航/);
   assert.match(planner, /count 为 0 的 expectCount/);
   assert.match(planner, /全新的 browser context/);
+  assert.match(planner, /初始状态、准备操作、目标操作和结果放在同一个 case/);
+  assert.match(planner, /同名 button\/link 提供等价候选/);
   assert.match(planner, /hover/);
   assert.match(planner, /doubleClick/);
   assert.match(planner, /hasText.*只允许出现在 locator 的 `scope` 对象内部/);
