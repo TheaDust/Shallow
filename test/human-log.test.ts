@@ -13,6 +13,20 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Gateway recovery logs distinguish saved code from completed requirements", () => {
+  const formatter = new HumanRunFormatter();
+  const at = "2026-09-20T00:00:00Z";
+  assert.match(formatLine(formatter, eventLine(at, "gateway_wait", {
+    packetId: "a", detail: { source: "builder", retry: 2, delayMs: 60_000, failure: { kind: "rate_limit", retryable: true, status: 429 } },
+  })), /网关恢复等待.*a.*builder.*1m.*重试 2/);
+  assert.match(formatLine(formatter, eventLine(at, "builder_work_preserved", {
+    packetId: "a", detail: { preserved: true, requirementIds: ["A"] },
+  })), /保存为可运行检查点.*仍待完成/);
+  assert.match(formatLine(formatter, eventLine(at, "implementation_paused", {
+    packetId: "a", detail: { requirementIds: ["A"], failure: { kind: "rate_limit", retryable: true, status: 429 } },
+  })), /停止派发.*保持待处理/);
+});
+
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
   const formatter = new HumanRunFormatter();
   const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {

@@ -38,6 +38,26 @@ test("GitOps writes and tracks ignore rules when initializing", async () => {
   });
 });
 
+test("Application change detection ignores run metadata and build files but sees untracked, committed and deleted source", async () => {
+  await withTempDir("shallow-git-change-", async directory => {
+    const git = await GitCliOps.open(directory);
+    const baseline = await git.captureAccepted("baseline");
+    for (const folder of [".arc", "shallow-progress", "dist", "node_modules"]) {
+      await mkdir(join(directory, folder), { recursive: true });
+      await writeFile(join(directory, folder, "record.txt"), "diagnostic/build output");
+    }
+    assert.equal(await git.hasApplicationChanges(baseline), false);
+    await writeFile(join(directory, "app.ts"), "export const value = 1;");
+    assert.equal(await git.hasApplicationChanges(baseline), true);
+    const written = await git.captureAccepted("builder wrote source");
+    assert.equal(await git.hasApplicationChanges(baseline), true);
+    assert.equal(await git.hasApplicationChanges(written), false);
+    await execFileAsync("git", ["rm", "app.ts"], { cwd: directory });
+    assert.equal(await git.hasApplicationChanges(written), true);
+    assert.equal(await git.hasApplicationChanges(baseline), false);
+  });
+});
+
 test("GitOps keeps an existing .gitignore untouched", async () => {
   await withTempDir("shallow-git-", async (directory) => {
     await writeFile(join(directory, ".gitignore"), "custom/\n", "utf8");

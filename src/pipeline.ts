@@ -32,6 +32,8 @@ import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
 import { memorySnapshot } from "./memory-snapshot.js";
 import { ExecutionFault } from "./execution-fault.js";
+import { GatewayRequestError } from "./gateway-failure.js";
+import { GatewayRecovery } from "./gateway-recovery.js";
 import type { CandidateRuntime } from "./candidate-runtime.js";
 import type { CandidateEvidence } from "./types.js";
 import type {
@@ -83,6 +85,7 @@ export interface PipelineDeps {
   logSink?: LogSink;
   diagnosticSecrets?: readonly string[];
   runMetadata?: Record<string, unknown>;
+  gatewayRecovery?: GatewayRecovery;
 }
 
 export interface PipelineOptions {
@@ -104,6 +107,7 @@ export interface RunSummary {
   implementedRequirementIds?: string[];
   failedRequirementIds?: string[];
   inconclusiveRequirementIds?: string[];
+  pendingRequirementIds?: string[];
 }
 
 export async function runPipeline(options: PipelineOptions, deps: PipelineDeps): Promise<RunSummary> {
@@ -121,9 +125,20 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let results = new Map<string, AuditResult>();
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
+  let gatewayPhase: PipelinePhase = "implementation";
+  const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
+  gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
+  const planner = deps.planner;
+  deps = { ...deps, planner: {
+    plan: (packet, feedback, callOptions) => gateway.run("planner", packet.id, () => budget.remaining(gatewayPhase),
+      () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+    refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, () => budget.remaining(gatewayPhase),
+      () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+  } };
   deps.candidate?.setRecorder(event => state.record(event));
 
   const phase = async (name: PipelinePhase, round?: number): Promise<void> => {
+    gatewayPhase = name;
     const remaining = budget.remaining(name);
     await state.record({ at: now(), type: "phase_started", detail: { phase: name, round,
       memory: await memorySnapshot(),
@@ -132,21 +147,47 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
     const packetId = "packet" in request ? request.packet.id : "delivery-repair";
     const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : 120_000;
-    const timeoutMs = budget.callTimeout(name, Math.min(ceiling, runOptions.timeoutMs ?? ceiling));
-    if (timeoutMs <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
+    const deadline = deps.clock.nowMs() + Math.min(ceiling, runOptions.timeoutMs ?? ceiling);
+    const remaining = () => Math.min(deadline - deps.clock.nowMs(), budget.remaining(name));
+    if (remaining() <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
     state.setPacketAttempt(packetId, "packet" in request ? request.packet.attempt : 1);
-    await state.record({ at: now(), type: "builder_started", packetId, detail: { mode: request.mode } });
-    const at = deps.clock.nowMs();
-    let result: BuilderResult;
-    try { result = await deps.builder.run(request, { timeoutMs, sessionKey: runOptions.sessionKey }); }
-    catch (error) {
+    let lastResult: BuilderResult | undefined;
+    try {
+      return await gateway.run("builder", packetId, remaining, async () => {
+        await state.record({ at: now(), type: "builder_started", packetId, detail: { mode: request.mode } });
+        const at = deps.clock.nowMs();
+        let result: BuilderResult;
+        try { result = await deps.builder.run(request, { timeoutMs: Math.max(1, Math.floor(remaining())), sessionKey: runOptions.sessionKey }); }
+        catch (error) {
+          if (error instanceof ExecutionFault) throw error;
+          result = { outcome: "failed", sessionId: "unavailable", summary: errorMessage(error),
+            ...(error instanceof GatewayRequestError ? { gatewayFailure: error.gatewayFailure } : {}) };
+        }
+        lastResult = result;
+        await state.record({ at: now(), type: "builder_finished", packetId,
+          detail: { ...result, durationMs: Math.max(0, deps.clock.nowMs() - at) } });
+        if (result.referenceImages) await state.record({ at: now(), type: "builder_reference_images", packetId, detail: result.referenceImages });
+        if (result.outcome !== "completed" && result.gatewayFailure) {
+          if (request.mode === "implement" && await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) {
+            await deps.git.captureAccepted(`shallow: interrupted attempt ${packetId}`);
+            let candidate: CandidateEvidence | undefined;
+            let preserved = false;
+            try { candidate = await runnable(); preserved = true; }
+            catch { await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
+            if (preserved) await checkpoint([], `interrupted ${packetId}`, candidate);
+            await state.record({ at: now(), type: "builder_work_preserved", packetId,
+              detail: { preserved, requirementIds: request.packet.requirementIds } });
+          }
+          throw new GatewayRequestError(result.gatewayFailure);
+        }
+        return result;
+      });
+    } catch (error) {
       if (error instanceof ExecutionFault) throw error;
-      result = { outcome: "failed", sessionId: "unavailable", summary: errorMessage(error) };
+      if (!(error instanceof GatewayRequestError)) throw error;
+      return { ...lastResult, sessionId: lastResult?.sessionId ?? "unavailable", outcome: "failed",
+        summary: lastResult?.summary ?? error.message, gatewayFailure: error.gatewayFailure };
     }
-    await state.record({ at: now(), type: "builder_finished", packetId,
-      detail: { ...result, durationMs: Math.max(0, deps.clock.nowMs() - at) } });
-    if (result.referenceImages) await state.record({ at: now(), type: "builder_reference_images", packetId, detail: result.referenceImages });
-    return result;
   };
   const runnable = async (): Promise<CandidateEvidence | undefined> => {
     const app = await deps.appLifecycle.start(options.outputDir, options.platformContract);
@@ -199,6 +240,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
   };
   const runModuleBoundaryAudit = async (packetIds: string[], moduleId: string, moduleName: string | undefined): Promise<void> => {
+    gatewayPhase = "audit";
     if (budget.remaining("audit") <= 0) return;
     // Reset per-module boundary repair quota when switching modules.
     if (currentBoundaryModule !== moduleId) {
@@ -318,7 +360,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       await emitArc(deps, state, arc => arc.requirementState(folderId, "design", "running"));
       await emitArc(deps, state, arc => arc.requirementState(folderId, "design", "completed"));
       await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", "running"));
-      await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", implementedLeaves.length ? "completed" : "failed"));
+      await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", implementedLeaves.length === leaves.length ? "completed" : "failed"));
       const allVerified = leaves.every(id => statuses[id] === "verified");
       await emitArc(deps, state, arc => arc.requirementState(folderId, "test", allVerified ? "passed" : "failed"));
     }
@@ -329,7 +371,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
     for (let packetIndex = 0; packetIndex < featureGrouping.packets.length; packetIndex++) {
       const packet = featureGrouping.packets[packetIndex];
-      if (budget.remaining("implementation") <= 0) break;
+      if (budget.remaining("implementation") <= 0 || gateway.exhausted) break;
       const currentModuleId = packet.requirements[0]?.folderPath[1] ?? packet.requirements[0]?.id;
       // Module boundary: run full audit on the previous module before starting the next one.
       if (previousModuleId !== undefined && currentModuleId !== previousModuleId && pendingModuleAudit.packetIds.length > 0) {
@@ -337,6 +379,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         pendingModuleAudit.packetIds = [];
       }
       pendingModuleAudit.moduleId = currentModuleId;
+      gatewayPhase = "implementation";
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
         detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
       for (const id of packet.requirementIds) {
@@ -356,10 +399,19 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         .map(p => spawnPlanGeneration(p, p.id, deps.planner, planCache, planTimeoutMs));
       // Every packet is implemented in a fresh session; handoff across packets
       // goes through the project itself (code, tests, ARCHITECTURE.md).
-      const result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation");
-      // Plans are generated in the background; await them here to ensure they are persisted.
-      await Promise.allSettled(planPromises);
+      let result: BuilderResult;
+      try {
+        result = await build({ mode: "implement", packet, outputDir: options.outputDir,
+          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation");
+      } finally {
+        // Drain background work before changing phases or leaving the run.
+        await Promise.allSettled(planPromises);
+      }
+      if (result.gatewayFailure && result.outcome !== "completed") {
+        await state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
+          detail: { requirementIds: packet.requirementIds, failure: result.gatewayFailure } });
+        break;
+      }
       let candidate: CandidateEvidence | undefined;
       let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
       if (reason !== undefined) {
@@ -367,7 +419,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         // receipt must not discard runnable code.
         await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
         const receiptFailure = reason;
-        try { candidate = await runnable(); reason = undefined; }
+        try {
+          if (!await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) throw new Error("Builder failed without application changes");
+          candidate = await runnable(); reason = undefined;
+        }
         catch (error) { reason = errorMessage(error); }
         if (reason === undefined) {
           await state.record({ at: now(), type: "module_rescued", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason: receiptFailure } });
@@ -417,7 +472,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await state.record({ at: now(), type: "delivery_started" });
     await deps.candidate?.assertAcceptedInput();
     let finalReport = await runFinalVerifier(options, deps, state);
-    if (!finalReport.ok && budget.remaining("delivery") > 0) {
+    if (!finalReport.ok && !gateway.exhausted && budget.remaining("delivery") > 0) {
       await state.record({ at: now(), type: "delivery_repair_started", detail: { stage: finalReport.stage, message: finalReport.message, round: 1 } });
       const result = await build({ mode: "delivery_repair", outputDir: options.outputDir,
         platformContract: options.platformContract, deliveryFailure: { stage: finalReport.stage,
@@ -444,7 +499,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const verifiedRequirementIds = ids("verified");
     const summary: RunSummary = { status: !finalReport.ok ? "failed" : verifiedRequirementIds.length === catalog.requirements.length ? "delivered" : "partial",
       acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented], verifiedRequirementIds,
-      blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive") };
+      blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive"), pendingRequirementIds: ids("todo") };
     await state.record({ at: now(), type: "pipeline_finished", detail: { ...summary, pendingRequirementIds: ids("todo"), memory: await memorySnapshot() } });
     await emitFolderRollup();
     await emitArc(deps, state, arc => arc.runnerState(finalReport.ok ? "completed" : "failed", `summary ${summary.status}`));

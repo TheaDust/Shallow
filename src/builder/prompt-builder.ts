@@ -17,7 +17,8 @@ export class PromptBuilder implements BuilderPort {
       result = await this.client.run({ ...input, textOnly: true, timeoutMs: deadline - Date.now() });
     }
     // Session paths and SDK internals stay private to the execution adapter.
-    return { sessionId: result.sessionId, outcome: result.outcome, summary: result.summary, referenceImages: result.referenceImages, execution: result.execution };
+    return { sessionId: result.sessionId, outcome: result.outcome, summary: result.summary, referenceImages: result.referenceImages, execution: result.execution,
+      ...(result.gatewayFailure ? { gatewayFailure: result.gatewayFailure } : {}) };
   }
   close(): Promise<void> { return this.client.close(); }
 }

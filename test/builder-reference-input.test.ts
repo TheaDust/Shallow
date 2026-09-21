@@ -19,6 +19,12 @@ async function fixture(results: CodingAgentResult[]) {
 }
 const completed: CodingAgentResult = { sessionId: "done", outcome: "completed", summary: "done" };
 
+test("Builder forwards structured gateway failure metadata to the controller", async () => {
+  const gatewayFailure = { kind: "rate_limit", retryable: true, status: 429, retryAfterMs: 30_000 } as const;
+  const f = await fixture([{ ...completed, outcome: "failed", gatewayFailure }]);
+  assert.deepEqual((await f.builder.run(f.request)).gatewayFailure, gatewayFailure);
+});
+
 test("Engine-neutral Builder preserves separate prompts, references, key and smaller timeout", async () => {
   const f = await fixture([completed]);
   await f.builder.run(f.request, { timeoutMs: 300, sessionKey: "module" });

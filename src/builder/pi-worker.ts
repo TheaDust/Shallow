@@ -10,6 +10,7 @@ import { piProviderModel } from "./pi-model-config.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
+import { observeGatewayFailures } from "../gateway-failure.js";
 
 // Wait for ownership to be established by the parent before executing anything.
 process.once("message", (request: PiWorkerRequest) => {
@@ -64,22 +65,26 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   // the client reads a repaired stream while diagnostics keep the original bytes.
   const capture = input.sseCaptureDir ? installSseCapture(input.sseCaptureDir, input.sessionKey ?? "builder") : undefined;
   const resilience = installSseResilience(raw => process.stderr.write(`[ShallowCode] 检测到损坏的网关 SSE 事件：${raw}\n`));
+  const gateway = observeGatewayFailures(input.gateway.baseUrl);
   try {
     const imageNote = !input.references?.length ? "" : input.textOnly ? loadPrompt("system", "reference-images-text-fallback")
       : fillTemplate(loadPrompt("system", "reference-images"), {
         ATTACHED_REFERENCES: loaded.images.map(image => `- ${image.reference}`).join("\n") || "无",
         UNAVAILABLE_REFERENCES: loaded.skipped.map(item => `- ${item.reference}: ${item.reason}`).join("\n") || "无",
       });
-    await session.prompt(`${input.taskPrompt}\n\n${imageNote}`, { images, expandPromptTemplates: false });
+    let promptError: unknown;
+    try { await session.prompt(`${input.taskPrompt}\n\n${imageNote}`, { images, expandPromptTemplates: false }); }
+    catch (error) { promptError = error; }
     const last = session.messages.at(-1);
-    const success = last?.role === "assistant" && last.stopReason === "stop";
-    const summary = last?.role === "assistant" ? last.errorMessage || last.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "Pi did not reach a terminal assistant response";
+    const success = !promptError && last?.role === "assistant" && last.stopReason === "stop";
+    const summary = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage || last.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "Pi did not reach a terminal assistant response";
     const stats = collector.summarize(session.getSessionStats().tokens);
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       outcome: success ? "completed" : "failed", summary: summary.slice(-8_000), toolCalls, compactions, peakRssBytes: process.resourceUsage().maxRSS * 1024,
+      ...(!success && gateway.failure() ? { gatewayFailure: gateway.failure() } : {}),
       usage: stats.usage, timing: stats.timing,
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && /\b(?:image(?:_url| input|s)?|vision|multimodal)\b.{0,60}\b(?:not supported|unsupported)\b|\b(?:model|endpoint|provider)\b.{0,40}\b(?:does not support|cannot accept)\b.{0,30}\bimage/i.test(summary),
       ...(input.references?.length ? { referenceImages: { mode: input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable", attachedCount: images.length, skipped: loaded.skipped } as const } : {}),
     };
-  } finally { unsubscribe(); session.dispose(); resilience.uninstall(); await capture?.uninstall(); await closeSharedBrowser(); }
+  } finally { unsubscribe(); session.dispose(); gateway.uninstall(); resilience.uninstall(); await capture?.uninstall(); await closeSharedBrowser(); }
 }

@@ -7,6 +7,7 @@ import { PROGRESS_DIR_NAME } from "./progress-journal.js";
 export interface GitOps {
   captureAccepted(message: string): Promise<string>;
   restoreAccepted(sha: string): Promise<void>;
+  hasApplicationChanges(sinceSha: string): Promise<boolean>;
 }
 
 interface CommandResult {
@@ -80,6 +81,17 @@ export class GitCliOps implements GitOps {
       message,
     ]);
     return (await requireGit(this.repositoryRoot, ["rev-parse", "HEAD"])).stdout.trim();
+  }
+
+  async hasApplicationChanges(sinceSha: string): Promise<boolean> {
+    await this.validateRoot();
+    if (!/^[0-9a-f]{40,64}$/i.test(sinceSha)) throw new Error("Invalid application baseline SHA");
+    const paths = ["--", ".", ":(top,exclude).arc", `:(top,exclude)${PROGRESS_DIR_NAME}`];
+    const [changed, untracked] = await Promise.all([
+      requireGit(this.repositoryRoot, ["diff", "--name-only", sinceSha, ...paths]),
+      requireGit(this.repositoryRoot, ["ls-files", "--others", "--exclude-standard", ...paths]),
+    ]);
+    return Boolean(changed.stdout.trim() || untracked.stdout.trim());
   }
 
   async restoreAccepted(sha: string): Promise<void> {

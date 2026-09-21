@@ -37,12 +37,30 @@ test("Authentication failure is not retried and its session is not reused", { ti
   await fixture((_body, res, n) => { count = n; if (n === 1) { res.writeHead(401); res.end(JSON.stringify({ error: { message: "Invalid API key" } })); } else completion(res); }, async (client, app) => {
     const failed = await client.run({ ...prompt, outputDir: app });
     assert.equal(failed.outcome, "failed"); assert.equal(count, 1);
+    assert.deepEqual(failed.gatewayFailure, { kind: "authentication", retryable: false, status: 401 });
     const recovered = await client.run({ ...prompt, outputDir: app });
     assert.equal(recovered.outcome, "completed", recovered.summary);
     assert.notEqual(failed.sessionId, recovered.sessionId);
     assert.equal(recovered.execution?.resumed, false);
+    assert.equal(recovered.gatewayFailure, undefined);
   });
 });
+
+for (const afterTool of [false, true]) {
+  test(`Worker preserves actual quota failure metadata, including partial work: afterTool=${afterTool}`, { timeout: 30_000 }, async () => {
+    await fixture((_body, res, count) => {
+      if (afterTool && count === 1) return completion(res, { name: "write", arguments: { path: "partial.txt", content: "keep" } });
+      res.writeHead(429, { "content-type": "application/json", "retry-after": "0" });
+      res.end(JSON.stringify({ error: { message: "Free allocated quota exceeded." } }));
+    }, async (client, app) => {
+      const result = await client.run({ ...prompt, outputDir: app });
+      assert.equal(result.outcome, "failed");
+      assert.deepEqual(result.gatewayFailure, { kind: "rate_limit", retryable: true, status: 429, retryAfterMs: 0 });
+      assert.equal(result.execution?.toolCalls, afterTool ? 1 : 0);
+      if (afterTool) assert.equal(await readFile(join(app, "partial.txt"), "utf8"), "keep");
+    });
+  });
+}
 
 test("Truncated assistant output is failure, not successful completion", async () => {
   await fixture((_body, res) => completion(res, undefined, "length"), async (client, app) => {

@@ -6,6 +6,7 @@ import type { RunEvent, ShadowReport, WorkPacket } from "../../src/types.js";
 import { FakeBuilder } from "../fakes/fake-builder.js";
 import { FakeGitOps } from "../fakes/fake-git-ops.js";
 import { withTempDir } from "./temp-dir.js";
+import { GatewayRecovery } from "../../src/gateway-recovery.js";
 
 export function testPlan(packet: WorkPacket): ProbePlan {
   return { packetId: packet.id, cases: [{ id: `case-${packet.requirementIds[0]}`, requirementIds: packet.requirementIds,
@@ -34,7 +35,9 @@ export async function withModulePipeline(callback: (fixture: PipelineFixture) =>
         installCommands: [], buildCommands: [], startCommand: { executable: "node", args: ["server.mjs"], cwd: "output" }, healthPath: "/health", buildTimeoutMs: 5_000, startTimeoutMs: 5_000 } };
     const builder = new FakeBuilder();
     const git = new FakeGitOps(["initial", "first", "second", "repair-one", "repair-two"]);
+    let gatewayTime = 0;
     const deps: PipelineDeps = { builder, git, clock: { nowMs: () => 0 },
+      gatewayRecovery: new GatewayRecovery({ now: () => gatewayTime, sleep: async ms => { gatewayTime += ms; } }),
       planner: { plan: async packet => testPlan(packet), refineLocators: async original => original },
       runner: { run: async plan => pass(plan) },
       appLifecycle: { start: async () => ({ baseUrl: options.platformContract.baseUrl, stop: async () => {} }) },

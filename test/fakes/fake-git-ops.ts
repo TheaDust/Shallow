@@ -3,6 +3,9 @@ import type { GitOps } from "../../src/git-ops.js";
 export class FakeGitOps implements GitOps {
   readonly captureMessages: string[] = [];
   readonly restoredShas: string[] = [];
+  applicationChanged = true;
+
+  async hasApplicationChanges(_sinceSha: string): Promise<boolean> { return this.applicationChanged; }
 
   constructor(private readonly shas = ["baseline", "accepted"]) {}
 

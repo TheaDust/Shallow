@@ -115,6 +115,9 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
   httpStatus?: number; attempt?: number; retryCount?: number; retry?: boolean };
 
 interface RunEventDetails {
+  gateway_wait: { source: "builder" | "planner"; retry: number; delayMs: number; failure: import("./gateway-failure.js").GatewayFailure };
+  builder_work_preserved: { preserved: boolean; requirementIds: string[] };
+  implementation_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
   phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number; memory?: Record<string, unknown> };
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
@@ -129,7 +132,7 @@ interface RunEventDetails {
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;
-    attempt?: number; durationMs?: number; execution?: Record<string, unknown> };
+    attempt?: number; durationMs?: number; execution?: Record<string, unknown>; gatewayFailure?: import("./gateway-failure.js").GatewayFailure };
   builder_reference_images: { mode: string; attachedCount: number; skipped: Array<{ reference: string; reason: string }> };
   candidate_prepared: Omit<CandidateEvidence, "runtimeId"> & { reused: boolean; installed: boolean;
     durationMs: number; installMs: number; buildMs: number };

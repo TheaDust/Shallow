@@ -1,5 +1,6 @@
 import type { BuilderPromptInput } from "./prompt-input.js";
 import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
+import type { GatewayFailure } from "../gateway-failure.js";
 
 export type BuilderRequest = BuilderPromptInput;
 
@@ -7,6 +8,7 @@ export interface BuilderResult {
   sessionId: string;
   outcome: "completed" | "failed" | "timed_out";
   summary: string;
+  gatewayFailure?: GatewayFailure;
   execution?: { engine: string; version: string; nodeVersion: string; workerPid: number; resumed: boolean;
     durationMs: number; cleanupMs: number; toolCalls?: number; compactions?: number; peakRssBytes?: number;
     usage: ExecutionUsage; timing?: ExecutionTiming };

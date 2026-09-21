@@ -82,6 +82,12 @@ function describe(type: string, event: RunEvent): string | null {
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
+    case "gateway_wait":
+      return `模型网关恢复等待（${packetId}）；调用方 ${pickString(detail, "source")}；剩余等待 ${renderDuration(pickNumber(detail, "delayMs") ?? 0)}；原调用重试 ${pickNumber(detail, "retry") ?? 0}`;
+    case "builder_work_preserved":
+      return `中断任务的代码${detail?.preserved ? "已保存为可运行检查点" : "无法运行，已恢复上一检查点"}（${packetId}）；当前需求仍待完成`;
+    case "implementation_paused":
+      return `模型网关未恢复，停止派发实现任务（${packetId}）；需求保持待处理，进入已有产物验收与交付`;
     case "builder_finished":
       return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）${pickString(detail, "summary") ? `；自述回执（非验收）：${pickString(detail, "summary")}` : ""}${describeBuilderExecution(detail?.execution)}`;
     case "probe_planning":

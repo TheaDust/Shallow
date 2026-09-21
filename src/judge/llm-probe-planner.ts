@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ProbeFailure, WorkPacket } from "../types.js";
 import { sanitizeDiagnosticText } from "../run-state.js";
 import { loadPrompt } from "../prompt-assets.js";
+import { httpGatewayFailure, type GatewayFailure } from "../gateway-failure.js";
 import {
   PROBE_PLAN_JSON_SCHEMA,
   toWireProbePlan,
@@ -48,6 +49,7 @@ export type ProbePlannerErrorCategory =
   | "refinement";
 
 export class ProbePlannerError extends Error {
+  readonly gatewayFailure?: GatewayFailure;
   readonly retryable: boolean;
   readonly fatal: boolean;
   readonly diagnostics: {
@@ -63,11 +65,13 @@ export class ProbePlannerError extends Error {
   constructor(
     readonly category: ProbePlannerErrorCategory,
     message: string,
-    options?: ErrorOptions & { content?: string; apiKey?: string; httpStatus?: number },
+    options?: ErrorOptions & { content?: string; apiKey?: string; httpStatus?: number; retryAfter?: string | null },
   ) {
     super(message, options);
     this.name = "ProbePlannerError";
     const status = options?.httpStatus;
+    if (category === "transport") this.gatewayFailure = status === undefined
+      ? { kind: "unavailable", retryable: true } : httpGatewayFailure(status, options?.retryAfter);
     this.retryable = category === "transport" && (status === undefined || status === 408 || status === 429 || status >= 500);
     this.fatal = category === "response" || (category === "transport" && !this.retryable);
     this.diagnostics = {
@@ -223,7 +227,7 @@ export class LlmProbePlanner implements ProbePlanner {
       throw new ProbePlannerError(
         "transport",
         `Probe planner returned HTTP ${response.status}`,
-        { httpStatus: response.status },
+        { httpStatus: response.status, retryAfter: response.headers.get("retry-after") },
       );
     }
 
