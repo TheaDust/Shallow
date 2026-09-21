@@ -310,6 +310,12 @@ test("Human logs report rescued modules in Chinese", () => {
   })), /Builder 未完成回执，但写出的应用可运行，已保存为可运行版本.*A、B.*timed_out/);
 });
 
+test("Human logs explain the bounded implementation retry", () => {
+  assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_retry", {
+    packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 600_000 },
+  })), /新会话续做原需求包.*仅重试一次.*10m/);
+});
+
 test("Human logs distinguish runnable checkpoints, unknown audits, and retained repairs", () => {
   const formatter = new HumanRunFormatter();
   const checkpoint = formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "checkpoint_saved", {

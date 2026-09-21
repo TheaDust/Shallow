@@ -168,16 +168,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           detail: { ...result, durationMs: Math.max(0, deps.clock.nowMs() - at) } });
         if (result.referenceImages) await state.record({ at: now(), type: "builder_reference_images", packetId, detail: result.referenceImages });
         if (result.outcome !== "completed" && result.gatewayFailure) {
-          if (request.mode === "implement" && await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) {
-            await deps.git.captureAccepted(`shallow: interrupted attempt ${packetId}`);
-            let candidate: CandidateEvidence | undefined;
-            let preserved = false;
-            try { candidate = await runnable(); preserved = true; }
-            catch { await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
-            if (preserved) await checkpoint([], `interrupted ${packetId}`, candidate);
-            await state.record({ at: now(), type: "builder_work_preserved", packetId,
-              detail: { preserved, requirementIds: request.packet.requirementIds } });
-          }
+          if (request.mode === "implement") await preserveInterruptedWork(request.packet);
           throw new GatewayRequestError(result.gatewayFailure);
         }
         return result;
@@ -205,6 +196,17 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     if (candidate) deps.candidate?.recordAccepted(candidate);
     await state.record({ at: now(), type: "checkpoint_saved", detail: { requirementIds: ids, reason, candidate } });
     await emitArc(deps, state, arc => arc.commitHistorySignal("git_commit"));
+  };
+  const preserveInterruptedWork = async (packet: WorkPacket): Promise<void> => {
+    if (!await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) return;
+    await deps.git.captureAccepted(`shallow: interrupted attempt ${packet.id}`);
+    let candidate: CandidateEvidence | undefined;
+    let preserved = false;
+    try { candidate = await runnable(); preserved = true; }
+    catch { await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
+    if (preserved) await checkpoint([], `interrupted ${packet.id}`, candidate);
+    await state.record({ at: now(), type: "builder_work_preserved", packetId: packet.id,
+      detail: { preserved, requirementIds: packet.requirementIds } });
   };
   const audit = async (name: PipelinePhase, previous = results): Promise<Map<string, AuditResult>> => {
     const audited = new Map<string, AuditResult>();
@@ -406,6 +408,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       } finally {
         // Drain background work before changing phases or leaving the run.
         await Promise.allSettled(planPromises);
+      }
+      if (result.outcome === "timed_out" && !result.gatewayFailure) {
+        await preserveInterruptedWork(packet);
+        const retryTimeoutMs = budget.callTimeout("implementation", 600_000);
+        if (retryTimeoutMs > 0 && !gateway.exhausted) {
+          const retryPacket: WorkPacket = { ...packet, attempt: 2 };
+          state.setPacketAttempt(packet.id, retryPacket.attempt);
+          for (const auditPacket of relatedAuditPackets) state.setPacketAttempt(auditPacket.id, retryPacket.attempt);
+          await state.record({ at: now(), type: "implementation_retry", packetId: packet.id,
+            detail: { requirementIds: packet.requirementIds, timeoutMs: retryTimeoutMs } });
+          result = await build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
+            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+          "implementation", { timeoutMs: retryTimeoutMs });
+          if (result.outcome === "timed_out" && !result.gatewayFailure) await preserveInterruptedWork(retryPacket);
+        }
+        if (result.outcome === "timed_out" && !result.gatewayFailure) {
+          state.markRequirements(packet.requirementIds, "blocked");
+          await state.record({ at: now(), type: "module_failed", packetId: packet.id,
+            detail: { requirementIds: packet.requirementIds, reason: "Builder deadline exhausted; partial work is not a completed implementation" } });
+          for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+          continue;
+        }
       }
       if (result.gatewayFailure && result.outcome !== "completed") {
         await state.record({ at: now(), type: "implementation_paused", packetId: packet.id,

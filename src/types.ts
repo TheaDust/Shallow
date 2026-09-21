@@ -117,6 +117,7 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
 interface RunEventDetails {
   gateway_wait: { source: "builder" | "planner"; retry: number; delayMs: number; failure: import("./gateway-failure.js").GatewayFailure };
   builder_work_preserved: { preserved: boolean; requirementIds: string[] };
+  implementation_retry: { requirementIds: string[]; timeoutMs: number };
   implementation_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
   phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number; memory?: Record<string, unknown> };
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };

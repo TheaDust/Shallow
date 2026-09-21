@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
 import { withTempDir } from "./helpers/temp-dir.js";
@@ -76,6 +76,36 @@ test("A hanging gateway is cancelled and the client can start a fresh worker", {
     assert.equal(result.outcome, "timed_out");
     hang = false;
     assert.equal((await client.run({ ...prompt, outputDir: app })).outcome, "completed");
+  });
+});
+
+test("Worker tool data is isolated per call and removed after completion or timeout", { timeout: 60_000 }, async () => {
+  await fixture((_body, res, count) => {
+    if ([1, 3, 5].includes(count)) return completion(res, { name: "shell", arguments: { command: "node data-probe.cjs" } });
+    if (count < 6) completion(res);
+  }, async (client, app, root) => {
+    await writeFile(join(app, "data-probe.cjs"), `
+const fs = require('node:fs');
+const path = require('node:path');
+const dir = process.env.SHALLOW_DATA_DIR;
+if (!dir) throw new Error('missing isolated data directory');
+const file = path.join(dir, 'state.json');
+const existed = fs.existsSync(file);
+fs.writeFileSync(file, 'debug mutation');
+fs.writeFileSync('data-proof.json', JSON.stringify({ dir, existed }));
+`);
+    const paths = new Set<string>();
+    for (const outcome of ["completed", "completed", "timed_out"]) {
+      const result = await client.run({ ...prompt, outputDir: app, timeoutMs: 10_000 });
+      assert.equal(result.outcome, outcome, result.summary);
+      const proof = JSON.parse(await readFile(join(app, "data-proof.json"), "utf8"));
+      assert.equal(proof.existed, false, "a new call must not inherit debug mutations");
+      assert.ok(!proof.dir.startsWith(app));
+      assert.ok(!paths.has(proof.dir));
+      paths.add(proof.dir);
+      await assert.rejects(readdir(proof.dir), { code: "ENOENT" });
+      assert.ok(!(await readdir(join(root, "sessions"))).some(name => name.startsWith("data-")));
+    }
   });
 });
 

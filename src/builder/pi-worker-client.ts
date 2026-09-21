@@ -1,8 +1,8 @@
 import { fork, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { GatewayConfig } from "../runtime-config.js";
 import type { CodingAgentRequest, CodingAgentResult, CodingAgentPort } from "./execution-port.js";
 import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
@@ -41,9 +41,10 @@ export class PiWorkerClient implements CodingAgentPort {
     const prior = input.sessionKey ? this.sessions.get(input.sessionKey) : undefined;
     if (prior && prior.cwd !== resolve(input.outputDir)) throw new Error("Pi session workspace mismatch");
     const fallback: PiWorkerResult = { sessionId: randomUUID(), outcome: "failed", summary: "Pi worker exited before producing a result" };
+    const dataDirectory = await mkdtemp(join(resolve(this.sessionDir), "data-"));
     const child = fork(fileURLToPath(new URL("./pi-worker.ts", import.meta.url)), [], {
       cwd: input.outputDir, execArgv: ["--import", import.meta.resolve("tsx")],
-      env: toolEnvironment(), detached: process.platform !== "win32",
+      env: { ...toolEnvironment(), SHALLOW_DATA_DIR: dataDirectory }, detached: process.platform !== "win32",
       stdio: ["ignore", "ignore", "pipe", "ipc"],
     });
     let finish!: () => void;
@@ -83,6 +84,7 @@ export class PiWorkerClient implements CodingAgentPort {
       try {
         if (tree) await tree.stop();
         else child.kill("SIGKILL");
+        await rm(dataDirectory, { recursive: true, force: true });
       } catch (error) {
         throw new ExecutionFault("builder", "builder_cleanup", false, { cause: error });
       } finally { cleanupMs = Date.now() - cleanupStarted; this.active = undefined; finish(); }

@@ -116,6 +116,8 @@ Judge 在控制器应用副本中另启实例，复用匹配的构建产物；�
 
 运行数据必须写入 `SHALLOW_DATA_DIR` 指定目录，未设置该变量时由应用使用缺省数据目录。种子数据保留为应用输入，由应用初始化到数据目录。每次独立探针执行在控制器私有 workspace 下用 `mkdtemp` 建立全新数据目录，由应用按种子数据初始化；同一 case 内刷新、新浏览器上下文及需要验证的重启继续用同一数据目录，失败确认用另一个全新目录。数据由该执行生命周期清理，不混入源码摘要，不回写交付应用，也不接触官方评估数据。
 
+Pi Worker 的每次调用（含 baseline）也获得独立的 `SHALLOW_DATA_DIR`，shell 与 run_tests 继承它；父进程回收 Worker 后删除该目录，正常结束与超时均清理。应用必须遵守此环境变量；控制器不会猜测并删除应用自己的任意 data 文件。种子声明是初始状态，场景 GIVEN 所需的变更由准备动作建立，不能预先写入种子。
+
 `candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。
 
 Pi Worker、会话续接、进程组/作业回收、图片回退、网关 SSE 容错与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/sse-resilience.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块边界审计的额度与回滚由 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
@@ -181,7 +183,8 @@ GitOps（`src/git-ops.ts`）细节：
 
 | 来源 | 处理 |
 | --- | --- |
-| Builder 普通失败/超时 | 仅在相对接受基线存在实际应用改动、且应用可运行时 rescue；无改动或不可运行则恢复并标 blocked |
+| Builder 普通失败 | 仅在相对接受基线存在实际应用改动、且应用可运行时 rescue；无改动或不可运行则恢复并标 blocked |
+| 实现包超时 | 可运行的部分成果保存为空需求检查点，否则回滚；以新会话续做同包一次，至多 10min 且不超过实现阶段剩余预算；再次超时保留可运行代码并标 blocked，不记 implemented |
 | 网关 429/408/5xx 或连接故障 | Builder 与 Planner 共享有界退避，重试原调用；中断代码可另存检查点，需求保持待处理；额度耗尽后停止派发新任务并交付已有产物 |
 | 模块未完成或无法构建/启动 | 保存失败尝试，恢复检查点，标记模块失败，使用新会话继续其他模块 |
 | 可复现业务失败 | 保留实现，由所在模块的边界修复处理（每模块至多两轮）；复查既有通过项 |
