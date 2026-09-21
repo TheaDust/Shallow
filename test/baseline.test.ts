@@ -10,10 +10,10 @@ import { deriveModelTimeouts } from "../src/runtime-config.js";
 const fixture = resolve("test/fixtures/requirements.yaml");
 
 test("baseline gives ROOT subtrees twice the main packet timeout while retaining budget scaling", () => {
-  assert.equal(deriveBaselinePromptTimeoutMs(0), 10_800_000);
+  assert.equal(deriveBaselinePromptTimeoutMs(0), 16_200_000);
   assert.equal(deriveBaselinePromptTimeoutMs(600_000), 480_000);
-  assert.equal(deriveBaselinePromptTimeoutMs(10_000_000), 7_200_000);
-  assert.equal(deriveModelTimeouts(0).builderTimeoutMs, 3_600_000);
+  assert.equal(deriveBaselinePromptTimeoutMs(10_000_000), 8_000_000);
+  assert.equal(deriveModelTimeouts(0).builderTimeoutMs, 5_400_000);
 });
 
 test("loadRootModules splits ROOT direct children in declaration order", async () => {

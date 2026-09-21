@@ -79,11 +79,11 @@ test("Runtime config bounds model calls by the total budget", () => {
     plannerTimeoutMs: 10_000,
   });
   assert.deepEqual(deriveModelTimeouts(0), {
-    builderTimeoutMs: 3_600_000,
+    builderTimeoutMs: 5_400_000,
     plannerTimeoutMs: 720_000,
   });
   assert.deepEqual(deriveModelTimeouts(10_800_000), {
-    builderTimeoutMs: 3_600_000,
+    builderTimeoutMs: 4_320_000,
     plannerTimeoutMs: 720_000,
   });
   assert.deepEqual(deriveModelTimeouts(3_600_000), {

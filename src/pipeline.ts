@@ -43,6 +43,8 @@ import type {
 } from "./types.js";
 
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 3_600_000;
+const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
+const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
 
 export interface AppLifecycle {
   start(
@@ -146,7 +148,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
     const packetId = "packet" in request ? request.packet.id : "delivery-repair";
-    const ceiling = name === "implementation" ? (options.totalBudgetMs > 0 ? 600_000 : 3_600_000) : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : 120_000;
+    const ceiling = name === "implementation" ? IMPLEMENTATION_CALL_CEILING_MS : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : 120_000;
     const deadline = deps.clock.nowMs() + Math.min(ceiling, runOptions.timeoutMs ?? ceiling);
     const remaining = () => Math.min(deadline - deps.clock.nowMs(), budget.remaining(name));
     if (remaining() <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
@@ -411,7 +413,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       if (result.outcome === "timed_out" && !result.gatewayFailure) {
         await preserveInterruptedWork(packet);
-        const retryTimeoutMs = budget.callTimeout("implementation", 600_000);
+        const retryTimeoutMs = budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
         if (retryTimeoutMs > 0 && !gateway.exhausted) {
           const retryPacket: WorkPacket = { ...packet, attempt: 2 };
           state.setPacketAttempt(packet.id, retryPacket.attempt);

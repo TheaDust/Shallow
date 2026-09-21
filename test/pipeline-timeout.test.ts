@@ -29,7 +29,7 @@ for (const runnable of [true, false]) {
           assert.equal(request.packet.id, (f.builder.requests[0] as typeof request).packet.id);
           assert.equal(request.packet.attempt, 2);
           assert.equal(options?.sessionKey, undefined);
-          assert.equal(options?.timeoutMs, 600_000);
+          assert.equal(options?.timeoutMs, 2_700_000);
           if (runnable) assert.equal(await readFile(marker, "utf8"), "partial work");
           else await assert.rejects(readFile(marker), { code: "ENOENT" });
         }

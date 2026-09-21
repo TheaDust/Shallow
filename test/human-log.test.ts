@@ -312,8 +312,8 @@ test("Human logs report rescued modules in Chinese", () => {
 
 test("Human logs explain the bounded implementation retry", () => {
   assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_retry", {
-    packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 600_000 },
-  })), /新会话续做原需求包.*仅重试一次.*10m/);
+    packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 2_700_000 },
+  })), /新会话续做原需求包.*仅重试一次.*45m/);
 });
 
 test("Human logs distinguish runnable checkpoints, unknown audits, and retained repairs", () => {
