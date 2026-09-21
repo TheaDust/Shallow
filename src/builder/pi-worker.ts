@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { AuthStorage, ModelRegistry, SessionManager, SettingsManager, DefaultResourceLoader, createAgentSession } from "@mariozechner/pi-coding-agent";
@@ -31,6 +32,9 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const modelRegistry = ModelRegistry.inMemory(authStorage);
   modelRegistry.registerProvider("shallow-gateway", {
     baseUrl: input.gateway.baseUrl, api: "openai-completions", apiKey: "SHALLOW_RUNTIME_CREDENTIAL",
+    // Some OpenAI-compatible gateways (e.g. opencode.ai) require a routing session
+    // id on every request; the Planner sends the same header.
+    headers: { "x-opencode-session": randomUUID() },
     models: [piProviderModel(input.gateway.model, input.contextWindow)],
   });
   const settingsManager = SettingsManager.inMemory({ retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000,
