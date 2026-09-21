@@ -145,6 +145,26 @@ test("ignored output artifacts do not invalidate accepted input evidence", async
   });
 });
 
+test("CRLF re-checkout of tracked files does not invalidate accepted input evidence", async () => {
+  await fixture(async ({ output, candidate, contract }) => {
+    await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
+    await writeFile(join(output, "view.txt"), "line one\nline two\n");
+    await execFileAsync("git", ["-C", output, "init"]);
+    await execFileAsync("git", ["-C", output, "add", "."]);
+    await execFileAsync("git", ["-C", output, "-c", "user.name=ShallowCode", "-c", "user.email=shallowcode@local.invalid", "commit", "-m", "base"]);
+    const app = await candidate.start(output, contract);
+    candidate.recordAccepted(app.candidate!);
+    // Git re-checkout on Windows (core.autocrlf=true) rewrites LF as CRLF; the
+    // application is unchanged, so acceptance evidence must survive it.
+    await writeFile(join(output, "view.txt"), "line one\r\nline two\r\n");
+    await candidate.assertAcceptedInput();
+    // A real content change must still be rejected.
+    await writeFile(join(output, "view.txt"), "line one\nline two changed\n");
+    await assert.rejects(candidate.assertAcceptedInput(), /evidence is invalid/);
+    await app.stop();
+  });
+});
+
 test("the product-visible progress journal does not invalidate accepted input evidence", async () => {
   await fixture(async ({ output, candidate, contract }) => {
     await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");

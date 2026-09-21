@@ -246,6 +246,22 @@ function hash(value: string | Buffer): string { return createHash("sha256").upda
 function digestSnapshot(files: Snapshot): string { return hash(JSON.stringify([...files])); }
 
 /**
+ * On Windows Git may re-checkout tracked text files with CRLF (core.autocrlf),
+ * changing the raw bytes of an unchanged application. Acceptance evidence must
+ * stay invariant to that conversion, so line endings are normalized before
+ * hashing. Byte-exact copy integrity checks keep using snapshot()/digestSnapshot().
+ */
+function hashApplicationContent(content: Buffer): string {
+  if (!content.includes(0x0d)) return hash(content);
+  const normalized: number[] = [];
+  for (let index = 0; index < content.length; index += 1) {
+    if (content[index] === 0x0d && content[index + 1] === 0x0a) continue;
+    normalized.push(content[index]);
+  }
+  return hash(Buffer.from(normalized));
+}
+
+/**
  * Digest over exactly the files a Git rollback can restore: tracked files plus
  * untracked-but-not-ignored files. Ignored runtime/build artifacts (dist, data,
  * dependencies) cannot be rolled back, so they must not be part of acceptance
@@ -270,7 +286,7 @@ async function restorableInputDigest(root: string): Promise<string> {
           if (!after || before.ctimeMs !== after.ctimeMs || before.size !== after.size) {
             throw new Error("Application changed while hashing");
           }
-          files.set(path, { digest: hash(content), mode: before.mode & 0o111 });
+          files.set(path, { digest: hashApplicationContent(content), mode: before.mode & 0o111 });
         }
         return digestSnapshot(files);
       }
