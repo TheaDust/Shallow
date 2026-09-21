@@ -30,8 +30,17 @@ test("Engine-neutral Builder preserves separate prompts, references, key and sma
   await f.builder.run(f.request, { timeoutMs: 300, sessionKey: "module" });
   assert.equal(f.calls[0].timeoutMs, 300);
   assert.equal(f.calls[0].sessionKey, "module");
+  assert.deepEqual(f.calls[0].platformContract, f.request.platformContract);
   assert.ok(f.calls[0].references?.includes("reference/profile.png"));
   assert.match(f.calls[0].systemPrompt, /唯一代码实现者/);
+  assert.match(f.calls[0].taskPrompt, /REQ-A/);
+});
+
+test("Continuation keeps the packet and adds concrete failure feedback", async () => {
+  const f = await fixture([completed]);
+  await f.builder.run(f.request, { sessionKey: "same-packet", continuationFeedback: "Missing export {{literal}}" });
+  assert.equal(f.calls[0].sessionKey, "same-packet");
+  assert.match(f.calls[0].taskPrompt, /Missing export \{\{literal\}\}/);
   assert.match(f.calls[0].taskPrompt, /REQ-A/);
 });
 

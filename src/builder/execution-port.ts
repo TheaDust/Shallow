@@ -1,4 +1,5 @@
 import type { BuilderResult } from "./port.js";
+import type { PlatformContract } from "../types.js";
 
 /** Engine-independent prompt execution shared by the controller and raw baseline. */
 export interface CodingAgentRequest {
@@ -7,6 +8,7 @@ export interface CodingAgentRequest {
   outputDir: string;
   timeoutMs: number;
   sessionKey?: string;
+  platformContract?: PlatformContract;
   requirementsDir?: string;
   references?: string[];
   textOnly?: boolean;

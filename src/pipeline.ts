@@ -1,4 +1,5 @@
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import type {
   BuilderPort,
@@ -159,7 +160,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await state.record({ at: now(), type: "builder_started", packetId, detail: { mode: request.mode } });
         const at = deps.clock.nowMs();
         let result: BuilderResult;
-        try { result = await deps.builder.run(request, { timeoutMs: Math.max(1, Math.floor(remaining())), sessionKey: runOptions.sessionKey }); }
+        try { result = await deps.builder.run(request, { ...runOptions, timeoutMs: Math.max(1, Math.floor(remaining())) }); }
         catch (error) {
           if (error instanceof ExecutionFault) throw error;
           result = { outcome: "failed", sessionId: "unavailable", summary: errorMessage(error),
@@ -404,14 +405,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       // Every packet is implemented in a fresh session; handoff across packets
       // goes through the project itself (code, tests, ARCHITECTURE.md).
       let result: BuilderResult;
+      const implementationDeadline = deps.clock.nowMs() + budget.callTimeout("implementation", IMPLEMENTATION_CALL_CEILING_MS);
+      const sessionKey = randomUUID();
+      let mayContinue = true;
       try {
         result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation");
+          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey });
       } finally {
         // Drain background work before changing phases or leaving the run.
         await Promise.allSettled(planPromises);
       }
       if (result.outcome === "timed_out" && !result.gatewayFailure) {
+        mayContinue = false;
         await preserveInterruptedWork(packet);
         const retryTimeoutMs = budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
         if (retryTimeoutMs > 0 && !gateway.exhausted) {
@@ -462,6 +467,24 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       } else {
         try { candidate = await runnable(); }
         catch (error) { reason = errorMessage(error); }
+        const remainingMs = Math.min(implementationDeadline - deps.clock.nowMs(), budget.remaining("implementation"));
+        if (reason !== undefined && mayContinue && remainingMs > 0 && !gateway.exhausted) {
+          const failure = sanitizeDiagnosticText(reason, deps.diagnosticSecrets);
+          await state.record({ at: now(), type: "implementation_continued", packetId: packet.id,
+            detail: { reason: failure, timeoutMs: remainingMs } });
+          result = await build({ mode: "implement", packet, outputDir: options.outputDir,
+            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+          "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure });
+          if (result.gatewayFailure) {
+            await state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
+              detail: { requirementIds: packet.requirementIds, failure: result.gatewayFailure } });
+            break;
+          }
+          if (result.outcome === "completed") {
+            try { candidate = await runnable(); reason = undefined; }
+            catch (error) { reason = errorMessage(error); }
+          } else reason = result.summary || result.outcome;
+        }
         if (reason !== undefined) {
           await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
           await deps.git.restoreAccepted(state.snapshot.acceptedSha);

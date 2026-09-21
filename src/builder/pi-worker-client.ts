@@ -9,6 +9,7 @@ import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
 import { ownProcessTree, toolEnvironment } from "../process-lifecycle.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sanitizeDiagnosticText } from "../diagnostics.js";
+import { BuilderApp, type AppAction } from "./builder-app.js";
 
 export interface PiWorkerRequest extends CodingAgentRequest {
   gateway: GatewayConfig;
@@ -42,6 +43,7 @@ export class PiWorkerClient implements CodingAgentPort {
     if (prior && prior.cwd !== resolve(input.outputDir)) throw new Error("Pi session workspace mismatch");
     const fallback: PiWorkerResult = { sessionId: randomUUID(), outcome: "failed", summary: "Pi worker exited before producing a result" };
     const dataDirectory = await mkdtemp(join(resolve(this.sessionDir), "data-"));
+    const application = input.platformContract ? new BuilderApp(input.outputDir, { ...input.platformContract, dataDirectory }) : undefined;
     const child = fork(fileURLToPath(new URL("./pi-worker.ts", import.meta.url)), [], {
       cwd: input.outputDir, execArgv: ["--import", import.meta.resolve("tsx")],
       env: { ...toolEnvironment(), SHALLOW_DATA_DIR: dataDirectory }, detached: process.platform !== "win32",
@@ -50,6 +52,17 @@ export class PiWorkerClient implements CodingAgentPort {
     let finish!: () => void;
     const finished = new Promise<void>(res => { finish = res; });
     this.active = { child, finished };
+    const onAppRequest = (message: unknown) => {
+      const request = message as { type?: string; id?: string; action?: string } | null;
+      if (request?.type !== "builder_app" || typeof request.id !== "string" || !["start", "stop", "status"].includes(request.action ?? "")) return;
+      const respond = (detail: object) => {
+        if (child.connected) child.send({ type: "builder_app_result", id: request.id, ...detail }, () => {});
+      };
+      if (!application) { respond({ error: "No application contract provided" }); return; }
+      void application.run(request.action as AppAction).then(status => respond({ status }),
+        error => respond({ error: sanitizeDiagnosticText(String(error), [this.gateway.apiKey]) }));
+    };
+    child.on("message", onAppRequest);
     let timer: NodeJS.Timeout | undefined;
     let tree: Awaited<ReturnType<typeof ownProcessTree>> | undefined;
     let stderr = "";
@@ -82,8 +95,11 @@ export class PiWorkerClient implements CodingAgentPort {
       if (timer) clearTimeout(timer);
       const cleanupStarted = Date.now();
       try {
-        if (tree) await tree.stop();
-        else child.kill("SIGKILL");
+        child.off("message", onAppRequest);
+        try {
+          if (tree) await tree.stop();
+          else child.kill("SIGKILL");
+        } finally { await application?.close(); }
         await rm(dataDirectory, { recursive: true, force: true });
       } catch (error) {
         throw new ExecutionFault("builder", "builder_cleanup", false, { cause: error });

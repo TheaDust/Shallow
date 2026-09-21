@@ -31,6 +31,8 @@ npm run start
 
 运行数据写入 `SHALLOW_DATA_DIR` 指定目录，未设置时使用应用自己的缺省数据目录。开发工具已继承本次调用的临时数据目录，调用结束后会清理；将种子定义保留在源码中，首次启动初始化，重启保留已保存数据。
 
+浏览器自检前先安装依赖并构建，再用 app 工具的 start 启动并等待健康检查，以返回的 baseUrl 调用 browser。app 的 status 查询进程状态、stop 停止自行启动的应用；重新构建前先 stop，调用结束自动回收。browser 的 code 直接写函数体，可使用 page、context 和 Playwright expect；返回值及页面观察属于开发诊断。
+
 ## 工作方式
 
 - 每次请求只提供 ROOT 的一个直接子树，完整实现该子树及其全部后代。不要索要或读取完整的 requirements.yaml。

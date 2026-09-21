@@ -28,8 +28,8 @@ test("Pipeline checks module paths before the full atomic audit and keeps verifi
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(f.git.restoredShas, []);
     // Every implementation packet runs in a fresh session.
-    assert.equal(f.builder.runOptions[0]?.sessionKey, undefined);
-    assert.equal(f.builder.runOptions[1]?.sessionKey, undefined);
+    assert.ok(f.builder.runOptions[0]?.sessionKey);
+    assert.notEqual(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
     assert.equal(f.builder.closeCount, 1);
     const events = await f.events();
     assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
@@ -74,7 +74,7 @@ test("Audit replays a business failure in a fresh application before requesting 
     assert.ok(repair && repair.mode === "repair");
     assert.deepEqual(repair.packet.requirementIds, ["A", "B"]);
     assert.equal(repair.shadowObservation.failures.length, 2);
-    assert.equal(f.builder.runOptions[2]?.sessionKey, undefined);
+    assert.equal(f.builder.runOptions[f.builder.requests.findIndex(item => item.mode === "repair")]?.sessionKey, undefined);
     // Module boundary audit adds an extra probe round before consolidated.
     assert.equal(calls.get("packet-a"), 4);
     assert.equal(calls.get("packet-b"), 4);
@@ -193,15 +193,15 @@ test("Broken module startup restores its checkpoint and the next packet starts a
   await withModulePipeline(async f => {
     let starts = 0;
     f.deps.appLifecycle.start = async () => {
-      if (++starts === 1) throw new Error("broken build");
+      if (++starts <= 2) throw new Error("broken build");
       return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
     };
     const summary = await f.run();
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
     assert.deepEqual(summary.verifiedRequirementIds, ["C"]);
     assert.deepEqual(f.git.restoredShas, ["initial"]);
-    assert.equal(f.builder.runOptions[0]?.sessionKey, undefined);
-    assert.equal(f.builder.runOptions[1]?.sessionKey, undefined);
+    assert.equal(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
+    assert.notEqual(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[2]?.sessionKey);
   });
 });
 
@@ -217,8 +217,8 @@ test("A failed Builder receipt is rescued when the written application is runnab
     // initial + attempt snapshot for the rescued packet + two checkpoints.
     assert.equal(f.git.captureMessages.length, 4);
     // Implementation packets always run in fresh sessions.
-    assert.equal(builder.runOptions[0]?.sessionKey, undefined);
-    assert.equal(builder.runOptions[1]?.sessionKey, undefined);
+    assert.ok(builder.runOptions[0]?.sessionKey);
+    assert.notEqual(builder.runOptions[0]?.sessionKey, builder.runOptions[1]?.sessionKey);
     const events = await f.events();
     const rescued = events.filter(item => item.type === "module_rescued");
     assert.equal(rescued.length, 1);
@@ -386,7 +386,7 @@ test("Real Git keeps a blocked module's rejected attempt reachable in history", 
     f.deps.git = await GitCliOps.open(f.options.outputDir);
     let starts = 0;
     f.deps.appLifecycle.start = async () => {
-      if (++starts === 1) throw new Error("broken build");
+      if (++starts <= 2) throw new Error("broken build");
       return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
     };
     const summary = await f.run();

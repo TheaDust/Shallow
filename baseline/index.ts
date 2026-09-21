@@ -11,6 +11,10 @@ import {
   deriveModelTimeouts,
   readEnvFile,
   readGatewayConfig,
+  createArcPlatformContract,
+  pickFreePort,
+  parseEvaluationPort,
+  resolvePlatformExtraPorts,
 } from "../src/runtime-config.js";
 
 export interface RootModule {
@@ -53,6 +57,10 @@ export async function baselineMain(
 
   const startedAt = Date.now();
   const perPromptTimeoutMs = deriveBaselinePromptTimeoutMs(cli.budgetMs);
+  const evaluationPort = parseEvaluationPort(mergedEnv) ?? 3000;
+  const extraPorts = await resolvePlatformExtraPorts(mergedEnv, evaluationPort);
+  const platformContract = createArcPlatformContract(process.platform,
+    await pickFreePort([evaluationPort, ...extraPorts]), evaluationPort, extraPorts);
   const runtime = new PiWorkerClient(gateway, join(tmpdir(), "shallowcode-runs", `baseline-${process.pid}-${startedAt}`, "pi-sessions"));
   const arcEvents = new ArcEventSink(cli.outputDir);
   await arcEvents.init();
@@ -69,7 +77,7 @@ export async function baselineMain(
       }
       log(`实现 ${module.index}/${module.total}：${module.id} - ${module.name}`);
       await arcEvents.requirementState(module.id, "implement", "running");
-      const { outcome } = await runtime.run({ systemPrompt,
+      const { outcome } = await runtime.run({ systemPrompt, platformContract,
         taskPrompt: modulePrompt(module, cli.requirementsDir, completed), outputDir: cli.outputDir,
         sessionKey: "baseline", contextWindow: BASELINE_CONTEXT_WINDOW, timeoutMs: cli.budgetMs > 0
           ? Math.min(perPromptTimeoutMs, Math.max(1, cli.budgetMs - (Date.now() - startedAt))) : perPromptTimeoutMs });

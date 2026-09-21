@@ -4,6 +4,7 @@ import { createServer, type ServerResponse } from "node:http";
 import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
+import { createArcPlatformContract, pickFreePort } from "../src/runtime-config.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 function completion(res: ServerResponse, tool?: { name: string; arguments: Record<string, unknown> }, finish = "stop") {
@@ -31,6 +32,33 @@ async function fixture(handler: (body: Record<string, unknown>, response: Server
   });
 }
 const prompt = { systemPrompt: "Use tools when requested.", taskPrompt: "do the task", timeoutMs: 10_000, sessionKey: "implementation" };
+
+for (const timeout of [false, true]) {
+  test(`Managed app IPC starts the real app and cleans it after Worker ${timeout ? "timeout" : "completion"}`, { timeout: 30_000 }, async () => {
+    let ready!: (response: ServerResponse) => void;
+    const appReady = new Promise<ServerResponse>(resolve => { ready = resolve; });
+    await fixture((_body, response, count) => {
+      if (count === 1) completion(response, { name: "app", arguments: { action: "start" } });
+      else ready(response);
+    }, async (client, app) => {
+      await writeFile(join(app, "server.cjs"), `
+require('node:http').createServer((req,res)=>res.end(JSON.stringify({data:process.env.SHALLOW_DATA_DIR,extra:process.env.ARC_EXTRA_PORTS}))).listen(Number(process.env.PORT),'127.0.0.1');
+`);
+      const platformContract = createArcPlatformContract(process.platform, await pickFreePort([3000, 3301]));
+      platformContract.startCommand = { executable: process.execPath, args: ["server.cjs"], cwd: "output" };
+      const running = client.run({ ...prompt, timeoutMs: 8_000, outputDir: app, platformContract });
+      const response = await appReady;
+      const live = await fetch(platformContract.baseUrl).then(r => r.json()) as { data: string; extra: string };
+      assert.ok(live.data);
+      assert.equal(live.extra, "0");
+      if (!timeout) completion(response);
+      const result = await running;
+      assert.equal(result.outcome, timeout ? "timed_out" : "completed", result.summary);
+      await assert.rejects(fetch(platformContract.baseUrl, { signal: AbortSignal.timeout(1000) }));
+      await assert.rejects(readdir(live.data), { code: "ENOENT" });
+    });
+  });
+}
 
 test("Authentication failure is not retried and its session is not reused", { timeout: 30_000 }, async () => {
   let count = 0;

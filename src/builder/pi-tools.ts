@@ -6,6 +6,7 @@ import { toolEnvironment } from "../process-lifecycle.js";
 import { PROGRESS_DIR_NAME } from "../progress-journal.js";
 import { createBrowserTool } from "./pi-browser-tool.js";
 import { createTestTool } from "./pi-test-tool.js";
+import { createAppTool } from "./pi-app-tool.js";
 
 export async function assertToolPath(root: string, input: string): Promise<string> {
   const canonicalRoot = await realpath(root);
@@ -123,7 +124,7 @@ function scriptNameIsTest(name: string): boolean {
   return normalized.split(/[:.\-]/).some(part => part === "test" || part === "tests");
 }
 
-export function createPiTools(cwd: string): ToolDefinition[] {
+export function createPiTools(cwd: string, managedApp = false): ToolDefinition[] {
   const files = [createReadToolDefinition(cwd), createEditToolDefinition(cwd), createWriteToolDefinition(cwd)] as unknown as ToolDefinition[];
   const guarded = files.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
     const params = args[1] as { path: string };
@@ -160,6 +161,6 @@ export function createPiTools(cwd: string): ToolDefinition[] {
   } });
   // Retain the SDK schema and output truncation, replace only the execution backend.
   shell.name = "shell";
-  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and type checks; run tests with the run_tests tool instead. Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed.`;
-  return [...guarded, shell as unknown as ToolDefinition, createTestTool(cwd), createBrowserTool()];
+  shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and type checks; run tests with the run_tests tool instead. ${managedApp ? "Use the app tool to start and stop the application for browser checks." : "Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed."}`;
+  return [...guarded, shell as unknown as ToolDefinition, createTestTool(cwd), createBrowserTool(), ...(managedApp ? [createAppTool()] : [])];
 }

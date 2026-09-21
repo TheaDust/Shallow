@@ -316,6 +316,12 @@ test("Human logs explain the bounded implementation retry", () => {
   })), /新会话续做原需求包.*仅重试一次.*45m/);
 });
 
+test("Human logs explain a same-session continuation with its actual failure", () => {
+  assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_continued", {
+    packetId: "packet-a", detail: { reason: "missing export", timeoutMs: 60_000 },
+  })), /同会话续做一次.*missing export/);
+});
+
 test("Human logs distinguish runnable checkpoints, unknown audits, and retained repairs", () => {
   const formatter = new HumanRunFormatter();
   const checkpoint = formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "checkpoint_saved", {

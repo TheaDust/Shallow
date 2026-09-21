@@ -1,5 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
-import { chromium, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
@@ -30,12 +29,13 @@ export async function closeSharedBrowser(): Promise<void> {
 
 const parameters = Type.Object({
   url: Type.String({ description: "URL of the locally started application page to open first" }),
-  code: Type.String({ description: "Async JavaScript function body executed with (page, context) after the URL opens; may return a JSON-serializable observation" }),
+  screenshot: Type.Optional(Type.Boolean({ description: "Include a viewport screenshot when visual inspection is needed (requires image-capable model)" })),
+  code: Type.String({ description: "Async JavaScript function body executed with (page, context) after the URL opens; use await for actions and return a JSON-serializable observation; Playwright expect is also injected" }),
 });
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
-) => (page: Page, context: BrowserContext) => Promise<unknown>;
+) => (page: Page, context: BrowserContext, assertion: typeof expect) => Promise<unknown>;
 
 export function createBrowserTool(): ToolDefinition<typeof parameters> {
   return {
@@ -59,34 +59,49 @@ export function createBrowserTool(): ToolDefinition<typeof parameters> {
       page.on("pageerror", error => {
         if (consoleErrors.length < MAX_CONSOLE_ERRORS) consoleErrors.push(String(error));
       });
+      let timer: NodeJS.Timeout | undefined;
+      let onAbort: (() => void) | undefined;
       try {
         signal?.throwIfAborted();
-        await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
-        const run = new AsyncFunction("page", "context", params.code);
-        const script = run(page, context);
-        // The race below reports a rejection; this handler only avoids an
-        // unhandled rejection when the timeout or abort wins first.
-        void script.catch(() => undefined);
-        const timedOut = delay(SCRIPT_TIMEOUT_MS).then(() => {
-          throw new Error(`browser script exceeded ${SCRIPT_TIMEOUT_MS / 1_000}s`);
-        });
-        const aborted = new Promise<never>((_resolve, reject) =>
-          signal?.addEventListener("abort", () => reject(new Error("browser tool aborted")), { once: true }));
-        const value = await Promise.race([script, timedOut, aborted]);
+        let value: unknown;
+        let error: string | undefined;
+        try {
+          const script = (async () => {
+            await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
+            page.setDefaultTimeout(5_000);
+            return new AsyncFunction("page", "context", "expect", params.code)(page, context, expect);
+          })();
+          const interrupted = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`browser script exceeded ${SCRIPT_TIMEOUT_MS / 1_000}s`)), SCRIPT_TIMEOUT_MS);
+            onAbort = () => reject(new Error("browser tool aborted"));
+            signal?.addEventListener("abort", onAbort, { once: true });
+          });
+          value = await Promise.race([script, interrupted]);
+        } catch (failure) {
+          error = String(failure).slice(0, MAX_RESULT_TEXT);
+        } finally {
+          if (timer) clearTimeout(timer);
+          if (onAbort) signal?.removeEventListener("abort", onAbort);
+        }
         signal?.throwIfAborted();
-        const pageText = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
+        const pageText = await page.locator("body").innerText({ timeout: 2_000 }).catch(() => "");
+        const accessibility = await page.locator("body").ariaSnapshot({ timeout: 2_000 }).catch(() => "");
         const title = await page.title().catch(() => "");
         const payload = {
-          url: page.url(),
-          title,
-          consoleErrors,
+          ok: !error, error, url: page.url(), title, consoleErrors,
           result: serialize(value),
-          pageText: pageText.slice(0, MAX_PAGE_TEXT),
+          ...(!error && value === undefined ? { warning: "Script returned no observation. Use an explicit return or awaited expect assertions; this is not proof of requirement completion." } : {}),
+          pageText: pageText.slice(0, MAX_PAGE_TEXT), accessibility: accessibility.slice(0, 4_000),
         };
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify(payload, null, 1) }],
-          details: { url: payload.url, title, consoleErrorCount: consoleErrors.length },
-        };
+        if (error) throw new Error(JSON.stringify(payload));
+        const content: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = [
+          { type: "text", text: JSON.stringify(payload, null, 1) },
+        ];
+        if (params.screenshot) {
+          const screenshot = await page.screenshot({ type: "jpeg", quality: 60, timeout: 2_000 }).catch(() => undefined);
+          if (screenshot) content.push({ type: "image", data: screenshot.toString("base64"), mimeType: "image/jpeg" });
+        }
+        return { content, details: { ok: true, url: payload.url, title, consoleErrorCount: consoleErrors.length } };
       } finally {
         await context.close().catch(() => undefined);
       }
