@@ -8,7 +8,7 @@ test("gateway provider model keeps the default window unless a run overrides it"
   const fallback = piProviderModel("provider/model");
   assert.equal(fallback.id, "provider/model");
   assert.equal(fallback.contextWindow, 256_000);
-  assert.equal(fallback.maxTokens, 16_384);
+  assert.equal(fallback.maxTokens, 65_536);
   assert.deepEqual(fallback.input, ["text", "image"]);
   assert.equal(piProviderModel("provider/model", 1_000_000).contextWindow, 1_000_000);
 });
