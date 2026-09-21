@@ -445,26 +445,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       let candidate: CandidateEvidence | undefined;
       let reason = result.outcome === "completed" ? undefined : result.summary || result.outcome;
-      if (reason !== undefined) {
-        // Save the attempt first, then check what actually runs: a missing
-        // receipt must not discard runnable code.
-        await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
-        const receiptFailure = reason;
-        try {
-          if (!await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) throw new Error("Builder failed without application changes");
-          candidate = await runnable(); reason = undefined;
-        }
-        catch (error) { reason = errorMessage(error); }
-        if (reason === undefined) {
-          await state.record({ at: now(), type: "module_rescued", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason: receiptFailure } });
-        } else {
-          await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-          state.markRequirements(packet.requirementIds, "blocked");
-          await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
-          for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
-          continue;
-        }
-      } else {
+      if (result.outcome === "completed") {
         try { candidate = await runnable(); }
         catch (error) { reason = errorMessage(error); }
         const remainingMs = Math.min(implementationDeadline - deps.clock.nowMs(), budget.remaining("implementation"));
@@ -485,14 +466,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             catch (error) { reason = errorMessage(error); }
           } else reason = result.summary || result.outcome;
         }
-        if (reason !== undefined) {
-          await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
-          await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-          state.markRequirements(packet.requirementIds, "blocked");
-          await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
-          for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
-          continue;
+      }
+      // Initial and continued ordinary failures share the same rescue gate.
+      // Timeouts and gateway failures retain their separate recovery semantics.
+      if (result.outcome === "failed") {
+        await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
+        const receiptFailure = result.summary || result.outcome;
+        try {
+          if (!await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) throw new Error("Builder failed without application changes");
+          candidate = await runnable(); reason = undefined;
         }
+        catch (error) { reason = errorMessage(error); }
+        if (reason === undefined) {
+          await state.record({ at: now(), type: "module_rescued", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason: receiptFailure } });
+        }
+      }
+      if (reason !== undefined) {
+        if (result.outcome !== "failed") await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
+        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+        state.markRequirements(packet.requirementIds, "blocked");
+        await state.record({ at: now(), type: "module_failed", packetId: packet.id, detail: { requirementIds: packet.requirementIds, reason } });
+        for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+        continue;
       }
       // Track which audit packets are eligible for module boundary audit.
       for (const p of relatedAuditPackets) {

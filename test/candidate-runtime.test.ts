@@ -150,6 +150,7 @@ test("CRLF re-checkout of tracked files does not invalidate accepted input evide
     await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
     await writeFile(join(output, "view.txt"), "line one\nline two\n");
     await execFileAsync("git", ["-C", output, "init"]);
+    await execFileAsync("git", ["-C", output, "config", "core.autocrlf", "true"]);
     await execFileAsync("git", ["-C", output, "add", "."]);
     await execFileAsync("git", ["-C", output, "-c", "user.name=ShallowCode", "-c", "user.email=shallowcode@local.invalid", "commit", "-m", "base"]);
     const app = await candidate.start(output, contract);
@@ -164,6 +165,54 @@ test("CRLF re-checkout of tracked files does not invalidate accepted input evide
     await app.stop();
   });
 });
+
+for (const scenario of ["binary-tracked", "binary-untracked", "explicit-binary", "conversion-disabled", "committed-crlf"] as const) {
+  test(`Candidate detects byte changes in ${scenario} input`, async () => {
+    await fixture(async ({ output, candidate, contract, counts }) => {
+      const binary = scenario.startsWith("binary-");
+      const before = Buffer.from(binary ? [0, 137, 80, 13, 10, 26, 10] : "one\r\ntwo\r\n");
+      const after = Buffer.from(binary ? [0, 137, 80, 10, 26, 10] : "one\ntwo\n");
+      // Spaces exercise the NUL-delimited --eol filename parsing.
+      const asset = "asset sample.dat";
+      await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
+      await writeFile(join(output, asset), before);
+      await execFileAsync("git", ["-C", output, "init"]);
+      await execFileAsync("git", ["-C", output, "config", "core.autocrlf",
+        scenario === "conversion-disabled" || scenario === "committed-crlf" ? "false" : "true"]);
+      if (scenario === "explicit-binary") await writeFile(join(output, ".gitattributes"), "*.dat -text\n");
+      if (scenario !== "binary-untracked") await execFileAsync("git", ["-C", output, "add", "."]);
+      if (scenario === "committed-crlf") await writeFile(join(output, ".gitattributes"), "*.dat text=auto\n");
+      const app = await candidate.start(output, contract);
+      candidate.recordAccepted(app.candidate!);
+      await app.stop();
+      await writeFile(join(output, asset), after);
+      await assert.rejects(candidate.assertAcceptedInput(), /evidence is invalid/);
+      await candidate.prepare();
+      assert.deepEqual(await readFile(join(candidate.directory, asset)), after);
+      assert.equal(await counts(), "install\nbuild\nbuild\n");
+    });
+  });
+}
+
+for (const attributes of ["text", "text=auto", "eol=lf"] as const) {
+  test(`Git ${attributes} attributes normalize text with core.autocrlf=false`, async () => {
+    await fixture(async ({ output, candidate, contract, counts }) => {
+      await writeFile(join(output, ".gitignore"), "dist/\nnode_modules/\n");
+      await writeFile(join(output, ".gitattributes"), `view.txt ${attributes}\n`);
+      await writeFile(join(output, "view.txt"), "one\ntwo\n");
+      await execFileAsync("git", ["-C", output, "init"]);
+      await execFileAsync("git", ["-C", output, "config", "core.autocrlf", "false"]);
+      await execFileAsync("git", ["-C", output, "add", "."]);
+      const app = await candidate.start(output, contract);
+      candidate.recordAccepted(app.candidate!);
+      await app.stop();
+      await writeFile(join(output, "view.txt"), "one\r\ntwo\r\n");
+      await candidate.assertAcceptedInput();
+      await candidate.prepare();
+      assert.equal(await counts(), "install\nbuild\n");
+    });
+  });
+}
 
 test("the product-visible progress journal does not invalidate accepted input evidence", async () => {
   await fixture(async ({ output, candidate, contract }) => {

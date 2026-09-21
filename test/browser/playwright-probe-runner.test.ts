@@ -148,8 +148,10 @@ test("Playwright Probe Runner classifies a wrong assertion as fail", async () =>
 
     const report = await new PlaywrightProbeRunner().run(plan, {
       baseUrl: server.baseUrl,
-      stepTimeoutMs: 100,
-      caseTimeoutMs: 1_000,
+      // This tests assertion classification, so navigation needs enough time
+      // even when other Chromium test files run concurrently.
+      stepTimeoutMs: 1_000,
+      caseTimeoutMs: 5_000,
     });
 
     assert.equal(report.verdict, "fail");

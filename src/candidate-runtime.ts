@@ -247,18 +247,29 @@ function digestSnapshot(files: Snapshot): string { return hash(JSON.stringify([.
 
 /**
  * On Windows Git may re-checkout tracked text files with CRLF (core.autocrlf),
- * changing the raw bytes of an unchanged application. Acceptance evidence must
- * stay invariant to that conversion, so line endings are normalized before
- * hashing. Byte-exact copy integrity checks keep using snapshot()/digestSnapshot().
+ * Normalize only paths for which Git enables text conversion. Binary assets and
+ * -text paths retain their exact bytes. Copy integrity remains byte-exact too.
  */
-function hashApplicationContent(content: Buffer): string {
-  if (!content.includes(0x0d)) return hash(content);
-  const normalized: number[] = [];
+function hashApplicationContent(content: Buffer, normalize: boolean): string {
+  if (!normalize || !content.includes(0x0d)) return hash(content);
+  const normalized = Buffer.allocUnsafe(content.length);
+  let length = 0;
   for (let index = 0; index < content.length; index += 1) {
     if (content[index] === 0x0d && content[index + 1] === 0x0a) continue;
-    normalized.push(content[index]);
+    normalized[length++] = content[index];
   }
-  return hash(Buffer.from(normalized));
+  return hash(normalized.subarray(0, length));
+}
+
+function normalizesLineEndings(info: string, autoCrlf: boolean): boolean {
+  const match = /^i\/(\S*)\s+w\/(\S*)\s+attr\/(.*)$/.exec(info);
+  if (!match) throw new Error("Unexpected git ls-files --eol output");
+  const [, indexed, working, rawAttributes] = match;
+  const attributes = rawAttributes.trim();
+  if (working === "-text" || attributes === "-text") return false;
+  if (/^text(?: |$)/.test(attributes)) return true;
+  // Auto conversion preserves files already committed with CRLF.
+  return (attributes.startsWith("text=auto") || autoCrlf) && indexed !== "crlf" && indexed !== "mixed";
 }
 
 /**
@@ -274,10 +285,20 @@ async function restorableInputDigest(root: string): Promise<string> {
     const canonical = await realpath(root);
     const toplevel = await runGit(canonical, ["rev-parse", "--show-toplevel"], true);
     if (toplevel.code === 0 && samePathish(await realpath(toplevel.stdout.trim()), canonical)) {
-      const listed = await runGit(canonical, ["ls-files", "-c", "-o", "--exclude-standard", "-z"], true);
+      const listed = await runGit(canonical, ["ls-files", "-c", "-o", "--exclude-standard", "--eol", "-z"], true);
       if (listed.code === 0) {
+        const config = await runGit(canonical, ["config", "--type=bool-or-str", "--get", "core.autocrlf"], true);
+        const autoCrlf = /^(true|input)$/.test(config.stdout.trim());
+        const paths = new Map<string, boolean>();
+        for (const entry of listed.stdout.split("\0").filter(Boolean)) {
+          const separator = entry.indexOf("\t");
+          if (separator < 0) throw new Error("Unexpected git ls-files --eol output");
+          const path = entry.slice(separator + 1);
+          if (path === ".arc" || path.startsWith(".arc/") || isProgressPath(path)) continue;
+          paths.set(path, normalizesLineEndings(entry.slice(0, separator), autoCrlf));
+        }
         const files: Snapshot = new Map();
-        for (const path of listed.stdout.split("\0").filter(p => p && p !== ".arc" && !p.startsWith(".arc/") && !isProgressPath(p)).sort()) {
+        for (const path of [...paths.keys()].sort()) {
           const absolute = join(canonical, path);
           const before = await lstat(absolute).catch(() => undefined);
           if (!before?.isFile()) continue;
@@ -286,7 +307,7 @@ async function restorableInputDigest(root: string): Promise<string> {
           if (!after || before.ctimeMs !== after.ctimeMs || before.size !== after.size) {
             throw new Error("Application changed while hashing");
           }
-          files.set(path, { digest: hashApplicationContent(content), mode: before.mode & 0o111 });
+          files.set(path, { digest: hashApplicationContent(content, paths.get(path)!), mode: before.mode & 0o111 });
         }
         return digestSnapshot(files);
       }

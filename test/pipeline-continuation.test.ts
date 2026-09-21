@@ -1,6 +1,43 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { withModulePipeline } from "./helpers/module-pipeline.js";
+
+for (const scenario of ["runnable", "unchanged", "broken", "timed_out"] as const) {
+  test(`Failed continuation rescue: ${scenario}`, async () => {
+    await withModulePipeline(async f => {
+      let starts = 0;
+      f.deps.appLifecycle.start = async () => {
+        if (++starts === 1 || (scenario === "broken" && starts === 2)) throw new Error("build failed");
+        return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
+      };
+      const original = f.builder.run.bind(f.builder);
+      f.builder.run = async (request, options) => {
+        const result = await original(request, options);
+        if (!options?.continuationFeedback) return result;
+        f.git.applicationChanged = scenario !== "unchanged";
+        if (f.git.applicationChanged) await writeFile(join(request.outputDir, "fixed.txt"), "fixed");
+        return { ...result, outcome: scenario === "timed_out" ? "timed_out" : "failed",
+          summary: "terminal response incomplete" };
+      };
+      const summary = await f.run();
+      const rescued = (await f.events()).filter(e => e.type === "module_rescued");
+      assert.equal(f.builder.requests.length, 3, "no extra continuation or timeout retry");
+      if (scenario === "runnable") {
+        assert.equal(summary.status, "delivered");
+        assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+        assert.equal(rescued.length, 1);
+        assert.deepEqual(f.git.restoredShas, []);
+      } else {
+        assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
+        assert.deepEqual(summary.implementedRequirementIds, ["C"]);
+        assert.equal(rescued.length, 0);
+        assert.equal(f.git.restoredShas.length, 1);
+      }
+    });
+  });
+}
 
 test("Build failure continues only the same packet/session within its remaining budget", async () => {
   await withModulePipeline(async f => {
