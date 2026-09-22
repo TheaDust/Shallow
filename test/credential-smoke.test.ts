@@ -96,6 +96,7 @@ function smokePacket(): WorkPacket {
         ],
         references: [],
         exactUiStrings: ["Profile name", "Save", "Saved"],
+        seedDeclarations: [],
         product: {
           kind: "generic_web",
           rootId: "ROOT",

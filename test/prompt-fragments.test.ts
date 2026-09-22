@@ -210,6 +210,7 @@ function packet(kind: string, requirementNames: string[]): WorkPacket {
       scenarios: [`${name} scenario`],
       references: [],
       exactUiStrings: [],
+      seedDeclarations: [],
       product: {
         kind: kind as never,
         rootId: "ROOT",

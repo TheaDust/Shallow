@@ -205,6 +205,7 @@ function collectAtomics(
       scenarios,
       references: [...new Set([node, ...ancestors].flatMap(item => [...extractReferences(item.description), ...(item.visual_reference ?? [])]))],
       exactUiStrings: extractUiStrings(evidenceText),
+      seedDeclarations: extractSeedDeclarations(evidenceText),
       product,
       ancestors: ancestors.map((ancestor) => ({
         id: ancestor.id,
@@ -243,6 +244,18 @@ function extractUiStrings(text: string): string[] {
     }
   }
   return values.sort((left, right) => left.index - right.index).map(({ value }) => value);
+}
+
+function extractSeedDeclarations(text: string): string[] {
+  const declarations: string[] = [];
+  for (const match of text.matchAll(/Seed data:\s*(.+?)(?=\s+Seed data:|[\n]|$)/gim)) {
+    const clause = match[1]
+      .replace(/\s+(?:Reference image:|!\[)[\s\S]*$/i, "")
+      .trim()
+      .replace(/\.$/, "");
+    if (clause && !declarations.includes(clause)) declarations.push(clause);
+  }
+  return declarations;
 }
 
 function requireRecord(value: unknown, location: string): Record<string, unknown> {

@@ -6,7 +6,7 @@ import type { WorkPacket } from "../src/types.js";
 function packet(text = 'Open "Items" and click "Publish".'): WorkPacket {
   return { id: "packet-a", requirementIds: ["A"], attempt: 1, requirements: [{
     id: "A", name: "Publish", text, declarationIndex: 0, folderPath: ["ROOT"], ancestors: [],
-    dependencyIds: [], scenarios: [], references: [], exactUiStrings: ["Items", "Publish"],
+    dependencyIds: [], scenarios: [], references: [], exactUiStrings: ["Items", "Publish"], seedDeclarations: [],
     product: { kind: "generic_web", rootId: "ROOT", rootName: "Product", description: "", seedData: [] },
   }] };
 }

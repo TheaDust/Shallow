@@ -393,18 +393,28 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
   const seedData: SeedDataCategory[] = [
     { category: "notes", items: ["Sprint goals", "Groceries"] },
   ];
-  await planner.plan(packet(seedData));
+  const seededPacket = packet(seedData);
+  seededPacket.requirements[0].seedDeclarations = ['shelf "Shelf 4.3.1"'];
+  await planner.plan(seededPacket);
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
   assert.match(seeded.messages[0].content, /seed data/i);
   assert.match(seeded.messages[0].content, /逐字出现/);
-  const seededPayload = JSON.parse(seeded.messages[1].content) as { seedData?: unknown };
+  const seededPayload = JSON.parse(seeded.messages[1].content) as {
+    seedData?: unknown;
+    requirements: Array<{ seedDeclarations?: unknown }>;
+  };
   assert.deepEqual(seededPayload.seedData, seedData);
+  assert.deepEqual(seededPayload.requirements[0].seedDeclarations, ['shelf "Shelf 4.3.1"']);
 
   await planner.plan(packet());
   const plain = JSON.parse(bodies[1]) as { messages: Array<{ content: string }> };
-  const plainPayload = JSON.parse(plain.messages[1].content) as { seedData?: unknown };
+  const plainPayload = JSON.parse(plain.messages[1].content) as {
+    seedData?: unknown;
+    requirements: Array<{ seedDeclarations?: unknown }>;
+  };
   assert.equal("seedData" in plainPayload, false);
+  assert.deepEqual(plainPayload.requirements[0].seedDeclarations, []);
 });
 
 test("Probe Planner extracts JSON from fenced and annotated responses", async () => {
@@ -657,6 +667,7 @@ function packet(seedData: SeedDataCategory[] = []): WorkPacket {
         scenarios: ["Save the profile"],
         references: ["reference/profile.png"],
         exactUiStrings: ["Profile name", "Save"],
+        seedDeclarations: [],
         product: {
           kind: "generic_web",
           rootId: "ROOT",

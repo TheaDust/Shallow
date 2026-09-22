@@ -161,10 +161,20 @@ function projectContextSection(context: BuilderProjectContext): string {
 }
 
 function workPacketSection(packet: WorkPacket): string {
+  const seedLines = packet.requirements.flatMap((requirement) =>
+    requirement.seedDeclarations.map((clause) => `- ${requirement.id}：${clause}`),
+  );
   return [
     "## 当前工作包",
     "",
     packet.requirements.map(renderRequirement).join("\n\n"),
+    ...(seedLines.length > 0 ? [
+      "",
+      "### 本包初始数据清单（Seed data 逐字落库）",
+      "",
+      "以下实体必须全部出现在首次启动的初始数据中：名称逐字、一个不落，包括仅作其他场景前置条件的实体；与先前工作包已交付的初始数据累加，不得覆盖或丢失。",
+      ...seedLines,
+    ] : []),
   ].join("\n");
 }
 

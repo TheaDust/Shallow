@@ -263,3 +263,36 @@ test("A gateway outage during the timeout retry pauses and resumes the same pack
     assert.equal(events.filter(event => event.type === "module_rescued").length, 0);
   });
 });
+
+test("A gateway outage spanning multiple call windows pauses repeatedly and still completes the same packet", async () => {
+  await withModulePipeline(async f => {
+    let elapsed = 0;
+    f.options.totalBudgetMs = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    const original = f.builder.run.bind(f.builder);
+    const calls: string[] = [];
+    f.deps.builder.run = async (request, options) => {
+      assert.ok("packet" in request);
+      calls.push(request.packet.id);
+      // One implementation call window is 90 minutes; fail past two windows.
+      if (elapsed < 190 * 60_000) {
+        f.git.applicationChanged = false;
+        return { sessionId: "down", outcome: "failed", summary: "quota exhausted", gatewayFailure: httpGatewayFailure(429) };
+      }
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(summary.pendingRequirementIds, []);
+    const firstPacketId = calls[0];
+    let samePacketCalls = 0;
+    while (samePacketCalls < calls.length && calls[samePacketCalls] === firstPacketId) samePacketCalls++;
+    assert.ok(samePacketCalls > 20, `expected the same packet to be retried across call windows, saw ${samePacketCalls} calls`);
+    const events = await f.events();
+    const pauses = events.filter(event => event.type === "implementation_paused" && event.packetId === firstPacketId);
+    assert.ok(pauses.length >= 2, `expected repeated implementation_paused events, saw ${pauses.length}`);
+    assert.ok(elapsed >= 190 * 60_000, `expected the outage to span multiple call windows, saw ${elapsed}ms`);
+    assert.equal(events.filter(event => event.type === "module_rescued").length, 0);
+  });
+});

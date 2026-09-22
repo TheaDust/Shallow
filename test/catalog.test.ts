@@ -268,6 +268,56 @@ test("Catalog rejects malformed seed data", async () => {
   );
 });
 
+test("Catalog extracts verbatim Seed data declarations from requirement evidence", async () => {
+  const yaml = [
+    "id: ROOT",
+    "name: Root",
+    "type: ROOT",
+    "children:",
+    "  - id: AREA",
+    "    name: Area",
+    "    type: FOLDER",
+    "    dependencies: []",
+    "    description: 'Area. Seed data: verified account with nickname \"Demo User\", email \"demo@example.com\", and password \"Password123!\".'",
+    "    children:",
+    "      - id: A",
+    "        name: First",
+    "        type: ATOMIC",
+    "        dependencies: []",
+    "        description: 'Create a shelf. Reference image: ![image](./reference/create.png) Seed data: shelf \"Shelf 4.3.1\".'",
+    "      - id: B",
+    "        name: Second",
+    "        type: ATOMIC",
+    "        dependencies: []",
+    "        description: 'No seeds here.'",
+    "  - id: OTHER",
+    "    name: Other",
+    "    type: FOLDER",
+    "    dependencies: []",
+    "    children:",
+    "      - id: C",
+    "        name: Third",
+    "        type: ATOMIC",
+    "        dependencies: []",
+    "        description: 'Delete a shelf. Seed data: deletable shelf \"Shelf 4.4.1\". Seed data: account \"backup@example.com\".'",
+  ].join("\n");
+  await withYaml(`${yaml}\n`, async (file) => {
+    const catalog = await loadRequirementCatalog(file);
+    const byId = new Map(catalog.requirements.map((item) => [item.id, item]));
+    assert.deepEqual(byId.get("A")?.seedDeclarations, [
+      'verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
+      'shelf "Shelf 4.3.1"',
+    ]);
+    assert.deepEqual(byId.get("B")?.seedDeclarations, [
+      'verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
+    ]);
+    assert.deepEqual(byId.get("C")?.seedDeclarations, [
+      'deletable shelf "Shelf 4.4.1"',
+      'account "backup@example.com"',
+    ]);
+  });
+});
+
 async function withYaml(
   contents: string,
   callback: (file: string) => Promise<void>,

@@ -121,6 +121,7 @@ export class LlmProbePlanner implements ProbePlanner {
             scenarios: requirement.scenarios,
             references: requirement.references,
             exactUiStrings: requirement.exactUiStrings,
+            seedDeclarations: requirement.seedDeclarations,
           })),
         }),
       },

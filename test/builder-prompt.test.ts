@@ -40,6 +40,12 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /hash 路由/);
   assert.match(compiled.systemPrompt, /必须使用 HashRouter/);
   assert.match(compiled.systemPrompt, /@testing-library\/react/);
+  assert.match(compiled.systemPrompt, /逐字作为 label、placeholder、按钮与入口的可访问名/);
+  assert.match(compiled.systemPrompt, /不得缩写、加长、同义替换或翻译/);
+  assert.match(compiled.systemPrompt, /种子清单/);
+  assert.match(compiled.systemPrompt, /首次启动的初始数据中逐字存在/);
+  assert.match(compiled.systemPrompt, /产品名> logo/);
+  assert.match(compiled.systemPrompt, /首帧渲染即带对象名称/);
   assert.match(compiled.taskPrompt, /浏览器未执行/);
   assert.match(compiled.taskPrompt, /未执行/);
   assert.match(compiled.taskPrompt, /需求核对/);
@@ -109,6 +115,23 @@ test("Builder includes all seed data in implementation and both packet repair mo
   }
   assert.doesNotMatch(compileBuilderPrompt(implementRequest()).taskPrompt, /## 种子数据/);
   assert.doesNotMatch(compileBuilderPrompt(deliveryRequest()).taskPrompt, /## 种子数据/);
+});
+
+test("Work packet renders the aggregated verbatim seed checklist and omits it when empty", () => {
+  const withSeeds = implementRequest();
+  if (withSeeds.mode === "delivery_repair") throw new Error("unexpected mode");
+  withSeeds.packet.requirements[0].seedDeclarations = ['shelf "Shelf 4.3.1"', 'account "demo@example.com"'];
+  const seeded = compileBuilderPrompt(withSeeds).taskPrompt;
+  assert.match(seeded, /### 本包初始数据清单/);
+  assert.match(seeded, /逐字落库/);
+  assert.ok(seeded.includes('- REQ-PROFILE：shelf "Shelf 4.3.1"'));
+  assert.ok(seeded.includes('- REQ-PROFILE：account "demo@example.com"'));
+
+  const withoutSeeds = compileBuilderPrompt(implementRequest()).taskPrompt;
+  assert.doesNotMatch(withoutSeeds, /本包初始数据清单/);
+
+  const repaired = compileBuilderPrompt(repairRequest("repair")).taskPrompt;
+  assert.doesNotMatch(repaired, /本包初始数据清单/);
 });
 
 test("Repair prompt carries only the cleaned shadow observation", () => {
@@ -310,6 +333,7 @@ function requirementFixture(): AtomicRequirement {
     scenarios: ["Save a profile\nTHEN: The value remains after refresh."],
     references: ["reference/profile.png"],
     exactUiStrings: ["Profile name", "Save"],
+    seedDeclarations: [],
     product: {
       kind: "generic_web",
       rootId: "ROOT",

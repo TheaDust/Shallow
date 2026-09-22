@@ -189,6 +189,7 @@ function requirement(
     scenarios: options.scenarios ?? [],
     references: [],
     exactUiStrings: options.uiStrings ?? [],
+    seedDeclarations: [],
     product: {
       kind: "generic_web",
       rootId: "ROOT",
