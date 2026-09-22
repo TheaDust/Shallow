@@ -1,10 +1,12 @@
 import type { ProbePlanner, ProbePlannerFeedback, ProbeRefinementOptions } from "../../src/judge/llm-probe-planner.js";
 import type { ProbePlan } from "../../src/judge/probe-schema.js";
+import type { PlanReview } from "../../src/judge/semantic-review.js";
 import type { ProbeFailure, WorkPacket } from "../../src/types.js";
 
 export class FakeProbePlanner implements ProbePlanner {
   readonly packets: WorkPacket[] = [];
   readonly refinements: Array<{ original: ProbePlan; failures: ProbeFailure[]; feedback?: ProbePlannerFeedback; anchoredNames?: readonly string[] }> = [];
+  readonly reviews: Array<{ plan: ProbePlan; failures: ProbeFailure[] }> = [];
   private planIndex = 0;
 
   constructor(private readonly plans: ProbePlan[]) {}
@@ -23,5 +25,10 @@ export class FakeProbePlanner implements ProbePlanner {
     this.planIndex += 1;
     if (!plan) throw new Error("FakeProbePlanner has no refinement plan");
     return structuredClone(plan);
+  }
+
+  async reviewPlan(_packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[]): Promise<PlanReview> {
+    this.reviews.push({ plan: structuredClone(original), failures: structuredClone(failures) });
+    return { status: "sound", rationale: "fake semantic review: plan is grounded" };
   }
 }

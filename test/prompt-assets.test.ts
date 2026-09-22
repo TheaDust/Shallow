@@ -192,6 +192,9 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /登录表单可见或页面跳转不等于登录成功/);
   assert.match(planner, /逐字纳入 locator 或终末 assertion/);
   assert.match(planner, /不是本场景要创建或修改的对象/);
+  assert.match(planner, /expectationBasis/);
+  assert.match(planner, /逐字引用/);
+  assert.match(planner, /引用必须能在需求证据中逐字找到/);
   const refinement = loadPrompt("judge", "probe-refinement");
   assert.match(refinement, /仅调整 locator 对象/);
   assert.match(refinement, /冻结字段/);
@@ -199,6 +202,7 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(refinement, /anchoredRequirementNames/);
   assert.match(refinement, /列表之外的名称是猜测值/);
   assert.match(refinement, /hasText.*只允许出现在 `scope` 对象内部/);
+  assert.match(refinement, /expectationBasis/);
 });
 
 test("prompt assets contain no CR characters", async () => {

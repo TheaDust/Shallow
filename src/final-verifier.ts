@@ -58,6 +58,7 @@ export class FinalVerifier implements FinalVerifierPort {
               id: "root-page",
               requirementIds: ["delivery"],
               purpose: "happy_path",
+              expectationBasis: ["The delivered application serves the root page."],
               steps: [
                 { op: "goto", path: "/" },
                 {

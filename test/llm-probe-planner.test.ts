@@ -605,6 +605,7 @@ function validPlan(): {
     id: string;
     requirementIds: string[];
     purpose: string;
+    expectationBasis?: string[];
     steps: Array<Record<string, unknown>>;
   }>;
 } {
@@ -615,6 +616,7 @@ function validPlan(): {
         id: "save-profile",
         requirementIds: ["REQ-PROFILE"],
         purpose: "happy_path",
+        expectationBasis: ["Keep the profile after refresh."],
         steps: [
           { op: "goto", path: "/" },
           {
@@ -637,6 +639,7 @@ function validPlan(): {
         id: "refresh-profile",
         requirementIds: ["REQ-PROFILE"],
         purpose: "persistence",
+        expectationBasis: ["Keep the profile after refresh."],
         steps: [
           { op: "goto", path: "/" },
           { op: "reload" },
@@ -703,10 +706,11 @@ function jsonResponse(body: unknown): Response {
 test("Wire cases require a final assertion and parse it into the ordered execution plan", () => {
   assert.ok(PROBE_PLAN_JSON_SCHEMA.properties.cases.items.required.includes("assertion"));
   const plan = parseProbePlan({ packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
-    steps: [{ op: "goto", path: "/" }], assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } }] });
+    expectationBasis: ["requirement evidence"], steps: [{ op: "goto", path: "/" }],
+    assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } }] });
   assert.equal(plan.cases[0].steps.at(-1)?.op, "expectVisible");
   assert.throws(() => parseProbePlan({ packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
-    steps: [], assertion: { op: "goto", path: "/" } }] }), /must be an assertion/);
+    expectationBasis: ["requirement evidence"], steps: [], assertion: { op: "goto", path: "/" } }] }), /must be an assertion/);
 });
 
 test("Locator scopes are flat, bounded, and count as new localization evidence", () => {
@@ -723,3 +727,104 @@ test("Locator scopes are flat, bounded, and count as new localization evidence",
   unsafe.cases[0].steps[1].locator.scope.hasText = "x".repeat(2001);
   assert.throws(() => parseProbePlan(unsafe), /2000 characters/);
 });
+
+test("Every case must ground its expected outcome in verbatim requirement evidence", () => {
+  const missing = validPlan() as { packetId: string; cases: Array<Record<string, unknown>> };
+  delete missing.cases[0].expectationBasis;
+  assert.throws(() => parseProbePlan(missing, packet()), /expectationBasis/);
+
+  const invented = validPlan();
+  invented.cases[0].expectationBasis = ["A success toast appears"];
+  assert.throws(() => parseProbePlan(invented, packet()), /must quote the requirement evidence verbatim/);
+
+  const tooMany = validPlan();
+  tooMany.cases[0].expectationBasis = ["Keep the profile after refresh.", "Keep", "profile", "refresh"];
+  assert.throws(() => parseProbePlan(tooMany, packet()), /at most 3 expectationBasis quotes/);
+
+  const seed = validPlan();
+  seed.cases[0].expectationBasis = ["Sprint goals"];
+  assert.doesNotThrow(() => parseProbePlan(seed, packet([{ category: "notes", items: ["Sprint goals"] }])));
+
+  const scenario = validPlan();
+  scenario.cases[0].expectationBasis = ["Save the profile"];
+  assert.doesNotThrow(() => parseProbePlan(scenario, packet()));
+
+  const uncleaned = validPlan();
+  uncleaned.cases[0].expectationBasis = ["  keep   the PROFILE after refresh.  "];
+  assert.doesNotThrow(() => parseProbePlan(uncleaned, packet()));
+});
+
+test("Refinement freezes expectationBasis like every other non-locator field", () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const changed = structuredClone(original);
+  changed.cases[0].expectationBasis = ["A success toast appears"];
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed), /only locator fields/);
+});
+
+test("Probe Planner semantic review returns sound or a validated corrected plan", async () => {
+  const bodies: string[] = [];
+  const reviews = [
+    { verdict: "sound", rationale: "期望与需求原文一致" },
+    { verdict: "corrected", rationale: "计划误读种子",
+      corrections: [{ caseId: "save-profile", conflict: "需求写 active", basis: ["Keep the profile after refresh."] }],
+      plan: correctedPlan() },
+  ];
+  let call = 0;
+  const fetchFn: typeof fetch = async (_input, init) => {
+    bodies.push(String(init?.body));
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(reviews[call++]) } }] });
+  };
+  const planner = new LlmProbePlanner(config(), fetchFn);
+  const original = parseProbePlan(validPlan(), packet());
+
+  const sound = await planner.reviewPlan(packet(), original, behaviorFailures());
+  assert.deepEqual(sound, { status: "sound", rationale: "期望与需求原文一致" });
+  const corrected = await planner.reviewPlan(packet(), original, behaviorFailures());
+  assert.equal(corrected.status, "corrected");
+  if (corrected.status === "corrected") assert.equal(corrected.plan.cases[0].steps.at(-1)?.op, "expectText");
+
+  const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
+  assert.match(request.messages[0].content, /复核者/);
+  assert.match(request.messages[0].content, /expectationBasis/);
+  const payload = JSON.parse(request.messages[1].content) as { originalPlan?: unknown; failures?: unknown[] };
+  assert.ok(payload.originalPlan);
+  assert.equal((payload.failures as unknown[]).length, 1);
+  assert.doesNotMatch(JSON.stringify(payload), /source code|git diff|acceptedSha/);
+});
+
+test("Review contract violations are review-category errors with diagnostics", async () => {
+  for (const [payload, pattern] of [
+    [{ verdict: "sound", rationale: "x", plan: correctedPlan() }, /must not carry/],
+    [{ verdict: "corrected", rationale: "x",
+      corrections: [{ caseId: "ghost", conflict: "c", basis: ["Keep the profile after refresh."] }], plan: correctedPlan() }, /reviewed and corrected plans/],
+    [{ verdict: "corrected", rationale: "x",
+      corrections: [{ caseId: "save-profile", conflict: "c", basis: ["invented"] }], plan: correctedPlan() }, /verbatim/],
+  ] as const) {
+    const planner = new LlmProbePlanner(config(), async () =>
+      jsonResponse({ choices: [{ message: { content: JSON.stringify(payload) } }] }));
+    const original = parseProbePlan(validPlan(), packet());
+    await assert.rejects(planner.reviewPlan(packet(), original, behaviorFailures()), (error: unknown) => {
+      assert.ok(error instanceof ProbePlannerError);
+      assert.equal(error.category, "review");
+      assert.match(error.diagnostics.validationError ?? "", pattern);
+      return true;
+    });
+  }
+});
+
+function behaviorFailures(): ProbeFailure[] {
+  return [{ caseId: "save-profile", stepIndex: 3, category: "assertion", message: "expected Saved" }];
+}
+function correctedPlan(): unknown {
+  return { packetId: "packet-profile", cases: [
+    { id: "save-profile", requirementIds: ["REQ-PROFILE"], purpose: "happy_path",
+      expectationBasis: ["Keep the profile after refresh."],
+      steps: [{ op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "button", name: "Save" } }],
+      assertion: { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" } },
+    { id: "refresh-profile", requirementIds: ["REQ-PROFILE"], purpose: "persistence",
+      expectationBasis: ["Keep the profile after refresh."],
+      steps: [{ op: "goto", path: "/" }, { op: "reload" }],
+      assertion: { op: "expectValue", locator: { by: "label", text: "Profile name" }, value: "Ada" } },
+  ] };
+}

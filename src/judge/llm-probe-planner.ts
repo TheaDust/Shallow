@@ -8,9 +8,11 @@ import {
   PROBE_PLAN_JSON_SCHEMA,
   toWireProbePlan,
   assertLocatorOnlyRefinement,
+  groundedLocatorAnchors,
   parseProbePlan,
   type ProbePlan,
 } from "./probe-schema.js";
+import { parsePlanReview, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
 export interface ProbePlanOptions { timeoutMs: number }
 export interface ProbeRefinementOptions {
@@ -21,6 +23,7 @@ export interface ProbeRefinementOptions {
 export interface ProbePlanner {
   plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<ProbePlan>;
   refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbeRefinementOptions): Promise<ProbePlan>;
+  reviewPlan(packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<PlanReview>;
 }
 
 export interface ProbePlannerFeedback {
@@ -46,7 +49,8 @@ export type ProbePlannerErrorCategory =
   | "response"
   | "json"
   | "schema"
-  | "refinement";
+  | "refinement"
+  | "review";
 
 export class ProbePlannerError extends Error {
   readonly gatewayFailure?: GatewayFailure;
@@ -189,9 +193,72 @@ export class LlmProbePlanner implements ProbePlanner {
     return refined;
   }
 
+  async reviewPlan(packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<PlanReview> {
+    const content = await this.complete([
+      {
+        role: "system",
+        content: loadPrompt("judge", "probe-review"),
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          packetId: packet.id,
+          prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
+          ...(packet.requirements[0]?.product.seedData.length
+            ? { seedData: packet.requirements[0].product.seedData }
+            : {}),
+          requirements: packet.requirements.map((requirement) => ({
+            id: requirement.id,
+            name: requirement.name,
+            text: requirement.text,
+            ancestors: requirement.ancestors,
+            scenarios: requirement.scenarios,
+            references: requirement.references,
+            exactUiStrings: requirement.exactUiStrings,
+          })),
+          originalPlan: toWireProbePlan(original),
+          ...(groundedLocatorAnchors(original, packet).length
+            ? { anchoredRequirementNames: groundedLocatorAnchors(original, packet) }
+            : {}),
+          failures: failures.map((failure) => ({
+            caseId: failure.caseId,
+            stepIndex: failure.stepIndex,
+            step: original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex],
+            category: failure.category,
+            message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
+            accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined
+              : sanitizeDiagnosticText(failure.locatorSnapshot, [this.config.apiKey], 4_000),
+          })),
+          ...(feedback ? {
+            validationError: sanitizePlannerDiagnostic(feedback.validationError, this.config.apiKey),
+            previousResponsePreview: feedback.contentPreview === undefined ? undefined
+              : sanitizePlannerDiagnostic(feedback.contentPreview, this.config.apiKey),
+          } : {}),
+        }),
+      },
+    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA);
+    let value: unknown;
+    try {
+      value = JSON.parse(extractJsonPayload(content));
+    } catch (error) {
+      throw new ProbePlannerError("json", "Probe planner review content is not JSON", {
+        cause: error, content, apiKey: this.config.apiKey,
+      });
+    }
+    try {
+      return parsePlanReview(value, packet, original);
+    } catch (error) {
+      throw new ProbePlannerError("review", "Probe planner review violates the review contract", {
+        cause: error, content, apiKey: this.config.apiKey,
+      });
+    }
+  }
+
   private async complete(
     messages: Array<{ role: "system" | "user"; content: string }>,
     timeoutMs = this.config.timeoutMs,
+    schema: unknown = PROBE_PLAN_JSON_SCHEMA,
   ): Promise<string> {
     // Structured outputs (`json_schema`) are unavailable on several
     // OpenAI-compatible gateways, including the ARC-Bench model proxy, so the
@@ -199,7 +266,7 @@ export class LlmProbePlanner implements ProbePlanner {
     // JSON mode instead. Plan parsing still tolerates fenced or annotated text
     // and validates the result against PROBE_PLAN_JSON_SCHEMA.
     const requestMessages = messages.map((message, index) => index === 0
-      ? { ...message, content: `${message.content}\n\n仅返回符合此 schema 的 JSON：\n${JSON.stringify(PROBE_PLAN_JSON_SCHEMA)}` }
+      ? { ...message, content: `${message.content}\n\n仅返回符合此 schema 的 JSON：\n${JSON.stringify(schema)}` }
       : message);
     let response: Response;
     try {

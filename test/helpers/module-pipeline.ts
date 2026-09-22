@@ -10,7 +10,8 @@ import { GatewayRecovery } from "../../src/gateway-recovery.js";
 
 export function testPlan(packet: WorkPacket): ProbePlan {
   return { packetId: packet.id, cases: [{ id: `case-${packet.requirementIds[0]}`, requirementIds: packet.requirementIds,
-    purpose: "happy_path", steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] }] };
+    purpose: "happy_path", expectationBasis: [packet.requirements[0]?.text ?? "fixture"],
+    steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] }] };
 }
 export function pass(plan: ProbePlan): ShadowReport { return { packetId: plan.packetId, verdict: "pass", passedCases: plan.cases.map(item => item.id), failures: [] }; }
 export function fail(plan: ProbePlan, category: "assertion" | "locator" | "runner" = "assertion"): ShadowReport {
@@ -38,7 +39,8 @@ export async function withModulePipeline(callback: (fixture: PipelineFixture) =>
     let gatewayTime = 0;
     const deps: PipelineDeps = { builder, git, clock: { nowMs: () => 0 },
       gatewayRecovery: new GatewayRecovery({ now: () => gatewayTime, sleep: async ms => { gatewayTime += ms; } }),
-      planner: { plan: async packet => testPlan(packet), refineLocators: async original => original },
+      planner: { plan: async packet => testPlan(packet), refineLocators: async original => original,
+        reviewPlan: async () => ({ status: "sound" as const, rationale: "fixture review" }) },
       runner: { run: async plan => pass(plan) },
       appLifecycle: { start: async () => ({ baseUrl: options.platformContract.baseUrl, stop: async () => {} }) },
       finalVerifier: { verify: async () => ({ ok: true, stage: "complete", message: "fixture ready" }) } };

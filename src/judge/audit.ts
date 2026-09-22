@@ -38,8 +38,25 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     if (!plan) return { status: "inconclusive", reason: "probe planner failed" };
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
-    const first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
+    let first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
     plan = first.plan;
+    // Semantic attribution: a reproducible behavior failure is not yet a probe
+    // verdict. Only recovery-enabled audits review; detection-only audits publish
+    // without repairing.
+    if (policy.refineLocators && first.report.verdict !== "pass" && first.source === "probe" &&
+      first.report.failures.length > 0 &&
+      first.report.failures.every(item => item.category !== "locator" && item.category !== "runner") &&
+      remaining() > 0) {
+      const review = await reviewBehaviorFailures(packet, plan, first.report, deps, state, remaining);
+      if (review.status === "unavailable") {
+        return { status: "inconclusive", plan, report: first.report, reason: review.reason };
+      }
+      if (review.status === "corrected") {
+        plan = review.plan;
+        first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
+        plan = first.plan;
+      }
+    }
     if (first.report.verdict === "pass") return { status: "verified", plan, report: first.report };
     if (first.source !== "probe" || first.report.failures.some(item => item.category === "locator" || item.category === "runner")) {
       // A planner guess remains inconclusive. A stable absence of an explicitly
@@ -74,6 +91,63 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
 
 function failureKey(report: ShadowReport): string {
   return JSON.stringify(report.failures.map(item => [item.caseId, item.stepIndex, item.category]).sort());
+}
+
+const DEFAULT_SEMANTIC_REVIEW_ATTEMPTS = 2;
+
+type SemanticReviewOutcome =
+  | { status: "sound" }
+  | { status: "corrected"; plan: ProbePlan }
+  | { status: "unavailable"; reason: string };
+
+async function reviewBehaviorFailures(
+  packet: WorkPacket,
+  plan: ProbePlan,
+  report: ShadowReport,
+  deps: PipelineDeps,
+  state: RunStateStore,
+  remaining: () => number,
+): Promise<SemanticReviewOutcome> {
+  await state.record({ at: now(), type: "probe_review_started", packetId: packet.id,
+    detail: { cases: plan.cases.length, failed: report.failures.length } });
+  const beforePlanSha256 = probePlanSha256(plan);
+  let feedback: ProbePlannerFeedback | undefined;
+  for (let attempt = 0; attempt < DEFAULT_SEMANTIC_REVIEW_ATTEMPTS; attempt += 1) {
+    if (remaining() <= 0) break;
+    try {
+      const review = await deps.planner.reviewPlan(packet, plan, report.failures, feedback, {
+        timeoutMs: Math.max(1, Math.min(PLANNER_ATTEMPT_TIMEOUT_MS, remaining())),
+      });
+      if (review.status === "sound") {
+        await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
+          detail: { verdict: "sound", rationale: review.rationale, beforePlanSha256 } });
+        return { status: "sound" };
+      }
+      const exhausted = review.corrections.filter(correction =>
+        state.semanticCorrectionCount(packet.id, correction.caseId) >= 1);
+      if (exhausted.length > 0) {
+        const reason = `semantic correction quota exhausted for: ${exhausted.map(item => item.caseId).join(", ")}`;
+        await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
+          detail: { message: reason, planSha256: beforePlanSha256 } });
+        return { status: "unavailable", reason };
+      }
+      for (const correction of review.corrections) state.noteSemanticCorrection(packet.id, correction.caseId);
+      await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
+        detail: { verdict: "corrected", rationale: review.rationale, beforePlanSha256,
+          planSha256: probePlanSha256(review.plan), corrections: review.corrections } });
+      return { status: "corrected", plan: review.plan };
+    } catch (error) {
+      if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
+      const detail = plannerFailureDetail(error);
+      await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
+        detail: { ...detail, planSha256: beforePlanSha256 } });
+      feedback = error instanceof ProbePlannerError
+        ? { validationError: String(detail.validationError ?? detail.message),
+            ...(typeof detail.contentPreview === "string" ? { contentPreview: detail.contentPreview } : {}) }
+        : { validationError: errorMessage(error) };
+    }
+  }
+  return { status: "unavailable", reason: "semantic review could not establish valid probe evidence" };
 }
 
 function missingRequiredControl(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): boolean {

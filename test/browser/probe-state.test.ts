@@ -16,7 +16,8 @@ test("State probes reject no-op toggles and visible fallbacks in Chromium", asyn
     const run = (plan: ProbePlan) => new PlaywrightProbeRunner().run(plan, {
       baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 300, caseTimeoutMs: 5_000,
     });
-    const plan: ProbePlan = { packetId: "state", cases: [{ id: "toggle", requirementIds: ["A"], purpose: "happy_path", steps: [
+    const plan: ProbePlan = { packetId: "state", cases: [{ id: "toggle", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["fixture"], steps: [
       { op: "goto", path: "/" },
       { op: "click", locator: { by: "role", role: "button", name: "Toggle" } },
       { op: "expectAttribute", locator: { by: "role", role: "button", name: "Toggle" }, attribute: "aria-expanded", value: "false" },

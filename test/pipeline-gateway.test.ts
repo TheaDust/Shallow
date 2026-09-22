@@ -296,3 +296,19 @@ test("A gateway outage spanning multiple call windows pauses repeatedly and stil
     assert.equal(events.filter(event => event.type === "module_rescued").length, 0);
   });
 });
+
+test("Semantic review is routed through planner gateway recovery", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    f.deps.runner.run = async plan => fail(plan);
+    let reviews = 0;
+    f.deps.planner.reviewPlan = async () => {
+      reviews += 1;
+      if (reviews === 1) throw new ProbePlannerError("transport", "HTTP 429", { httpStatus: 429 });
+      return { status: "sound", rationale: "429 recovered" };
+    };
+    await f.run();
+    assert.ok(reviews >= 2);
+    assert.ok((await f.events()).some(event => event.type === "gateway_wait" && event.detail?.source === "planner"));
+  });
+});

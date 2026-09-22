@@ -36,6 +36,7 @@ export class RunStateStore {
   private readonly runId = randomUUID();
   private firstEventAtMs?: number;
   private evidenceCount = 0;
+  private readonly semanticCorrections = new Map<string, number>();
 
   constructor(
     initial: InitialRunState,
@@ -75,6 +76,16 @@ export class RunStateStore {
 
   setPacketAttempt(packetId: string, attempt: number): void {
     this.state.attemptsByPacketId[packetId] = attempt;
+  }
+
+  /** Per-run quota fence: each case may receive at most one semantic correction. */
+  semanticCorrectionCount(packetId: string, caseId: string): number {
+    return this.semanticCorrections.get(`${packetId}\u0000${caseId}`) ?? 0;
+  }
+
+  noteSemanticCorrection(packetId: string, caseId: string): void {
+    const key = `${packetId}\u0000${caseId}`;
+    this.semanticCorrections.set(key, (this.semanticCorrections.get(key) ?? 0) + 1);
   }
 
   /** Bounded, source-free failure evidence; neither full plans nor raw browser traces. */

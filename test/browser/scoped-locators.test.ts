@@ -15,7 +15,7 @@ test("Scoped accessible locators select the correct repeated card and count mult
   if (!address || typeof address === "string") assert.fail("missing port");
   try {
     const plan = parseProbePlan({ packetId: "cards", cases: [{ id: "select-beta", requirementIds: ["req"], purpose: "happy_path",
-      steps: [{ op: "goto", path: "/" },
+      expectationBasis: ["fixture"], steps: [{ op: "goto", path: "/" },
         { op: "expectCount", locator: { by: "role", role: "button", name: "More" }, count: 2 },
         { op: "click", locator: { by: "role", role: "button", name: "More", scope: { by: "role", role: "article", hasText: "Beta note" } } }],
       assertion: { op: "expectText", locator: { by: "role", role: "status" }, text: "Beta selected" } }] });

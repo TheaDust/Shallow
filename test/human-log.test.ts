@@ -342,3 +342,20 @@ test("Human logs distinguish runnable checkpoints, unknown audits, and retained 
     detail: { round: 1, retained: false, reason: "regression" },
   })), /已恢复原检查点.*regression/);
 });
+
+test("Human logs explain semantic review outcomes", () => {
+  const formatter = new HumanRunFormatter();
+  const base = "2026-09-22T00:00:00.000Z";
+  assert.match(formatLine(formatter, eventLine(base, "probe_review_started", {
+    packetId: "p", detail: { cases: 4, failed: 2 },
+  })), /^\[\d{2}:\d{2}:\d{2} \+0s\] 开始语义复核探针依据（p）；失败 2 \/ 4 个用例$/);
+  assert.match(formatLine(formatter, eventLine(base, "probe_reviewed", {
+    packetId: "p", detail: { verdict: "sound", rationale: "依据成立" },
+  })), /语义复核确认探针依据成立（p）$/);
+  assert.match(formatLine(formatter, eventLine(base, "probe_reviewed", {
+    packetId: "p", detail: { verdict: "corrected", corrections: [{ caseId: "c" }] },
+  })), /语义复核发现探针与需求冲突，按需求重建 1 个用例并重跑（p）$/);
+  assert.match(formatLine(formatter, eventLine(base, "probe_review_failed", {
+    packetId: "p", detail: { message: "schema drift" },
+  })), /语义复核失败（p）：schema drift$/);
+});

@@ -43,7 +43,7 @@ import type {
   WorkPacket,
 } from "./types.js";
 
-const BOUNDARY_REPAIR_CALL_CEILING_MS = 3_600_000;
+const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
 /** One planner call keeps retrying an outage for at most this long. */
@@ -145,6 +145,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
     refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, plannerWindow(),
       () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+    reviewPlan: (packet, original, failures, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
+      () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
   } };
   deps.candidate?.setRecorder(event => state.record(event));
 

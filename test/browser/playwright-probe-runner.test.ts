@@ -35,6 +35,7 @@ test("Playwright Probe Runner executes press, doubleClick, and hover actions in 
           id: "keyboard-and-pointer",
           requirementIds: ["REQ-ACTIONS"],
           purpose: "happy_path",
+          expectationBasis: ["fixture"],
           steps: [
             { op: "goto", path: "/" },
             {
@@ -101,6 +102,7 @@ test("Playwright Probe Runner creates a fresh browser context for newContext", a
           id: "replace-context",
           requirementIds: ["REQ-CONTEXT"],
           purpose: "persistence",
+          expectationBasis: ["fixture"],
           steps: [
             { op: "goto", path: "/" },
             { op: "newContext", actor: "second-user" },
@@ -135,6 +137,7 @@ test("Playwright Probe Runner classifies a wrong assertion as fail", async () =>
         id: "wrong-value",
         requirementIds: ["REQ-PROFILE"],
         purpose: "happy_path",
+        expectationBasis: ["fixture"],
         steps: [
           { op: "goto", path: "/" },
           {
@@ -171,6 +174,7 @@ test("Playwright Probe Runner returns inconclusive with an aria snapshot for a m
         id: "missing-control",
         requirementIds: ["REQ-PROFILE"],
         purpose: "happy_path",
+        expectationBasis: ["fixture"],
         steps: [
           { op: "goto", path: "/" },
           {
@@ -206,6 +210,7 @@ test("Playwright Probe Runner rejects navigation away from the configured origin
           id: "cross-origin",
           requirementIds: ["REQ-NAV"],
           purpose: "negative",
+          expectationBasis: ["fixture"],
           steps: [{ op: "goto", path: "https://example.com" }],
         },
       ],
@@ -232,6 +237,7 @@ function happyPlan(): ProbePlan {
         id: "save-profile",
         requirementIds: ["REQ-PROFILE"],
         purpose: "happy_path",
+        expectationBasis: ["fixture"],
         steps: [
           { op: "goto", path: "/" },
           {
@@ -255,6 +261,7 @@ function happyPlan(): ProbePlan {
         id: "refresh-profile",
         requirementIds: ["REQ-PROFILE"],
         purpose: "persistence",
+        expectationBasis: ["fixture"],
         steps: [
           { op: "goto", path: "/" },
           { op: "reload" },

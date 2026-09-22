@@ -12,7 +12,8 @@ function packet(text = 'Open "Items" and click "Publish".'): WorkPacket {
 }
 
 function plan(path = "/"): ProbePlan {
-  return { packetId: "packet-a", cases: [{ id: "publish", requirementIds: ["A"], purpose: "happy_path", steps: [
+  return { packetId: "packet-a", cases: [{ id: "publish", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["Open"], steps: [
     { op: "goto", path },
     { op: "click", locator: { by: "role", role: "button", name: "Publish", exact: true } },
     { op: "expectVisible", locator: { by: "role", role: "status" } },

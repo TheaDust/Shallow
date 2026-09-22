@@ -326,7 +326,8 @@ children:
           async close() {},
         },
         planner: new FakeProbePlanner([{ packetId: "packet-req-profile", cases: [{ id: "main", requirementIds: ["REQ-PROFILE"],
-          purpose: "happy_path", steps: [{ op: "goto", path: "/" }, { op: "expectText", locator: { by: "role", role: "main" }, text: "current" }] }] }]),
+          purpose: "happy_path", expectationBasis: ["Show current in the main content."],
+          steps: [{ op: "goto", path: "/" }, { op: "expectText", locator: { by: "role", role: "main" }, text: "current" }] }] }]),
         runner: { async run(plan, options) {
           const report = await browser.run(plan, options);
           if (mutation === "probe") await writeFile(join(output, "late.txt"), "late");

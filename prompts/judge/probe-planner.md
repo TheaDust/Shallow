@@ -14,6 +14,7 @@
       "id": "kebab-case-unique-id",
       "requirementIds": ["REQ-x.y"],
       "purpose": "happy_path",
+      "expectationBasis": ["<逐字引用需求证据中的原文>"],
       "steps": [
         { "op": "goto", "path": "/" },
         { "op": "fill", "locator": { "by": "label", "text": "Name" }, "value": "Example" },
@@ -33,6 +34,12 @@
 - 每个 case 的 `requirementIds` 只能引用本次输入 `requirements` 数组里出现的 `id`，逐个照抄。
 - 绝不引用 `prerequisites`（前置需求）里的 id，也绝不引用你臆测的父需求或兄弟需求 id；前置需求只用于理解上下文，不作为本 case 的覆盖对象。
 - 全部 case 合起来必须覆盖 `requirements` 里的每一个 id，且只覆盖这些 id。
+
+## 需求依据（expectationBasis）
+- 每个 case 必须提供 `expectationBasis`：1 到 3 条必须逐字引用需求证据原文的引用（原样复制，不做改写），说明该 case 的终末断言所期待的结果由哪句需求、场景、祖先描述、exactUiStrings、种子条目或前置需求支撑。
+- 引用必须能在需求证据中逐字找到（程序会校验；忽略首尾空白、连续空白折叠与大小写差异）。改写、概括、翻译或自行编写「合理」的反馈文案都会导致计划被拒绝。
+- 臆造需求未声明的反馈属于致命错误：找不到可引用原文时，删除该断言或改用证据支持的结果，绝不能保留无依据的预期。
+- expectationBasis 描述的是期待结果的需求依据，不是复述断言本身；断言必须检查目标操作的结果（按钮是否真的生效、数据是否真的保存），而不是只检查页面容器或原本就可见的元素。
 
 ## Locator 陷阱
 纯 text locator（`by: "text"` 且没有声明 exactUiString、seed 条目或先前 fill 值支撑）必须同时提供同一目标的 role 或 label fallback；优先结构化 role。绝不让一个无依据的裸 text 成为唯一定位方式。

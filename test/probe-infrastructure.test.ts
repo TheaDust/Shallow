@@ -7,6 +7,7 @@ import type { ProbePlan } from "../src/judge/probe-schema.js";
 import { startFixtureServer } from "./helpers/fixture-server.js";
 
 const plan: ProbePlan = { packetId: "packet", cases: [{ id: "case", requirementIds: ["req"], purpose: "happy_path",
+  expectationBasis: ["fixture"],
   steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }],
 }] };
 const options = { baseUrl: "http://127.0.0.1:1", stepTimeoutMs: 100, caseTimeoutMs: 1000 };
@@ -68,7 +69,7 @@ test("Locator fallbacks rescue missed primaries; hits keep assertion failures st
     const report = await new PlaywrightProbeRunner().run({
       packetId: "packet", cases: [
         {
-          id: "fallback-click", requirementIds: ["req"], purpose: "happy_path", steps: [
+          id: "fallback-click", requirementIds: ["req"], purpose: "happy_path", expectationBasis: ["fixture"], steps: [
             { op: "goto", path: "/" },
             {
               op: "click",
@@ -78,14 +79,14 @@ test("Locator fallbacks rescue missed primaries; hits keep assertion failures st
           ],
         },
         {
-          id: "any-of-feedback", requirementIds: ["req"], purpose: "happy_path", steps: [
+          id: "any-of-feedback", requirementIds: ["req"], purpose: "happy_path", expectationBasis: ["fixture"], steps: [
             { op: "goto", path: "/" },
             { op: "hover", locator: { by: "role", role: "button", name: "Hint" } },
             { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved", anyOf: ["Hovered"] },
           ],
         },
         {
-          id: "assert-after-fallback", requirementIds: ["req"], purpose: "happy_path", steps: [
+          id: "assert-after-fallback", requirementIds: ["req"], purpose: "happy_path", expectationBasis: ["fixture"], steps: [
             { op: "goto", path: "/" },
             {
               op: "expectText",
@@ -110,7 +111,7 @@ test("All locator candidates missing stays a locator failure eligible for refine
     const report = await new PlaywrightProbeRunner().run({
       packetId: "packet", cases: [
         {
-          id: "all-miss", requirementIds: ["req"], purpose: "happy_path", steps: [
+          id: "all-miss", requirementIds: ["req"], purpose: "happy_path", expectationBasis: ["fixture"], steps: [
             { op: "goto", path: "/" },
             {
               op: "expectVisible",

@@ -11,6 +11,7 @@ function plan(packetId: string, covered: string[]): ProbePlan {
   return {
     packetId,
     cases: [{ id: "case-1", requirementIds: covered, purpose: "happy_path",
+      expectationBasis: ["fixture"],
       steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] }],
   };
 }

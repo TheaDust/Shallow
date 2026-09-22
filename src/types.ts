@@ -150,6 +150,11 @@ interface RunEventDetails {
     durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
   probe_refined: { plan?: ProbePlan; refinementAttempt?: number; beforePlanSha256?: string; planSha256?: string };
   probe_refinement_failed: DiagnosticDetail & { refinementAttempt?: number; planSha256?: string };
+  probe_review_started: { cases: number; failed: number };
+  probe_reviewed: { verdict: "sound" | "corrected"; rationale?: string;
+    corrections?: Array<{ caseId: string; conflict?: string; basis?: string[] }>;
+    beforePlanSha256?: string; planSha256?: string };
+  probe_review_failed: DiagnosticDetail & { planSha256?: string };
   probe_planner_retry: DiagnosticDetail;
   probe_planner_failed: DiagnosticDetail;
   application_starting: Record<string, never>;

@@ -20,8 +20,9 @@ async function audit(f: PipelineFixture, remaining: () => number = () => 60_000,
     startedAtMs: 0, totalBudgetMs: 60_000 }, f.options.ledgerFile, f.deps.logSink);
   return auditPacket(packet, undefined, f.options, f.deps, state, remaining, policy);
 }
-function homePlan(role = "tab"): ProbePlan {
+function homePlan(role = "tab", basis = "Display the main workspace."): ProbePlan {
   return { packetId: "packet-a", cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: [basis],
     steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role, name: role === "button" ? "home" : "Home",
       ...(role === "button" ? { exact: true } : { fallbacks: [{ by: "text", text: "Home" }] }) } }] }] };
 }
@@ -32,14 +33,16 @@ for (const mode of ["required", "transient", "guessed", "no-navigation"] as cons
       const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
       catalog.children[0].children[0].description = 'Open "Items" and click "Publish".';
       await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
-      const plan: ProbePlan = { packetId: "packet-a", cases: [{ id: "publish", requirementIds: ["A"], purpose: "happy_path", steps: [
+      const plan: ProbePlan = { packetId: "packet-a", cases: [{ id: "publish", requirementIds: ["A"], purpose: "happy_path",
+        expectationBasis: ['Open "Items" and click "Publish".'], steps: [
         { op: "goto", path: "/" },
         ...(mode === "no-navigation" ? [] : [{ op: "click" as const, locator: { by: "role" as const, role: "button", name: "Items" } }]),
         { op: "click", locator: { by: "role", role: "button", name: mode === "guessed" ? "Unknown" : "Publish" } },
         { op: "expectVisible", locator: { by: "role", role: "status" } },
       ] }] };
-      f.deps.planner = new FakeProbePlanner([plan]);
-      f.deps.planner.refineLocators = async original => original;
+      const planner = new FakeProbePlanner([plan]);
+      f.deps.planner = planner;
+      planner.refineLocators = async original => original;
       let runs = 0;
       f.deps.runner.run = async current => {
         if (++runs === 2 && mode === "transient") return pass(current);
@@ -52,6 +55,7 @@ for (const mode of ["required", "transient", "guessed", "no-navigation"] as cons
       assert.equal(result.repairableLocatorFailure === true, mode === "required");
       assert.equal(runs, mode === "required" || mode === "transient" ? 2 : 1);
       assert.equal(f.builder.requests.length, 0);
+      assert.equal(planner.reviews.length, 0);
     });
   });
 }
@@ -92,7 +96,8 @@ test("Audit forwards requirement-declared anchor names to locator refinement", a
     const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
     catalog.children[0].children[0].description = 'Show "Home" in the workspace.';
     await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
-    const planner = new FakeProbePlanner([homePlan(), homePlan("button")]);
+    const planner = new FakeProbePlanner([homePlan("tab", 'Show "Home" in the workspace.'),
+      homePlan("button", 'Show "Home" in the workspace.')]);
     f.deps.planner = planner;
     let runs = 0;
     f.deps.runner.run = async plan => { runs += 1; return runs === 1 ? fail(plan, "locator") : pass(plan); };
@@ -166,12 +171,14 @@ test("Detection-only audits skip locator refinement but still run the probes", a
   await withModulePipeline(async f => {
     let runs = 0;
     let refinements = 0;
-    f.deps.planner = new FakeProbePlanner([homePlan()]);
-    f.deps.planner.refineLocators = async original => { refinements++; return homePlan("button"); };
+    const planner = new FakeProbePlanner([homePlan()]);
+    f.deps.planner = planner;
+    planner.refineLocators = async original => { refinements++; return homePlan("button"); };
     f.deps.runner.run = async plan => { runs++; return fail(plan, "locator"); };
     assert.equal((await audit(f, () => 60_000, { refineLocators: false })).status, "inconclusive");
     assert.equal(runs, 1);
     assert.equal(refinements, 0);
+    assert.equal(planner.reviews.length, 0);
     assert.deepEqual(f.git.restoredShas, []);
   });
 });

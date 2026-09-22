@@ -144,6 +144,18 @@ function describe(type: string, event: RunEvent): string | null {
       return `定位器已精化，重跑探针（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}`;
     case "probe_refinement_failed":
       return `定位器精化失败（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}${plannerFailureText(detail)}`;
+    case "probe_review_started":
+      return `开始语义复核探针依据（${packetId}）；失败 ${pickNumber(detail, "failed") ?? 0} / ${pickNumber(detail, "cases") ?? 0} 个用例`;
+    case "probe_reviewed": {
+      const verdict = pickString(detail, "verdict");
+      if (verdict === "corrected") {
+        const corrections = Array.isArray(detail?.corrections) ? detail.corrections.length : 0;
+        return `语义复核发现探针与需求冲突，按需求重建 ${corrections} 个用例并重跑（${packetId}）`;
+      }
+      return `语义复核确认探针依据成立（${packetId}）`;
+    }
+    case "probe_review_failed":
+      return `语义复核失败（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_retry":
       return `探针规划失败，将重试（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_failed":

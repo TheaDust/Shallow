@@ -56,7 +56,8 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
       message: "opaque-credential", locatorSnapshot: "Cookie: sid=private\n" + "x".repeat(5000),
       locatorAttempts: [{ locator: { by: "text" as const, text: "opaque-credential" }, message: "password=attempt-secret" }],
     })), probePlan: "HIDDEN-PLAN" };
-    const plan: ProbePlan = { packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path", steps: [
+    const plan: ProbePlan = { packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
+      expectationBasis: ["fixture"], steps: [
       { op: "goto", path: "/" }, { op: "reload" },
       { op: "expectText", locator: { by: "text", text: "opaque-credential" }, text: "HIDDEN-ASSERTION" },
     ] }] };

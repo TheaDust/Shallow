@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ProbeFailure, WorkPacket } from "../types.js";
+import type { AtomicRequirement, ProbeFailure, WorkPacket } from "../types.js";
 
 export type ProbeScope =
   | { by: "role"; role: string; name?: string; exact?: boolean; hasText?: string }
@@ -49,6 +49,8 @@ export interface ProbeCase {
   id: string;
   requirementIds: string[];
   purpose: "happy_path" | "persistence" | "negative" | "permission";
+  /** Verbatim requirement-evidence quotes supporting the expected outcome (1-3). */
+  expectationBasis: string[];
   steps: ProbeStep[];
 }
 
@@ -62,6 +64,7 @@ const MAX_STEPS = 30;
 const MAX_STRING = 2_000;
 const MAX_FALLBACKS = 3;
 const MAX_TEXT_ALTERNATIVES = 4;
+const MAX_BASIS_QUOTES = 3;
 
 const STRING_SCHEMA = { type: "string", maxLength: 2_000 };
 const NONEMPTY_STRING_SCHEMA = { ...STRING_SCHEMA, minLength: 1 };
@@ -147,8 +150,7 @@ const STEP_SCHEMA = {
   ],
 };
 
-export const PROBE_PLAN_JSON_SCHEMA = {
-  $defs: { locator: LOCATOR_SCHEMA, locatorFlat: LOCATOR_FLAT_SCHEMA, scope: SCOPE_SCHEMA },
+export const PROBE_PLAN_BODY = {
   type: "object",
   additionalProperties: false,
   required: ["packetId", "cases"],
@@ -161,13 +163,21 @@ export const PROBE_PLAN_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "requirementIds", "purpose", "assertion", "steps"],
+        required: ["id", "requirementIds", "purpose", "expectationBasis", "assertion", "steps"],
         properties: {
           id: { type: "string" },
           requirementIds: { type: "array", minItems: 1, items: { type: "string" } },
           purpose: {
             type: "string",
             enum: ["happy_path", "persistence", "negative", "permission"],
+          },
+          expectationBasis: {
+            type: "array",
+            minItems: 1,
+            maxItems: MAX_BASIS_QUOTES,
+            description:
+              "1-3 verbatim quotes copied from the requirement evidence (requirement text, scenarios, ancestor descriptions, exactUiStrings, seed items, or prerequisites) that justify this case's expected outcome. Quotes are validated as literal substrings.",
+            items: NONEMPTY_STRING_SCHEMA,
           },
           assertion: { anyOf: STEP_SCHEMA.anyOf.filter(schema => {
             const op = schema.properties.op as { enum: string[] };
@@ -185,6 +195,11 @@ export const PROBE_PLAN_JSON_SCHEMA = {
       },
     },
   },
+} as const;
+
+export const PROBE_PLAN_JSON_SCHEMA = {
+  $defs: { locator: LOCATOR_SCHEMA, locatorFlat: LOCATOR_FLAT_SCHEMA, scope: SCOPE_SCHEMA },
+  ...PROBE_PLAN_BODY,
 } as const;
 
 export function parseProbePlan(
@@ -216,7 +231,8 @@ export function parseProbePlan(
   }
   if (packet?.requirements) {
     for (const probeCase of cases) {
-      const evidence = [...packet.requirements.filter(item => probeCase.requirementIds.includes(item.id)), ...(packet.prerequisites ?? [])];
+      const scoped = packet.requirements.filter(item => probeCase.requirementIds.includes(item.id));
+      const evidence = [...scoped, ...(packet.prerequisites ?? [])];
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         if (step.op === "goto" && step.path !== "/") {
@@ -241,6 +257,9 @@ export function parseProbePlan(
           throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: unanchored text locator requires a role or label fallback; prefer a structural role when no UI label is declared`);
         }
       }
+      assertQuotesGrounded(probeCase.expectationBasis,
+        requirementEvidenceTexts(scoped, packet.prerequisites),
+        `ProbePlan case ${probeCase.id}.expectationBasis`);
     }
   }
   return { packetId, cases };
@@ -288,6 +307,7 @@ export function assertLocatorOnlyRefinement(
       beforeCase.id !== afterCase.id ||
       beforeCase.purpose !== afterCase.purpose ||
       JSON.stringify(beforeCase.requirementIds) !== JSON.stringify(afterCase.requirementIds) ||
+      JSON.stringify(beforeCase.expectationBasis) !== JSON.stringify(afterCase.expectationBasis) ||
       beforeCase.steps.length !== afterCase.steps.length
     ) {
       throw new Error("Refinement may change only locator fields");
@@ -372,12 +392,36 @@ export function groundedLocatorAnchors(plan: ProbePlan, packet: Pick<WorkPacket,
         const name = candidateTargetName(candidate);
         const normalized = name === undefined ? "" : normalizeName(name);
         if (name === undefined || !declared.has(normalized) || seen.has(normalized)) continue;
-        seen.add(normalized);
-        anchors.push(name);
+      seen.add(normalized);
+      anchors.push(name);
       }
     }
   }
   return anchors;
+}
+
+/** Requirement, ancestor, scenario, exact-label and seed texts a basis quote may cite. */
+export function requirementEvidenceTexts(
+  requirements: readonly AtomicRequirement[],
+  prerequisites: readonly AtomicRequirement[] = [],
+): string[] {
+  return [...requirements, ...prerequisites].flatMap(item => [
+    item.text,
+    ...item.scenarios,
+    ...item.ancestors.map(ancestor => ancestor.description),
+    ...item.exactUiStrings,
+    ...item.product.seedData.flatMap(category => category.items),
+  ]);
+}
+
+export function assertQuotesGrounded(quotes: readonly string[], evidence: readonly string[], location: string): void {
+  const normalized = evidence.map(value => value.replace(/\s+/g, " ").trim().toLowerCase());
+  for (const [index, quote] of quotes.entries()) {
+    const needle = quote.replace(/\s+/g, " ").trim().toLowerCase();
+    if (needle.length === 0 || !normalized.some(item => item.includes(needle))) {
+      throw new Error(`${location}[${index}] must quote the requirement evidence verbatim: ${quote.slice(0, 80)}`);
+    }
+  }
 }
 
 function parseCase(
@@ -387,7 +431,7 @@ function parseCase(
 ): ProbeCase {
   const location = `ProbePlan.cases[${index}]`;
   const candidate = record(value, location);
-  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion"], location);
+  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion", "expectationBasis"], location);
   const id = text(candidate.id, `${location}.id`);
   const requirementIds = array(candidate.requirementIds, `${location}.requirementIds`).map(
     (item, requirementIndex) =>
@@ -411,6 +455,13 @@ function parseCase(
   ) {
     throw new Error(`${location}.purpose is invalid`);
   }
+  const basisValues = array(candidate.expectationBasis, `${location}.expectationBasis`);
+  if (basisValues.length === 0) throw new Error(`${location}.expectationBasis must not be empty`);
+  if (basisValues.length > MAX_BASIS_QUOTES) {
+    throw new Error(`${location} allows at most ${MAX_BASIS_QUOTES} expectationBasis quotes`);
+  }
+  const expectationBasis = basisValues.map((item, basisIndex) =>
+    text(item, `${location}.expectationBasis[${basisIndex}]`));
   const stepValues = [...array(candidate.steps, `${location}.steps`)];
   if (candidate.assertion !== undefined) {
     const assertion = parseStep(candidate.assertion, `${location}.assertion`);
@@ -427,7 +478,7 @@ function parseCase(
   if (!steps.some((step) => step.op.startsWith("expect"))) {
     throw new Error(`${location} requires at least one assertion`);
   }
-  return { id, requirementIds, purpose, steps };
+  return { id, requirementIds, purpose, expectationBasis, steps };
 }
 
 function parseStep(value: unknown, location: string): ProbeStep {
