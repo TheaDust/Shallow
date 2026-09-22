@@ -72,6 +72,8 @@ function describe(type: string, event: RunEvent): string | null {
       return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":
       return `第 ${detail?.round} 轮修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
+    case "repair_paused":
+      return `模型网关故障，暂停本轮修复并等待恢复后重试（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "pipeline_started": {
       const grouping = typeof detail?.grouping === "object" && detail.grouping !== null
         ? detail.grouping as Record<string, unknown> : undefined;
@@ -91,7 +93,9 @@ function describe(type: string, event: RunEvent): string | null {
     case "implementation_continued":
       return `实现检查失败，同会话续做一次（${packetId}）；剩余额度 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}；${pickString(detail, "reason")}`;
     case "implementation_paused":
-      return `模型网关未恢复，停止派发实现任务（${packetId}）；需求保持待处理，进入已有产物验收与交付`;
+      return `模型网关故障，暂停实现（${packetId}）并等待恢复后重试同一需求包；短暂中断不会跳过剩余需求`;
+    case "implementation_stopped":
+      return `模型网关故障不可重试，停止派发实现任务（${packetId}）；需求保持待处理`;
     case "builder_finished":
       return `Builder ${builderOutcomeText(pickString(detail, "outcome"))}（${packetId}）${pickString(detail, "summary") ? `；自述回执（非验收）：${pickString(detail, "summary")}` : ""}${describeBuilderExecution(detail?.execution)}`;
     case "probe_planning":

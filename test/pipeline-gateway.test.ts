@@ -6,7 +6,7 @@ import { httpGatewayFailure } from "../src/gateway-failure.js";
 import { GatewayRecovery } from "../src/gateway-recovery.js";
 import { GitCliOps } from "../src/git-ops.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
-import { withModulePipeline, testPlan } from "./helpers/module-pipeline.js";
+import { withModulePipeline, testPlan, fail, pass } from "./helpers/module-pipeline.js";
 
 test("Zero-tool 429 retries the same feature group before advancing implementation", async () => {
   await withModulePipeline(async f => {
@@ -31,18 +31,16 @@ test("Zero-tool 429 retries the same feature group before advancing implementati
   });
 });
 
-test("Persistent zero-write outage leaves current and later requirements pending and still verifies the saved app", async () => {
+test("A bounded implementation budget leaves gateway-blocked requirements blocked and still delivers", async () => {
   await withModulePipeline(async f => {
-    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    f.options.totalBudgetMs = 10_000;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
     const original = f.builder.run.bind(f.builder);
-    const states: Array<{ id: string; phase: string; status: string }> = [];
-    f.deps.arcEvents = { runnerState: async () => {}, storeRequirementTree: async () => {}, commitHistorySignal: async () => {},
-      requirementState: async (id, phase, status) => { states.push({ id, phase, status }); } };
-    let failures = 0;
     f.deps.builder.run = async (request, options) => {
       assert.ok("packet" in request);
       if (request.packet.requirementIds.includes("C")) {
-        failures++;
         f.git.applicationChanged = false;
         return { sessionId: "down", outcome: "failed", summary: "quota exhausted", gatewayFailure: httpGatewayFailure(429) };
       }
@@ -51,13 +49,59 @@ test("Persistent zero-write outage leaves current and later requirements pending
     const summary = await f.run();
     assert.equal(summary.status, "partial");
     assert.deepEqual(summary.implementedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.pendingRequirementIds, ["C"]);
-    assert.equal(failures, 6);
+    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+    assert.deepEqual(summary.pendingRequirementIds, []);
     const events = await f.events();
-    assert.ok(events.some(event => event.type === "verification_finished" && event.detail?.ok));
     assert.ok(events.some(event => event.type === "implementation_paused"));
-    assert.ok(!events.some(event => event.type === "module_rescued"));
-    assert.ok(!states.some(event => ["C", "SECOND", "ROOT"].includes(event.id) && event.phase === "implement" && event.status === "completed"));
+    assert.ok(events.some(event => event.type === "verification_finished" && event.detail?.ok));
+    assert.ok(events.some(event => event.type === "delivery_finished"));
+  });
+});
+
+test("A gateway outage longer than one call window pauses and resumes the same packet", async () => {
+  await withModulePipeline(async f => {
+    let elapsed = 0;
+    f.options.totalBudgetMs = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    const original = f.builder.run.bind(f.builder);
+    const calls: string[] = [];
+    f.deps.builder.run = async (request, options) => {
+      assert.ok("packet" in request);
+      calls.push(request.packet.id);
+      if (calls.length <= 25) {
+        f.git.applicationChanged = false;
+        return { sessionId: "down", outcome: "failed", summary: "quota exhausted", gatewayFailure: httpGatewayFailure(429) };
+      }
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(summary.pendingRequirementIds, []);
+    assert.equal(new Set(calls.slice(0, 26)).size, 1);
+    assert.ok(elapsed > 90 * 60_000, `expected the outage to outlast one call window, saw ${elapsed}ms`);
+    const events = await f.events();
+    assert.ok(events.some(event => event.type === "implementation_paused"));
+    assert.equal(events.filter(event => event.type === "module_rescued").length, 0);
+  });
+});
+
+test("A non-retryable gateway rejection stops dispatch instead of retrying without backoff", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let calls = 0;
+    f.deps.builder.run = async () => {
+      calls++;
+      if (calls > 1) throw new Error("non-retryable rejection was retried");
+      return { sessionId: "bad", outcome: "failed", summary: "HTTP 400 bad request", gatewayFailure: httpGatewayFailure(400) };
+    };
+    const summary = await f.run();
+    assert.equal(calls, 1);
+    assert.equal(summary.status, "partial");
+    assert.deepEqual(summary.pendingRequirementIds, ["A", "B", "C"]);
+    const events = await f.events();
+    assert.ok(events.some(event => event.type === "implementation_stopped"));
+    assert.equal(events.filter(event => event.type === "implementation_paused").length, 0);
   });
 });
 
@@ -91,7 +135,10 @@ test("Unrunnable partial gateway work is rolled back before retrying the same pa
 
 test("Interrupted source changes survive recovery and are not marked implemented when the gateway stays unavailable", async () => {
   await withModulePipeline(async f => {
-    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    f.options.totalBudgetMs = 100_000;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
     f.deps.git = await GitCliOps.open(f.options.outputDir);
     const original = f.builder.run.bind(f.builder);
     let calls = 0;
@@ -106,7 +153,8 @@ test("Interrupted source changes survive recovery and are not marked implemented
     const summary = await f.run();
     assert.equal(summary.status, "partial");
     assert.deepEqual(summary.implementedRequirementIds, []);
-    assert.deepEqual(summary.pendingRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.pendingRequirementIds, ["C"]);
     assert.equal(await readFile(join(f.options.outputDir, "partial.txt"), "utf8"), "keep this work");
     const checkpoints = (await f.events()).filter(event => event.type === "checkpoint_saved");
     assert.equal(checkpoints.length, 1);
@@ -146,7 +194,28 @@ test("Planner 429 recovers within the module rather than deferring all feedback 
   });
 });
 
-test("A short implementation budget stops recovery with requirements pending and preserves delivery time", async () => {
+test("A gateway outage during boundary repair postpones the round instead of abandoning the module", async () => {
+  await withModulePipeline(async f => {
+    let runs = 0;
+    f.deps.runner.run = async plan => { runs++; return runs <= 2 ? fail(plan) : pass(plan); };
+    const original = f.builder.run.bind(f.builder);
+    let repairCalls = 0;
+    f.deps.builder.run = async (request, options) => {
+      if (request.mode === "repair" && ++repairCalls <= 6) {
+        return { sessionId: "down", outcome: "failed", summary: "429", gatewayFailure: httpGatewayFailure(429) };
+      }
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    const finished = (await f.events()).filter(event => event.type === "repair_batch_finished");
+    assert.equal(finished.length, 1);
+    assert.equal(finished[0].detail?.retained, true);
+    assert.equal(repairCalls, 7);
+  });
+});
+
+test("A short implementation budget bounds gateway recovery and preserves delivery time", async () => {
   await withModulePipeline(async f => {
     let elapsed = 0;
     f.options.totalBudgetMs = 10_000;
@@ -160,9 +229,37 @@ test("A short implementation budget stops recovery with requirements pending and
     };
     const summary = await f.run();
     assert.equal(calls, 1);
-    assert.equal(elapsed, 0);
+    assert.equal(elapsed, 6_000);
     assert.deepEqual(summary.implementedRequirementIds, []);
-    assert.deepEqual(summary.pendingRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.pendingRequirementIds, ["C"]);
     assert.ok((await f.events()).some(event => event.type === "delivery_finished"));
+  });
+});
+
+test("A gateway outage during the timeout retry pauses and resumes the same packet", async () => {
+  await withModulePipeline(async f => {
+    let elapsed = 0;
+    f.options.totalBudgetMs = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    const original = f.builder.run.bind(f.builder);
+    const calls: string[] = [];
+    f.deps.builder.run = async (request, options) => {
+      assert.ok("packet" in request);
+      calls.push(request.packet.id);
+      if (calls.length === 1) return { sessionId: "slow", outcome: "timed_out", summary: "deadline" };
+      if (elapsed < 90 * 60_000) {
+        return { sessionId: "down", outcome: "failed", summary: "429", gatewayFailure: httpGatewayFailure(429) };
+      }
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.ok(elapsed > 45 * 60_000, `expected the outage to outlast the timeout-retry window, saw ${elapsed}ms`);
+    const events = await f.events();
+    assert.ok(events.some(event => event.type === "implementation_retry"));
+    assert.ok(events.some(event => event.type === "implementation_paused"));
+    assert.equal(events.filter(event => event.type === "module_rescued").length, 0);
   });
 });

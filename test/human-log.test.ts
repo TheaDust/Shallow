@@ -24,7 +24,13 @@ test("Gateway recovery logs distinguish saved code from completed requirements",
   })), /保存为可运行检查点.*仍待完成/);
   assert.match(formatLine(formatter, eventLine(at, "implementation_paused", {
     packetId: "a", detail: { requirementIds: ["A"], failure: { kind: "rate_limit", retryable: true, status: 429 } },
-  })), /停止派发.*保持待处理/);
+  })), /暂停实现.*等待恢复后重试同一需求包/);
+  assert.match(formatLine(formatter, eventLine(at, "implementation_stopped", {
+    packetId: "a", detail: { requirementIds: ["A"], failure: { kind: "request", retryable: false, status: 400 } },
+  })), /不可重试.*停止派发实现任务.*需求保持待处理/);
+  assert.match(formatLine(formatter, eventLine(at, "repair_paused", {
+    packetId: "a", detail: { requirementIds: ["A"], failure: { kind: "rate_limit", retryable: true, status: 429 } },
+  })), /暂停本轮修复并等待恢复后重试.*需求 A/);
 });
 
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {

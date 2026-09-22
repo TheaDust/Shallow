@@ -27,25 +27,41 @@ test("Shared recovery retries the same operation through a five-minute outage", 
   assert.equal(f.recovery.exhausted, false);
 });
 
-test("Persistent outages stop all new calls after bounded recovery", async () => {
+test("Persistent outages exhaust the caller's window without disabling later calls", async () => {
   const f = fixture();
+  const windowMs = 3_600_000;
   let calls = 0;
-  await assert.rejects(f.recovery.run("planner", "packet-a", unlimited, async () => { calls++; throw down(); }), GatewayUnavailableError);
-  assert.equal(calls, 6);
-  assert.equal(f.now(), 750_000);
-  await assert.rejects(f.recovery.run("builder", "packet-b", unlimited, async () => { calls++; }), GatewayUnavailableError);
-  assert.equal(calls, 6);
+  await assert.rejects(f.recovery.run("planner", "packet-a", () => windowMs - f.now(), async () => { calls++; throw down(); }),
+    error => error instanceof GatewayRequestError && error.gatewayFailure.status === 429);
+  assert.ok(calls > 10, `expected recovery to outlast the old five-attempt cap, saw ${calls} attempts`);
+  assert.equal(f.now(), windowMs);
+  assert.equal(f.recovery.exhausted, false);
+  const result = await f.recovery.run("builder", "packet-b", unlimited, async () => { calls++; return "recovered"; });
+  assert.equal(result, "recovered");
 });
 
-test("Retry-After and stage budgets bound recovery without spending the delivery reserve", async () => {
+test("Builder authentication failures still stop all new calls", async () => {
+  const f = fixture();
+  await assert.rejects(f.recovery.run("builder", "packet-a", unlimited, async () => {
+    throw new GatewayRequestError(httpGatewayFailure(401));
+  }), GatewayRequestError);
+  assert.equal(f.recovery.exhausted, true);
+  let calls = 0;
+  await assert.rejects(f.recovery.run("builder", "packet-b", unlimited, async () => { calls++; }), GatewayUnavailableError);
+  assert.equal(calls, 0);
+});
+
+test("Retry-After and stage budgets bound one call's recovery window", async () => {
   const f = fixture();
   let calls = 0;
-  await assert.rejects(f.recovery.run("builder", "a", () => 60_000, async () => {
+  await assert.rejects(f.recovery.run("builder", "a", () => 60_000 - f.now(), async () => {
     calls++;
     throw new GatewayRequestError(httpGatewayFailure(429, "120"));
-  }), GatewayUnavailableError);
+  }), error => error instanceof GatewayRequestError && error.gatewayFailure.retryAfterMs === 120_000);
   assert.equal(calls, 1);
-  assert.equal(f.delays.length, 0);
+  assert.deepEqual(f.delays, [30_000, 30_000]);
+  assert.equal(f.now(), 60_000);
+  assert.equal(f.recovery.exhausted, false);
   assert.equal(httpGatewayFailure(503, "2").retryAfterMs, 2000);
   assert.equal(httpGatewayFailure(503, "Wed, 21 Oct 2015 07:28:00 GMT", Date.parse("2015-10-21T07:27:00Z")).retryAfterMs, 60_000);
   assert.equal(httpGatewayFailure(429, "invalid").retryAfterMs, undefined);

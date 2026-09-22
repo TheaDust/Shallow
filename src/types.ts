@@ -120,6 +120,7 @@ interface RunEventDetails {
   implementation_retry: { requirementIds: string[]; timeoutMs: number };
   implementation_continued: { reason: string; timeoutMs: number };
   implementation_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
+  implementation_stopped: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
   phase_started: { phase: "implementation" | "audit" | "repair" | "delivery"; remainingMs?: number; round?: number; memory?: Record<string, unknown> };
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
@@ -127,6 +128,7 @@ interface RunEventDetails {
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string };
+  repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;

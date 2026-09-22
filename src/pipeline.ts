@@ -46,6 +46,8 @@ import type {
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 3_600_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
+/** One planner call keeps retrying an outage for at most this long. */
+const PLANNER_RECOVERY_CEILING_MS = 1_800_000;
 
 export interface AppLifecycle {
   start(
@@ -132,10 +134,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
+  // A planner call keeps retrying across a gateway outage, but only within its
+  // own window so audits degrade to inconclusive instead of blocking forever.
+  const plannerWindow = (): (() => number) => {
+    const deadline = deps.clock.nowMs() + budget.callTimeout(gatewayPhase, PLANNER_RECOVERY_CEILING_MS);
+    return () => Math.min(deadline - deps.clock.nowMs(), budget.remaining(gatewayPhase));
+  };
   deps = { ...deps, planner: {
-    plan: (packet, feedback, callOptions) => gateway.run("planner", packet.id, () => budget.remaining(gatewayPhase),
+    plan: (packet, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
       () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
-    refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, () => budget.remaining(gatewayPhase),
+    refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, plannerWindow(),
       () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
   } };
   deps.candidate?.setRecorder(event => state.record(event));
@@ -182,6 +190,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       return { ...lastResult, sessionId: lastResult?.sessionId ?? "unavailable", outcome: "failed",
         summary: lastResult?.summary ?? error.message, gatewayFailure: error.gatewayFailure };
     }
+  };
+  /**
+   * A gateway outage pauses work instead of ending the run: retry the same
+   * builder call with a fresh window while the failure is retryable. A
+   * non-retryable rejection (authentication or a request error) ends the loop
+   * so the caller can stop dispatching instead of spinning without backoff.
+   */
+  const resumeGatewayWork = async (
+    current: BuilderResult,
+    emitPause: (failure: NonNullable<BuilderResult["gatewayFailure"]>) => Promise<void>,
+    retry: () => Promise<BuilderResult>,
+  ): Promise<BuilderResult> => {
+    while (current.gatewayFailure?.retryable && current.outcome !== "completed" && !gateway.exhausted) {
+      await emitPause(current.gatewayFailure);
+      current = await retry();
+    }
+    return current;
+  };
+  const stopImplementation = async (packet: WorkPacket,
+    failure: NonNullable<BuilderResult["gatewayFailure"]>): Promise<void> => {
+    await state.record({ at: now(), type: "implementation_stopped", packetId: packet.id,
+      detail: { requirementIds: packet.requirementIds, failure } });
   };
   const runnable = async (): Promise<CandidateEvidence | undefined> => {
     const app = await deps.appLifecycle.start(options.outputDir, options.platformContract);
@@ -294,9 +324,17 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
       const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
-      const repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
+      let repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
         outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs });
+      // Same recovery rule as implementation: an outage postpones the repair
+      // instead of abandoning an entire module while its quota is untouched.
+      repairResult = await resumeGatewayWork(repairResult,
+        failure => state.record({ at: now(), type: "repair_paused", packetId: repairPacket.id,
+          detail: { requirementIds: repairPacket.requirementIds, failure } }),
+        () => build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
+          outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
+        "repair", { timeoutMs: repairTimeoutMs }));
       let reason = repairResult.outcome === "completed" ? "" : repairResult.summary || repairResult.outcome;
       let candidate: CandidateEvidence | undefined;
       if (!reason) {
@@ -415,6 +453,15 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         // Drain background work before changing phases or leaving the run.
         await Promise.allSettled(planPromises);
       }
+      // A gateway outage must not end the run: keep retrying the same packet
+      // with a fresh call window while the failure is retryable; a
+      // non-retryable rejection stops dispatch at the check below.
+      result = await resumeGatewayWork(result,
+        failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
+          detail: { requirementIds: packet.requirementIds, failure } }),
+        () => build({ mode: "implement", packet, outputDir: options.outputDir,
+          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+        "implementation", { sessionKey }));
       if (result.outcome === "timed_out" && !result.gatewayFailure) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
@@ -428,6 +475,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           result = await build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
             platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
           "implementation", { timeoutMs: retryTimeoutMs });
+          result = await resumeGatewayWork(result,
+            failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
+              detail: { requirementIds: packet.requirementIds, failure } }),
+            () => build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
+              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+            "implementation", { timeoutMs: retryTimeoutMs }));
           if (result.outcome === "timed_out" && !result.gatewayFailure) await preserveInterruptedWork(retryPacket);
         }
         if (result.outcome === "timed_out" && !result.gatewayFailure) {
@@ -439,8 +492,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         }
       }
       if (result.gatewayFailure && result.outcome !== "completed") {
-        await state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
-          detail: { requirementIds: packet.requirementIds, failure: result.gatewayFailure } });
+        await stopImplementation(packet, result.gatewayFailure);
         break;
       }
       let candidate: CandidateEvidence | undefined;
@@ -456,9 +508,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           result = await build({ mode: "implement", packet, outputDir: options.outputDir,
             platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
           "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure });
-          if (result.gatewayFailure) {
-            await state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
-              detail: { requirementIds: packet.requirementIds, failure: result.gatewayFailure } });
+          result = await resumeGatewayWork(result,
+            pause => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
+              detail: { requirementIds: packet.requirementIds, failure: pause } }),
+            () => build({ mode: "implement", packet, outputDir: options.outputDir,
+              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+            "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure }));
+          if (result.gatewayFailure && result.outcome !== "completed") {
+            await stopImplementation(packet, result.gatewayFailure);
             break;
           }
           if (result.outcome === "completed") {
