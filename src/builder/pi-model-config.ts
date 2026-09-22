@@ -1,10 +1,10 @@
 /**
  * In-process gateway provider descriptor. The context window is the only
- * per-run tunable: the raw baseline keeps a single long session and asks for a
- * larger window so automatic compaction does not drop earlier modules, while
- * the controller's short per-packet sessions keep the default.
+ * per-run tunable: omitted runs use the shared 1M default so automatic
+ * compaction does not drop earlier work, while a run may still override it
+ * (the raw baseline pins its own single-session window).
  */
-export const DEFAULT_CONTEXT_WINDOW = 256_000;
+export const DEFAULT_CONTEXT_WINDOW = 1_000_000;
 
 export function piProviderModel(model: string, contextWindow: number = DEFAULT_CONTEXT_WINDOW) {
   return {

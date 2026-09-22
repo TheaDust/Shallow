@@ -65,7 +65,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 | --- | --- | --- |
 | 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，3 条/5 场景/3k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
 | 会话 | 实现阶段每个工作包使用全新会话；修复使用新会话 | 一次运行复用同一个会话 |
-| 模型上下文窗口 | 缺省 256k | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
+| 模型上下文窗口 | 1M（缺省） | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
 | 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | Pi 调用结果；Python 入口另检查 frontend/backend 目录 |
 | 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |

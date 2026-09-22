@@ -209,7 +209,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## Baseline 开发范围
 
-`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装；系统提示词与 `prompts/system/platform-contract.md` 措辞对齐（不含工作包概念），单会话请求 1M 上下文窗口（`BASELINE_CONTEXT_WINDOW` 经 `CodingAgentRequest.contextWindow` 覆盖，主线缺省 256k）。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
+`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装；系统提示词与 `prompts/system/platform-contract.md` 措辞对齐（不含工作包概念），单会话请求 1M 上下文窗口（`BASELINE_CONTEXT_WINDOW` 经 `CodingAgentRequest.contextWindow` 覆盖，主线缺省同为 1M）。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
 
 ## 代码与测试惯例
 
