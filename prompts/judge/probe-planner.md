@@ -56,8 +56,8 @@
 
 ## Locator 策略
 对于重复出现的控件，将 scope 设为包含它的 role（row、article、listitem、dialog），可选带来自需求证据或先前 fill 值的字面 hasText，然后在该 scope 内定位控件。scope 必须是单层的。
-使用 role、label 或 text，字符串取证据中声明的原值，包括 exactUiStrings。字符串按字面匹配，忽略大小写，除非 exact 为 true，否则作为子串匹配；绝不使用正则表达式语法、alternation 或通配符。button、link、checkbox、heading、alert 优先用 role 加 name；表单控件优先用 label；保留应用声明的语言，不要翻译 label。
-为关键 locator 给出一到两个 fallback，描述同一控件的其他可访问渲染方式——例如同名 role button，其次 label，再次纯 text——按最具体优先排序；每个 fallback 必须复用证据中声明的字符串，且 fallback 不得嵌套。
+使用 role、label 或 text，字符串取证据中声明的原值，包括 exactUiStrings。字符串按字面匹配，忽略大小写，除非 exact 为 true，否则作为子串匹配；绝不使用正则表达式语法、alternation 或通配符。button、link、checkbox、heading、alert 优先用 role 加 name；表单控件优先用 label；保留应用声明的语言，不要翻译 label。需求原文（含引号与 exactUiStrings）给出的控件名、动作名与入口名使用 exact: true 精确匹配——验收按精确名（^…$）锚定，子串匹配会把近似文案误判为通过。
+为关键 locator 给出一到两个 fallback，描述同一控件的其他可访问渲染方式——button ↔ link ↔ menuitem ↔ tab 等同类交互角色互换，或同名 label——按最具体优先排序；每个 fallback 必须复用证据中声明的字符串，且 fallback 不得嵌套。交互控件（按钮、链接、菜单项、开关、输入框）的 fallback 不得降级为纯 text：一个可见文本不等于可操作的控件。终末 assertion 的 locator 只允许 role 或 label，至多带一个同类角色 fallback，不得用纯 text 兜底——预期结果必须钉死在需求声明的角色与名称上；expectHidden 与 count 为 0 的 expectCount 不在此限，它们需要枚举目标所有可能的渲染形态。
 当需求只要求打开某个对象、未指定角色时，为同名 button/link 提供等价候选；只要求展示对象名称时，用有依据的 text，避免把 heading 层级当作业务断言。明确要求角色或容器归属时保留该约束。异步内容使用等待型断言，不用瞬时可见性判断推断功能缺失。
 
 ## Locator 选择补充
@@ -71,6 +71,8 @@
 expectText 匹配完整的可见文本，除非 exact: false（此时匹配子串）；用简短稳定的子串加 exact: false 断言消息。当证据为同一条消息声明了多种措辞时，用 expectText 的 anyOf 逐字列出这些候选；绝不臆造替代措辞。用 expectValue 断言输入状态，用 count 为 0 的 expectCount 断言不存在，例如没有已登录 session 或没有已创建的记录。对于被拒绝的操作，断言必需的可见反馈以及成功效果不存在。绝不臆造证据未声明的 operation、locator 或行为。
 
 - 断言必须区分“完成了所需操作”和“操作根本没发生”。保存后检查目标记录/字段，删除前确认目标存在、删除后确认消失，菜单出现后检查证据明确给出的选项；不要只检查 main、menu 或原本就可见的条目。
+- 枚举覆盖：需求描述以“including / 包含 / 如 A、B、C”逐一枚举界面元素（字段、选项、按钮、菜单项、设置项）时，为该需求安排至少一条 case 对枚举项逐项断言可见（可与主流程同 case 分步断言），每一项都是独立的得分点，缺一项即未覆盖该需求。
+- 操作类断言钉死交互性：证据声明的是一个动作（归档、撤销、保存、提交）时，终末 assertion 必须落在该动作的控件角色上（role + exact 名称），只断言提示文字或容器可见不算动作可操作。
 - 认证/登录类需求：提交凭据后必须断言证据声明的登录后状态（如昵称、账户入口或登出入口的逐字文案）；登录表单可见或页面跳转不等于登录成功，表单存在不能作为认证功能通过的依据。证据引号（含中文引号与反引号）声明的界面文案是定位与断言的首选字符串：覆盖该文案所属需求的 case 中，至少一条把关键文案（字段 label、placeholder、按钮或入口名）逐字纳入 locator 或终末 assertion。
 - 切换/折叠/恢复流程在第一次操作后立即验证状态变化，再执行反向操作并验证恢复。用 expectHidden 检查隐藏（不同于 DOM 数量为零）；对于展开、按下、选中状态可用 expectAttribute，attribute 仅允许 aria-expanded、aria-pressed、aria-selected、aria-checked，value 仅允许 true/false/mixed 字符串。不要对正常输入框臆造 ARIA 属性，原生值用 expectValue。
 - 每个 case 的准备步骤必须自足。持久化 case 在同一 case 内创建或修改后 reload，不能依赖前一个 case 创建的记录。不要为未声明的场景增加登录；需求明确要求登录时在本 case 使用给定账号完成登录。

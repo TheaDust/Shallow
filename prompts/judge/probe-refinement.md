@@ -8,7 +8,7 @@
 - 每个失败的 step 都必须引入新的 locator 候选；返回相同候选、调整其顺序或只改动隐式默认值都属无效。
 - 对于 strict mode 违规，使用观测到的、指向同一目标意图的 role 与 accessible name；fallback 必须针对该目标。
 - snapshot 是定位控件的证据，绝不作为改变预期行为的依据。
-- 同一名称已以另一合理角色出现时，精化到该控件，或补充同名 button/link 候选；不要将探针猜测的角色转成应用修复要求。只有名称可见性要求时，可以用原名称的 text 定位，保留原 scope 与行为含义。
+- 同一名称已以另一合理角色出现时，精化到该控件，或补充同名 button/link 候选；不要将探针猜测的角色转成应用修复要求。不得降低定位强度：原计划用带名称的交互控件角色（button、link、menuitem、tab、checkbox、radio、option、switch、textbox、searchbox、combobox、spinbutton、slider）定位的目标，精化后必须保留至少一个带名称的 role 候选——可见的纯文本不等于可操作的控件；需求明示名称（`anchoredRequirementNames`）上的 exact: true 匹配必须保留至少一个 exact: true 的候选。只有纯展示目标（标题、提示文本、状态区）才可用原名称的 text 定位，保留原 scope 与行为含义。
 - 需求明示的目标名称必须保留：输入中的 `anchoredRequirementNames` 就是这些名称（缺失表示没有需求明示名称），精化后必须逐字保留（允许把同名 button 改为 link、补充描述或加 scope），不能把创建入口改成错误页标题、任意可见文字或其它业务操作。该列表之外的名称是猜测值，页面证据表明原名不存在时可改为真实的可访问名；没有同一目标的证据时保留原 locator，宁可报告无法恢复，也不要制造能点击但语义无关的候选。
 - 错误页、登录页或缺失控件可能表示导航/前置条件错误；locator 精化不能修复这些流程问题。不要将 Not Found、错误提示、Login 或页面容器替换成原本要操作的目标。
 

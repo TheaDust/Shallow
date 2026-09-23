@@ -323,14 +323,21 @@ export function assertLocatorOnlyRefinement(
       if (JSON.stringify(beforeBehavior) !== JSON.stringify(afterBehavior)) {
         throw new Error("Refinement may change only locator fields");
       }
-      if (packet && "locator" in before && "locator" in after && JSON.stringify(before.locator) !== JSON.stringify(after.locator)) {
-        const anchors = groundedLocatorNames(before.locator, packet);
-        if (anchors.length && locatorCandidates(after.locator).some(candidate => {
-          const name = candidate.by === "role" ? candidate.name : candidate.text;
-          return !name || !anchors.some(anchor => containsTargetName(name, anchor));
-        })) {
-          throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
+      if ("locator" in before && "locator" in after && JSON.stringify(before.locator) !== JSON.stringify(after.locator)) {
+        if (packet) {
+          const anchors = groundedLocatorNames(before.locator, packet);
+          if (anchors.length && locatorCandidates(after.locator).some(candidate => {
+            const name = candidate.by === "role" ? candidate.name : candidate.text;
+            return !name || !anchors.some(anchor => containsTargetName(name, anchor));
+          })) {
+            throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
+          }
+          if (anchors.length && before.locator.exact === true &&
+            !locatorCandidates(after.locator).some(candidate => candidate.exact === true)) {
+            throw new Error("Refinement must keep exact matching for requirement-declared names; a grader anchors on the exact name");
+          }
         }
+        assertRefinementKeepsStrength(before.locator, after.locator);
       }
     }
   }
@@ -345,6 +352,33 @@ export function assertLocatorOnlyRefinement(
     if (!locatorCandidates(after.locator).some((candidate) => !exhausted.has(locatorKey(candidate)))) {
       throw new Error(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
     }
+  }
+}
+
+/**
+ * Roles a grader treats as operable controls. A refinement may swap equivalent
+ * renderings (button ↔ link ↔ menuitem) but must not downgrade a named control
+ * to plain text — visible text is not an operable control, and such a downgrade
+ * would let the probe pass on evidence a strict grader rejects. Display-only
+ * roles (heading, status, dialog, …) may still be refined to text, since they
+ * assert visibility rather than operability.
+ */
+const INTERACTIVE_ROLES = new Set([
+  "button", "link", "menuitem", "tab", "checkbox", "radio", "option",
+  "switch", "textbox", "searchbox", "combobox", "spinbutton", "slider",
+]);
+
+function assertRefinementKeepsStrength(before: ProbeLocator, after: ProbeLocator): void {
+  const candidates = locatorCandidates(after);
+  if (before.by === "role" && before.name !== undefined && INTERACTIVE_ROLES.has(before.role) &&
+    !candidates.some(candidate => candidate.by === "role")) {
+    throw new Error(
+      "Refinement must not downgrade a named interactive-role locator to plain text; keep a named role candidate for the same control (button/link/menuitem swaps are allowed)");
+  }
+  if (before.by === "label" &&
+    !candidates.some(candidate => candidate.by === "label" || candidate.by === "role")) {
+    throw new Error(
+      "Refinement must not downgrade a label locator to plain text; keep a label or role candidate for the same control");
   }
 }
 

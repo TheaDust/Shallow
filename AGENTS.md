@@ -102,7 +102,8 @@ src/
     audit.ts                    auditPacket：计划恢复、定位恢复、行为失败先经受限语义复核（依据成立或按需求重建）再复现/修复；
                                 Judge 故障返回 inconclusive
     probe-schema.ts             ProbePlan/ProbeCase schema（expectationBasis 逐字引用落地校验）、显式终末 assertion、单层 scope、
-                                parseProbePlan（白名单校验）、assertLocatorOnlyRefinement（refinement 只许改 locator）
+                                parseProbePlan（白名单校验）、assertLocatorOnlyRefinement（refinement 只许改 locator、
+                                保留需求锚定名与 exact 匹配、交互控件不得降级为纯 text）
     semantic-review.ts          语义复核合同：PlanReview（sound/corrected）、引用落地校验、纠正计划重建约束
     llm-probe-planner.ts        LlmProbePlanner：网关调用（json_schema）、extractJsonPayload（剥围栏/杂文提取 JSON）、
                                 plan/refineLocators/reviewPlan（失败步骤诊断 + locator 校验；系统提示词见 prompts/judge/；恢复额度由 pipeline 管理）
@@ -192,7 +193,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时最多以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；可运行部分保存为空需求检查点，再次超时标 blocked，不记 implemented。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收，使用缓存的探针计划（实现阶段已并行生成并落盘，见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或需求明示的操作控件在此前已有成功交互、且两次新应用实例中均于同一步缺失时触发模块边界修复（后者仍记 inconclusive，Builder 按需求诊断），每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何修复目标→verified 改善时恢复原检查点并停止修复。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。
-6. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。goto 默认从 `/` 进入，非根路径须在需求文字中明示；精化仅改 locator，保留需求明示的目标名称，固定操作、输入与预期。支持 expectHidden 与有限 ARIA 状态 expectAttribute 断言，检查每次状态变化。混合失败先处理带快照的 locator 部分；会触发修复的每次原子验收至多两轮精化、一次浏览器基础设施重试（只检测审计不做精化）。业务失败复现共享这些额度。语义复核只改需求依据冲突，不改定位（定位仍走精化）；检测型审计不触发复核；每 case 每运行至多一次语义修正，旧判词作废、只采纳纠正后重跑的结果。
+6. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。goto 默认从 `/` 进入，非根路径须在需求文字中明示；精化仅改 locator，保留需求明示的目标名称与 exact 匹配，固定操作、输入与预期，且不得降低定位强度（带名称的交互控件角色不得降级为纯 text，label 不得降级为纯 text；button/link/menuitem 等同类角色互换允许）。终末断言对需求给出的控件名使用 role + exact，不用 text 兜底。支持 expectHidden 与有限 ARIA 状态 expectAttribute 断言，检查每次状态变化。混合失败先处理带快照的 locator 部分；会触发修复的每次原子验收至多两轮精化、一次浏览器基础设施重试（只检测审计不做精化）。业务失败复现共享这些额度。语义复核只改需求依据冲突，不改定位（定位仍走精化）；检测型审计不触发复核；每 case 每运行至多一次语义修正，旧判词作废、只采纳纠正后重跑的结果。
 7. **交付**：最终验证为安装/构建/就绪/浏览器 smoke/grader-like 复验（只设 `PORT`，额外端口与未知路径），至多一次浏览器基础设施重试。剩余额度允许时至多一次交付修复；修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
 8. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 单次实现上限90min（正预算时另受实现阶段剩余预算限制），模块边界修复上限90min（最多剩余修复阶段一半），交付修复2min；Planner 单次尝试上限180s；实际取阶段剩余及 runtime 配置的较小值。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
 9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 持文件、shell、`app`（父进程管理开发服务 start/status/stop）、`run_tests`（限内存传统测试执行，见 `src/builder/pi-test-tool.ts`）与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写传统测试并用 run_tests 运行。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。

@@ -59,6 +59,82 @@ test("Refinement can change rendering but cannot replace a declared action with 
   assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, refined, target, unnamed));
 });
 
+test("Refinement cannot downgrade a named control to plain text (grader-style operability)", () => {
+  // Modeled on the Keep-style grading contract: card actions must stay real
+  // controls (card.getByRole('button', { name: /^Archive$/i })), a visible
+  // "Archive" text node is not an operable Archive action.
+  const keepPacket = packet('Archive a note from the note actions area and show an Undo notification.');
+  keepPacket.requirements[0].exactUiStrings = ["Archive", "Undo"];
+  const original: ProbePlan = { packetId: "packet-a", cases: [{ id: "archive-note", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["show an Undo notification"], steps: [
+    { op: "goto", path: "/" },
+    { op: "click", locator: { by: "role", role: "button", name: "Archive", exact: true } },
+    { op: "expectVisible", locator: { by: "role", role: "button", name: "Undo", exact: true } },
+  ] }] };
+  const failedClick = [{ caseId: "archive-note", stepIndex: 1 }];
+
+  const toText = structuredClone(original);
+  toText.cases[0].steps[1] = { op: "click", locator: { by: "text", text: "Archive", exact: true } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, toText, failedClick, keepPacket), /downgrade.*plain text/);
+
+  const toTextFallback = structuredClone(original);
+  toTextFallback.cases[0].steps[1] = { op: "click", locator: { by: "text", text: "Archive", exact: true,
+    fallbacks: [{ by: "text", text: "Archive note" }] } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, toTextFallback, failedClick, keepPacket), /downgrade.*plain text/);
+
+  // Equivalent control renderings remain allowed: button -> link/menuitem with a named role candidate.
+  const toLink = structuredClone(original);
+  toLink.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Archive", exact: true,
+    fallbacks: [{ by: "role", role: "menuitem", name: "Archive", exact: true }] } };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, toLink, failedClick, keepPacket));
+
+  // A field located by label may be refined to the same field's role form, not to bare text.
+  const fieldPlan: ProbePlan = { packetId: "packet-a", cases: [{ id: "edit-note", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["show an Undo notification"], steps: [
+    { op: "goto", path: "/" },
+    { op: "fill", locator: { by: "label", text: "Note content", exact: true }, value: "Updated content" },
+    { op: "expectVisible", locator: { by: "role", role: "button", name: "Undo", exact: true } },
+  ] }] };
+  const fieldToText = structuredClone(fieldPlan);
+  fieldToText.cases[0].steps[1] = { op: "fill", locator: { by: "text", text: "Note content" }, value: "Updated content" };
+  assert.throws(() => assertLocatorOnlyRefinement(fieldPlan, fieldToText, [{ caseId: "edit-note", stepIndex: 1 }]), /downgrade.*plain text/);
+  const fieldToRole = structuredClone(fieldPlan);
+  fieldToRole.cases[0].steps[1] = { op: "fill", locator: { by: "role", role: "textbox", name: "Note content", exact: true }, value: "Updated content" };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(fieldPlan, fieldToRole, [{ caseId: "edit-note", stepIndex: 1 }]));
+
+  // Display-only targets (headings, status areas) assert visibility, so text is a legitimate refinement.
+  const displayPlan = structuredClone(original);
+  displayPlan.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "heading", name: "Archived notes" } };
+  const displayToText = structuredClone(displayPlan);
+  displayToText.cases[0].steps[1] = { op: "expectVisible", locator: { by: "text", text: "Archived notes" } };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(displayPlan, displayToText, [{ caseId: "archive-note", stepIndex: 1 }], keepPacket));
+});
+
+test("Refinement keeps exact matching for requirement-declared names", () => {
+  const keepPacket = packet('Archive a note from the note actions area and show an Undo notification.');
+  keepPacket.requirements[0].exactUiStrings = ["Archive", "Undo"];
+  const original: ProbePlan = { packetId: "packet-a", cases: [{ id: "archive-note", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["show an Undo notification"], steps: [
+    { op: "goto", path: "/" },
+    { op: "click", locator: { by: "role", role: "button", name: "Archive", exact: true } },
+    { op: "expectVisible", locator: { by: "role", role: "button", name: "Undo", exact: true } },
+  ] }] };
+  const failedClick = [{ caseId: "archive-note", stepIndex: 1 }];
+
+  // /^Archive$/i must not become a substring match: "Archive note" would pass a probe a grader fails.
+  const droppedExact = structuredClone(original);
+  droppedExact.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Archive" } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, droppedExact, failedClick, keepPacket), /exact/);
+
+  // Guessed (undeclared) names may still relax exactness, and exact candidates keep the match.
+  const guessPacket = packet();
+  guessPacket.requirements[0].exactUiStrings = [];
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, droppedExact, failedClick, guessPacket));
+  const keptExact = structuredClone(original);
+  keptExact.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Archive", exact: true } };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, keptExact, failedClick, keepPacket));
+});
+
 test("Grounded anchors keep declared names in original casing and ignore guesses", () => {
   assert.deepEqual(groundedLocatorAnchors(plan(), packet()), ["Publish"]);
   const unnamed = packet();

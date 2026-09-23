@@ -14,15 +14,15 @@
 成列的数据（订单、乘客、搜索结果等）使用原生 <table>（<thead>/<tbody>/<tr>/<th>/<td>）；可排序列的列头内嵌 <button>（可访问名等于列名），行内操作是所在行单元格内可访问名精确的 <button>。
 下拉选择优先原生 <select> + <option> 并与 <label> 关联，选项文本逐字等于需求原词；单选使用原生 radio + label，多选使用原生 checkbox + label。
 不可用的控件（过去日期、未满足条件的提交）通过原生 disabled 属性禁用，不用 CSS class 伪装；日历的日期格子使用 <button>，日期、倒计时与相对时间显示以浏览器时钟（new Date()/Date.now()）为准。
-模态对话框容器使用 role="dialog"（或原生 <dialog>），可访问名等于其标题（aria-labelledby 指向标题元素），标题本身是 heading；标签页界面使用 role="tablist"/"tab"/"tabpanel"；侧栏容器使用 <aside> 或 <nav>。
-操作结果反馈（成功提示、错误提示、snackbar/toast）的容器使用 role="status"（一般反馈）或 role="alert"（错误），内容是可见纯文本，措辞使用需求声明的原词。
+模态对话框容器使用 role="dialog"（或原生 <dialog>），可访问名等于其标题（aria-labelledby 指向标题元素），标题本身是 heading；编辑器、弹层等对话框的可访问名逐字等于需求原文或参考图给出的编辑器标题，对话框内的字段与按钮命名同样遵守逐字原词规则。标签页界面使用 role="tablist"/"tab"/"tabpanel"；侧栏容器使用 <aside> 或 <nav>。
+操作结果反馈（成功提示、错误提示、snackbar/toast）的容器使用 role="status"（一般反馈）或 role="alert"（错误），内容是可见纯文本，措辞使用需求声明的原词。反馈中的操作（如 Undo、Retry）必须是真正的 <button>，可访问名逐字等于需求动作词，不能用纯文本、<span> 或 <a> 伪装。
 
-每一个 <form> 都必须有可访问名称：用 aria-label 或 aria-labelledby 明确命名（例如登录表单 aria-label="Login form"、创建书架表单 aria-label="Create shelf form"）。可访问名称要说明表单用途，不能只靠 id 或隐式推断——自动化评分通过角色 + 名称定位表单。
+表单与面板容器（<form>、role="dialog"、role="search"、section）不要随意加 aria-label：自动化按 label 定位输入控件时会先命中 DOM 序更靠前的祖先容器，容器可访问名只要包含字段词（如 Search、Address、Name），该字段就永远被解析到容器上而无法填入。仅当需求原文明确给出表单或对话框名称时才命名，且名称不得包含其内部任何字段或按钮的原词（例如需求写"登录表单"时命名 Login form 是安全的，因为它不与 Email/Password 字段词重叠）；输入控件自身的 <label>/aria-label 关联永远是必须的，容器命名不能替代控件命名。
 表单提交成功后必须产生浏览器可观察的状态迁移：跳转路由（history.pushState 后重新渲染）或在原视图渲染出提交后的新状态，且新状态下的关键元素（如登录后的导航昵称、新列表项）要立即出现在 DOM 中。提交后不能让页面停留在提交前状态而无任何可见变化。
 
-同一视图内，不同功能的交互控件不得共用完全相同的可访问名（角色 + 名称）。动作入口的措辞应同时说明对象和动作，不要只用一个泛指词。
+同一视图内，不同功能的交互控件不得共用完全相同的可访问名（角色 + 名称）。操作控件的可访问名逐字等于需求原文给出的动作词（如 Archive、Undo、Save、Delete），不加对象后缀、不缩写、不改写——自动化按精确名（^…$）匹配，任何加长都会失配。多个条目各自携带同名行内操作（每张卡片都有 Archive）是允许的：靠条目的 hover 显隐与条目作用域区分，不靠给名称加后缀消除重名。
 列表项与卡片的次要操作默认收起，仅在悬停或键盘聚焦该项时显示；用 display / visibility 控制显隐，不要只改颜色或透明度。同一时刻不要让多张卡片同时暴露一组同名按钮。
 可多选的选项集合使用真正的 checkbox 并带 label；开关状态使用 aria-pressed 或 role="switch"，不要用普通按钮伪装选中态。
-没有可见文字的图标按钮必须有稳定、具体的 aria-label，其含义不得随折叠、禁用或状态变化而消失。
+没有可见文字的图标按钮必须有稳定的 aria-label，逐字等于需求原文的动作词（如 Archive、Change color、More options），不自创近义词，其含义不得随折叠、禁用或状态变化而消失。
 重复出现的行内编辑，每行的输入控件都要通过 <label> 或 aria-label 关联到所在行的对象，避免整页出现多个同名输入框。
 模态对话框打开时，背景内容不得再被点击或聚焦；关闭后焦点回到触发控件。
