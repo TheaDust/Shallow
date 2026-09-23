@@ -46,6 +46,10 @@ import type {
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
+/** Delivery repairs get longer calls and more rounds than other fixes: the
+ * candidate goes straight to the grader, so delivery must be given every chance. */
+const DELIVERY_REPAIR_CALL_CEILING_MS = 1_800_000;
+const MAX_DELIVERY_REPAIR_ROUNDS = 3;
 /** One planner call keeps retrying an outage for at most this long. */
 const PLANNER_RECOVERY_CEILING_MS = 1_800_000;
 
@@ -159,7 +163,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   const build = async (request: BuilderRequest, name: PipelinePhase, runOptions: BuilderRunOptions = {}): Promise<BuilderResult> => {
     const packetId = "packet" in request ? request.packet.id : "delivery-repair";
-    const ceiling = name === "implementation" ? IMPLEMENTATION_CALL_CEILING_MS : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : 120_000;
+    const ceiling = name === "implementation" ? IMPLEMENTATION_CALL_CEILING_MS : name === "repair" ? BOUNDARY_REPAIR_CALL_CEILING_MS : DELIVERY_REPAIR_CALL_CEILING_MS;
     const deadline = deps.clock.nowMs() + Math.min(ceiling, runOptions.timeoutMs ?? ceiling);
     const remaining = () => Math.min(deadline - deps.clock.nowMs(), budget.remaining(name));
     if (remaining() <= 0) return { outcome: "timed_out", sessionId: "unavailable", summary: "phase budget exhausted" };
@@ -348,12 +352,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         // this module's verified packets first and discard the repair on the first
         // loss; only then look for improvement across the failed packets.
         let regressed = false;
+        const rechecked = new Map<string, AuditResult>();
         for (const packet of targetPackets) {
           if (results.get(packet.id)?.status !== "verified") continue;
           if (budget.remaining("repair") <= 0) { regressed = true; break; }
           const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
           const recheck = await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
           if (recheck.status !== "verified") { regressed = true; break; }
+          rechecked.set(packet.id, recheck);
         }
         const reAudit = new Map<string, AuditResult>();
         if (!regressed) {
@@ -370,6 +376,17 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         if (regressed) reason = "previously verified behavior was lost or could not be reverified";
         else if (!improved) reason = "repair produced no independently verified improvement";
         else {
+          // The repair is kept, so locator refinements the rechecks needed survive
+          // too: detection-only audits cannot refine again and would otherwise
+          // demote these verified packets with the pre-repair plans.
+          for (const [id, recheck] of rechecked) {
+            const previousPlan = results.get(id)?.plan;
+            if (recheck.plan && (!previousPlan || probePlanSha256(recheck.plan) !== probePlanSha256(previousPlan))) {
+              await planCache.write(id, recheck.plan).catch(() => {});
+              nextResults = new Map(nextResults);
+              nextResults.set(id, recheck);
+            }
+          }
           for (const [id, r] of reAudit) {
             nextResults = new Map(nextResults);
             nextResults.set(id, r);
@@ -575,12 +592,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await state.record({ at: now(), type: "delivery_started" });
     await deps.candidate?.assertAcceptedInput();
     let finalReport = await runFinalVerifier(options, deps, state);
-    if (!finalReport.ok && !gateway.exhausted && budget.remaining("delivery") > 0) {
-      await state.record({ at: now(), type: "delivery_repair_started", detail: { stage: finalReport.stage, message: finalReport.message, round: 1 } });
+    let repairedRounds = 0;
+    for (let round = 1; !finalReport.ok && round <= MAX_DELIVERY_REPAIR_ROUNDS && !gateway.exhausted && budget.remaining("delivery") > 0; round += 1) {
+      repairedRounds = round;
+      await state.record({ at: now(), type: "delivery_repair_started", detail: { stage: finalReport.stage, message: finalReport.message, round } });
       const result = await build({ mode: "delivery_repair", outputDir: options.outputDir,
         platformContract: options.platformContract, deliveryFailure: { stage: finalReport.stage,
           expected: expectedByStage[finalReport.stage], actual: sanitizeDiagnosticText(finalReport.message, deps.diagnosticSecrets) } }, "delivery");
-      const repaired = await runFinalVerifier(options, deps, state);
+      // A repair the Builder did not complete is restored unseen: its verification
+      // would be discarded anyway, so spend the remaining rounds on fresh attempts.
+      const repaired = result.outcome === "completed" ? await runFinalVerifier(options, deps, state) : finalReport;
       if (result.outcome === "completed" && repaired.ok) {
         await checkpoint([...implemented], "delivery-repair", repaired.candidate);
         // Runtime repair changed the delivered source: old feature passes are not evidence for it.
@@ -588,11 +609,15 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await publish();
         finalReport = repaired;
         await state.record({ at: now(), type: "delivery_repair_accepted" });
-      } else {
-        await deps.git.restoreAccepted(state.snapshot.acceptedSha);
-        await state.record({ at: now(), type: "delivery_repair_restored", detail: { round: 1 } });
-        finalReport = await runFinalVerifier(options, deps, state);
+        break;
       }
+      await deps.git.restoreAccepted(state.snapshot.acceptedSha);
+      await state.record({ at: now(), type: "delivery_repair_restored", detail: { round } });
+    }
+    if (!finalReport.ok && repairedRounds > 0) {
+      // All attempted rounds failed and were restored; confirm the accepted state
+      // once so the final report describes the delivered candidate, not a rejected attempt.
+      finalReport = await runFinalVerifier(options, deps, state);
     }
     await deps.candidate?.assertAcceptedInput();
     if (finalReport.ok && finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);

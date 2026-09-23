@@ -144,6 +144,41 @@ test("A module boundary repair that breaks a verified path is discarded instead 
   });
 });
 
+test("A boundary repair that drifts a verified packet's locators keeps the refined plan for the final audit", async () => {
+  await withModulePipeline(async f => {
+    const refined: string[] = [];
+    f.deps.planner.refineLocators = async original => {
+      refined.push(original.packetId);
+      return {
+        ...structuredClone(original),
+        cases: original.cases.map(item => ({
+          ...item,
+          steps: item.steps.map(step => "locator" in step && step.locator.by === "role" && step.locator.name === undefined
+            ? { ...step, locator: { ...step.locator, name: "Workspace" } }
+            : step),
+        })),
+      };
+    };
+    f.deps.runner.run = async plan => {
+      if (plan.packetId === "packet-c") return pass(plan);
+      const repaired = f.builder.requests.some(item => item.mode === "repair");
+      if (plan.packetId === "packet-a") return repaired ? pass(plan) : fail(plan);
+      // packet-b: the plain locator resolves before the repair; the repair renames
+      // the control, so afterwards only the refined (named) locator resolves.
+      const step = plan.cases[0].steps[1];
+      const named = "locator" in step && step.locator.by === "role" && step.locator.name !== undefined;
+      return repaired === named ? pass(plan) : fail(plan, named ? "assertion" : "locator");
+    };
+    const summary = await f.run();
+    // The verified packet's recheck needed a locator refinement to survive the repair.
+    assert.deepEqual(refined, ["packet-b"]);
+    // Detection-only final audits cannot refine again, so the refined plan must have
+    // been kept: B stays verified instead of dropping to inconclusive.
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.equal(summary.status, "delivered");
+  });
+});
+
 test("Judge events carry the build attempt that produced the audited code", async () => {
   await withModulePipeline(async f => {
     const summary = await f.run();
@@ -286,15 +321,39 @@ test("Delivery repair has one attempt and invalidates stale feature passes when 
   });
 });
 
-test("Unlimited delivery still stops after one failed repair and one browser infrastructure retry", async () => {
+test("A failed delivery repair attempt is not verified; the next round can still succeed", async () => {
+  await withModulePipeline(async f => {
+    const builder = new FakeBuilder(["completed", "completed", "failed", "completed"]);
+    f.deps.builder = builder;
+    let checks = 0;
+    f.deps.finalVerifier.verify = async () => {
+      checks++;
+      return checks === 1 ? { ok: false, stage: "build", message: "broken" } : { ok: true, stage: "complete", message: "repaired" };
+    };
+    const summary = await f.run();
+    assert.equal(builder.requests.filter(item => item.mode === "delivery_repair").length, 2);
+    // Verification covers the initial failure and the completed round only: a repair
+    // the Builder did not complete is restored without wasting a verification on it.
+    assert.equal(checks, 2);
+    assert.equal(summary.status, "delivered");
+  });
+});
+
+test("Unlimited delivery stops after three repair rounds and one browser infrastructure retry", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
     let checks = 0;
     f.deps.finalVerifier.verify = async () => { checks++; return { ok: false, stage: "build", message: "broken" }; };
     assert.equal((await f.run()).status, "failed");
-    assert.equal(checks, 3);
-    assert.equal(f.builder.requests.filter(item => item.mode === "delivery_repair").length, 1);
-    assert.deepEqual(f.git.restoredShas, ["second"]);
+    // Initial verification, one per completed repair round, one post-restore confirmation.
+    assert.equal(checks, 5);
+    const repairs = f.builder.requests.filter(item => item.mode === "delivery_repair");
+    assert.equal(repairs.length, 3);
+    // Each delivery repair call may take up to the 30-minute ceiling.
+    const firstRepair = f.builder.requests.findIndex(item => item.mode === "delivery_repair");
+    assert.equal(f.builder.runOptions[firstRepair]?.timeoutMs, 1_800_000);
+    // Every failed round restores the accepted state before the next attempt.
+    assert.deepEqual(f.git.restoredShas, ["second", "second", "second"]);
   });
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
