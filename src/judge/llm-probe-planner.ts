@@ -117,7 +117,8 @@ export class LlmProbePlanner implements ProbePlanner {
             description: packet.requirements[0].product.description,
           },
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
-            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
+            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
             ? { seedData: packet.requirements[0].product.seedData }
             : {}),
@@ -212,7 +213,8 @@ export class LlmProbePlanner implements ProbePlanner {
             description: packet.requirements[0].product.description,
           },
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
-            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
+            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
             ? { seedData: packet.requirements[0].product.seedData }
             : {}),
@@ -224,6 +226,7 @@ export class LlmProbePlanner implements ProbePlanner {
             scenarios: requirement.scenarios,
             references: requirement.references,
             exactUiStrings: requirement.exactUiStrings,
+            seedDeclarations: requirement.seedDeclarations,
           })),
           originalPlan: toWireProbePlan(original),
           ...(groundedLocatorAnchors(original, packet).length

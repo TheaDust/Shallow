@@ -250,6 +250,7 @@ export function parseProbePlan(
         const declared = exactUiStrings.some((value) => value.toLowerCase() === literal.toLowerCase());
         const entered = probeCase.steps.slice(0, stepIndex).some((previous) =>
           previous.op === "fill" && previous.value === literal);
+        // Inline seed prose can describe state without declaring visible text; keep its role/label fallback.
         const seeded = packet.requirements.some((requirement) => requirement.product.seedData
           .some((category) => category.items.includes(literal)));
         if (!declared && !entered && !seeded &&

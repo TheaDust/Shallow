@@ -247,6 +247,7 @@ function extractUiStrings(text: string): string[] {
 }
 
 function extractSeedDeclarations(text: string): string[] {
+  // Keep extraction limited to explicit seed markers; unlabeled prose remains in the full requirement text.
   const declarations: string[] = [];
   for (const match of text.matchAll(/(Seed (?:data|values):|(?:The )?evaluation seed contains)\s*(.+?)(?=\s+Seed (?:data|values):|\s+(?:The )?evaluation seed contains|[\n]|$)/gim)) {
     const clause = (match[1].toLowerCase().includes("evaluation seed contains")

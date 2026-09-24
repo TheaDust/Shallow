@@ -195,6 +195,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /终末 assertion 应检查目标操作的结果/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
+  assert.match(planner, /顶层 `seedData` 条目/);
+  assert.match(planner, /内联 `seedDeclarations`.*role 或 label fallback/);
   assert.match(planner, /逐字引用/);
   assert.match(planner, /引用必须能在需求证据中逐字找到/);
   const refinement = loadPrompt("judge", "probe-refinement");

@@ -58,6 +58,19 @@ test("Literal text assertions keep declared labels, seed items and data entered 
   }
 });
 
+test("Inline seed prose alone does not authorize a bare text locator", () => {
+  const input = packet();
+  input.requirements[0].exactUiStrings = [];
+  input.requirements[0].seedDeclarations = ["Seed values: record Sample"];
+  const plan = validPlan();
+  plan.cases[0].steps = [{ op: "goto", path: "/" },
+    { op: "expectVisible", locator: { by: "text", text: "Sample" } }];
+  assert.throws(() => parseProbePlan(plan, input), /unanchored text locator.*role or label fallback/);
+  plan.cases[0].steps[1] = { op: "expectVisible", locator: { by: "text", text: "Sample",
+    fallbacks: [{ by: "role", role: "listitem", name: "Sample" }] } };
+  assert.doesNotThrow(() => parseProbePlan(plan, input));
+});
+
 test("Refinement rejects unchanged, reordered and equivalent candidates at every failed step", () => {
   const original = parseProbePlan(validPlan(), packet());
   const fill = original.cases[0].steps[1];
@@ -395,6 +408,8 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
   ];
   const seededPacket = packet(seedData);
   seededPacket.requirements[0].seedDeclarations = ['Seed data: shelf "Shelf 4.3.1"'];
+  seededPacket.prerequisites = [{ ...seededPacket.requirements[0], id: "REQ-BASE",
+    seedDeclarations: ['Seed values: account "alice-dev"'] }];
   await planner.plan(seededPacket);
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
@@ -404,11 +419,13 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
     product?: { name: string; description: string };
     seedData?: unknown;
     requirements: Array<{ seedDeclarations?: unknown }>;
+    prerequisites?: Array<{ seedDeclarations?: unknown }>;
   };
   assert.deepEqual(seededPayload.seedData, seedData);
   assert.equal(seededPayload.product?.name, "Demo Product");
   assert.equal(seededPayload.product?.description, "Root description.");
   assert.deepEqual(seededPayload.requirements[0].seedDeclarations, ['Seed data: shelf "Shelf 4.3.1"']);
+  assert.deepEqual(seededPayload.prerequisites?.[0].seedDeclarations, ['Seed values: account "alice-dev"']);
 
   await planner.plan(packet());
   const plain = JSON.parse(bodies[1]) as { messages: Array<{ content: string }> };
@@ -778,11 +795,15 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
     return jsonResponse({ choices: [{ message: { content: JSON.stringify(reviews[call++]) } }] });
   };
   const planner = new LlmProbePlanner(config(), fetchFn);
-  const original = parseProbePlan(validPlan(), packet());
+  const reviewedPacket = packet();
+  reviewedPacket.requirements[0].seedDeclarations = ['Seed data: shelf "Shelf 4.3.1"'];
+  reviewedPacket.prerequisites = [{ ...reviewedPacket.requirements[0], id: "REQ-BASE",
+    seedDeclarations: ['Seed values: account "alice-dev"'] }];
+  const original = parseProbePlan(validPlan(), reviewedPacket);
 
-  const sound = await planner.reviewPlan(packet(), original, behaviorFailures());
+  const sound = await planner.reviewPlan(reviewedPacket, original, behaviorFailures());
   assert.deepEqual(sound, { status: "sound", rationale: "期望与需求原文一致" });
-  const corrected = await planner.reviewPlan(packet(), original, behaviorFailures());
+  const corrected = await planner.reviewPlan(reviewedPacket, original, behaviorFailures());
   assert.equal(corrected.status, "corrected");
   if (corrected.status === "corrected") assert.equal(corrected.plan.cases[0].steps.at(-1)?.op, "expectText");
 
@@ -793,9 +814,13 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
     originalPlan?: unknown;
     failures?: unknown[];
     product?: { description: string };
+    requirements?: Array<{ seedDeclarations?: unknown }>;
+    prerequisites?: Array<{ seedDeclarations?: unknown }>;
   };
   assert.ok(payload.originalPlan);
   assert.equal(payload.product?.description, "Root description.");
+  assert.deepEqual(payload.requirements?.[0].seedDeclarations, ['Seed data: shelf "Shelf 4.3.1"']);
+  assert.deepEqual(payload.prerequisites?.[0].seedDeclarations, ['Seed values: account "alice-dev"']);
   assert.equal((payload.failures as unknown[]).length, 1);
   assert.doesNotMatch(JSON.stringify(payload), /source code|git diff|acceptedSha/);
 });
