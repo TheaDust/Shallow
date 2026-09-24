@@ -310,17 +310,17 @@ test("Catalog extracts verbatim Seed data and Seed values declarations from requ
     const catalog = await loadRequirementCatalog(file);
     const byId = new Map(catalog.requirements.map((item) => [item.id, item]));
     assert.deepEqual(byId.get("A")?.seedDeclarations, [
-      'verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
-      'shelf "Shelf 4.3.1"',
+      'Seed data: verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
+      'Seed data: shelf "Shelf 4.3.1"',
     ]);
     assert.deepEqual(byId.get("B")?.seedDeclarations, [
-      'verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
-      'workbook "Q3 Sales"',
-      'the seeded workbook "Q3 Sales", worksheet "Sheet1", and cell A1 value "Region"',
+      'Seed data: verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
+      'Seed values: workbook "Q3 Sales"',
+      'The evaluation seed contains the seeded workbook "Q3 Sales", worksheet "Sheet1", and cell A1 value "Region"',
     ]);
     assert.deepEqual(byId.get("C")?.seedDeclarations, [
-      'deletable shelf "Shelf 4.4.1"',
-      'account "backup@example.com"',
+      'Seed data: deletable shelf "Shelf 4.4.1"',
+      'Seed data: account "backup@example.com"',
     ]);
   });
 });
@@ -332,17 +332,20 @@ test("Bundled competition seeds and legacy Seed data declarations remain extract
 
   const sheet = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
   assert.equal(sheet.requirements.length, 24);
-  assert.ok(sheet.requirements.every((item) => item.seedDeclarations.some((value) => value.includes("seeded"))));
+  assert.ok(sheet.requirements.every((item) => item.seedDeclarations.some((value) => value.startsWith("The evaluation seed contains"))));
   assert.ok(sheet.requirements[0].seedDeclarations.includes(
-    "the seeded workbook `Q3 Sales`, worksheet `Sheet1`, and cell A1 value `Region`",
+    "The evaluation seed contains the seeded workbook `Q3 Sales`, worksheet `Sheet1`, and cell A1 value `Region`",
   ));
+  assert.ok(sheet.requirements.some((item) => item.seedDeclarations.includes(
+    "The evaluation seed contains the seeded workbook `Q3 Sales`, cells `A1=2`, `B1=3`, and formulas `=A1+B1` and `=C1*2`",
+  )));
 
   const keep = await loadRequirementCatalog(resolve("data/keep/requirements.yaml"));
   assert.ok(keep.requirements.some((item) => item.seedDeclarations.includes(
-    'pinned note "Sprint goals" and regular note "Groceries"',
+    'Seed data: pinned note "Sprint goals" and regular note "Groceries"',
   )));
   const bookstack = await loadRequirementCatalog(resolve("data/bookstack/requirements.yaml"));
-  assert.ok(bookstack.requirements.some((item) => item.seedDeclarations.includes('shelf "Shelf 4.3.1"')));
+  assert.ok(bookstack.requirements.some((item) => item.seedDeclarations.includes('Seed data: shelf "Shelf 4.3.1"')));
 });
 
 async function withYaml(

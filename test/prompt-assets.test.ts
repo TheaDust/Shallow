@@ -116,7 +116,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /hash 路由/);
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
-  assert.match(loadPrompt("system", "builder-system"), /初始状态、GIVEN 所需的准备动作/);
+  assert.match(loadPrompt("system", "builder-system"), /单个场景 GIVEN 中的初始条件/);
   assert.match(loadPrompt("system", "builder-system"), /等待目标数据期间给出忙碌状态/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),

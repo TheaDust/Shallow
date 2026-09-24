@@ -36,7 +36,7 @@ export interface AtomicRequirement {
   scenarios: string[];
   references: string[];
   exactUiStrings: string[];
-  /** Verbatim `Seed data:` clauses from the requirement evidence text (ancestors included). */
+  /** Seed declarations with source wording from requirement evidence (ancestors included). */
   seedDeclarations: string[];
   product: ProductContext;
   ancestors: RequirementAncestor[];

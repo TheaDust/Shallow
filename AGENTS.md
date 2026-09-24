@@ -55,7 +55,7 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树、ProductContext.seedData 与原子级 seedDeclarations
-                                （从 Seed data、Seed values、evaluation seed 摘录）；校验 ID 和依赖
+                                （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、3 条/5 场景/3k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
@@ -207,7 +207,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 - 需求证据：catalog 保留原子及祖先中的双引号/中文引号/反引号界面文案，原子与祖先参考图均进入 Builder 图片输入；Planner 同时接收祖先文字。
 - 种子状态按动作前初始态解释；GIVEN 所需变更通过场景准备动作建立。Builder 每次调用注入独立的 SHALLOW_DATA_DIR，shell/run_tests 继承，父进程回收 Worker 后清理；共享执行层使 baseline 同样生效。应用需遵守该变量。
-- 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染到 implement、repair、root_cause_repair。空数组省略该段；交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。此外 `extractSeedDeclarations` 从需求证据文本（含祖先）摘录 `Seed data:`、`Seed values:` 与 `evaluation seed contains` 声明为 `seedDeclarations`，`workPacketSection` 聚合为“本包初始数据原文摘录”（空则省略）；摘录用于核对，Builder 仍须从需求全文找齐明确预置的实体、原文名称、属性和关系，在 ARCHITECTURE.md 维护累计种子清单。Planner 输入同样携带 `seedDeclarations`，探针规则明确种子是动作前初始数据、不是创建/修改的目标名。
+- 种子数据：`catalog.ts` 的 `parseSeedData` 读取 YAML 顶层 `data`，`prompt.ts` 的 `projectContextSection` 经 `seed-data.md` 按分类全量渲染为产品级共享预置；空数组省略该段。交付修复仅携带交付失败及平台合同，Planner 维持当前需求的文字证据输入。需求原文与种子数据保持完整，1500 字符限制属于观测与诊断通道。`extractSeedDeclarations` 从需求证据文本（含祖先）摘录 `Seed data:`、`Seed values:` 与 `evaluation seed contains` 声明，保留来源措辞；`workPacketSection` 按需求 ID 聚合为“本包初始数据原文摘录”（空则省略）。摘录用于核对各自作用域：明确要求由应用提供且彼此相容的预置记录完整播种，独立场景中同名对象的互斥初始值分别保留。Builder 仍须核对需求全文，在 ARCHITECTURE.md 记录共享种子和按场景区分的初始条件。Planner 输入同样携带 `seedDeclarations`，探针规则明确种子是动作前初始数据、不是创建/修改的目标名。
 - 图片：生产入口把需求目录传给 `PromptBuilder.options.requirementsDir`（经 `PiWorkerClient`）；`loadReferenceImages` 加载当前 packet 原子需求及祖先描述/visual_reference 中的图片引用并去重，校验解码路径、真实路径、文件签名并去重。支持本地 PNG/JPEG/WebP/GIF，单图 10 MiB、每包 30 MiB；不可用引用写入 `skipped` 并依据文字继续。SDK 使用 `file` part 的 data URL 传递附件。
 - 拒图回退：携图请求被明确识别为图片输入不支持、且响应没有工具或已完成步骤的执行证据时，先 abort 原会话，再用新会话发送纯文本；每次尝试至多一次，复用原超时额度，当前 Builder 实例记住文本模式。普通错误仍走失败路径，packet 尝试计数和验收门槛保持原语义。
 - 观测：`BuilderResult.referenceImages` 只保存模式、附件数量与跳过原因；`pipeline.ts` 发出 `builder_reference_images`，`human-log.ts` 渲染中文说明。图片载荷只用于模型输入。Builder 每次调用的 token 用量与模型/工具耗时分布保存在 `execution.usage`/`execution.timing`（由 `pi-execution-stats.ts` 聚合，只含计数与工具名，不含参数或消息内容），随 `builder_finished` 进私有台账与 run-log。

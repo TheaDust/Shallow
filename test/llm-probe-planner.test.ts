@@ -394,7 +394,7 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
     { category: "notes", items: ["Sprint goals", "Groceries"] },
   ];
   const seededPacket = packet(seedData);
-  seededPacket.requirements[0].seedDeclarations = ['shelf "Shelf 4.3.1"'];
+  seededPacket.requirements[0].seedDeclarations = ['Seed data: shelf "Shelf 4.3.1"'];
   await planner.plan(seededPacket);
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
@@ -408,7 +408,7 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
   assert.deepEqual(seededPayload.seedData, seedData);
   assert.equal(seededPayload.product?.name, "Demo Product");
   assert.equal(seededPayload.product?.description, "Root description.");
-  assert.deepEqual(seededPayload.requirements[0].seedDeclarations, ['shelf "Shelf 4.3.1"']);
+  assert.deepEqual(seededPayload.requirements[0].seedDeclarations, ['Seed data: shelf "Shelf 4.3.1"']);
 
   await planner.plan(packet());
   const plain = JSON.parse(bodies[1]) as { messages: Array<{ content: string }> };

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 import { compileBuilderPrompt } from "../src/builder/prompt.js";
+import { loadRequirementCatalog } from "../src/catalog.js";
 import type {
   BuilderPromptInput,
   BuilderProjectContext,
@@ -42,7 +43,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /@testing-library\/react/);
   assert.match(compiled.systemPrompt, /按其所属控件或文本逐字实现/);
   assert.match(compiled.systemPrompt, /不得缩写、加长、同义替换或翻译/);
-  assert.match(compiled.systemPrompt, /种子清单/);
+  assert.match(compiled.systemPrompt, /共享种子及按场景区分的初始条件/);
   assert.match(compiled.systemPrompt, /明确列为预置或既有的实体/);
   assert.match(compiled.systemPrompt, /logo 等返回首页入口的角色和可访问名以需求明示为准/);
   assert.match(compiled.systemPrompt, /用户可操作时，目标数据应已加载或能等待加载完成/);
@@ -113,6 +114,7 @@ test("Builder includes all seed data in implementation and both packet repair mo
     assert.match(taskPrompt, /账户预置/);
     assert.ok(taskPrompt.includes(item));
     assert.match(taskPrompt, /内置或可复现/);
+    assert.match(taskPrompt, /产品级共享预置/);
   }
   assert.doesNotMatch(compileBuilderPrompt(implementRequest()).taskPrompt, /## 种子数据/);
   assert.doesNotMatch(compileBuilderPrompt(deliveryRequest()).taskPrompt, /## 种子数据/);
@@ -121,18 +123,44 @@ test("Builder includes all seed data in implementation and both packet repair mo
 test("Work packet renders the aggregated verbatim seed checklist and omits it when empty", () => {
   const withSeeds = implementRequest();
   if (withSeeds.mode === "delivery_repair") throw new Error("unexpected mode");
-  withSeeds.packet.requirements[0].seedDeclarations = ['shelf "Shelf 4.3.1"', 'account "demo@example.com"'];
-  const seeded = compileBuilderPrompt(withSeeds).taskPrompt;
+  withSeeds.packet.requirements[0].seedDeclarations = [
+    'Seed data: shelf "Shelf 4.3.1"',
+    'The evaluation seed contains workbook "Q3 Sales" with cell A1 value "Region"',
+  ];
+  const compiled = compileBuilderPrompt(withSeeds);
+  const seeded = compiled.taskPrompt;
   assert.match(seeded, /### 本包初始数据原文摘录/);
-  assert.match(seeded, /逐字保留实体及关系/);
-  assert.ok(seeded.includes('- REQ-PROFILE：shelf "Shelf 4.3.1"'));
-  assert.ok(seeded.includes('- REQ-PROFILE：account "demo@example.com"'));
+  assert.match(seeded, /预置记录须完整播种/);
+  assert.match(seeded, /同名对象的互斥初始值分别保留/);
+  assert.match(compiled.systemPrompt, /不把它们拼成单一默认记录/);
+  assert.ok(seeded.includes('- REQ-PROFILE：Seed data: shelf "Shelf 4.3.1"'));
+  assert.ok(seeded.includes('- REQ-PROFILE：The evaluation seed contains workbook "Q3 Sales" with cell A1 value "Region"'));
 
   const withoutSeeds = compileBuilderPrompt(implementRequest()).taskPrompt;
   assert.doesNotMatch(withoutSeeds, /本包初始数据原文摘录/);
 
   const repaired = compileBuilderPrompt(repairRequest("repair")).taskPrompt;
   assert.doesNotMatch(repaired, /本包初始数据原文摘录/);
+});
+
+test("Official spreadsheet seed variants reach their own Builder work packets", async () => {
+  const catalog = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
+  for (const [id, clause] of [
+    ["REQ-1-1-1", "cell A1 value `Region`"],
+    ["REQ-4-1-1", "cells `A1=2`, `B1=3`"],
+  ]) {
+    const requirement = catalog.requirements.find((item) => item.id === id);
+    assert.ok(requirement);
+    const request = implementRequest();
+    if (request.mode !== "implement") throw new Error("unexpected mode");
+    request.packet = { ...request.packet, requirements: [requirement], requirementIds: [id] };
+    request.projectContext.product = requirement.product;
+    request.projectContext.ancestors = requirement.ancestors;
+    const { taskPrompt } = compileBuilderPrompt(request);
+    assert.ok(taskPrompt.includes(`- ${id}：The evaluation seed contains`));
+    assert.ok(taskPrompt.includes(clause));
+    assert.match(taskPrompt, /独立场景中同名对象的互斥初始值分别保留/);
+  }
 });
 
 test("Repair prompt carries only the cleaned shadow observation", () => {
