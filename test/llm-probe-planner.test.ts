@@ -401,10 +401,13 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
   assert.match(seeded.messages[0].content, /seed data/i);
   assert.match(seeded.messages[0].content, /动作前的初始数据/);
   const seededPayload = JSON.parse(seeded.messages[1].content) as {
+    product?: { name: string; description: string };
     seedData?: unknown;
     requirements: Array<{ seedDeclarations?: unknown }>;
   };
   assert.deepEqual(seededPayload.seedData, seedData);
+  assert.equal(seededPayload.product?.name, "Demo Product");
+  assert.equal(seededPayload.product?.description, "Root description.");
   assert.deepEqual(seededPayload.requirements[0].seedDeclarations, ['shelf "Shelf 4.3.1"']);
 
   await planner.plan(packet());
@@ -786,8 +789,13 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
   assert.match(request.messages[0].content, /复核者/);
   assert.match(request.messages[0].content, /expectationBasis/);
-  const payload = JSON.parse(request.messages[1].content) as { originalPlan?: unknown; failures?: unknown[] };
+  const payload = JSON.parse(request.messages[1].content) as {
+    originalPlan?: unknown;
+    failures?: unknown[];
+    product?: { description: string };
+  };
   assert.ok(payload.originalPlan);
+  assert.equal(payload.product?.description, "Root description.");
   assert.equal((payload.failures as unknown[]).length, 1);
   assert.doesNotMatch(JSON.stringify(payload), /source code|git diff|acceptedSha/);
 });

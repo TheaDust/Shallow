@@ -112,6 +112,10 @@ export class LlmProbePlanner implements ProbePlanner {
         role: "user",
         content: JSON.stringify({
           packetId: packet.id,
+          product: packet.requirements[0] && {
+            name: packet.requirements[0].product.rootName,
+            description: packet.requirements[0].product.description,
+          },
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
             text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
@@ -203,6 +207,10 @@ export class LlmProbePlanner implements ProbePlanner {
         role: "user",
         content: JSON.stringify({
           packetId: packet.id,
+          product: packet.requirements[0] && {
+            name: packet.requirements[0].product.rootName,
+            description: packet.requirements[0].product.description,
+          },
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
             text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length

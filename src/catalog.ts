@@ -248,8 +248,10 @@ function extractUiStrings(text: string): string[] {
 
 function extractSeedDeclarations(text: string): string[] {
   const declarations: string[] = [];
-  for (const match of text.matchAll(/Seed data:\s*(.+?)(?=\s+Seed data:|[\n]|$)/gim)) {
-    const clause = match[1]
+  for (const match of text.matchAll(/(Seed (?:data|values):|evaluation seed contains)\s*(.+?)(?=\s+Seed (?:data|values):|\s+evaluation seed contains|[\n]|$)/gim)) {
+    const clause = (match[1].toLowerCase() === "evaluation seed contains"
+      ? match[2].split(/\.(?=\s|$)/, 1)[0]
+      : match[2])
       .replace(/\s+(?:Reference image:|!\[)[\s\S]*$/i, "")
       .trim()
       .replace(/\.$/, "");

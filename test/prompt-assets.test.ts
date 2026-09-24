@@ -42,7 +42,7 @@ test("fillTemplate deduplicates residual placeholder names", () => {
 test("loadPrompt reads an asset verbatim with LF endings", () => {
   assert.equal(
     loadPrompt("fragments", "repository-collaboration"),
-    "【仓库协作业务】\n仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态必须一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
+    "【仓库协作业务】\n仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。代码浏览、分支指向、提交历史、文件内容与差异应反映同一版本关系，变更后不能只更新其中一个视图。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态按需求保持一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
   );
 });
 
@@ -135,7 +135,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /ARCHITECTURE\.md/);
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
-  assert.match(implement, /逐条覆盖本包需求与验收场景/);
+  assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
@@ -191,7 +191,7 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /hasText.*只允许出现在 locator 的 `scope` 对象内部/);
   assert.match(planner, /登录表单可见或页面跳转不等于登录成功/);
   assert.match(planner, /逐字纳入 locator 或终末 assertion/);
-  assert.match(planner, /把声明的条目视为动作前的初始数据/);
+  assert.match(planner, /把它们视为动作前的初始数据/);
   assert.match(planner, /终末 assertion 应检查目标操作的结果/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);

@@ -43,7 +43,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /按其所属控件或文本逐字实现/);
   assert.match(compiled.systemPrompt, /不得缩写、加长、同义替换或翻译/);
   assert.match(compiled.systemPrompt, /种子清单/);
-  assert.match(compiled.systemPrompt, /首次启动的初始数据中逐字存在/);
+  assert.match(compiled.systemPrompt, /明确列为预置或既有的实体/);
   assert.match(compiled.systemPrompt, /logo 等返回首页入口的角色和可访问名以需求明示为准/);
   assert.match(compiled.systemPrompt, /用户可操作时，目标数据应已加载或能等待加载完成/);
   assert.match(compiled.taskPrompt, /浏览器未执行/);
@@ -53,7 +53,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /# 行动：实现当前工作包/);
   assert.match(compiled.taskPrompt, /先规划，再实施/);
   assert.match(compiled.taskPrompt, /严格符合需求文档/);
-  assert.match(compiled.taskPrompt, /逐条覆盖本包需求与验收场景/);
+  assert.match(compiled.taskPrompt, /覆盖本包每条需求和场景新增的具体约束/);
   assert.match(compiled.taskPrompt, /完整业务链路/);
   assert.match(compiled.taskPrompt, /不要为某个示例数据/);
   assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
@@ -64,6 +64,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /The value remains after refresh\./);
   assert.match(compiled.taskPrompt, /reference\/profile\.png/);
   assert.match(compiled.taskPrompt, /Profile name \| Save/);
+  assert.match(compiled.taskPrompt, /引号原词（须按原文区分界面名称、数据值与示例）/);
   assert.match(compiled.taskPrompt, /输入控件使用符合用途的原生类型/);
   assert.match(compiled.taskPrompt, /不只依赖浏览器原生校验气泡/);
   assert.match(compiled.taskPrompt, /同名操作可以重复/);
@@ -122,16 +123,16 @@ test("Work packet renders the aggregated verbatim seed checklist and omits it wh
   if (withSeeds.mode === "delivery_repair") throw new Error("unexpected mode");
   withSeeds.packet.requirements[0].seedDeclarations = ['shelf "Shelf 4.3.1"', 'account "demo@example.com"'];
   const seeded = compileBuilderPrompt(withSeeds).taskPrompt;
-  assert.match(seeded, /### 本包初始数据清单/);
-  assert.match(seeded, /逐字落库/);
+  assert.match(seeded, /### 本包初始数据原文摘录/);
+  assert.match(seeded, /逐字保留实体及关系/);
   assert.ok(seeded.includes('- REQ-PROFILE：shelf "Shelf 4.3.1"'));
   assert.ok(seeded.includes('- REQ-PROFILE：account "demo@example.com"'));
 
   const withoutSeeds = compileBuilderPrompt(implementRequest()).taskPrompt;
-  assert.doesNotMatch(withoutSeeds, /本包初始数据清单/);
+  assert.doesNotMatch(withoutSeeds, /本包初始数据原文摘录/);
 
   const repaired = compileBuilderPrompt(repairRequest("repair")).taskPrompt;
-  assert.doesNotMatch(repaired, /本包初始数据清单/);
+  assert.doesNotMatch(repaired, /本包初始数据原文摘录/);
 });
 
 test("Repair prompt carries only the cleaned shadow observation", () => {

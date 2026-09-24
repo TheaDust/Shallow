@@ -268,7 +268,7 @@ test("Catalog rejects malformed seed data", async () => {
   );
 });
 
-test("Catalog extracts verbatim Seed data declarations from requirement evidence", async () => {
+test("Catalog extracts verbatim Seed data and Seed values declarations from requirement evidence", async () => {
   const yaml = [
     "id: ROOT",
     "name: Root",
@@ -289,7 +289,12 @@ test("Catalog extracts verbatim Seed data declarations from requirement evidence
     "        name: Second",
     "        type: ATOMIC",
     "        dependencies: []",
-    "        description: 'No seeds here.'",
+    "        description: 'Open a workbook. Seed values: workbook \"Q3 Sales\".'",
+    "        scenarios:",
+    "          - name: Open seeded workbook",
+    "            steps:",
+    "              - keyword: GIVEN",
+    "                content: 'The evaluation seed contains the seeded workbook \"Q3 Sales\", worksheet \"Sheet1\", and cell A1 value \"Region\". The visitor opens the home page.'",
     "  - id: OTHER",
     "    name: Other",
     "    type: FOLDER",
@@ -310,12 +315,34 @@ test("Catalog extracts verbatim Seed data declarations from requirement evidence
     ]);
     assert.deepEqual(byId.get("B")?.seedDeclarations, [
       'verified account with nickname "Demo User", email "demo@example.com", and password "Password123!"',
+      'workbook "Q3 Sales"',
+      'the seeded workbook "Q3 Sales", worksheet "Sheet1", and cell A1 value "Region"',
     ]);
     assert.deepEqual(byId.get("C")?.seedDeclarations, [
       'deletable shelf "Shelf 4.4.1"',
       'account "backup@example.com"',
     ]);
   });
+});
+
+test("Bundled competition seeds and legacy Seed data declarations remain extractable", async () => {
+  const github = await loadRequirementCatalog(resolve("data/official-competition/hackathon--github/requirements.yaml"));
+  assert.equal(github.requirements.length, 47);
+  assert.ok(github.requirements.every((item) => item.seedDeclarations.length > 0));
+
+  const sheet = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
+  assert.equal(sheet.requirements.length, 24);
+  assert.ok(sheet.requirements.every((item) => item.seedDeclarations.some((value) => value.includes("seeded"))));
+  assert.ok(sheet.requirements[0].seedDeclarations.includes(
+    "the seeded workbook `Q3 Sales`, worksheet `Sheet1`, and cell A1 value `Region`",
+  ));
+
+  const keep = await loadRequirementCatalog(resolve("data/keep/requirements.yaml"));
+  assert.ok(keep.requirements.some((item) => item.seedDeclarations.includes(
+    'pinned note "Sprint goals" and regular note "Groceries"',
+  )));
+  const bookstack = await loadRequirementCatalog(resolve("data/bookstack/requirements.yaml"));
+  assert.ok(bookstack.requirements.some((item) => item.seedDeclarations.includes('shelf "Shelf 4.3.1"')));
 });
 
 async function withYaml(

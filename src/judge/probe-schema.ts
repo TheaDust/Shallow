@@ -176,7 +176,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 1,
             maxItems: MAX_BASIS_QUOTES,
             description:
-              "1-3 verbatim quotes copied from the requirement evidence (requirement text, scenarios, ancestor descriptions, exactUiStrings, seed items, or prerequisites) that justify this case's expected outcome. Quotes are validated as literal substrings.",
+              "1-3 verbatim quotes copied from the requirement evidence (ROOT product description, requirement text, scenarios, ancestor descriptions, exactUiStrings, seed items, or prerequisites) that justify this case's expected outcome. Quotes are validated as literal substrings.",
             items: NONEMPTY_STRING_SCHEMA,
           },
           assertion: { anyOf: STEP_SCHEMA.anyOf.filter(schema => {
@@ -238,7 +238,7 @@ export function parseProbePlan(
         if (step.op === "goto" && step.path !== "/") {
           // A guessed server path cannot reach a hash-routed page. Only public
           // requirement text can authorize a deep link; never infer it from a name.
-          const declaredPaths = evidence.flatMap(item => [item.text, ...item.scenarios, ...item.ancestors.map(ancestor => ancestor.description)])
+          const declaredPaths = evidence.flatMap(item => [item.product.description, item.text, ...item.scenarios, ...item.ancestors.map(ancestor => ancestor.description)])
             .flatMap(value => [...value.replace(/!\[[^\]]*\]\([^)]*\)/g, "").matchAll(/(?<![\w./])(?:https?:\/\/[^\s/]+)?(\/[^\s<>"'`，。；、（）\[\]()]+)/g)]
               .map(match => match[1].replace(/[.,;:!?]+$/, "")));
           if (!declaredPaths.includes(step.path)) {
@@ -440,6 +440,7 @@ export function requirementEvidenceTexts(
   prerequisites: readonly AtomicRequirement[] = [],
 ): string[] {
   return [...requirements, ...prerequisites].flatMap(item => [
+    item.product.description,
     item.text,
     ...item.scenarios,
     ...item.ancestors.map(ancestor => ancestor.description),

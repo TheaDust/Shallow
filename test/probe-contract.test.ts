@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertLocatorOnlyRefinement, groundedLocatorAnchors, parseProbePlan, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
+import { assertLocatorOnlyRefinement, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 
 function packet(text = 'Open "Items" and click "Publish".'): WorkPacket {
@@ -34,6 +34,20 @@ test("Deep links require exact public path evidence, including hash and query", 
   const input = packet();
   input.prerequisites = [{ ...input.requirements[0], id: "P", text: "Open `/workspace`." }];
   assert.doesNotThrow(() => parseProbePlan(plan("/workspace"), input));
+  const rootPath = packet();
+  rootPath.requirements[0].product.description = "Open /workspace from the home page.";
+  assert.doesNotThrow(() => parseProbePlan(plan("/workspace"), rootPath));
+  rootPath.requirements[0].product.description = "See ![preview](/workspace).";
+  assert.throws(() => parseProbePlan(plan("/workspace"), rootPath), /undeclared/);
+});
+
+test("Root product contract can ground a probe expectation", () => {
+  assert.match(PROBE_PLAN_BODY.properties.cases.items.properties.expectationBasis.description, /ROOT product description/);
+  const input = packet();
+  input.requirements[0].product.description = "The workspace shows saved items.";
+  const grounded = plan();
+  grounded.cases[0].expectationBasis = ["The workspace shows saved items."];
+  assert.doesNotThrow(() => parseProbePlan(grounded, input));
 });
 
 test("Refinement can change rendering but cannot replace a declared action with an error or unrelated control", () => {

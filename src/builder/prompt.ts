@@ -170,9 +170,9 @@ function workPacketSection(packet: WorkPacket): string {
     packet.requirements.map(renderRequirement).join("\n\n"),
     ...(seedLines.length > 0 ? [
       "",
-      "### 本包初始数据清单（Seed data 逐字落库）",
+      "### 本包初始数据原文摘录",
       "",
-      "以下实体必须全部出现在首次启动的初始数据中：名称逐字、一个不落，包括仅作其他场景前置条件的实体；与先前工作包已交付的初始数据累加，不得覆盖或丢失。",
+      "以下是可提取的 Seed data / Seed values / evaluation seed 声明；逐字保留实体及关系，与先前工作包已交付的初始数据累加。还须核对需求原文中其他明确的预置状态，本清单不代表全部初始数据。",
       ...seedLines,
     ] : []),
   ].join("\n");
@@ -193,8 +193,8 @@ function renderRequirement(requirement: AtomicRequirement): string {
     "引用资料：",
     requirement.references.join("、") || "无",
     "",
-    "必须保持精确的界面文案：",
-    requirement.exactUiStrings.join(" | ") || "无",
+    "需求中的引号原词（须按原文区分界面名称、数据值与示例）：",
+    [...new Set(requirement.exactUiStrings)].join(" | ") || "无",
   ].join("\n");
 }
 
