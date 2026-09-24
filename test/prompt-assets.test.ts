@@ -117,7 +117,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
   assert.match(loadPrompt("system", "builder-system"), /初始状态、GIVEN 所需的准备动作/);
-  assert.match(loadPrompt("system", "builder-system"), /先准备目标数据再完成视图切换/);
+  assert.match(loadPrompt("system", "builder-system"), /等待目标数据期间给出忙碌状态/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -184,14 +184,16 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /准备前置条件 → 导航/);
   assert.match(planner, /count 为 0 的 expectCount/);
   assert.match(planner, /全新的 browser context/);
-  assert.match(planner, /初始状态、准备操作、目标操作和结果放在同一个 case/);
+  assert.match(planner, /把准备操作、目标操作和结果放在同一个 case/);
   assert.match(planner, /同名 button\/link 提供等价候选/);
   assert.match(planner, /hover/);
   assert.match(planner, /doubleClick/);
   assert.match(planner, /hasText.*只允许出现在 locator 的 `scope` 对象内部/);
   assert.match(planner, /登录表单可见或页面跳转不等于登录成功/);
   assert.match(planner, /逐字纳入 locator 或终末 assertion/);
-  assert.match(planner, /不是本场景要创建或修改的对象/);
+  assert.match(planner, /把声明的条目视为动作前的初始数据/);
+  assert.match(planner, /终末 assertion 应检查目标操作的结果/);
+  assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
   assert.match(planner, /逐字引用/);
   assert.match(planner, /引用必须能在需求证据中逐字找到/);

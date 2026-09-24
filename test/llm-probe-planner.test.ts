@@ -399,7 +399,7 @@ test("Probe Planner forwards declared seed data and omits it when empty", async 
 
   const seeded = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
   assert.match(seeded.messages[0].content, /seed data/i);
-  assert.match(seeded.messages[0].content, /逐字出现/);
+  assert.match(seeded.messages[0].content, /动作前的初始数据/);
   const seededPayload = JSON.parse(seeded.messages[1].content) as {
     seedData?: unknown;
     requirements: Array<{ seedDeclarations?: unknown }>;
