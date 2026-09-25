@@ -337,6 +337,22 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   );
 });
 
+test("An unbounded Planner call keeps its request pending without a local abort timer", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  let requestSignal: AbortSignal | null | undefined;
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    requestSignal = init?.signal;
+    await pending;
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
+  });
+  const plan = planner.plan(packet(), undefined, { timeoutMs: Infinity });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(requestSignal, undefined);
+  release();
+  assert.equal((await plan).cases.length, 2);
+});
+
 test("Probe Planner uses broadly supported JSON mode and a stable per-instance session", async () => {
   const calls: Array<{ init?: RequestInit }> = [];
   const fetchFn: typeof fetch = async (_input, init) => {

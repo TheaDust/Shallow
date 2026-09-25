@@ -50,8 +50,6 @@ const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
  * candidate goes straight to the grader, so delivery must be given every chance. */
 const DELIVERY_REPAIR_CALL_CEILING_MS = 1_800_000;
 const MAX_DELIVERY_REPAIR_ROUNDS = 3;
-/** One planner call keeps retrying an outage for at most this long. */
-const PLANNER_RECOVERY_CEILING_MS = 1_800_000;
 
 export interface AppLifecycle {
   start(
@@ -138,19 +136,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
-  // A planner call keeps retrying across a gateway outage, but only within its
-  // own window so audits degrade to inconclusive instead of blocking forever.
+  // Keep one request in flight while the phase has time left. A gateway error
+  // can still be retried, but a local attempt timer must not abort a slow reply.
   const plannerWindow = (): (() => number) => {
-    const deadline = deps.clock.nowMs() + budget.callTimeout(gatewayPhase, PLANNER_RECOVERY_CEILING_MS);
-    return () => Math.min(deadline - deps.clock.nowMs(), budget.remaining(gatewayPhase));
+    return () => budget.remaining(gatewayPhase);
   };
   deps = { ...deps, planner: {
     plan: (packet, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
-      () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+      () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
     refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, plannerWindow(),
-      () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+      () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
     reviewPlan: (packet, original, failures, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
-      () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? 180_000, budget.remaining(gatewayPhase))) })),
+      () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
   } };
   deps.candidate?.setRecorder(event => state.record(event));
 
@@ -455,7 +452,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const relatedAuditPackets = packets.filter(p => packet.requirementIds.some(id => p.requirementIds.includes(id)));
       // Judge events and evidence correlate back to the build attempt that produced the code.
       for (const auditPacket of relatedAuditPackets) state.setPacketAttempt(auditPacket.id, packet.attempt);
-      const planTimeoutMs = budget.callTimeout("implementation", 180_000);
+      const planTimeoutMs = budget.remaining("implementation");
       const planPromises = relatedAuditPackets
         .filter(p => !results.has(p.id))
         .map(p => spawnPlanGeneration(p, p.id, deps.planner, planCache, planTimeoutMs));

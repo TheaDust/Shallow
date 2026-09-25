@@ -194,6 +194,35 @@ test("Planner 429 recovers within the module rather than deferring all feedback 
   });
 });
 
+test("Planner calls use the phase budget instead of a 180-second attempt timer", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 1_000_000;
+    f.deps.clock = { nowMs: () => 0 };
+    const timeouts: number[] = [];
+    f.deps.planner.plan = async (packet, _feedback, options) => {
+      timeouts.push(options?.timeoutMs ?? 0);
+      return testPlan(packet);
+    };
+    assert.equal((await f.run()).status, "delivered");
+    assert.ok(timeouts.length > 0);
+    assert.ok(timeouts.every(timeout => timeout >= 600_000), JSON.stringify(timeouts));
+  });
+});
+
+test("Planner calls have no local deadline when the run budget is unlimited", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    const timeouts: number[] = [];
+    f.deps.planner.plan = async (packet, _feedback, options) => {
+      timeouts.push(options?.timeoutMs ?? 0);
+      return testPlan(packet);
+    };
+    assert.equal((await f.run()).status, "delivered");
+    assert.ok(timeouts.length > 0);
+    assert.ok(timeouts.every(timeout => timeout === Infinity), JSON.stringify(timeouts));
+  });
+});
+
 test("A gateway outage during boundary repair postpones the round instead of abandoning the module", async () => {
   await withModulePipeline(async f => {
     let runs = 0;

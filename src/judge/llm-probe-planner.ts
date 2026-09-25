@@ -294,7 +294,7 @@ export class LlmProbePlanner implements ProbePlanner {
           messages: requestMessages,
           response_format: { type: "json_object" },
         }),
-        signal: AbortSignal.timeout(Math.max(1, Math.min(timeoutMs, this.config.timeoutMs))),
+        ...(Number.isFinite(timeoutMs) ? { signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))) } : {}),
       });
     } catch (error) {
       throw new ProbePlannerError("transport", "Probe planner request failed", {

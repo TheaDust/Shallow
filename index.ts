@@ -166,7 +166,7 @@ async function executeProduction(
         arcEvents,
         logSink,
         diagnosticSecrets: [gateway.apiKey],
-        runMetadata: { model: gateway.model, ...modelTimeouts,
+        runMetadata: { model: gateway.model, builderTimeoutMs: modelTimeouts.builderTimeoutMs,
           promptSha256: promptHash.digest("hex"),
           probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
         },
