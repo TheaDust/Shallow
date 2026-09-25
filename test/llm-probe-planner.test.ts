@@ -58,6 +58,13 @@ test("Literal text assertions keep declared labels, seed items and data entered 
   }
 });
 
+test("A matching root id echo is ignored without relaxing the probe schema", () => {
+  const valid = validPlan();
+  assert.equal(parseProbePlan({ ...valid, id: valid.packetId }, packet()).cases.length, 2);
+  assert.throws(() => parseProbePlan({ ...valid, id: "another-packet" }, packet()), /unsupported ProbePlan field: id/);
+  assert.throws(() => parseProbePlan({ ...valid, id: valid.packetId, extra: true }, packet()), /unsupported ProbePlan field: extra/);
+});
+
 test("Inline seed prose alone does not authorize a bare text locator", () => {
   const input = packet();
   input.requirements[0].exactUiStrings = [];
@@ -329,12 +336,45 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   assert.equal(headers.get("user-agent"), "ShallowCode/1.0");
   assert.ok(headers.get("x-opencode-session"));
   const body = JSON.stringify(JSON.parse(String(calls[0].init?.body)));
+  assert.equal(JSON.parse(String(calls[0].init?.body)).stream, true);
   assert.match(body, /Keep the profile after refresh/);
   assert.match(body, /happy_path/);
   assert.doesNotMatch(
     body,
     /candidate-app|source code|git diff|acceptedSha|SECRET-OTHER-REQ|\/workspace\/tests/,
   );
+});
+
+test("Probe Planner assembles split SSE deltas and tolerates a damaged usage trailer", async () => {
+  const json = JSON.stringify(validPlan());
+  const event = (content: string) => `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`;
+  const payload = event(json.slice(0, 17)) + event(json.slice(17))
+    + 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+    + 'data: {"created":123,"usage":nu';
+  const chunks = [payload.slice(0, 9), payload.slice(9, 41), payload.slice(41)];
+  const planner = new LlmProbePlanner(config(), async () => sseResponse(chunks));
+  assert.equal((await planner.plan(packet())).cases.length, 2);
+});
+
+test("Probe Planner rejects an SSE stream that ends before completion", async () => {
+  const payload = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: '{"packetId":' }, finish_reason: null }] })}\n\n`;
+  const planner = new LlmProbePlanner(config(), async () => sseResponse([payload]));
+  await assert.rejects(planner.plan(packet()), error => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.category, "transport");
+    return true;
+  });
+});
+
+test("Probe Planner retries a damaged content-bearing SSE event", async () => {
+  const planner = new LlmProbePlanner(config(), async () =>
+    sseResponse(['data: {"choices":[{"index":0,"delta":{"content":"partial"}\n\n']));
+  await assert.rejects(planner.plan(packet()), error => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.category, "transport");
+    assert.equal(error.retryable, true);
+    return true;
+  });
 });
 
 test("An unbounded Planner call keeps its request pending without a local abort timer", async () => {
@@ -736,6 +776,17 @@ function jsonResponse(body: unknown): Response {
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+function sseResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (index === chunks.length) controller.close();
+      else controller.enqueue(encoder.encode(chunks[index++]));
+    },
+  }), { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
 

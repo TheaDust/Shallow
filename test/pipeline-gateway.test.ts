@@ -233,7 +233,7 @@ test("Planner calls use the phase budget instead of a 180-second attempt timer",
   });
 });
 
-test("Planner calls have no local deadline when the run budget is unlimited", async () => {
+test("Planner calls get a recovery window when the run budget is unlimited", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
     const timeouts: number[] = [];
@@ -243,7 +243,54 @@ test("Planner calls have no local deadline when the run budget is unlimited", as
     };
     assert.equal((await f.run()).status, "delivered");
     assert.ok(timeouts.length > 0);
-    assert.ok(timeouts.every(timeout => timeout === Infinity), JSON.stringify(timeouts));
+    assert.ok(timeouts.every(timeout => timeout === 720_000), JSON.stringify(timeouts));
+  });
+});
+
+test("Builder checkpoints before a background probe plan settles", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let releasePlan!: () => void;
+    const heldPlan = new Promise<void>(resolve => { releasePlan = resolve; });
+    const originalPlan = f.deps.planner.plan.bind(f.deps.planner);
+    f.deps.planner.plan = async (packet, feedback, options) => {
+      if (packet.id === "packet-a") await heldPlan;
+      return originalPlan(packet, feedback, options);
+    };
+    let checkpointSaved!: () => void;
+    const checkpoint = new Promise<void>(resolve => { checkpointSaved = resolve; });
+    const capture = f.deps.git.captureAccepted.bind(f.deps.git);
+    f.deps.git.captureAccepted = async reason => {
+      const sha = await capture(reason);
+      if (reason.startsWith("shallow: checkpoint feature-")) checkpointSaved();
+      return sha;
+    };
+    const running = f.run();
+    try {
+      await Promise.race([checkpoint, new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Builder checkpoint waited for the probe plan")), 1_000))]);
+    } finally { releasePlan(); }
+    assert.equal((await running).status, "delivered");
+  });
+});
+
+test("A stalled probe planner exhausts its window and does not stop later implementation", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") throw new ProbePlannerError("transport", "headers timeout");
+      return testPlan(packet);
+    };
+    const summary = await f.run();
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.ok(summary.inconclusiveRequirementIds?.includes("A"));
+    assert.ok(elapsed < 26 * 60_000, `planner exceeded two recovery windows: ${elapsed}ms`);
+    const events = await f.events();
+    assert.ok(events.some(event => event.type === "checkpoint_saved" && event.detail?.requirementIds.includes("C")));
+    assert.ok(events.some(event => event.type === "probe_preplan_failed" && event.packetId === "packet-a" && event.phase === "planner"));
   });
 });
 

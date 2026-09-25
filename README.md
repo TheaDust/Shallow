@@ -167,7 +167,7 @@ FinalVerifier 检查安装、构建、启动、健康状态和浏览器根页面
 - **arc-projection.jsonl**：与 ledger 同目录，保存官方格式的平台事件及完整需求树投影意图，内部记录带唯一 ID。主线结束时从它重建本轮 `.arc`，重复 ID 只投影一次；写入失败记录告警，不改变已提交的验收决定。
 - **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
 
-Planner 失败事件（`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，现有的一次重试会携带校验原因、内容片段和完整 schema；传输错误维持原请求重试。`probe_started` 记录执行计划指纹，`probe_refined` 记录恢复轮次及前后计划指纹，`probe_refinement_failed` 记录轮次与被保留的计划指纹；定位明文仅在私有证据中。反馈仅在 Judge 侧使用。
+Planner 失败事件（`probe_preplan_failed`、`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，一次重试会携带校验原因、内容片段和完整 schema；传输错误在 Planner 操作窗口内重试。`probe_started` 记录执行计划指纹，`probe_refined` 记录恢复轮次及前后计划指纹，`probe_refinement_failed` 记录轮次与被保留的计划指纹；定位明文仅在私有证据中。反馈仅在 Judge 侧使用。
 
 `diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
 
@@ -202,7 +202,7 @@ GitOps（`src/git-ops.ts`）细节：
 
 验收报告的原始类别仍保留；只有 `audit_result` 中的 failed 才表示已复现业务失败；符合条件的 locator 缺失保持 inconclusive，以诊断目的进入同一修复配额。应用实例的业务数据由 CandidateRuntime 分次初始化，浏览器 context 隔离本身不代表服务端数据隔离。
 
-主线网关恢复由 `src/gateway-recovery.ts` 管理：Planner 单路排队，与 Builder 并行；两者收到临时网关错误后共享退避窗口。控制器按失败类型指数退避：429 限流从 30 秒起、上限 5 分钟；5xx/408/连接故障从 5 秒起、上限 1 分钟；均遵守更长的 `Retry-After`。Planner 请求发出后持续等待回复；没有总预算时不设本地请求超时，有正预算时仅受当前阶段剩余额度限制。Builder 仍受各调用上限约束。网关错误后的重试不越过阶段或 Builder 调用剩余额度；Builder 调用窗口耗尽后，控制器用新窗口重试同一需求包或修复批次，直至网关恢复或阶段预算耗尽。网关把上游 `connection reset by peer` 包装成 HTTP 400 时，仅凭实际网关状态与 SDK 错误消息的精确组合将其按连接故障重试；普通 400、认证和请求格式错误不重试，Builder 的认证失败与请求错误都停止派发并保留未完成需求；Planner 单独的认证/协议错误保持 Judge 故障隔离。
+主线网关恢复由 `src/gateway-recovery.ts` 管理：Planner 单路排队，与 Builder 并行；两者收到临时网关错误后共享退避窗口。控制器按失败类型指数退避：429 限流从 30 秒起、上限 5 分钟；5xx/408/连接故障从 5 秒起、上限 1 分钟；均遵守更长的 `Retry-After`。Planner 请求使用流式 Chat Completions，汇集 SSE 内容后严格校验完整计划；普通 JSON 响应也可读取。无总预算时每次 Planner 操作的网关恢复窗口为12分钟，有正预算时受阶段剩余额度限制。后台预规划不挡 Builder 保存可运行检查点，在模块边界验收前收敛；窗口耗尽的验收记 inconclusive，同一候选最终检测跳过重复的无计划请求。Builder 仍受各调用上限约束。网关错误后的重试不越过阶段或 Builder 调用剩余额度；Builder 调用窗口耗尽后，控制器用新窗口重试同一需求包或修复批次，直至网关恢复或阶段预算耗尽。网关把上游 `connection reset by peer` 包装成 HTTP 400 时，仅凭实际网关状态与 SDK 错误消息的精确组合将其按连接故障重试；普通 400、认证和请求格式错误不重试，Builder 的认证失败与请求错误都停止派发并保留未完成需求；Planner 单独的认证/协议错误保持 Judge 故障隔离。
 
 中途写出的应用通过可运行检查后可保存为空需求列表的检查点，供原工作包继续实现；它不增加 implemented，也不授予 verified。阶段预算耗尽时，未完成需求写入 `blockedRequirementIds`/`pendingRequirementIds`，父目录仅在全部后代实现后标记实现完成。
 
@@ -215,7 +215,7 @@ GitOps（`src/git-ops.ts`）细节：
 | 模块实现 | 90分钟（正预算时另受实现阶段剩余预算限制） |
 | 模块边界修复 | 1小时，且最多使用剩余修复阶段的一半，留出复验时间 |
 | 交付修复 | 单次30分钟，至多三轮 |
-| Planner / locator 精化 | 180秒 |
+| Planner / locator 精化 | 无总预算时每次操作含恢复最多12分钟；正预算时受阶段剩余额度限制 |
 | Pi Worker 进程组回收 | 5秒 |
 | git 单命令 | 30秒 |
 | 探针单步 / case | 2秒 / 15秒；case 受阶段剩余时间约束 |

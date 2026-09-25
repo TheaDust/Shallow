@@ -2,6 +2,7 @@ import type { PipelineDeps, PipelineOptions, AppLifecycle } from "../pipeline.js
 import type { WorkPacket, ShadowReport } from "../types.js";
 import type { RunStateStore } from "../run-state.js";
 import { ExecutionFault } from "../execution-fault.js";
+import { GatewayRequestError } from "../gateway-failure.js";
 import { ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 
@@ -82,6 +83,9 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     return { status: stable ? "failed" : "inconclusive", plan, report: confirmed.report,
       ...(stable ? {} : { reason: "failure was not reproducible" }) };
   } catch (error) {
+    if (error instanceof GatewayRequestError) {
+      return { status: "inconclusive", plan, reason: "gateway recovery window exhausted" };
+    }
     // Judge faults do not edit or discard the buildable application checkpoint.
     await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
       detail: { source: "judge", message: errorMessage(error), retry: false } });
@@ -141,6 +145,7 @@ async function reviewBehaviorFailures(
       const detail = plannerFailureDetail(error);
       await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
         detail: { ...detail, planSha256: beforePlanSha256 } });
+      if (error instanceof GatewayRequestError) return { status: "unavailable", reason: "gateway recovery window exhausted" };
       feedback = error instanceof ProbePlannerError
         ? { validationError: String(detail.validationError ?? detail.message),
             ...(typeof detail.contentPreview === "string" ? { contentPreview: detail.contentPreview } : {}) }
@@ -258,6 +263,7 @@ async function runShadowProbes(
         };
         await state.record({ at: now(), type: "probe_refinement_failed", packetId: packet.id,
           detail: { ...detail, refinementAttempt, planSha256: beforePlanSha256 } });
+        if (error instanceof GatewayRequestError) break;
         continue;
       }
       if (remaining() <= 0) break;
@@ -310,6 +316,7 @@ async function planProbe(
       detail: { ...plannerFailureDetail(error), attempt: packet.attempt, retryCount: 0 },
     });
     if (error instanceof ProbePlannerError && error.fatal) throw error;
+    if (error instanceof GatewayRequestError) throw error;
   }
   if (remaining() <= 0) return undefined;
   const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;

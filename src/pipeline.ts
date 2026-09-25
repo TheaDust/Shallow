@@ -22,7 +22,7 @@ import type {
   FinalVerificationReport,
   FinalVerifierPort,
 } from "./final-verifier.js";
-import type { ProbePlanner } from "./judge/llm-probe-planner.js";
+import { ProbePlannerError, type ProbePlanner } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
@@ -46,6 +46,8 @@ import type {
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
+/** A single Judge operation may recover from transient faults, but cannot own an unlimited run. */
+const PLANNER_RECOVERY_WINDOW_MS = 720_000;
 /** Delivery repairs get longer calls and more rounds than other fixes: the
  * candidate goes straight to the grader, so delivery must be given every chance. */
 const DELIVERY_REPAIR_CALL_CEILING_MS = 1_800_000;
@@ -133,21 +135,31 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
   let gatewayPhase: PipelinePhase = "implementation";
+  const pendingPlans = new Map<string, Promise<unknown>>();
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
-  // Keep one request in flight while the phase has time left. A gateway error
-  // can still be retried, but a local attempt timer must not abort a slow reply.
   const plannerWindow = (): (() => number) => {
-    return () => budget.remaining(gatewayPhase);
+    const phase = gatewayPhase;
+    const deadline = options.totalBudgetMs <= 0 ? deps.clock.nowMs() + PLANNER_RECOVERY_WINDOW_MS : Infinity;
+    return () => Math.min(budget.remaining(phase), deadline - deps.clock.nowMs());
   };
   deps = { ...deps, planner: {
-    plan: (packet, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
-      () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
-    refineLocators: (original, failures, feedback, callOptions) => gateway.run("planner", original.packetId, plannerWindow(),
-      () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
-    reviewPlan: (packet, original, failures, feedback, callOptions) => gateway.run("planner", packet.id, plannerWindow(),
-      () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, budget.remaining(gatewayPhase))) })),
+    plan: (packet, feedback, callOptions) => {
+      const remaining = plannerWindow();
+      return gateway.run("planner", packet.id, remaining,
+        () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+    },
+    refineLocators: (original, failures, feedback, callOptions) => {
+      const remaining = plannerWindow();
+      return gateway.run("planner", original.packetId, remaining,
+        () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+    },
+    reviewPlan: (packet, original, failures, feedback, callOptions) => {
+      const remaining = plannerWindow();
+      return gateway.run("planner", packet.id, remaining,
+        () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+    },
   } };
   deps.candidate?.setRecorder(event => state.record(event));
 
@@ -251,7 +263,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     for (const packet of ordered) {
       if (!packet.requirementIds.every(id => implemented.has(id))) continue;
       const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
-      const result = budget.remaining(name) <= 0
+      const result = previous.get(packet.id)?.reason === "gateway recovery window exhausted" && !cached
+        ? previous.get(packet.id)!
+        : budget.remaining(name) <= 0
         ? { status: "inconclusive" as const, plan: cached, reason: "audit phase budget exhausted" }
         : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
       // Detection-only audits never refine; persist a freshly planned result so
@@ -278,6 +292,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
   };
   const runModuleBoundaryAudit = async (packetIds: string[], moduleId: string, moduleName: string | undefined): Promise<void> => {
+    await Promise.allSettled(packetIds.map(id => pendingPlans.get(id)).filter((plan): plan is Promise<unknown> => plan !== undefined));
     gatewayPhase = "audit";
     if (budget.remaining("audit") <= 0) return;
     // Reset per-module boundary repair quota when switching modules.
@@ -453,22 +468,23 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       // Judge events and evidence correlate back to the build attempt that produced the code.
       for (const auditPacket of relatedAuditPackets) state.setPacketAttempt(auditPacket.id, packet.attempt);
       const planTimeoutMs = budget.remaining("implementation");
-      const planPromises = relatedAuditPackets
-        .filter(p => !results.has(p.id))
-        .map(p => spawnPlanGeneration(p, p.id, deps.planner, planCache, planTimeoutMs));
+      for (const auditPacket of relatedAuditPackets) {
+        if (!results.has(auditPacket.id) && !pendingPlans.has(auditPacket.id)) {
+          pendingPlans.set(auditPacket.id, spawnPlanGeneration(auditPacket, auditPacket.id, deps.planner, planCache, planTimeoutMs,
+            error => state.record({ at: now(), type: "probe_preplan_failed", packetId: auditPacket.id,
+              detail: error instanceof ProbePlannerError
+                ? { source: "planner", ...error.diagnostics }
+                : { source: "planner", message: errorMessage(error) } })));
+        }
+      }
       // Every packet is implemented in a fresh session; handoff across packets
       // goes through the project itself (code, tests, ARCHITECTURE.md).
       let result: BuilderResult;
       const implementationDeadline = deps.clock.nowMs() + budget.callTimeout("implementation", IMPLEMENTATION_CALL_CEILING_MS);
       const sessionKey = randomUUID();
       let mayContinue = true;
-      try {
-        result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey });
-      } finally {
-        // Drain background work before changing phases or leaving the run.
-        await Promise.allSettled(planPromises);
-      }
+      result = await build({ mode: "implement", packet, outputDir: options.outputDir,
+        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey });
       // A gateway outage must not end the run: keep retrying the same packet
       // with a fresh call window while the failure is retryable; a
       // non-retryable rejection stops dispatch at the check below.
@@ -637,7 +653,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await emitArc(deps, state, arc => arc.runnerState("failed", sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets)));
     throw error;
   } finally {
-    await deps.builder.close();
+    try { await deps.builder.close(); }
+    finally { await Promise.allSettled(pendingPlans.values()); }
   }
 }
 

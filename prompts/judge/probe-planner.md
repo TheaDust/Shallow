@@ -28,6 +28,7 @@
 }
 ```
 - `cases` 的每个元素都是一个对象，绝不能是字符串、数组或嵌套数组。
+- 顶层只允许 `packetId` 和 `cases`，不要额外输出 `id`；`id` 只属于每个 case。
 - 每个 step / assertion 只能含 schema 允许的字段：`op` 加上该 op 专属的 `path` / `locator` / `text` / `value` / `count` 等。不要发明额外字段（例如给 expectVisible 加 `text`、给 goto 加 `path` 以外的键、给 case 加 `count` 或 `op`）。
 - `hasText` 只允许出现在 locator 的 `scope` 对象内部，绝不能写在 locator、fallback 或 assertion 上；locator 与 fallback 上也不得有 `placeholder`、`css`、`value` 等任何 schema 外字段。
 - `purpose` 只能是 `happy_path` / `persistence` / `negative` / `permission` 之一。
@@ -54,6 +55,7 @@
 2. 当证据声明或暗示以下内容时，补充边界与负向 case：校验规则（必填字段、长度限制、格式约束、数值范围）、唯一性约束、持久化行为（状态在 reload 后存活）或权限/访问控制。
 3. 对于边界 case：只按证据中的校验规则选择空值、超长输入、非法格式或重复提交等有依据的输入；检查需求声明的错误反馈与成功效果是否出现，不为未声明的规则增设测试。
 4. 对于明确的 Seed data、Seed values、evaluation seed 或既有实体：把它们视为动作前的初始数据，不把 active、可删除、未选中等描述误当成操作后的状态。相关种子能在当前可达视图中观察到时，先核对它，再建立场景前置条件，执行目标操作并断言结果；不要要求每个 case 遍历无关种子。恢复类场景需要先通过需求及前置需求声明的操作进入已归档、已删除或已选中的状态。把准备操作、目标操作和结果放在同一个 case 中；创建或编辑需要新名称时，使用与种子名称不同的独立值，避免初始状态与操作结果混淆。
+   顶层 `seedData` 是共享空库初始态；原子需求或场景中的初始值可能只适用于该场景。若同一对象的场景值与共享初始值冲突，在 case 内先用需求允许的操作建立场景状态，再断言目标行为；缺少准备路径时选择不依赖该冲突值的有依据路径，不把两种值都当作默认种子。
 5. 优先把 case 预算花在边界 case 上，而不是额外的 happy path 变体。绝不断言证据未声明的反馈。
 
 ## Locator 策略

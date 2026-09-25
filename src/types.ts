@@ -144,6 +144,7 @@ interface RunEventDetails {
     durationMs: number; installMs: number; buildMs: number };
   candidate_prepare_failed: { stage: string; message: string; durationMs: number };
   probe_planning: Record<string, never>;
+  probe_preplan_failed: DiagnosticDetail;
   probe_planned: { cases: number };
   probe_started: { cases: number; retryCount: number; plan?: ProbePlan; planSha256?: string };
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;

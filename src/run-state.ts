@@ -182,7 +182,7 @@ function eventPhase(event: RunEvent): RunEvent["phase"] {
   if (event.type.startsWith("application_")) return "application";
   if (event.type.startsWith("candidate_")) return "application";
   if (event.type.startsWith("delivery_") || event.type.startsWith("verification_")) return "delivery";
-  if (event.type.startsWith("probe_plan") || event.type.startsWith("probe_refin")) return "planner";
+  if (event.type.startsWith("probe_plan") || event.type === "probe_preplan_failed" || event.type.startsWith("probe_refin")) return "planner";
   if (event.type.startsWith("probe_")) return "probe";
   if (event.type.startsWith("packet_")) return "decision";
   return "pipeline";

@@ -293,6 +293,7 @@ export class LlmProbePlanner implements ProbePlanner {
           model: this.config.model,
           messages: requestMessages,
           response_format: { type: "json_object" },
+          stream: true,
         }),
         ...(Number.isFinite(timeoutMs) ? { signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))) } : {}),
       });
@@ -310,16 +311,19 @@ export class LlmProbePlanner implements ProbePlanner {
       );
     }
 
-    let payload: unknown;
+    let content: string | undefined;
     try {
-      payload = await response.json();
+      if (/^text\/event-stream\b/i.test(response.headers.get("content-type") ?? "")) {
+        content = extractSseContent(await response.text());
+      } else {
+        content = extractContent(await response.json());
+      }
     } catch (error) {
       throw new ProbePlannerError(error instanceof SyntaxError ? "response" : "transport", "Probe planner response body failed", {
         cause: error,
         apiKey: this.config.apiKey,
       });
     }
-    const content = extractContent(payload);
     if (content === undefined) {
       throw new ProbePlannerError("response", "Probe planner response has no message content");
     }
@@ -415,6 +419,39 @@ function balancedBlocks(content: string): string[] {
     searchFrom = end + 1;
   }
   return blocks;
+}
+
+function extractSseContent(body: string): string | undefined {
+  let content = "";
+  let finished = false;
+  let done = false;
+  for (const block of body.split(/\r\n\r\n|\n\n|\r\r/)) {
+    const data = block.split(/\r\n|\n|\r/).filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).replace(/^ /, "")).join("\n");
+    if (!data) continue;
+    if (data.trim() === "[DONE]") { done = true; break; }
+    let event: unknown;
+    try { event = JSON.parse(data); }
+    catch (error) {
+      // A damaged usage trailer after the terminal choice cannot change the plan.
+      if (finished && !/"(?:choices|tool_calls)"\s*:/.test(data)) continue;
+      throw new Error("Probe planner stream contains an incomplete content event", { cause: error });
+    }
+    if (typeof event !== "object" || event === null) continue;
+    const envelope = event as { error?: { message?: string }; choices?: Array<{
+      index?: number; delta?: { content?: unknown }; finish_reason?: unknown;
+    }> };
+    if (envelope.error) throw new Error(envelope.error.message ?? "Probe planner stream returned an error");
+    const choice = envelope.choices?.find(item => item?.index === 0);
+    if (!choice) continue;
+    if (typeof choice.delta?.content === "string") content += choice.delta.content;
+    if (typeof choice.finish_reason === "string") {
+      if (choice.finish_reason === "length") throw new SyntaxError("Probe planner stream was cut off by the model");
+      finished = true;
+    }
+  }
+  if (!done && !finished) throw new Error("Probe planner stream ended before completion");
+  return content || undefined;
 }
 
 function extractContent(value: unknown): string | undefined {

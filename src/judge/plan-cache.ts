@@ -73,11 +73,15 @@ export function spawnPlanGeneration(
   planner: Pick<ProbePlanner, "plan">,
   cache: PlanCache,
   timeoutMs: number,
+  onFailure?: (error: unknown) => Promise<void>,
 ): Promise<ProbePlan | undefined> {
   return planner.plan(packet, undefined, { timeoutMs })
     .then(async (plan) => {
       await cache.write(auditPacketId, plan);
       return plan;
     })
-    .catch(() => undefined);
+    .catch(async error => {
+      await onFailure?.(error).catch(() => {});
+      return undefined;
+    });
 }

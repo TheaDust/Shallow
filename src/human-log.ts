@@ -160,6 +160,8 @@ function describe(type: string, event: RunEvent): string | null {
       return `探针规划失败，将重试（${packetId}）${plannerFailureText(detail)}`;
     case "probe_planner_failed":
       return `探针规划失败（${packetId}）${plannerFailureText(detail)}`;
+    case "probe_preplan_failed":
+      return `后台探针预规划失败（${packetId}）${plannerFailureText(detail)}`;
     case "execution_fault":
       return `执行基础设施故障（${packetId}，${pickString(detail, "source")} / ${pickString(detail, "code")}），${
         detail?.retry === true ? "保持候选和计划，重试一次" : "停止当前执行"

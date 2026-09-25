@@ -206,7 +206,12 @@ export function parseProbePlan(
   value: unknown,
   packet?: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements" | "prerequisites">>,
 ): ProbePlan {
-  const plan = record(value, "ProbePlan");
+  const received = record(value, "ProbePlan");
+  // Some JSON-mode gateways add a root id echo. It carries no probe behavior;
+  // discard only the exact packetId duplicate, then apply the strict schema.
+  const plan = received.id === received.packetId && typeof received.packetId === "string"
+    ? Object.fromEntries(Object.entries(received).filter(([key]) => key !== "id"))
+    : received;
   keys(plan, ["packetId", "cases"], "ProbePlan");
   const packetId = text(plan.packetId, "ProbePlan.packetId");
   if (packet && packetId !== packet.id) {

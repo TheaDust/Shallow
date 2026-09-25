@@ -81,7 +81,7 @@ test("HumanRunFormatter distinguishes bounded infrastructure recovery from Build
 
 test("HumanRunFormatter shows planner validation reasons while keeping response previews in the ledger", () => {
   const formatter = new HumanRunFormatter();
-  for (const type of ["probe_planner_retry", "probe_planner_failed", "probe_refinement_failed"]) {
+  for (const type of ["probe_planner_retry", "probe_planner_failed", "probe_preplan_failed", "probe_refinement_failed"]) {
     const line = formatLine(formatter, eventLine("2026-09-06T06:00:00.000Z", type, {
       packetId: "profile", detail: {
         message: "Probe planner content violates ProbePlan", category: "schema",
