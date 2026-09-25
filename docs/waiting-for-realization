@@ -1,8 +1,3 @@
-真实 token/usage；
-自定义compact；
-多轮驱动同一会话；
-hooks；
-自定义工具；
-
-部分日志，probeplan落入产物目录；
-evolution模式（增量开发）；
+builder主动通过工具获取ProbePlan（风险大，看情况做）
+调整功能组分组阈值（当前已退化为已单原子实现，适当根据赛题调高阈值）
+evolution模式（增量开发，确认能进决赛再完善）
