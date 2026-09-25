@@ -105,6 +105,30 @@ test("A non-retryable gateway rejection stops dispatch instead of retrying witho
   });
 });
 
+test("An upstream reset wrapped in HTTP 400 retries the same feature group", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    const original = f.builder.run.bind(f.builder);
+    const calls: string[] = [];
+    f.deps.builder.run = async (request, options) => {
+      if (request.mode === "implement") {
+        calls.push(request.packet.id);
+        if (calls.length === 1) return { sessionId: "upstream-reset", outcome: "failed", summary: "connection reset by peer",
+          gatewayFailure: { kind: "unavailable", retryable: true, status: 400 } };
+      }
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.equal(calls[0], calls[1]);
+    assert.equal(elapsed, 5_000);
+    assert.ok(!(await f.events()).some(event => event.type === "implementation_stopped"));
+  });
+});
+
 test("Unrunnable partial gateway work is rolled back before retrying the same packet", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;

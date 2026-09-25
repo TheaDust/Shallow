@@ -19,6 +19,10 @@ test("Gateway recovery logs distinguish saved code from completed requirements",
   assert.match(formatLine(formatter, eventLine(at, "gateway_wait", {
     packetId: "a", detail: { source: "builder", retry: 2, delayMs: 60_000, failure: { kind: "rate_limit", retryable: true, status: 429 } },
   })), /网关恢复等待.*a.*builder.*1m.*重试 2/);
+  assert.match(formatLine(formatter, eventLine(at, "gateway_wait", {
+    packetId: "a", detail: { source: "planner", retry: 1, delayMs: 30_000,
+      failure: { kind: "unavailable", retryable: true }, reason: "TypeError: fetch failed → Error: other side closed [UND_ERR_SOCKET]" },
+  })), /底层原因：TypeError: fetch failed → Error: other side closed \[UND_ERR_SOCKET\]/);
   assert.match(formatLine(formatter, eventLine(at, "builder_work_preserved", {
     packetId: "a", detail: { preserved: true, requirementIds: ["A"] },
   })), /保存为可运行检查点.*仍待完成/);

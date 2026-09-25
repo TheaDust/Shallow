@@ -6,6 +6,7 @@ export interface GatewayWait {
   retry: number;
   delayMs: number;
   failure: GatewayFailure;
+  reason?: string;
 }
 
 export class GatewayUnavailableError extends GatewayRequestError {}
@@ -28,6 +29,7 @@ export class GatewayRecovery {
   private plannerTail: Promise<void> = Promise.resolve();
   private recorder?: (event: GatewayWait) => Promise<void>;
   private lastFailure?: GatewayFailure;
+  private lastReason?: string;
 
   constructor(private readonly time = {
     now: () => Date.now(),
@@ -55,7 +57,8 @@ export class GatewayRecovery {
           // caller's decision.
           const delayMs = Math.min(this.blockedUntil - this.time.now(), remainingMs());
           if (delayMs <= 0) throw this.gatewayError();
-          await this.recorder?.({ source, packetId, retry, delayMs, failure: this.lastFailure! });
+          await this.recorder?.({ source, packetId, retry, delayMs, failure: this.lastFailure!,
+            ...(this.lastReason ? { reason: this.lastReason } : {}) });
           await this.time.sleep(Math.min(delayMs, 30_000));
           if (this.stopped) throw this.stopped;
         }
@@ -75,8 +78,10 @@ export class GatewayRecovery {
             if (failure.kind === "authentication" && source === "builder") this.stopped = new GatewayUnavailableError(failure, { cause: error });
             throw error;
           }
+          if (this.lastFailure?.kind !== failure.kind) this.failures = 0;
           this.lastFailure = failure;
-          const delay = Math.max(failure.retryAfterMs ?? 0, Math.min(30_000 * 2 ** this.failures, 300_000));
+          this.lastReason = source === "planner" ? transportCause(error) : undefined;
+          const delay = Math.max(failure.retryAfterMs ?? 0, backoffDelay(failure.kind, this.failures));
           this.failures++;
           this.version++;
           this.blockedUntil = Math.max(this.blockedUntil, this.time.now() + delay);
@@ -88,4 +93,26 @@ export class GatewayRecovery {
   private gatewayError(): GatewayRequestError {
     return new GatewayRequestError(this.lastFailure ?? { kind: "unavailable", retryable: true });
   }
+}
+
+/** Retry-After can extend either schedule. */
+function backoffDelay(kind: GatewayFailure["kind"], failures: number): number {
+  const [base, cap] = kind === "rate_limit" ? [30_000, 300_000] : [5_000, 60_000];
+  return Math.min(base * 2 ** failures, cap);
+}
+
+function transportCause(error: unknown): string | undefined {
+  let cause = error instanceof Error ? error.cause : undefined;
+  const parts: string[] = [];
+  for (let depth = 0; depth < 3 && cause !== undefined; depth++) {
+    if (cause instanceof Error) {
+      const code = (cause as Error & { code?: unknown }).code;
+      parts.push(`${cause.name}: ${cause.message}${typeof code === "string" ? ` [${code}]` : ""}`);
+      cause = cause.cause;
+    } else {
+      if (typeof cause === "string") parts.push(cause);
+      break;
+    }
+  }
+  return parts.length ? parts.join(" → ") : undefined;
 }

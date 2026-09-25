@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GatewayRequestError, httpGatewayFailure, observeGatewayFailures } from "../src/gateway-failure.js";
+import { GatewayRequestError, classifyGatewayFailure, httpGatewayFailure, observeGatewayFailures } from "../src/gateway-failure.js";
 import { GatewayRecovery, GatewayUnavailableError } from "../src/gateway-recovery.js";
 
 function fixture() {
@@ -11,6 +11,33 @@ function fixture() {
 }
 const unlimited = () => Infinity;
 const down = () => new GatewayRequestError(httpGatewayFailure(429));
+
+test("Only the observed upstream TCP reset is retryable among HTTP 400 errors", () => {
+  const badRequest = httpGatewayFailure(400);
+  const reset = '400 Post "https://api.taotoken.net/v1/chat/completions": read tcp 192.168.0.12:35232->119.3.253.96:443: read: connection reset by peer (request id: example)';
+  assert.deepEqual(classifyGatewayFailure(badRequest, reset), { kind: "unavailable", retryable: true, status: 400 });
+  assert.deepEqual(classifyGatewayFailure(badRequest, `400 ${reset}`), { kind: "unavailable", retryable: true, status: 400 });
+  assert.deepEqual(classifyGatewayFailure(badRequest, "Invalid model name"), badRequest);
+  assert.deepEqual(classifyGatewayFailure(badRequest, "400 Post something else: connection reset by peer"), badRequest);
+  assert.deepEqual(classifyGatewayFailure(httpGatewayFailure(401), reset), httpGatewayFailure(401));
+});
+
+test("Planner gateway waits report the nested transport error and code", async () => {
+  const f = fixture();
+  const waits: string[] = [];
+  f.recovery.setRecorder(async event => { if (event.reason) waits.push(event.reason); });
+  const socketError = Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" });
+  const fetchError = new TypeError("fetch failed", { cause: socketError });
+  const plannerError = Object.assign(new Error("Probe planner request failed", { cause: fetchError }), {
+    gatewayFailure: { kind: "unavailable" as const, retryable: true },
+  });
+  let attempts = 0;
+  await f.recovery.run("planner", "packet-a", unlimited, async () => {
+    if (++attempts === 1) throw plannerError;
+    return "recovered";
+  });
+  assert.equal(waits[0], "TypeError: fetch failed → Error: other side closed [UND_ERR_SOCKET]");
+});
 
 test("Shared recovery retries the same operation through a five-minute outage", async () => {
   const f = fixture();
@@ -25,6 +52,45 @@ test("Shared recovery retries the same operation through a five-minute outage", 
   assert.equal(f.now(), 450_000);
   assert.ok(f.delays.every(delay => delay <= 30_000));
   assert.equal(f.recovery.exhausted, false);
+});
+
+test("5xx and connection failures retry on the fast schedule, capped at one minute", async () => {
+  const f = fixture();
+  const attemptTimes: number[] = [];
+  await assert.rejects(f.recovery.run("builder", "packet-a", () => 1_000_000 - f.now(), async () => {
+    attemptTimes.push(f.now());
+    throw new GatewayRequestError(httpGatewayFailure(503));
+  }), error => error instanceof GatewayRequestError && error.gatewayFailure.status === 503);
+  const gaps = attemptTimes.slice(1).map((t, i) => t - attemptTimes[i]);
+  assert.deepEqual(gaps.slice(0, 5), [5_000, 10_000, 20_000, 40_000, 60_000]);
+  assert.ok(gaps.slice(5, -1).every(g => g === 60_000), `expected 60s cap after the ramp, saw ${gaps}`);
+  assert.ok(Math.max(...gaps) <= 60_000);
+  assert.equal(f.recovery.exhausted, false);
+});
+
+test("Retry-After still floors the delay for fast-schedule failures", async () => {
+  const f = fixture();
+  const attemptTimes: number[] = [];
+  await f.recovery.run("builder", "packet-a", unlimited, async () => {
+    attemptTimes.push(f.now());
+    if (attemptTimes.length === 1) throw new GatewayRequestError(httpGatewayFailure(503, "90"));
+    return "ok";
+  });
+  assert.deepEqual(attemptTimes, [0, 90_000]);
+});
+
+test("Switching between rate limits and outages starts each delay schedule at its base", async () => {
+  const f = fixture();
+  const attemptTimes: number[] = [];
+  const failures = [httpGatewayFailure(503), httpGatewayFailure(429),
+    { kind: "unavailable" as const, retryable: true }, httpGatewayFailure(408)];
+  await f.recovery.run("planner", "packet-a", unlimited, async () => {
+    attemptTimes.push(f.now());
+    const failure = failures.shift();
+    if (failure) throw new GatewayRequestError(failure);
+    return "ok";
+  });
+  assert.deepEqual(attemptTimes, [0, 5_000, 35_000, 40_000, 50_000]);
 });
 
 test("Persistent outages exhaust the caller's window without disabling later calls", async () => {

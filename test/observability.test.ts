@@ -23,6 +23,22 @@ test("Diagnostics redact known secrets, embedded headers, quoted values and URL 
   assert.equal(sanitizeDiagnosticText("x".repeat(1490) + "opaque-gateway-credential", ["opaque-gateway-credential"]).includes("opaque"), false);
 });
 
+test("Gateway wait transport reasons are redacted in both machine and human logs", async () => {
+  await withTempDir("shallow-gateway-log-", async directory => {
+    const chunks: string[] = [];
+    const store = new RunStateStore({ statusByRequirementId: {}, acceptedSha: "sha", startedAtMs: 0, totalBudgetMs: 0 },
+      join(directory, "ledger.jsonl"), { write: chunk => { chunks.push(chunk); } }, ["opaque-credential"]);
+    await store.record({ at: "2026-09-07T00:00:00Z", type: "gateway_wait", packetId: "p", detail: {
+      source: "planner", retry: 1, delayMs: 30_000, failure: { kind: "unavailable", retryable: true },
+      reason: "TypeError: fetch failed → Error: token=opaque-credential [ECONNRESET]",
+    } });
+    const ledger = await readFile(join(directory, "ledger.jsonl"), "utf8");
+    const human = new HumanRunFormatter().format(chunks[0]) ?? "";
+    assert.doesNotMatch(ledger + human, /opaque-credential/);
+    assert.match(human, /底层原因：.*ECONNRESET/);
+  });
+});
+
 test("Internal events are correlated; private previews stay out of public logs and usage numbers survive", async () => {
   await withTempDir("shallow-observe-", async (directory) => {
     const chunks: string[] = [];

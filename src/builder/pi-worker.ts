@@ -11,7 +11,7 @@ import { piProviderModel } from "./pi-model-config.js";
 import { loadReferenceImages } from "./reference-images.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
-import { observeGatewayFailures } from "../gateway-failure.js";
+import { classifyGatewayFailure, observeGatewayFailures } from "../gateway-failure.js";
 
 // Wait for ownership to be established by the parent before executing anything.
 process.once("message", (request: PiWorkerRequest) => {
@@ -82,11 +82,14 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     catch (error) { promptError = error; }
     const last = session.messages.at(-1);
     const success = !promptError && last?.role === "assistant" && last.stopReason === "stop";
+    // Only SDK/provider errors may clarify a gateway status; model content cannot.
+    const providerError = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage : undefined;
     const summary = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage || last.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "Pi did not reach a terminal assistant response";
     const stats = collector.summarize(session.getSessionStats().tokens);
+    const observedFailure = gateway.failure();
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       outcome: success ? "completed" : "failed", summary: summary.slice(-8_000), toolCalls, compactions, peakRssBytes: process.resourceUsage().maxRSS * 1024,
-      ...(!success && gateway.failure() ? { gatewayFailure: gateway.failure() } : {}),
+      ...(!success && observedFailure ? { gatewayFailure: classifyGatewayFailure(observedFailure, providerError) } : {}),
       usage: stats.usage, timing: stats.timing,
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && /\b(?:image(?:_url| input|s)?|vision|multimodal)\b.{0,60}\b(?:not supported|unsupported)\b|\b(?:model|endpoint|provider)\b.{0,40}\b(?:does not support|cannot accept)\b.{0,30}\bimage/i.test(summary),
       ...(input.references?.length ? { referenceImages: { mode: input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable", attachedCount: images.length, skipped: loaded.skipped } as const } : {}),

@@ -18,6 +18,15 @@ export function httpGatewayFailure(status: number, retryAfter: string | null = n
   };
 }
 
+/** The ARC proxy sometimes reports an upstream TCP reset as HTTP 400. */
+export function classifyGatewayFailure(failure: GatewayFailure, providerError?: string): GatewayFailure {
+  if (failure.status === 400 && providerError &&
+    /^(?:400 )?400 Post "https?:\/\/[^"\r\n]+\/chat\/completions": read tcp [^\r\n]+: read: connection reset by peer(?: \(request id: [^)\r\n]+\))?$/i.test(providerError)) {
+    return { ...failure, kind: "unavailable", retryable: true };
+  }
+  return failure;
+}
+
 export class GatewayRequestError extends Error {
   constructor(readonly gatewayFailure: GatewayFailure, options?: ErrorOptions) {
     super(`Model gateway ${gatewayFailure.kind}${gatewayFailure.status ? ` (HTTP ${gatewayFailure.status})` : ""}`, options);

@@ -74,6 +74,17 @@ test("Authentication failure is not retried and its session is not reused", { ti
   });
 });
 
+test("Worker identifies an upstream reset wrapped in HTTP 400 as retryable", { timeout: 30_000 }, async () => {
+  await fixture((_body, res) => {
+    res.writeHead(400, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: { message: '400 Post "https://api.taotoken.net/v1/chat/completions": read tcp 192.168.0.12:35232->119.3.253.96:443: read: connection reset by peer (request id: example)' } }));
+  }, async (client, app) => {
+    const result = await client.run({ ...prompt, outputDir: app });
+    assert.equal(result.outcome, "failed");
+    assert.deepEqual(result.gatewayFailure, { kind: "unavailable", retryable: true, status: 400 }, result.summary);
+  });
+});
+
 for (const afterTool of [false, true]) {
   test(`Worker preserves actual quota failure metadata, including partial work: afterTool=${afterTool}`, { timeout: 30_000 }, async () => {
     await fixture((_body, res, count) => {
