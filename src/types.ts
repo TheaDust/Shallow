@@ -133,8 +133,11 @@ interface RunEventDetails {
   repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
-    builderTimeoutMs?: number; plannerTimeoutMs?: number; promptSha256?: string; probeSchemaSha256?: string;
+    builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
+    promptSha256?: string; probeSchemaSha256?: string;
     grouping?: GroupingStats };
+  dependency_gate_blocked: { requirementIds: string[]; unmetDependencyIds: string[];
+    dependencyStatuses: Record<string, RequirementStatus> };
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;

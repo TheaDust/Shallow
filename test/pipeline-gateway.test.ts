@@ -274,7 +274,7 @@ test("Builder checkpoints before a background probe plan settles", async () => {
   });
 });
 
-test("A stalled probe planner exhausts its window and does not stop later implementation", async () => {
+test("A stalled foundation probe planner exhausts its window and gates dependent implementation", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
     let elapsed = 0;
@@ -285,11 +285,12 @@ test("A stalled probe planner exhausts its window and does not stop later implem
       return testPlan(packet);
     };
     const summary = await f.run();
-    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
     assert.ok(summary.inconclusiveRequirementIds?.includes("A"));
     assert.ok(elapsed < 26 * 60_000, `planner exceeded two recovery windows: ${elapsed}ms`);
     const events = await f.events();
-    assert.ok(events.some(event => event.type === "checkpoint_saved" && event.detail?.requirementIds.includes("C")));
+    assert.ok(events.some(event => event.type === "dependency_gate_blocked" && event.detail?.requirementIds.includes("C")));
     assert.ok(events.some(event => event.type === "probe_preplan_failed" && event.packetId === "packet-a" && event.phase === "planner"));
   });
 });

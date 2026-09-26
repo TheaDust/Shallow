@@ -5,13 +5,14 @@ import { loadPrompt } from "../prompt-assets.js";
 
 export class PromptBuilder implements BuilderPort {
   private textOnly = false;
-  constructor(private client: CodingAgentPort, private options: { timeoutMs: number; requirementsDir?: string }) {}
+  constructor(private client: CodingAgentPort, private options: { timeoutMs: number; requirementsDir?: string; contextWindow?: number }) {}
   async run(request: BuilderRequest, options: BuilderRunOptions = {}): Promise<BuilderResult> {
     const timeoutMs = Math.min(this.options.timeoutMs, options.timeoutMs ?? this.options.timeoutMs);
     const deadline = Date.now() + timeoutMs;
     const input: CodingAgentRequest = { ...compileBuilderPrompt(request), outputDir: request.outputDir,
       timeoutMs, sessionKey: options.sessionKey, platformContract: request.platformContract, requirementsDir: this.options.requirementsDir,
-      references: "packet" in request ? request.packet.requirements.flatMap(req => req.references) : [], textOnly: this.textOnly };
+      references: "packet" in request ? request.packet.requirements.flatMap(req => req.references) : [], textOnly: this.textOnly,
+      contextWindow: this.options.contextWindow };
     if (options.continuationFeedback) input.taskPrompt += "\n\n" + loadPrompt("system", "implementation-continuation")
       .replace("{{FAILURE}}", () => options.continuationFeedback!);
     let result = await this.client.run(input);

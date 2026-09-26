@@ -37,6 +37,15 @@ test("Gateway recovery logs distinguish saved code from completed requirements",
   })), /暂停本轮修复并等待恢复后重试.*需求 A/);
 });
 
+test("HumanRunFormatter explains dependency gate savings", () => {
+  const formatter = new HumanRunFormatter();
+  const line = formatLine(formatter, eventLine("2026-09-26T00:00:00Z", "dependency_gate_blocked", {
+    packetId: "downstream", detail: { requirementIds: ["C"], unmetDependencyIds: ["A", "B"],
+      dependencyStatuses: { A: "failed", B: "inconclusive" } },
+  }));
+  assert.match(line, /跳过下游实现.*C.*A、B/);
+});
+
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
   const formatter = new HumanRunFormatter();
   const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {
@@ -157,10 +166,10 @@ test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () =
 test("HumanRunFormatter renders feature grouping stats at pipeline start", () => {
   const formatter = new HumanRunFormatter();
   const line = formatLine(formatter, eventLine("2026-09-16T00:00:00.000Z", "pipeline_started", {
-    detail: { requirements: 24, totalBudgetMs: 0, port: 43210,
+    detail: { requirements: 24, totalBudgetMs: 0, port: 43210, builderContextWindow: 256_000,
       grouping: { packets: 6, requirements: 24, maxPacketSize: 5, crossModulePackets: 0, cohesionRate: 0.347, thresholdLimitedPackets: 0 } },
   }));
-  assert.match(line, /流水线启动；原子需求 24；预算 不限时；探针端口 43210；功能组 6$/);
+  assert.match(line, /流水线启动；原子需求 24；预算 不限时；探针端口 43210；Builder 上下文 256000；功能组 6$/);
 });
 
 test("HumanRunFormatter surfaces failure reasons and refined reruns", () => {

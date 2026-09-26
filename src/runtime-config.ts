@@ -2,6 +2,7 @@ import { createServer } from "node:net";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { DEFAULT_CONTEXT_WINDOW } from "./builder/pi-model-config.js";
 import type { PlatformContract } from "./types.js";
 
 /**
@@ -20,6 +21,25 @@ export interface GatewayConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
+}
+
+export const MIN_BUILDER_CONTEXT_WINDOW = 131_072;
+export const MAX_BUILDER_CONTEXT_WINDOW = 1_000_000;
+
+/** Mainline Pi context limit. Keeping this below the gateway maximum prevents
+ * repeated full-history input from overwhelming the cost of small packets. */
+export function parseBuilderContextWindow(
+  env: Record<string, string | undefined>,
+): number {
+  const raw = env["SHALLOW_BUILDER_CONTEXT_WINDOW"]?.trim();
+  if (!raw) return DEFAULT_CONTEXT_WINDOW;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < MIN_BUILDER_CONTEXT_WINDOW || value > MAX_BUILDER_CONTEXT_WINDOW) {
+    throw new Error(
+      `SHALLOW_BUILDER_CONTEXT_WINDOW must be an integer from ${MIN_BUILDER_CONTEXT_WINDOW} to ${MAX_BUILDER_CONTEXT_WINDOW}, got "${raw}"`,
+    );
+  }
+  return value;
 }
 
 export function readGatewayConfig(

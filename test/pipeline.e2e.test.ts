@@ -51,11 +51,13 @@ for (const fault of ["schema", "auth", "locator", "browser"] as const) {
       };
       const summary = await f.run();
       assert.equal(summary.status, "partial");
-      assert.deepEqual(summary.inconclusiveRequirementIds, ["A", "B", "C"]);
-      assert.deepEqual(summary.blockedRequirementIds, []);
+      assert.deepEqual(summary.inconclusiveRequirementIds, ["A", "B"]);
+      assert.deepEqual(summary.blockedRequirementIds, ["C"]);
       assert.deepEqual(f.git.restoredShas, []);
-      assert.equal(summary.acceptedSha, "second");
-      assert.equal(f.builder.requests.length, 2);
+      assert.equal(summary.acceptedSha, "first");
+      assert.equal(f.builder.requests.length, 1);
+      const gate = (await f.events()).find(item => item.type === "dependency_gate_blocked");
+      assert.deepEqual(gate?.detail?.unmetDependencyIds, ["A", "B"]);
     });
   });
 }
@@ -83,14 +85,16 @@ test("Audit replays a business failure in a fresh application before requesting 
   });
 });
 
-test("A non-reproducible failure stays inconclusive and does not edit the app", async () => {
+test("A non-reproducible foundation failure blocks downstream until it is independently verified", async () => {
   await withModulePipeline(async f => {
     const seen = new Set<string>();
     f.deps.runner.run = async plan => { if (seen.has(plan.packetId)) return pass(plan); seen.add(plan.packetId); return fail(plan); };
     const summary = await f.run();
-    // Module boundary audit consumes the first failure; consolidated audit sees a pass.
-    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
-    assert.equal(f.builder.requests.length, 2);
+    // The final detection pass can verify the retained foundation, but it is too
+    // late to spend a Builder call on a dependency that was uncertain at its gate.
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+    assert.equal(f.builder.requests.length, 1);
     assert.deepEqual(f.git.restoredShas, []);
   });
 });
@@ -107,14 +111,17 @@ for (const regression of [true, false]) {
       // Module boundary audit uses the repair rounds on the first module;
       // the final audit is detection-only and never launches more repairs.
       if (regression) {
-        // Boundary repair causes regression in packet-b; packet-c also fails when repairing.
+        // Boundary repair causes regression in packet-b; transitive dependency A
+        // was not verified at the gate, so C is never implemented.
         assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
-        assert.deepEqual(summary.failedRequirementIds, ["B", "C"]);
+        assert.deepEqual(summary.failedRequirementIds, ["B"]);
+        assert.deepEqual(summary.blockedRequirementIds, ["C"]);
         assert.equal(summary.status, "partial");
       } else {
         // packet-a always fails regardless of repair state.
-        assert.deepEqual(summary.verifiedRequirementIds, ["B", "C"]);
+        assert.deepEqual(summary.verifiedRequirementIds, ["B"]);
         assert.deepEqual(summary.failedRequirementIds, ["A"]);
+        assert.deepEqual(summary.blockedRequirementIds, ["C"]);
         assert.equal(summary.status, "partial");
       }
     });
@@ -135,11 +142,12 @@ test("A module boundary repair that breaks a verified path is discarded instead 
     const batches = events.filter(item => item.type === "repair_batch_finished");
     assert.equal(batches[0]?.detail?.retained, false);
     assert.match(String(batches[0]?.detail?.reason), /previously verified behavior was lost/);
-    // The regressing boundary repair is never checkpointed; only the two module
-    // checkpoints remain, and the verified pass the repair broke is never given up.
-    assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
-    assert.deepEqual(summary.verifiedRequirementIds, ["A", "C"]);
+    // The regressing boundary repair is never checkpointed, and the dependent
+    // module is not built on the unresolved foundation.
+    assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 1);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
     assert.deepEqual(summary.failedRequirementIds, ["B"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
     assert.equal(summary.status, "partial");
   });
 });
@@ -200,14 +208,16 @@ test("Per-module boundary repair quota: each module gets independent repair roun
       const key = plan.packetId;
       const count = (repairAttempts.get(key) ?? 0) + 1;
       repairAttempts.set(key, count);
-      // Fail first 4 attempts (2 audit runs), pass on 5th+ attempt (repair re-audit).
-      // This tests that each module gets its own repair quota.
-      return count <= 4 ? fail(plan) : pass(plan);
+      const repairCount = f.builder.requests.filter(request => request.mode === "repair").length;
+      // FIRST becomes sound after its repair. SECOND then fails independently
+      // until its own repair proves the per-module quota reset.
+      return plan.packetId === "packet-c"
+        ? repairCount >= 2 ? pass(plan) : fail(plan)
+        : repairCount >= 1 ? pass(plan) : fail(plan);
     };
     const summary = await f.run();
     const repairs = f.builder.requests.filter(r => r.mode === "repair");
-    // FIRST module: 1 boundary repair (A and B fail 4 times, pass on 5th attempt)
-    // SECOND module: 1 boundary repair (C fails 4 times, passes on 5th attempt)
+    // FIRST module and SECOND module each consume one independent repair.
     // Final audit only re-checks; it launches no repairs of its own.
     // Total: 2 implement + 1 FIRST repair + 1 SECOND repair = 4 requests
     assert.equal(repairs.length, 2);
@@ -217,14 +227,13 @@ test("Per-module boundary repair quota: each module gets independent repair roun
     assert.deepEqual(summary.failedRequirementIds, []);
     // Verify that A and B got repair attempts in FIRST module,
     // and C got repair attempts in SECOND module (proving quota reset).
-    // Each packet gets 5 attempts: 4 in boundary audit/repair + 1 in the final audit.
-    assert.ok((repairAttempts.get("packet-a") ?? 0) >= 5);
-    assert.ok((repairAttempts.get("packet-b") ?? 0) >= 5);
-    assert.ok((repairAttempts.get("packet-c") ?? 0) >= 5);
+    assert.ok((repairAttempts.get("packet-a") ?? 0) >= 3);
+    assert.ok((repairAttempts.get("packet-b") ?? 0) >= 3);
+    assert.ok((repairAttempts.get("packet-c") ?? 0) >= 3);
   });
 });
 
-test("Broken module startup restores its checkpoint and the next packet starts a fresh session", async () => {
+test("Broken foundation startup blocks its dependent packet without opening a new session", async () => {
   await withModulePipeline(async f => {
     let starts = 0;
     f.deps.appLifecycle.start = async () => {
@@ -232,11 +241,11 @@ test("Broken module startup restores its checkpoint and the next packet starts a
       return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
     };
     const summary = await f.run();
-    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.verifiedRequirementIds, ["C"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.verifiedRequirementIds, []);
     assert.deepEqual(f.git.restoredShas, ["initial"]);
     assert.equal(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
-    assert.notEqual(f.builder.runOptions[0]?.sessionKey, f.builder.runOptions[2]?.sessionKey);
+    assert.equal(f.builder.runOptions.length, 2);
   });
 });
 
@@ -270,8 +279,8 @@ test("A failed Builder receipt with unrunnable code stays blocked and restores t
       return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
     };
     const summary = await f.run();
-    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.implementedRequirementIds, ["C"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.implementedRequirementIds, []);
     assert.deepEqual(f.git.restoredShas, ["initial"]);
   });
 });
@@ -449,12 +458,14 @@ test("Real Git keeps a blocked module's rejected attempt reachable in history", 
       return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
     };
     const summary = await f.run();
-    assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.implementedRequirementIds, ["C"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.implementedRequirementIds, []);
     const log = (await import("node:child_process")).execFileSync;
     const subjects = log("git", ["log", "--format=%s"], { cwd: f.options.outputDir }).toString();
     assert.match(subjects, /attempt/);
-    assert.match(await readFile(join(f.options.outputDir, "server.mjs"), "utf8"), /createServer/);
+    const attemptSha = log("git", ["log", "--format=%H", "--grep=shallow: attempt", "-1"], { cwd: f.options.outputDir }).toString().trim();
+    assert.match(log("git", ["show", `${attemptSha}:server.mjs`], { cwd: f.options.outputDir }).toString(), /createServer/);
+    await assert.rejects(readFile(join(f.options.outputDir, "server.mjs"), "utf8"), /ENOENT/);
   });
 });
 
@@ -508,11 +519,11 @@ test("Folder rollup reflects blocked and failed descendants", async () => {
     // FIRST: A implemented+verified, B implemented but failed audit -> implement completed, test failed.
     assert.deepEqual(sequence("FIRST"),
       ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
-    // SECOND: C's Builder receipt failed, but the runnable code was rescued -> implement completed, test passed.
+    // SECOND: C depends transitively on failed B, so no Builder call is spent.
     assert.deepEqual(sequence("SECOND"),
-      ["design:running", "design:completed", "implement:running", "implement:completed", "test:passed"]);
-    // ROOT aggregates the whole tree: fully implemented, not fully verified.
+      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
+    // ROOT aggregates the whole tree: the blocked descendant prevents completion.
     assert.deepEqual(sequence("ROOT"),
-      ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
+      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
   });
 });

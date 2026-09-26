@@ -40,7 +40,7 @@ test("Agent entry validates paths and passes bounded production context", async 
         "--budget-ms",
         "600000",
       ],
-      { ...gatewayEnv(), SHALLOW_PROBE_PORT: "3100" },
+      { ...gatewayEnv(), SHALLOW_PROBE_PORT: "3100", SHALLOW_BUILDER_CONTEXT_WINDOW: "400000" },
       execute,
       null,
     );
@@ -51,6 +51,7 @@ test("Agent entry validates paths and passes bounded production context", async 
     assert.equal(received?.pipelineOptions.outputDir, outputDir);
     assert.equal(received?.pipelineOptions.totalBudgetMs, 600_000);
     assert.equal(received?.pipelineOptions.platformContract.port, 3100);
+    assert.equal(received?.builderContextWindow, 400_000);
   });
 });
 
@@ -92,6 +93,7 @@ test("Agent entry picks a non-3000 probe port when the override is absent", asyn
     assert.ok(contract);
     assert.notEqual(contract.port, 3000);
     assert.equal(contract.baseUrl, `http://127.0.0.1:${contract.port}`);
+    assert.equal(received?.builderContextWindow, 256_000);
   });
 });
 

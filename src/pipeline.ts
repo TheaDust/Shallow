@@ -40,6 +40,7 @@ import type { CandidateEvidence } from "./types.js";
 import type {
   PlatformContract,
   RequirementCatalog,
+  RequirementStatus,
   WorkPacket,
 } from "./types.js";
 
@@ -129,6 +130,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const implemented = new Set<string>();
   const packets = auditPackets(catalog);
   const featureGrouping = featureGroupPackets(catalog);
+  const requirementById = new Map(catalog.requirements.map(item => [item.id, item]));
+  const auditPacketByRequirementId = new Map(packets.flatMap(packet =>
+    packet.requirementIds.map(id => [id, packet] as const)));
   const planCache = new PlanCache(dirname(options.ledgerFile),
     options.progressDir ? progressPlansDirectory(options.progressDir) : undefined);
   let results = new Map<string, AuditResult>();
@@ -137,6 +141,42 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let gatewayPhase: PipelinePhase = "implementation";
   const pendingPlans = new Map<string, Promise<unknown>>();
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
+  const dependencyClosure = (requirementIds: readonly string[]): Set<string> => {
+    const closure = new Set<string>();
+    const pending = requirementIds.flatMap(id => requirementById.get(id)?.dependencyIds ?? []);
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (closure.has(id)) continue;
+      closure.add(id);
+      pending.push(...(requirementById.get(id)?.dependencyIds ?? []));
+    }
+    return closure;
+  };
+  const verificationStatus = (requirementId: string): RequirementStatus => {
+    const auditPacket = auditPacketByRequirementId.get(requirementId);
+    return (auditPacket ? results.get(auditPacket.id)?.status : undefined)
+      ?? state.snapshot.statusByRequirementId[requirementId]
+      ?? "todo";
+  };
+  const unmetVerifiedDependencies = (packet: WorkPacket, moduleId: string): Array<{ id: string; status: RequirementStatus }> => {
+    const packetIds = new Set(packet.requirementIds);
+    return [...dependencyClosure(packet.requirementIds)]
+      .filter(id => !packetIds.has(id))
+      .filter(id => {
+        const dependency = requirementById.get(id);
+        const dependencyModuleId = dependency?.folderPath[1] ?? dependency?.id;
+        const auditPacket = auditPacketByRequirementId.get(id);
+        // Dependencies in the current, not-yet-audited module remain eligible.
+        // Cross-module dependencies and already-decided local dependencies must
+        // independently pass before more code is generated on top of them.
+        return dependencyModuleId !== moduleId
+          || (auditPacket !== undefined && results.has(auditPacket.id))
+          || verificationStatus(id) !== "todo";
+      })
+      .map(id => ({ id, status: verificationStatus(id) }))
+      .filter(item => item.status !== "verified")
+      .sort((left, right) => left.id.localeCompare(right.id));
+  };
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
   const plannerWindow = (): (() => number) => {
@@ -461,6 +501,19 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await emitArc(deps, state, arc => arc.requirementState(id, "design", "running"));
         await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
+      }
+      const unmetDependencies = unmetVerifiedDependencies(packet, currentModuleId);
+      if (unmetDependencies.length > 0) {
+        state.markRequirements(packet.requirementIds, "blocked");
+        await state.record({ at: now(), type: "dependency_gate_blocked", packetId: packet.id,
+          detail: { requirementIds: packet.requirementIds,
+            unmetDependencyIds: unmetDependencies.map(item => item.id),
+            dependencyStatuses: Object.fromEntries(unmetDependencies.map(item => [item.id, item.status])) } });
+        for (const id of packet.requirementIds) {
+          await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
+        }
+        previousModuleId = currentModuleId;
+        continue;
       }
       // Spawn plan generation in parallel with Builder execution.
       // The corresponding audit packets get their plans pre-computed.

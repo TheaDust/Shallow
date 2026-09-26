@@ -23,15 +23,16 @@ for (const scenario of ["runnable", "unchanged", "broken", "timed_out"] as const
       };
       const summary = await f.run();
       const rescued = (await f.events()).filter(e => e.type === "module_rescued");
-      assert.equal(f.builder.requests.length, 3, "no extra continuation or timeout retry");
       if (scenario === "runnable") {
+        assert.equal(f.builder.requests.length, 3, "one continuation plus the verified dependent packet");
         assert.equal(summary.status, "delivered");
         assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
         assert.equal(rescued.length, 1);
         assert.deepEqual(f.git.restoredShas, []);
       } else {
-        assert.deepEqual(summary.blockedRequirementIds, ["A", "B"]);
-        assert.deepEqual(summary.implementedRequirementIds, ["C"]);
+        assert.equal(f.builder.requests.length, 2, "no dependent Builder call after the foundation failed");
+        assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
+        assert.deepEqual(summary.implementedRequirementIds, []);
         assert.equal(rescued.length, 0);
         assert.equal(f.git.restoredShas.length, 1);
       }
@@ -68,16 +69,17 @@ test("Build failure continues only the same packet/session within its remaining 
   });
 });
 
-test("Persistent build failure gets one continuation then rolls back before the next packet", async () => {
+test("Persistent foundation build failure gets one continuation then blocks the dependent packet", async () => {
   await withModulePipeline(async f => {
     f.deps.appLifecycle.start = async () => { throw new Error("build failed"); };
     const summary = await f.run();
-    assert.equal(f.builder.requests.length, 4);
+    assert.equal(f.builder.requests.length, 2);
     assert.equal(summary.status, "partial");
     assert.deepEqual(summary.implementedRequirementIds, []);
-    assert.equal(f.git.restoredShas.length, 2);
-    assert.notEqual(f.builder.runOptions[2]?.sessionKey, f.builder.runOptions[1]?.sessionKey);
-    assert.equal((await f.events()).filter(e => e.type === "implementation_continued").length, 2);
+    assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
+    assert.equal(f.git.restoredShas.length, 1);
+    assert.equal(f.builder.runOptions[1]?.sessionKey, f.builder.runOptions[0]?.sessionKey);
+    assert.equal((await f.events()).filter(e => e.type === "implementation_continued").length, 1);
   });
 });
 

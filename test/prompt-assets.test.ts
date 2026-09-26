@@ -118,6 +118,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
   assert.match(loadPrompt("system", "builder-system"), /单个场景 GIVEN 中的初始条件/);
   assert.match(loadPrompt("system", "builder-system"), /等待目标数据期间给出忙碌状态/);
+  assert.match(loadPrompt("system", "builder-system"), /最多 200 行且不超过 16 KiB/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -127,7 +128,7 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadPrompt("system", "self-test");
-  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests"]) {
+  for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
   const implement = loadPrompt("system", "action-implement");

@@ -57,13 +57,13 @@ test("Repeated timeouts preserve runnable code without falsely completing its re
       return { sessionId: "timeout", outcome: "timed_out", summary: "Pi call deadline reached" };
     };
     const summary = await f.run();
-    assert.equal(calls, 4); // two feature groups, at most two calls each
+    assert.equal(calls, 2); // the failed foundation gets two calls; its dependent gets none
     assert.equal(summary.status, "partial");
     assert.deepEqual(summary.implementedRequirementIds, []);
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
-    assert.equal(await readFile(join(f.options.outputDir, "partial.txt"), "utf8"), "work 4");
+    assert.equal(await readFile(join(f.options.outputDir, "partial.txt"), "utf8"), "work 2");
     const checkpoints = (await f.events()).filter(e => e.type === "checkpoint_saved");
-    assert.equal(checkpoints.length, 4);
+    assert.equal(checkpoints.length, 2);
     assert.ok(checkpoints.every(e => e.detail?.requirementIds.length === 0));
   });
 });

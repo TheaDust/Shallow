@@ -27,6 +27,7 @@ import { PROBE_PLAN_JSON_SCHEMA } from "./src/judge/probe-schema.js";
 import {
   createArcPlatformContract,
   deriveModelTimeouts,
+  parseBuilderContextWindow,
   parseEvaluationPort,
   parseProbePortOverride,
   parseRunDirOverride,
@@ -45,6 +46,8 @@ export interface AgentExecutionContext {
     builderTimeoutMs: number;
     plannerTimeoutMs: number;
   };
+  /** Mainline Pi context ceiling (`SHALLOW_BUILDER_CONTEXT_WINDOW`). */
+  builderContextWindow: number;
   /** Opt-in raw SSE capture directory for the Pi worker (`SHALLOW_CAPTURE_SSE`). */
   sseCaptureDir?: string | null;
 }
@@ -93,6 +96,7 @@ export async function main(
     gateway,
     pipelineOptions,
     modelTimeouts: deriveModelTimeouts(cli.budgetMs),
+    builderContextWindow: parseBuilderContextWindow(mergedEnv),
     sseCaptureDir,
   }).catch((error: unknown) => {
     throw new Error(sanitizeDiagnosticText(error instanceof Error ? error.message : String(error), [gateway.apiKey]));
@@ -117,7 +121,7 @@ async function mergeGatewayEnv(
 async function executeProduction(
   context: AgentExecutionContext,
 ): Promise<RunSummary> {
-  const { gateway, pipelineOptions, modelTimeouts, sseCaptureDir } = context;
+  const { gateway, pipelineOptions, modelTimeouts, builderContextWindow, sseCaptureDir } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
@@ -129,6 +133,7 @@ async function executeProduction(
     const builder = new PromptBuilder(new PiWorkerClient(gateway, join(dirname(runLogFile), "pi-sessions"), sseCaptureDir ?? undefined), {
       timeoutMs: modelTimeouts.builderTimeoutMs,
       requirementsDir: dirname(pipelineOptions.requirementsFile),
+      contextWindow: builderContextWindow,
     });
     const planner = new LlmProbePlanner({
       ...gateway,
@@ -167,6 +172,7 @@ async function executeProduction(
         logSink,
         diagnosticSecrets: [gateway.apiKey],
         runMetadata: { model: gateway.model, builderTimeoutMs: modelTimeouts.builderTimeoutMs,
+          builderContextWindow,
           promptSha256: promptHash.digest("hex"),
           probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
         },

@@ -12,7 +12,7 @@ async function fixture(results: CodingAgentResult[]) {
   const catalog = await loadRequirementCatalog(resolve("test/fixtures/requirements.yaml"));
   const packet = auditPackets(catalog)[0];
   const builder = new PromptBuilder({ run: async request => { calls.push(request); return results.shift()!; }, close: async () => {} },
-    { timeoutMs: 1000, requirementsDir: resolve("test/fixtures") });
+    { timeoutMs: 1000, requirementsDir: resolve("test/fixtures"), contextWindow: 256_000 });
   const request = { mode: "implement" as const, packet, outputDir: "application", platformContract: createArcPlatformContract("linux", 43210),
     projectContext: { product: packet.requirements[0].product, ancestors: [], satisfiedDependencies: [] } };
   return { builder, calls, request };
@@ -30,6 +30,7 @@ test("Engine-neutral Builder preserves separate prompts, references, key and sma
   await f.builder.run(f.request, { timeoutMs: 300, sessionKey: "module" });
   assert.equal(f.calls[0].timeoutMs, 300);
   assert.equal(f.calls[0].sessionKey, "module");
+  assert.equal(f.calls[0].contextWindow, 256_000);
   assert.deepEqual(f.calls[0].platformContract, f.request.platformContract);
   assert.ok(f.calls[0].references?.includes("reference/profile.png"));
   assert.match(f.calls[0].systemPrompt, /唯一代码实现者/);

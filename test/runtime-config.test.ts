@@ -9,6 +9,7 @@ import {
   createArcPlatformContract,
   deriveModelTimeouts,
   extractBasePorts,
+  parseBuilderContextWindow,
   parseEvaluationPort,
   parseProbePortOverride,
   parseRunDirOverride,
@@ -90,6 +91,17 @@ test("Runtime config bounds model calls by the total budget", () => {
     builderTimeoutMs: 1_440_000,
     plannerTimeoutMs: 360_000,
   });
+});
+
+test("Runtime config bounds the mainline Builder context window", () => {
+  assert.equal(parseBuilderContextWindow({}), 256_000);
+  assert.equal(parseBuilderContextWindow({ SHALLOW_BUILDER_CONTEXT_WINDOW: "400000" }), 400_000);
+  for (const value of ["131071", "1000001", "262144.5", "unbounded"]) {
+    assert.throws(
+      () => parseBuilderContextWindow({ SHALLOW_BUILDER_CONTEXT_WINDOW: value }),
+      /SHALLOW_BUILDER_CONTEXT_WINDOW/,
+    );
+  }
 });
 
 test("Runtime config accepts an explicit probe port and derives its base URL", () => {

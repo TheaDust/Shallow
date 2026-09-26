@@ -144,6 +144,7 @@ data/github、data/sheet         初赛题目的需求树（原文、结构化 Y
 - `SHALLOW_PROBE_PORT`：环境变量或 `.env` 显式指定探针/交付验证端口（缺省随机；3000 是评测端口，显式指定也会被拒绝）。
 - `SHALLOW_EVAL_PORT`：评测端口（缺省 3000，由适配入口按 `--web-port`/`ARCBENCH_WEB_PORT`/`ARC_WEB_PORT` 写入）；探针选端口时排除它，显式探针端口与它相同即报错。
 - `SHALLOW_RUN_DIR`：环境变量或 `.env` 指定运行日志目录（run-ledger.jsonl 与 run-log.txt；缺省 `%TMP%/shallowcode-runs/<pid>-<ts>/`，设置后仍按运行 ID 分子目录）。
+- `SHALLOW_BUILDER_CONTEXT_WINDOW`：主线 Builder 上下文窗口（缺省 256000，允许 131072..1000000）；较小窗口让长工具历史更早压缩，baseline 仍固定使用 1M。
 - `SHALLOW_MEMORY_GATE_MAX_WAIT_MS`：cgroup 内存背压的最长等待毫秒数（缺省 60000；`0` 表示不在候选安装/构建与探针浏览器启动前等待）。等待超时后放行并写 stderr 诊断行。
 - `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。抓捕开关独立于容错：`src/builder/sse-resilience.ts` 始终启用，先于客户端丢弃截断事件并补 `[DONE]`；抓包在容错内层，仍记录网关原始字节。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
@@ -189,7 +190,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。入口仅按字面量从验收 spec 提取 `http://127.0.0.1:<port>`/`localhost:<port>` 端口用于交付验证，spec 内容不进入任何 prompt 或判词。
-2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 3 条/5 场景/3,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。所有功能组先实现，再验收；实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内依赖和未 verified 的外部依赖不阻塞实现。
+2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 3 条/5 场景/3,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；已经跨过模块边界的依赖必须独立验收为 verified，否则下游包标 blocked，且不启动其 Builder 或探针预规划。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时最多以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；可运行部分保存为空需求检查点，再次超时标 blocked，不记 implemented。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收。实现阶段后台生成探针计划，Builder 完成后先保存可运行检查点；模块边界验收前收敛该模块的预规划任务，再读取有效缓存（见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或需求明示的操作控件在此前已有成功交互、且两次新应用实例中均于同一步缺失时触发模块边界修复（后者仍记 inconclusive，Builder 按需求诊断），每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何修复目标→verified 改善时恢复原检查点并停止修复。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。
@@ -215,7 +216,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## Baseline 开发范围
 
-`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装；系统提示词与 `prompts/system/platform-contract.md` 措辞对齐（不含工作包概念），单会话请求 1M 上下文窗口（`BASELINE_CONTEXT_WINDOW` 经 `CodingAgentRequest.contextWindow` 覆盖，主线缺省同为 1M）。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
+`baseline/index.ts` 以 ROOT 直接子树为工作单元、单会话顺序调用同一个 `PiWorkerClient`（raw Pi 对照），共享网关配置但自行组织提示词。输入由 `baseline/system.md` 与 `modulePrompt` 组装；系统提示词与 `prompts/system/platform-contract.md` 措辞对齐（不含工作包概念），单会话请求 1M 上下文窗口（`BASELINE_CONTEXT_WINDOW` 经 `CodingAgentRequest.contextWindow` 覆盖；主线缺省 256k，可按运行覆盖）。完成状态来自调用结果，输出 `[baseline]` stderr 日志与 `.arc` 模块状态；业务正确性由独立评估确认。主线的模块调度、模块边界修复、Shadow 验收、可运行检查点、种子数据和图片装配位于主线控制器中。修改共享执行层时同时检查两条入口；运行方式及结果解释见 README 的“Raw Pi baseline”节。
 
 ## 代码与测试惯例
 

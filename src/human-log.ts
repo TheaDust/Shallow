@@ -78,10 +78,13 @@ function describe(type: string, event: RunEvent): string | null {
       const grouping = typeof detail?.grouping === "object" && detail.grouping !== null
         ? detail.grouping as Record<string, unknown> : undefined;
       const groups = pickNumber(grouping, "packets");
-      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}${groups !== null ? `；功能组 ${groups}` : ""}` : ""}`;
+      const contextWindow = pickNumber(detail, "builderContextWindow");
+      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}${contextWindow !== null ? `；Builder 上下文 ${contextWindow}` : ""}${groups !== null ? `；功能组 ${groups}` : ""}` : ""}`;
     }
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
+    case "dependency_gate_blocked":
+      return `基础依赖尚未通过独立验收，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未通过依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
     case "gateway_wait":
