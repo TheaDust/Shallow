@@ -8,6 +8,7 @@ import { toolEnvironment } from "../process-lifecycle.js";
 const FRONTEND_TIMEOUT_MS = 600_000;
 const BACKEND_TIMEOUT_MS = 600_000;
 const MAX_OUTPUT_CHARS = 30_000;
+const MAX_SUCCESS_OUTPUT_CHARS = 2_000;
 
 const parameters = Type.Object({
   target: Type.Union([Type.Literal("frontend"), Type.Literal("backend"), Type.Literal("all")], {
@@ -120,5 +121,9 @@ async function runSuite(spawnFn: typeof spawn, cwd: string, target: "frontend" |
 
 function formatResult(result: SuiteResult): string {
   const outcome = result.timedOut ? "timed out" : `exit code ${result.exitCode ?? "unknown"}`;
-  return `[${result.target}] ${result.command}\n${outcome}, duration ${(result.durationMs / 1_000).toFixed(1)}s\n${result.output || "(no output)"}`;
+  const successful = result.exitCode === 0 && !result.timedOut;
+  const output = successful && result.output.length > MAX_SUCCESS_OUTPUT_CHARS
+    ? `[successful output abbreviated to the last ${MAX_SUCCESS_OUTPUT_CHARS} characters]\n${result.output.slice(-MAX_SUCCESS_OUTPUT_CHARS)}`
+    : result.output;
+  return `[${result.target}] ${result.command}\n${outcome}, duration ${(result.durationMs / 1_000).toFixed(1)}s\n${output || "(no output)"}`;
 }

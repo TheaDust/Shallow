@@ -356,6 +356,17 @@ test("Probe Planner assembles split SSE deltas and tolerates a damaged usage tra
   assert.equal((await planner.plan(packet())).cases.length, 2);
 });
 
+test("A model-length retry requests a shorter complete plan", async () => {
+  let requestBody = "";
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    requestBody = String(init?.body);
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
+  });
+  await planner.plan(packet(), { validationError: "Probe planner stream was cut off by the model" });
+  assert.match(requestBody, /最多两个 case/);
+  assert.match(requestBody, /保持每个需求 ID 的覆盖/);
+});
+
 test("Probe Planner rejects an SSE stream that ends before completion", async () => {
   const payload = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: '{"packetId":' }, finish_reason: null }] })}\n\n`;
   const planner = new LlmProbePlanner(config(), async () => sseResponse([payload]));

@@ -3,10 +3,11 @@ import type { WorkPacket, ShadowReport } from "../types.js";
 import type { RunStateStore } from "../run-state.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { GatewayRequestError } from "../gateway-failure.js";
-import { ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
+import { isModelLengthCutoff, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
+import { rootSearchNavigationPlan } from "./navigation-recovery.js";
 import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 
-interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan }
+interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
 export interface AuditResult {
   status: "verified" | "failed" | "inconclusive";
   plan?: ProbePlan;
@@ -58,7 +59,14 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
         plan = first.plan;
       }
     }
-    if (first.report.verdict === "pass") return { status: "verified", plan, report: first.report };
+    if (first.report.verdict === "pass") {
+      if (!first.navigationRecovered) return { status: "verified", plan, report: first.report };
+      if (remaining() <= 0) return { status: "inconclusive", plan, report: first.report, reason: "navigation recovery confirmation budget exhausted" };
+      const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
+      return confirmed.report.verdict === "pass"
+        ? { status: "verified", plan, report: confirmed.report }
+        : { status: "inconclusive", plan, report: confirmed.report, reason: "navigation recovery did not pass on a fresh application" };
+    }
     if (first.source !== "probe" || first.report.failures.some(item => item.category === "locator" || item.category === "runner")) {
       // A planner guess remains inconclusive. A stable absence of an explicitly
       // required action can still be sent to Builder for diagnosis, without
@@ -231,6 +239,19 @@ async function runShadowProbes(
       }
     };
     let report = await run();
+    let navigationRecovered = false;
+    const searchPlan = remaining() > 0 ? rootSearchNavigationPlan(packet, currentPlan, report) : undefined;
+    if (searchPlan) {
+      const beforePlan = currentPlan;
+      currentPlan = searchPlan;
+      const searched = await run();
+      navigationRecovered = searched.verdict === "pass";
+      await state.record({ at: now(), type: "probe_navigation_attempted", packetId: packet.id,
+        detail: { recovered: navigationRecovered, beforePlanSha256: probePlanSha256(beforePlan),
+          planSha256: probePlanSha256(searchPlan) } });
+      if (navigationRecovered) report = searched;
+      else return { source: "probe", report, plan: beforePlan };
+    }
 
     // The same anchors the plan was grounded on travel with each refinement request,
     // so the planner can tell requirement-declared names from its own guesses.
@@ -274,7 +295,7 @@ async function runShadowProbes(
       // Browser failures use their own shared quota, outside the planner error handler.
       report = await run();
     }
-    return { source: "probe", report, plan: currentPlan };
+    return { source: "probe", report, plan: currentPlan, navigationRecovered };
   } finally {
     // application_stopped pairs with application_starting/ready and must be
     // recorded even if shutdown or the post-stop integrity check throws;
@@ -303,7 +324,8 @@ async function planProbe(
   try {
     return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, remaining()) }), packet);
   } catch (error) {
-    if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema")) {
+    const cutOffByModel = isModelLengthCutoff(error);
+    if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema" || cutOffByModel)) {
       feedback = {
         validationError: error.diagnostics.validationError ?? error.diagnostics.message,
         contentPreview: error.diagnostics.contentPreview,
@@ -311,11 +333,11 @@ async function planProbe(
     }
     await state.record({
       at: now(),
-      type: error instanceof ProbePlannerError && error.fatal ? "probe_planner_failed" : "probe_planner_retry",
+      type: error instanceof ProbePlannerError && error.fatal && !cutOffByModel ? "probe_planner_failed" : "probe_planner_retry",
       packetId: packet.id,
       detail: { ...plannerFailureDetail(error), attempt: packet.attempt, retryCount: 0 },
     });
-    if (error instanceof ProbePlannerError && error.fatal) throw error;
+    if (error instanceof ProbePlannerError && error.fatal && !cutOffByModel) throw error;
     if (error instanceof GatewayRequestError) throw error;
   }
   if (remaining() <= 0) return undefined;

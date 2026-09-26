@@ -19,8 +19,8 @@ export interface FeatureGroupThresholds {
 
 export const DEFAULT_FEATURE_GROUP_THRESHOLDS: FeatureGroupThresholds = {
   maxRequirements: 3,
-  maxScenarios: 5,
-  maxTextChars: 3_000,
+  maxScenarios: 12,
+  maxTextChars: 12_000,
 };
 
 interface SchedulableRequirement {

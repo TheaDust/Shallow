@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { WorkPacket } from "../types.js";
-import type { ProbePlanner } from "./llm-probe-planner.js";
+import { isModelLengthCutoff, type ProbePlanner } from "./llm-probe-planner.js";
 import { parseProbePlan, type ProbePlan } from "./probe-schema.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
@@ -75,7 +75,14 @@ export function spawnPlanGeneration(
   timeoutMs: number,
   onFailure?: (error: unknown) => Promise<void>,
 ): Promise<ProbePlan | undefined> {
-  return planner.plan(packet, undefined, { timeoutMs })
+  const generate = async (): Promise<ProbePlan> => {
+    try { return await planner.plan(packet, undefined, { timeoutMs }); }
+    catch (error) {
+      if (!isModelLengthCutoff(error)) throw error;
+      return planner.plan(packet, { validationError: error.diagnostics.validationError ?? error.message }, { timeoutMs });
+    }
+  };
+  return generate()
     .then(async (plan) => {
       await cache.write(auditPacketId, plan);
       return plan;
