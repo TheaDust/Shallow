@@ -1,0 +1,10 @@
+{
+  "name": "spreadsheet-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Zero-dependency HTTP backend for the spreadsheet application",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  }
+}
