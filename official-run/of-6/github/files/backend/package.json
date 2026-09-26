@@ -1,0 +1,11 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Zero-dependency HTTP backend for the GitHub collaboration platform.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/"
+  }
+}

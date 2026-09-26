@@ -1,0 +1,3955 @@
+:root {
+  --fg: #1f2328;
+  --muted: #656d76;
+  --border: #d1d9e0;
+  --accent: #1f883d;
+  --accent-fg: #ffffff;
+  --error: #b62324;
+  --bg: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 24px;
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-search-slot {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.header-account-slot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.global-search-form {
+  width: min(420px, 100%);
+}
+
+.global-search-input {
+  width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.brand {
+  font-weight: 600;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+main {
+  flex: 1;
+  padding: 32px 24px;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.loading {
+  color: var(--muted);
+}
+
+.home-page h1,
+.account-access-page h1,
+.workspace-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.home-tagline {
+  color: var(--muted);
+}
+
+.home-entries {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.home-entries a,
+.account-access-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.account-access-page {
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.account-access-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.field input[type='text'],
+.field input[type='password'] {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.field-checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.field-error,
+.form-error {
+  margin: 2px 0 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
+.form-success {
+  margin: 2px 0 0;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.success-message {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.primary-button {
+  padding: 7px 16px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid rgba(27, 31, 36, 0.15);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account-access-links {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu-button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.account-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 160px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  padding: 4px 0;
+  z-index: 10;
+}
+
+.account-menu-user {
+  padding: 6px 12px;
+  font-weight: 600;
+}
+
+.account-menu-settings {
+  display: block;
+  padding: 6px 12px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.account-menu-settings:hover {
+  background: #f6f8fa;
+}
+
+.account-menu-sign-out {
+  display: block;
+  padding: 6px 12px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.account-menu-sign-out:hover {
+  background: #f6f8fa;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 35, 40, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.sign-out-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(420px, 90vw);
+}
+
+.sign-out-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.sign-out-dialog-text {
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.sign-out-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.secondary-button {
+  padding: 7px 16px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.demo-code {
+  color: var(--muted);
+  margin: 16px 0 0;
+}
+
+.demo-code-value {
+  margin: 4px 0 0;
+  color: var(--fg);
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 4px;
+}
+
+.settings-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.settings-layout {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.settings-nav-link {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-nav-link:hover {
+  background: #f6f8fa;
+}
+
+.settings-intro {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.password-settings-page {
+  max-width: 640px;
+}
+
+.change-password-section h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 24px 0 4px;
+}
+
+.change-password-form {
+  max-width: 380px;
+}
+
+/* ---- REQ-2-1 organization and repository browsing ---- */
+
+.account-menu-organizations {
+  display: block;
+  padding: 6px 12px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.account-menu-organizations:hover {
+  background: #f6f8fa;
+}
+
+.organization-page h1,
+.repositories-page h1,
+.repository-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.organization-display-name {
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.organization-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.organization-tab {
+  padding: 8px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.organization-tab:hover {
+  color: var(--fg);
+}
+
+.organization-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+.repository-filters {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.repository-search-field input[type='search'] {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 260px;
+}
+
+.repository-type-field select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+.repository-list,
+.people-list,
+.team-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.repository-list-item {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.repository-name-link {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.repository-name-link:hover {
+  text-decoration: underline;
+}
+
+.repository-description {
+  color: var(--muted);
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+.repository-meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.repository-visibility,
+.repository-visibility-badge {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.people-list-item,
+.team-list-item {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.people-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.people-username,
+.team-name {
+  font-weight: 600;
+}
+
+.people-role {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* REQ-2-2-4 member action menu and remove-member confirmation dialog */
+.member-action-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.member-menu-button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.member-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 190px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  padding: 4px 0;
+  z-index: 10;
+}
+
+.member-menu-item {
+  padding: 6px 12px;
+  font-size: 14px;
+  color: var(--danger, #cf222e);
+  cursor: pointer;
+}
+
+.member-menu-item:hover,
+.member-menu-item:focus {
+  background: #f6f8fa;
+  outline: none;
+}
+
+.remove-member-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(440px, 90vw);
+}
+
+.remove-member-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.remove-member-dialog-text {
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.team-description {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.muted-text {
+  color: var(--muted);
+}
+
+.organization-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.new-organization-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.new-organization-link:hover {
+  text-decoration: underline;
+}
+.organization-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.organization-list a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.organization-list a:hover {
+  text-decoration: underline;
+}
+
+.organization-list .organization-id-link {
+  margin-left: 10px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.repository-details {
+  margin-top: 16px;
+}
+
+.repository-details div {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.repository-details dt {
+  color: var(--muted);
+  font-weight: 600;
+  min-width: 120px;
+}
+
+.repository-details dd {
+  margin: 0;
+}
+
+.primary-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* ---- REQ-3-1 global repository search ---- */
+
+.search-results-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.search-results-query {
+  margin: 4px 0 12px;
+}
+
+.search-type-filter {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.search-type-filter-link {
+  padding: 8px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.search-type-filter-link:hover {
+  color: var(--fg);
+}
+
+.search-type-filter-link.active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+
+.search-result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.search-result-item {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-result-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.search-result-name-link {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.search-result-name-link:hover {
+  text-decoration: underline;
+}
+
+.search-result-owner {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.search-result-description {
+  color: var(--muted);
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+.search-result-meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.search-no-results {
+  color: var(--muted);
+}
+
+/* ---- REQ-4-2-3 repository code search ---- */
+
+.code-search-heading-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 2px 0 12px;
+}
+
+.code-search-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.code-search-branch {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.code-search-filters {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 16px;
+}
+
+.code-search-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.code-search-filter label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.code-search-filter-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  min-width: 220px;
+}
+
+.code-search-result-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.code-search-result-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.code-search-result-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.code-search-result-link {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.code-search-result-link:hover {
+  text-decoration: underline;
+}
+
+.code-search-result-path {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.code-search-result-meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.code-search-snippet {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- REQ-2-2 organization teams ---- */
+
+.new-team-page h1,
+.team-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.new-team-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  max-width: 380px;
+}
+
+.new-team-form select,
+.team-settings-form select,
+.add-member-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+.new-team-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.new-team-link:hover {
+  text-decoration: underline;
+}
+
+.team-tree {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.team-tree-node {
+  font-weight: 600;
+}
+
+.team-tree-org {
+  color: var(--fg);
+}
+
+.team-tree-parent {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.team-tree-parent:hover {
+  text-decoration: underline;
+}
+
+.team-tree-current {
+  color: var(--fg);
+}
+
+.team-tree-root {
+  margin-top: 4px;
+}
+
+.team-tree-root-org {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.team-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+}
+
+.team-tree-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.team-name-link {
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.team-name-link:hover {
+  text-decoration: underline;
+}
+
+.team-members-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.team-members-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.add-member-button {
+  align-self: flex-start;
+}
+
+.add-member-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.add-member-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.team-member-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.team-member-username {
+  font-weight: 600;
+}
+
+.remove-member-button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: var(--danger, #cf222e);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.remove-member-button:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.team-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 380px;
+  align-items: flex-start;
+}
+
+/* ---- REQ-2-3 repository Settings and Manage access ---- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.repository-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-top: 16px;
+}
+
+.repository-tab {
+  padding: 8px 14px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.repository-tab:hover {
+  color: var(--fg);
+}
+
+.repository-settings-page h1,
+.manage-access-page h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.repository-settings-title {
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.repo-access-section {
+  margin-bottom: 16px;
+}
+
+.repo-access-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 460px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.repo-access-picker input[type='text'] {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.repo-access-picker select,
+.grant-role-field select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+.access-subject-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.access-subject-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.access-subject-group-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.access-subject-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+/* REQ-3-4: Danger Zone with the Change visibility action */
+.danger-zone {
+  margin-top: 24px;
+  max-width: 640px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.danger-zone h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--danger, #cf222e);
+}
+
+.danger-zone-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid #d0d7de;
+  padding-top: 12px;
+}
+
+.danger-zone-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.danger-zone-item-text strong {
+  font-size: 14px;
+}
+
+.danger-button {
+  padding: 7px 16px;
+  background: var(--bg);
+  color: var(--danger, #cf222e);
+  border: 1px solid rgba(207, 34, 46, 0.4);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.visibility-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(460px, 90vw);
+}
+
+.visibility-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.visibility-dialog-text {
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.visibility-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.visibility-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.visibility-dialog .field input[type='text'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.visibility-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* REQ-4-3-3: the Branches tab of repository settings with the Default branch
+   select (native combobox) and the confirmation dialog. */
+.default-branch-section {
+  margin-top: 24px;
+  max-width: 640px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.default-branch-section h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.default-branch-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.default-branch-field {
+  min-width: 240px;
+}
+
+.default-branch-field select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  min-width: 220px;
+}
+
+.default-branch-updated {
+  margin: 12px 0 0;
+  color: #1a7f37;
+  font-size: 14px;
+}
+
+.default-branch-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(440px, 90vw);
+}
+
+.default-branch-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.default-branch-dialog-text {
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.default-branch-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* REQ-6-1: the branch protection rules section of the Branches settings
+   page (rule form + the list with the exact branch name and requirement
+   summaries). */
+.branch-protection-section {
+  margin-top: 24px;
+  max-width: 640px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.branch-protection-section h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.branch-protection-form {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.branch-protection-rules {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-protection-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.branch-protection-rule-name {
+  font-weight: 600;
+  font-family: var(--mono-font, monospace);
+}
+
+.branch-protection-requirement {
+  background: #f3f4f6;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+/* REQ-6-1: the Pull requests list page. */
+.pulls-page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+/* REQ-6-2-1: the Pull requests filter bar (status links, Author textbox,
+   Review status select). Filtering only changes the displayed rows. */
+.pulls-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.pulls-state-filter {
+  display: flex;
+  gap: 4px;
+}
+
+.pulls-state-link {
+  padding: 6px 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.pulls-state-link:hover {
+  color: var(--fg);
+}
+
+.pulls-state-link.active {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+.pulls-author-field,
+.pulls-review-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.pulls-author-field label,
+.pulls-review-filter label {
+  color: var(--muted);
+}
+
+.pulls-author-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 200px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.pulls-review-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.pulls-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* REQ-6-2-2/REQ-6-2-4: the PR comparison page (shown before creation). The
+   creation entries (“Create pull request” and “Create draft pull request”)
+   are buttons disabled whenever the selection has no comparable commits or
+   no changed files; “No changes” is the visible explanation for the
+   same-branch / no-difference state. */
+.pull-compare-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pull-compare-actions .primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* REQ-6-2-3: the pull-request creation form opened by the enabled
+   “Create pull request” entry on the comparison page (fields labeled Title
+   and Description plus the single Create pull request submit button). */
+.pull-create-form {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f6f8fa;
+  max-width: 640px;
+}
+
+.pull-create-form .field {
+  margin-bottom: 12px;
+}
+
+.pull-create-form textarea {
+  width: 100%;
+}
+
+.compare-no-changes {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f6f8fa;
+}
+
+.compare-no-changes-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.pull-compare-result {
+  margin-top: 20px;
+}
+
+.pull-compare-commits-section {
+  margin-bottom: 20px;
+}
+
+.commit-summary-count {
+  font-weight: 600;
+}
+
+.pull-compare-page .diff-summary-section {
+  margin-top: 20px;
+}
+
+.pull-row {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pull-row-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pull-title-link {
+  color: var(--link, #0969da);
+  font-weight: 600;
+}
+
+.pull-number {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pull-row-meta,
+.pull-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pull-status {
+  font-weight: 600;
+}
+
+.pull-status-open {
+  color: #1a7f37;
+}
+
+.pull-status-draft {
+  color: #57606a;
+}
+
+.pull-status-closed {
+  color: #cf222e;
+}
+
+.pull-status-merged {
+  color: #8250df;
+}
+
+.pull-branches {
+  font-family: var(--mono-font, monospace);
+}
+
+/* REQ-6-1: the pull request detail page (title heading, status text, tabs,
+   Conversation/Commits/Files changed/Checks views and the merge box). */
+.pull-detail-header {
+  margin-bottom: 16px;
+}
+
+.pull-title {
+  margin: 0 0 4px;
+}
+
+.pull-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.pull-tab {
+  padding: 8px 12px;
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.pull-tab:hover {
+  color: var(--fg);
+}
+
+.pull-tab.active {
+  color: var(--fg);
+  font-weight: 600;
+  border-bottom-color: #fd8c73;
+}
+
+.pull-description {
+  margin: 0 0 16px;
+  font-size: 15px;
+}
+
+.pull-activity-section,
+.pull-commits-section,
+.pull-checks-section,
+.pull-discussion-section,
+.pull-review-summary-section {
+  margin-top: 8px;
+}
+
+.pull-activity-list,
+.pull-commits-list,
+.pull-discussion-list,
+.pull-review-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.pull-activity-item,
+.pull-commit-item,
+.pull-discussion-item,
+.pull-review-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.pull-activity-actor,
+.pull-commit-message,
+.pull-comment-author,
+.pull-review-reviewer {
+  font-weight: 600;
+}
+
+.pull-activity-time,
+.pull-commit-meta,
+.pull-comment-time,
+.pull-review-time {
+  color: var(--muted);
+}
+
+.pull-comment-body,
+.pull-review-explanation {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.pull-review-commit {
+  margin-left: 8px;
+}
+
+/* REQ-6-3-4: the review decision status shown in the Review summary
+   (Approved / Changes requested / Commented). */
+.pull-review-decision {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pull-review-decision-approve {
+  color: #1a7f37;
+}
+
+.pull-review-decision-request_changes {
+  color: #9a6700;
+}
+
+/* REQ-6-3-4: the review form opened by “Review changes” in the Files
+   changed view — optional Summary, the Comment/Approve/Request changes
+   radio controls, and the Submit review button. */
+.pull-review-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.review-changes-button {
+  margin-left: auto;
+}
+
+.review-submitted-status {
+  color: #1a7f37;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.pull-review-form {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: var(--bg);
+}
+
+.pull-review-form .field {
+  margin-bottom: 12px;
+}
+
+.review-summary-textarea {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.pull-review-decision-field {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.pull-review-decision-field legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.pull-review-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.pull-review-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pull-commit-id {
+  margin-right: 8px;
+}
+
+.pull-merge-section {
+  margin-top: 16px;
+}
+
+/* REQ-6-4: the pull request detail body — the tab content in a main column
+   and the Reviewers area in a right-hand sidebar (the same two-column
+   layout as the issue detail page). */
+.pull-detail-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.pull-detail-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pull-page-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.pull-reviewer-section {
+  margin-bottom: 16px;
+}
+
+.pull-reviewer-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pull-reviewer-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 0 0 6px;
+}
+
+.pull-reviewer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pull-reviewer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.pull-reviewer-name {
+  font-weight: 600;
+}
+
+/* REQ-6-4: the “Remove <username>” button beside each requested reviewer —
+   clicking it immediately removes the request without a confirmation step. */
+.pull-reviewer-remove-button {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted-bg, #f6f8fa);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pull-reviewer-remove-button:hover:not(:disabled),
+.pull-reviewer-remove-button:focus-visible {
+  background: var(--accent-bg, #e7f0ff);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.pull-reviewer-remove-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pull-reviewer-error {
+  margin: 0 0 8px;
+}
+
+/* REQ-6-4: the Reviewers settings picker on the PR detail sidebar. The
+   trigger is a settings-icon button whose accessible name is exactly
+   “Reviewers”; the open popover holds the “Search” textbox and the
+   role=option list of eligible candidates (Write/Maintain/Admin who are not
+   the PR author), filtered live as the user types. */
+.reviewer-selector {
+  position: relative;
+}
+
+.pull-reviewer-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pull-reviewer-settings-button:hover,
+.pull-reviewer-settings-button:focus-visible {
+  background: var(--muted-bg, #f6f8fa);
+  border-color: var(--border);
+  color: var(--fg);
+  outline: none;
+}
+
+.reviewer-selector-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 240px;
+  background: var(--background, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 30;
+}
+
+.reviewer-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--fg);
+  margin-bottom: 6px;
+}
+
+.reviewer-option-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.reviewer-option {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.reviewer-option:hover,
+.reviewer-option:focus-visible {
+  background: var(--accent-bg, #e7f0ff);
+  outline: none;
+}
+
+.reviewer-no-matching {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.reviewer-selector-loading {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.reviewer-selector-error {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #cf222e;
+}
+
+.pull-merge-section .primary-button {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+/* REQ-6-6: the “Close pull request” / “Reopen pull request” buttons of the
+   PR detail page — rendered only for the PR author, Maintain, Admin, or
+   the organization Owner (never for a merged PR). Closing immediately sets
+   Closed and reopening immediately restores Open, with no confirmation
+   dialog. */
+.pull-close-button,
+.pull-reopen-button {
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.pull-state-error {
+  margin-top: 0;
+}
+
+.merge-state {
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.merge-state-ready {
+  background: #dafbe1;
+  color: #1a7f37;
+}
+
+.merge-state-blocked {
+  background: #fff8c5;
+  color: #9a6700;
+}
+
+.merge-blocked-reasons {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-weight: 400;
+}
+
+.pull-file-diff {
+  margin-top: 16px;
+}
+
+/* REQ-6-3-2: each Files changed diff block shows the file path, its
+   per-file added/deleted counts, and an expand/collapse control. The diff
+   lines stay hidden until the block is expanded; expanding is read-only. */
+.pull-file-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.pull-file-path {
+  margin: 0;
+  font-size: 15px;
+}
+
+.diff-expand-button {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.diff-expand-button:hover {
+  background: var(--border);
+}
+
+.diff-summary-lines {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diff-file-path-text {
+  color: var(--fg);
+}
+
+/* REQ-6-2-4: the Ready-for-review confirmation dialog of a Draft PR — a
+   modal with a single Confirm button (no Cancel), matching the “single
+   Confirm button” contract. */
+.ready-for-review-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(420px, 90vw);
+}
+
+.ready-for-review-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.ready-for-review-dialog-text {
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.ready-for-review-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* REQ-6-5: the merged summary replaces the merge entry on a merged PR —
+   the merger, the merge time, and the resulting commit identifier. */
+.pull-merged-summary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.pull-merged-summary p {
+  margin: 4px 0;
+}
+
+.merged-by-line {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.merged-commit-line {
+  color: var(--muted);
+}
+
+.merged-commit-line code {
+  font-family: var(--mono-font, monospace);
+  font-size: 13px;
+  background: var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* REQ-6-5: the merge confirmation box of an eligible PR. The only
+   selectable method is “Create a merge commit”; the box lists the merge
+   conditions with their satisfied/unsatisfied state and offers a “Confirm
+   merge” button. */
+.merge-confirm-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.4);
+  padding: 20px 24px;
+  width: min(460px, 90vw);
+}
+
+.merge-confirm-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.merge-dialog-pr {
+  color: var(--muted);
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.merge-method-field {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+
+.merge-method-field legend {
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 4px;
+}
+
+.merge-method-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.merge-conditions {
+  margin-bottom: 12px;
+}
+
+.merge-conditions h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.merge-condition-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.merge-condition-list li {
+  margin: 2px 0;
+}
+
+.merge-condition-satisfied {
+  color: #1a7f37;
+}
+
+.merge-condition-unsatisfied {
+  color: #cf222e;
+}
+
+.merge-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pull-file-path {
+  font-size: 14px;
+  font-family: var(--mono-font, monospace);
+}
+
+/* REQ-6-1: the Checks area of the PR detail page. */
+.check-run-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.check-run-name {
+  font-weight: 600;
+}
+
+.check-run-status {
+  font-family: var(--mono-font, monospace);
+}
+
+.check-run-pending {
+  color: #9a6700;
+}
+
+.check-run-success {
+  color: #1a7f37;
+}
+
+.check-run-failure {
+  color: #cf222e;
+}
+
+.check-run-meta {
+  color: var(--muted);
+}
+
+.check-status-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.check-status-field {
+  min-width: 200px;
+}
+
+.check-status-field select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  min-width: 180px;
+}
+
+.repo-access-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.repo-access-table th {
+  text-align: left;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+
+.repo-access-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.grant-subject-name {
+  font-weight: 600;
+}
+
+.grant-subject-type {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0 8px;
+  line-height: 20px;
+}
+
+.grant-role-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.grant-role-field label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- REQ-3-2-1 repository creation and content ---- */
+
+.new-repository-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.new-repository-link:hover {
+  text-decoration: underline;
+}
+
+.workspace-repositories {
+  margin-top: 24px;
+}
+
+.workspace-repositories h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workspace-repository-list {
+  margin-top: 8px;
+}
+
+.create-repository-page {
+  max-width: 520px;
+}
+
+.create-repository-form textarea {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 72px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.create-repository-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+.visibility-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.visibility-fieldset legend {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.repository-code-section {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.repository-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: #f6f8fa;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+/* ---- REQ-4-3-1 branch selector ---- */
+
+.branch-selector {
+  position: relative;
+}
+
+.branch-selector-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.branch-selector-trigger:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.branch-selector-icon {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.branch-selector-caret {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.branch-selector-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  padding: 8px;
+  z-index: 20;
+}
+
+.branch-find-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.branch-find-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.branch-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.branch-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.branch-option:hover,
+.branch-option:focus {
+  background: var(--muted-bg, #f6f8fa);
+  outline: none;
+}
+
+.branch-option-check {
+  width: 14px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.branch-option-name {
+  font-weight: 500;
+}
+
+.branch-no-matching {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* REQ-4-3-2: the create-branch entry and the live invalid-name state. */
+.create-branch-option {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.create-branch-option.creating {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.create-branch-base {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.branch-invalid {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--danger, #cf222e);
+  font-size: 14px;
+}
+
+.branch-selector-loading,
+.branch-selector-error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
+.branch-selector-error {
+  color: var(--danger, #cf222e);
+}
+
+
+.repository-file-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.repository-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.repository-file-list-item {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.repository-file-list-item:last-child {
+  border-bottom: none;
+}
+
+.repository-file-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.repository-file-link:hover {
+  text-decoration: underline;
+}
+
+.repository-code-section .muted-text {
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.repository-commits-section {
+  margin-top: 16px;
+}
+
+.repository-commits-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.repository-commits-link:hover {
+  text-decoration: underline;
+}
+
+.repository-commit-list,
+.commit-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.repository-commit-list-item,
+.commit-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.repository-commit-meta,
+.commit-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.repository-back-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.repository-back-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- REQ-4-1 file and directory browsing ---- */
+
+.file-path-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  margin: 8px 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.path-separator {
+  color: var(--muted);
+  margin: 0 6px;
+}
+
+.path-branch {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.path-current {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.path-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.path-link:hover {
+  text-decoration: underline;
+}
+
+.file-commit-line {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.file-commit-message {
+  color: var(--fg);
+}
+
+.file-commit-meta {
+  margin-left: 6px;
+}
+
+.file-content {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f6f8fa;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- REQ-3-2-2 repository forking ---- */
+
+.forked-from {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.forked-from a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.forked-from a:hover {
+  text-decoration: underline;
+}
+
+.fork-button {
+  margin-top: 12px;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fork-button:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.fork-repository-page {
+  max-width: 520px;
+}
+
+.fork-repository-form textarea {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 72px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.fork-repository-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+}
+
+/* ---- REQ-3-2-3 clone popover ---- */
+
+.repository-code-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.clone-menu {
+  position: relative;
+}
+
+.clone-menu-trigger {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.clone-menu-trigger:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.clone-menu-caret {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clone-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: min(380px, 90vw);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  padding: 12px;
+  z-index: 20;
+}
+
+.clone-tablist {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.clone-tab {
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+
+.clone-tab:hover {
+  color: var(--fg);
+}
+
+.clone-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.clone-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clone-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.clone-value {
+  flex: 1;
+  font-size: 13px;
+  color: var(--fg);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.clone-copy-button {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.clone-copy-button:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.clone-copied {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.clone-copy-failed {
+  margin: 0;
+  color: var(--error);
+  font-size: 13px;
+}
+
+
+/* ---- REQ-4-2-1 commit history and commit detail ---- */
+
+.repository-commit-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--muted-bg, #f6f8fa);
+  font-size: 14px;
+}
+
+.repository-latest-commit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.commit-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.commit-hash-link {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.commit-hash-link:hover {
+  text-decoration: underline;
+}
+
+.commit-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.commit-message-link {
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.commit-message-link:hover {
+  text-decoration: underline;
+}
+
+.file-actions-line {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+
+.file-commits-link {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.file-commits-link:hover {
+  text-decoration: underline;
+}
+
+.commit-detail-message {
+  margin: 0 0 4px;
+}
+
+.commit-detail-meta {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.commit-detail-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.commit-detail-info > div {
+  display: flex;
+  gap: 8px;
+}
+
+.commit-detail-info dt {
+  color: var(--muted);
+  min-width: 80px;
+}
+
+.commit-detail-info dd {
+  margin: 0;
+}
+
+.commit-parent-link {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-decoration: none;
+  margin-right: 8px;
+}
+
+.commit-parent-link:hover {
+  text-decoration: underline;
+}
+
+.commit-parent-message {
+  color: var(--fg);
+}
+
+.commit-file-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.commit-file-item {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+.commit-file-item:last-child {
+  border-bottom: none;
+}
+
+/* ---- REQ-4-2-2 commit/compare diff ---- */
+
+.commits-page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.compare-link {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.compare-link:hover {
+  text-decoration: underline;
+}
+
+.diff-summary-count {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.diff-file-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.diff-file-link:hover {
+  text-decoration: underline;
+}
+
+.diff-file-stats {
+  float: right;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.compare-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 380px;
+  margin-top: 16px;
+  align-items: flex-start;
+}
+
+.compare-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  min-width: 260px;
+}
+
+.diff-identifiers {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.diff-identifiers strong {
+  color: var(--fg);
+}
+
+.diff-revision-link {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.diff-revision-link:hover {
+  text-decoration: underline;
+}
+
+.diff-file-title {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+}
+
+.diff-file-stats-line {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diff-lines {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.diff-line {
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line.add {
+  background: #e6ffec;
+  color: #116329;
+}
+
+.diff-line.del {
+  background: #ffebe9;
+  color: #82071e;
+}
+
+.diff-line.context {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---- REQ-4-4 Add file menu ---- */
+
+.add-file-menu {
+  position: relative;
+}
+
+.add-file-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.add-file-trigger:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.add-file-caret {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.add-file-menu-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  padding: 4px;
+  z-index: 20;
+}
+
+.add-file-menu-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.add-file-menu-item:hover,
+.add-file-menu-item:focus {
+  background: var(--muted-bg, #f6f8fa);
+  outline: none;
+}
+
+/* ---- REQ-4-4 web file editor ---- */
+
+.file-editor-page {
+  max-width: 760px;
+}
+
+.editor-heading {
+  margin: 4px 0 16px;
+  font-size: 20px;
+}
+
+.file-editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.field textarea {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 220px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.commit-changes-button {
+  align-self: flex-start;
+}
+
+.file-edit-button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-edit-button:hover {
+  background: var(--muted-bg, #f6f8fa);
+}
+
+.file-actions-line {
+  gap: 12px;
+}
+
+/* ---- REQ-5-1-1 Issues list and issue detail ---- */
+
+.issues-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.issues-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.issues-state-filter {
+  display: flex;
+  gap: 4px;
+}
+
+.issues-state-link {
+  padding: 6px 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.issues-state-link:hover {
+  color: var(--fg);
+}
+
+.issues-state-link.active {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+.issues-search-field,
+.issues-label-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.issues-search-field label,
+.issues-label-filter label {
+  color: var(--muted);
+}
+
+.issues-search-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  min-width: 240px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.issues-label-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.issues-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issue-row {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.issue-row-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.issue-title-link {
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.issue-title-link:hover {
+  color: #0969da;
+  text-decoration: underline;
+}
+
+.issue-number {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.issue-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.issue-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.issue-state-open {
+  background: #1a7f37;
+}
+
+.issue-state-closed {
+  background: #8250df;
+}
+
+.issue-author {
+  color: var(--muted);
+}
+
+.issue-label {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #0969da;
+}
+
+.issue-updated {
+  color: var(--muted);
+}
+
+.issues-empty {
+  color: var(--muted);
+}
+
+/* REQ-5-2-1: the “New issue” link on the Issues list page (only shown to
+   Write, Maintain, Admin, or organization Owner accounts). */
+.new-issue-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+.new-issue-link:hover {
+  filter: brightness(1.08);
+}
+
+/* REQ-5-2-1: the repository issue creation form (Title + optional
+   Description fields and a “Submit new issue” button). */
+.new-issue-form {
+  margin-top: 8px;
+  max-width: 640px;
+}
+
+.new-issue-heading {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 12px 0 0;
+}
+
+/* Issue detail page */
+
+.issue-page-header {
+  margin-bottom: 16px;
+}
+
+.issue-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.issue-title-row h1 {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 4px 0 8px;
+}
+
+/* REQ-5-2-2: the edit buttons beside the title and the description. The
+   visible label is “Edit” while the accessible name is “Edit issue title” /
+   “Edit issue description” so both the requirement's unique button names and
+   the scenario's “Edit beside the title/description” clicks are satisfied. */
+.issue-edit-button {
+  flex-shrink: 0;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.issue-edit-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.issue-edit-button[aria-expanded='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* REQ-5-2-2: the inline title/description edit forms (textbox labeled
+   “Issue title” / “Issue description” plus the save button). */
+.issue-edit-form {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 10px 0;
+  max-width: 640px;
+}
+
+.issue-description-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.issue-description-row .issue-description {
+  flex: 1;
+  min-width: 0;
+}
+
+.issue-page-status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.issue-page-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.issue-page-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.issue-description {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.issue-page-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.issue-sidebar-section {
+  margin-bottom: 16px;
+}
+
+.issue-sidebar-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 0 0 6px;
+}
+
+.issue-sidebar-labels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issue-sidebar-labels li {
+  margin-bottom: 6px;
+}
+
+.issue-sidebar-assignees {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issue-sidebar-assignees li {
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+/* REQ-5-4: the “Close issue” / “Reopen issue” button of the issue detail
+   page sidebar (only Triage, Maintain, or Admin get it; Write and Read
+   users and visitors see neither control). */
+.issue-state-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.issue-state-button {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted-bg, #f6f8fa);
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.issue-state-button:hover:not(:disabled),
+.issue-state-button:focus-visible {
+  background: var(--accent-bg, #e7f0ff);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.issue-state-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.issue-state-error {
+  margin: 0 0 8px;
+}
+
+/* REQ-5-3-1: the Assignees settings selector on the issue detail page. The
+   trigger is a settings-icon button whose accessible name is exactly
+   “Assignees”; the open popover holds the “Search assignees” textbox and the
+   role=option member list (checked state shown for assigned members). */
+.issue-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.assignee-selector {
+  position: relative;
+}
+
+.issue-assignee-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.issue-assignee-settings-button:hover,
+.issue-assignee-settings-button:focus-visible {
+  background: var(--muted-bg, #f6f8fa);
+  border-color: var(--border);
+  color: var(--fg);
+  outline: none;
+}
+
+.assignee-selector-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 240px;
+  background: var(--background, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 30;
+}
+
+.assignee-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.assignee-search-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.assignee-option-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.assignee-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.assignee-option:hover,
+.assignee-option:focus {
+  background: var(--muted-bg, #f6f8fa);
+  outline: none;
+}
+
+.assignee-option-check {
+  width: 14px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.assignee-option-name {
+  font-weight: 500;
+}
+
+.assignee-no-matching,
+.assignee-selector-loading {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.assignee-selector-error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--danger, #cf222e);
+  font-size: 14px;
+}
+
+/* REQ-5-3-2: the Labels settings selector on the issue detail page. The
+   trigger is a settings-icon button whose accessible name is exactly
+   “Labels”; the open popover holds the role=option list of the current
+   repository's label names (checked state shown for applied labels). */
+.label-selector {
+  position: relative;
+}
+
+.issue-label-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.issue-label-settings-button:hover,
+.issue-label-settings-button:focus-visible {
+  background: var(--muted-bg, #f6f8fa);
+  border-color: var(--border);
+  color: var(--fg);
+  outline: none;
+}
+
+.label-selector-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 240px;
+  background: var(--background, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 30;
+}
+
+.label-option-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.label-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.label-option:hover,
+.label-option:focus {
+  background: var(--muted-bg, #f6f8fa);
+  outline: none;
+}
+
+.label-option-check {
+  width: 14px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.label-selector-loading {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.label-selector-error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--danger, #cf222e);
+  font-size: 14px;
+}
+
+.issue-milestone-value {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* REQ-5-3-3: the Milestone settings picker on the issue detail page. The
+   trigger is a settings-icon button whose accessible name is exactly
+   “Milestone”; the open popover holds the role=option list of the current
+   repository's milestone titles plus the “None” removal option (checked
+   state shows the currently associated milestone). */
+.milestone-selector {
+  position: relative;
+}
+
+.issue-milestone-settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.issue-milestone-settings-button:hover,
+.issue-milestone-settings-button:focus-visible {
+  background: var(--muted-bg, #f6f8fa);
+  border-color: var(--border);
+  color: var(--fg);
+  outline: none;
+}
+
+.milestone-selector-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  width: 240px;
+  background: var(--background, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 30;
+}
+
+.milestone-option-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.milestone-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.milestone-option:hover,
+.milestone-option:focus {
+  background: var(--muted-bg, #f6f8fa);
+  outline: none;
+}
+
+.milestone-option-check {
+  width: 14px;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.milestone-option-none {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.milestone-selector-loading {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.milestone-selector-error {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  color: var(--danger, #cf222e);
+  font-size: 14px;
+}
+
+
+/* REQ-5-1-2: the append-only activity timeline at the bottom of the issue
+   detail page (creation and comment activities in chronological order). */
+.issue-activity {
+  margin-top: 20px;
+}
+
+.issue-activity h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 0 0 8px;
+}
+
+.issue-activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.issue-activity-event {
+  border-left: 2px solid var(--border);
+  margin-left: 4px;
+  padding: 0 0 14px 14px;
+}
+
+.issue-activity-line {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.issue-comment-body {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* REQ-5-2-3: the comment editor (label “Comment”, submit button “Comment”) and
+   the reaction controls of the issue/comment discussion entries. */
+.issue-comment-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.issue-comment-form .field textarea {
+  min-height: 80px;
+}
+
+.submit-comment-button {
+  margin-top: 8px;
+}
+
+.issue-discussion-count {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.issue-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  position: relative;
+}
+
+.reaction-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 13px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.reaction-chip[aria-pressed='true'] {
+  background: var(--accent-soft, #ddf4ff);
+  border-color: var(--accent, #0969da);
+}
+
+.reaction-trigger {
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.reaction-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 160px;
+  background: var(--background, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.reaction-menu-item {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.reaction-menu-item:hover,
+.reaction-menu-item:focus {
+  background: var(--border, #d0d7de);
+}
+
+.issue-activity-item {
+  list-style: none;
+}
+
+.issue-body-reactions .issue-reactions {
+  margin-top: 2px;
+}
