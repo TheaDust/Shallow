@@ -63,7 +63,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baselin
 
 | 维度 | ShallowCode 主线 | baseline |
 | --- | --- | --- |
-| 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，3 条/5 场景/3k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
+| 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，3 条/12 场景/12k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
 | 会话 | 实现阶段每个工作包使用全新会话；修复使用新会话 | 一次运行复用同一个会话 |
 | 模型上下文窗口 | 256k（缺省，可用 `SHALLOW_BUILDER_CONTEXT_WINDOW` 覆盖） | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
@@ -94,7 +94,7 @@ flowchart TD
     DR --> F
 ```
 
-1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖；`featureGroupPackets` 把原子需求确定性组成有界功能组（3 条/5 场景/3,000 字符）。
+1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖；`featureGroupPackets` 把原子需求确定性组成有界功能组（3 条/12 场景/12,000 字符）。
 2. 按功能组逐包实现，每包使用全新会话，跨包交接只经代码、测试与 ARCHITECTURE.md。每包开始后并行生成该组相关审计包的探针计划并落盘，供后续验收复用。
 3. 功能组完成后做安装、构建与启动检查，保存可运行检查点。它不授予功能 verified；切换模块时对上一模块执行模块边界审计，失败按模块独立配额至多两轮修复。跨模块依赖只有在独立验收为 verified 后才允许继续实现下游；failed、inconclusive 或未完成的基础依赖会直接阻塞下游包，也不生成其探针计划。组内及当前尚未验收模块内的依赖不受此门禁影响。修复后必须既有 verified 全保持且至少一个修复目标变为 verified；没有改善、出现回归或无法重新验证既有 pass 时恢复修复前版本。
 4. 全部功能组实现或实现预算耗尽后，按原子需求逐项独立验收（已通过优先）；Judge 仅看需求与浏览器观察。最终验收只检测不修复：可复现业务失败标记 failed 计入交付状态，不再发起跨模块的集中修复。
@@ -146,7 +146,7 @@ Pi Worker、会话续接、进程组/作业回收、图片回退、网关 SSE �
 
 每个原子需求独立规划并检查，计划最多6个 case、每 case 最多30步；通常选择一条主路径和一条最高风险边界。wire case 的 `assertion` 必填，执行器将它附到 steps 末尾。 支持 expectHidden 和有限 ARIA 状态断言 expectAttribute（expanded/pressed/selected/checked），用于检查每次切换后的状态。goto 默认从 `/` 出发，非根路径必须逐字出现在需求或前置需求文字中；定位精化保留需求明示的目标名称。role/label/text 定位支持单层 scope 和字面 hasText，可以定位某张卡片或某行内的重复按钮。禁止 CSS/XPath、任意脚本及跨源导航。
 
-定位失败在 Judge 内精化，最多两轮；混合报告也先处理 locator 部分。期望值、操作、输入和顺序保持固定。仍无法建立证据、计划无效或浏览器故障时记 inconclusive，保留可运行检查点。 若此前已有成功交互，且需求明示的操作控件在两个新应用实例中均于同一步缺失，则允许 Builder 按需求诊断；猜测名称、初始页面未定位和基础设施故障不触发该路径。该诊断仍须独立复验改善并通过既有路径回归才能保留。纯业务失败须在新应用实例重现同一失败位置和类别后才能记 failed，交给所在模块的边界修复。
+定位失败在 Judge 内精化，最多两轮；混合报告也先处理 locator 部分。期望值、操作、输入和顺序保持固定。首页缺失种子仓库链接、需求允许经搜索进入且页面快照有唯一 searchbox 时，可在原点击前插入只读搜索；整条探针通过后在新应用实例复验，否则仍记 inconclusive。计划因模型输出长度截断时，后台预规划和审计规划各允许一次较短完整计划的重试。仍无法建立证据、计划无效或浏览器故障时记 inconclusive，保留可运行检查点。若此前已有成功交互，且需求明示的操作控件在两个新应用实例中均于同一步缺失，则允许 Builder 按需求诊断；猜测名称、初始页面未定位和基础设施故障不触发该路径。该诊断仍须独立复验改善并通过既有路径回归才能保留。纯业务失败须在新应用实例重现同一失败位置和类别后才能记 failed，交给所在模块的边界修复。
 
 修复统一在模块边界就地发生（每模块至多两轮，新会话，复查缓存计划）：必须至少使一个修复目标变为 verified，且所有既有 verified 仍通过，才保存修复；否则恢复原检查点并停止。全部模块完成后的最终验收只检测不修复，failed 直接计入交付状态。Builder 自述不能授予通过。
 
@@ -338,13 +338,14 @@ src/
     sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
     sse-resilience.ts          始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]、内容截断走重试
     pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端（测试命令引导到 run_tests）
-    pi-test-tool.ts            run_tests 工具：限内存传统测试执行（Vitest 单 worker、node:test 单并发）
+    pi-test-tool.ts            run_tests 工具：限内存传统测试执行（Vitest 单 worker、node:test 单并发；成功输出简述）
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
     prompt-fragments.ts        产品词典 → fragments 选择
     shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
   judge/
     audit.ts                   Judge 故障恢复、业务失败复现与独立验收结果
+    navigation-recovery.ts     按种子与可访问快照复查首页搜索导航
     probe-schema.ts            显式 assertion、单层 scope 与 locator-only refinement 校验
     llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
     playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定

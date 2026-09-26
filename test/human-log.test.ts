@@ -111,6 +111,9 @@ test("HumanRunFormatter identifies both locator recovery rounds", () => {
       packetId: "p", detail: { refinementAttempt, validationError: "unchanged failed locator" },
     })), new RegExp(`定位恢复第 ${refinementAttempt}/2 轮`));
   }
+  assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "probe_navigation_attempted", {
+    packetId: "p", detail: { recovered: true },
+  })), /首页搜索导航复查通过，待新实例确认/);
 });
 
 test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () => {

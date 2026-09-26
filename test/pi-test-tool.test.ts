@@ -110,7 +110,7 @@ test("run_tests reports failures with the output tail and a non-zero exit code",
   });
 });
 
-test("run_tests truncates very long output to the tail", async () => {
+test("run_tests abbreviates successful output while retaining the suite summary", async () => {
   await withTempDir("shallow-test-tool-", async root => {
     await makeApp(root);
     const { spawnFn } = fakeSpawn(child => {
@@ -120,10 +120,25 @@ test("run_tests truncates very long output to the tail", async () => {
     const tool = createTestTool(root, { spawnFn });
     const result = await execute(tool, { target: "frontend" });
     const text = (result.content[0] as { text: string }).text;
-    assert.match(text, /output truncated to the last 30000 characters/);
+    assert.match(text, /successful output abbreviated to the last 2000 characters/);
     assert.match(text, /end-marker/);
     assert.doesNotMatch(text, /start-marker/);
-    assert.ok(text.length < 31_000, `expected bounded output, got ${text.length}`);
+    assert.ok(text.length < 2_400, `expected concise success output, got ${text.length}`);
+  });
+});
+
+test("run_tests retains the longer failure tail for diagnosis", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    const { spawnFn } = fakeSpawn(child => {
+      child.stdout.emit("data", `start-marker${"x".repeat(40_000)}FAIL final assertion`);
+      child.emit("exit", 1);
+    });
+    const result = await execute(createTestTool(root, { spawnFn }), { target: "frontend" });
+    const text = (result.content[0] as { text: string }).text;
+    assert.match(text, /output truncated to the last 30000 characters/);
+    assert.match(text, /FAIL final assertion/);
+    assert.doesNotMatch(text, /start-marker/);
   });
 });
 

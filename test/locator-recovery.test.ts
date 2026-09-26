@@ -11,6 +11,7 @@ import { ExecutionFault } from "../src/execution-fault.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
+import { rootSearchNavigationPlan } from "../src/judge/navigation-recovery.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
 import { withModulePipeline, type PipelineFixture, fail, pass, testPlan } from "./helpers/module-pipeline.js";
 
@@ -183,6 +184,95 @@ test("Detection-only audits skip locator refinement but still run the probes", a
   });
 });
 
+test("A missing seeded link can be reached through visible search and must pass again on a fresh app", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = "Seed data: repository `acme-docs`. A search result opens the repository. Opening the repository shows Issues.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const plan: ProbePlan = { packetId: "packet-a", cases: [{ id: "issues", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "link", name: "acme-docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    f.deps.planner = new FakeProbePlanner([plan]);
+    let launches = 0;
+    const originalStart = f.deps.appLifecycle.start.bind(f.deps.appLifecycle);
+    f.deps.appLifecycle.start = async (...args) => { launches++; return originalStart(...args); };
+    let runs = 0;
+    f.deps.runner.run = async current => {
+      runs++;
+      if (runs === 1) {
+        const report = fail(current, "locator");
+        report.failures[0].locatorSnapshot = '- searchbox "Search"\n- link "Sign in"';
+        return report;
+      }
+      assert.deepEqual(current.cases[0].steps.slice(1, 3), [
+        { op: "fill", locator: { by: "role", role: "searchbox", name: "Search", exact: true }, value: "acme-docs" },
+        { op: "press", locator: { by: "role", role: "searchbox", name: "Search", exact: true }, key: "Enter" },
+      ]);
+      assert.deepEqual(current.cases[0].steps.slice(3), plan.cases[0].steps.slice(1));
+      return pass(current);
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "verified");
+    assert.equal(runs, 3);
+    assert.equal(launches, 2);
+    assert.equal((await f.events()).filter(event => event.type === "probe_navigation_attempted").length, 1);
+  });
+});
+
+test("Chromium recovers a seeded repository entry through the visible searchbox", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = "Seed data: repository `acme-docs`. A search result opens the repository. Opening the repository shows Issues.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const plan: ProbePlan = { packetId: "packet-a", cases: [{ id: "issues", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "link", name: "acme-docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const server = createServer((request, response) => {
+      const url = new URL(request.url ?? "/", "http://localhost");
+      response.setHeader("content-type", "text/html");
+      response.end(url.pathname === "/repo" ? '<a href="/issues">Issues</a>'
+        : `<form action="/"><input type="search" aria-label="Search" name="q"></form>${url.searchParams.get("q") === "acme-docs" ? '<a href="/repo">acme-docs</a>' : ""}`);
+    });
+    await new Promise<void>(resolvePromise => server.listen(0, "127.0.0.1", resolvePromise));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      f.deps.planner = new FakeProbePlanner([plan]);
+      f.deps.runner = new PlaywrightProbeRunner();
+      f.deps.appLifecycle.start = async () => ({ baseUrl: `http://127.0.0.1:${address.port}`, stop: async () => {} });
+      const result = await audit(f);
+      assert.equal(result.status, "verified");
+      assert.equal(result.plan?.cases[0].steps.length, plan.cases[0].steps.length + 2);
+    } finally {
+      await new Promise<void>(resolvePromise => server.close(() => resolvePromise()));
+    }
+  });
+});
+
+test("Search navigation is unavailable without a seeded target or a unique visible searchbox", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Display the main workspace."], steps: [
+        { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "link", name: "acme-docs" } },
+        { op: "expectVisible", locator: { by: "role", role: "main" } },
+      ] }] };
+    const report = fail(plan, "locator");
+    report.failures[0].locatorSnapshot = '- searchbox "Search"';
+    assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `acme-docs`."];
+    packet.requirements[0].text = "A search result opens the repository.";
+    report.failures[0].locatorSnapshot = '- searchbox "Search"\n- searchbox "Search code"';
+    assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+  });
+});
+
 test("Browser retry is bounded and does not consume a Builder call", async () => {
   for (const recover of [true, false]) await withModulePipeline(async f => {
     let runs = 0;
@@ -208,5 +298,21 @@ test("Planner invalid output gets scoped validation feedback and the remaining t
     };
     assert.equal((await audit(f, () => 1234)).status, "verified");
     assert.equal(calls, 2);
+  });
+});
+
+test("A model-length-truncated plan gets one compact retry", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.planner.plan = async (packet, feedback) => {
+      calls++;
+      if (calls === 1) throw new ProbePlannerError("response", "Probe planner response body failed",
+        { cause: new SyntaxError("Probe planner stream was cut off by the model") });
+      assert.equal(feedback?.validationError, "Probe planner stream was cut off by the model");
+      return testPlan(packet);
+    };
+    assert.equal((await audit(f)).status, "verified");
+    assert.equal(calls, 2);
+    assert.equal((await f.events()).filter(event => event.type === "probe_planner_retry").length, 1);
   });
 });

@@ -3,8 +3,10 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { PlanCache } from "../src/judge/plan-cache.js";
+import { PlanCache, spawnPlanGeneration } from "../src/judge/plan-cache.js";
+import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
+import type { WorkPacket } from "../src/types.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 function plan(packetId: string, covered: string[]): ProbePlan {
@@ -47,5 +49,44 @@ test("Plan cache mirrors writes into the product-visible directory", async () =>
     const files = await readdir(mirror);
     assert.equal(files.length, 1);
     assert.equal(JSON.parse(await readFile(join(mirror, files[0]), "utf8")).packetId, "packet-a");
+  });
+});
+
+test("Background planning retries a model-length cutoff and caches the complete plan", async () => {
+  await withTempDir("shallow-plan-cache-", async directory => {
+    const packet = { id: "packet-a", requirementIds: ["A"] } as WorkPacket;
+    const cache = new PlanCache(directory);
+    let calls = 0;
+    let failures = 0;
+    const generated = await spawnPlanGeneration(packet, packet.id, {
+      plan: async (_packet, feedback) => {
+        calls++;
+        if (calls === 1) throw new ProbePlannerError("response", "Probe planner response body failed",
+          { cause: new SyntaxError("Probe planner stream was cut off by the model") });
+        assert.equal(feedback?.validationError, "Probe planner stream was cut off by the model");
+        return plan(packet.id, packet.requirementIds);
+      },
+    }, cache, 60_000, async () => { failures++; });
+    assert.equal(calls, 2);
+    assert.equal(failures, 0);
+    assert.equal(generated?.packetId, packet.id);
+    assert.equal((await cache.read(packet))?.packetId, packet.id);
+  });
+});
+
+test("Background planning leaves other response failures unretried", async () => {
+  await withTempDir("shallow-plan-cache-", async directory => {
+    const packet = { id: "packet-a", requirementIds: ["A"] } as WorkPacket;
+    let calls = 0;
+    let failures = 0;
+    const generated = await spawnPlanGeneration(packet, packet.id, {
+      plan: async () => {
+        calls++;
+        throw new ProbePlannerError("response", "Probe planner response has no message content");
+      },
+    }, new PlanCache(directory), 60_000, async () => { failures++; });
+    assert.equal(generated, undefined);
+    assert.equal(calls, 1);
+    assert.equal(failures, 1);
   });
 });

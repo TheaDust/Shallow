@@ -153,6 +153,7 @@ interface RunEventDetails {
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;
     durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
   probe_refined: { plan?: ProbePlan; refinementAttempt?: number; beforePlanSha256?: string; planSha256?: string };
+  probe_navigation_attempted: { recovered: boolean; beforePlanSha256: string; planSha256: string };
   probe_refinement_failed: DiagnosticDetail & { refinementAttempt?: number; planSha256?: string };
   probe_review_started: { cases: number; failed: number };
   probe_reviewed: { verdict: "sound" | "corrected"; rationale?: string;

@@ -50,7 +50,8 @@ test("The scenario-count threshold skips an overflowing candidate but keeps exte
     requirement("S2", 1, { folder: ["ROOT", "M", "P"], scenarios: Array.from({ length: 5 }, () => "s") }),
     requirement("S3", 2, { folder: ["ROOT", "M", "P"], scenarios: ["s"] }),
   ]);
-  assert.deepEqual(featureGroupPackets(catalog).packets.map(item => item.requirementIds), [["S1", "S3"], ["S2"]]);
+  assert.deepEqual(featureGroupPackets(catalog, { maxRequirements: 3, maxScenarios: 5, maxTextChars: 12_000 })
+    .packets.map(item => item.requirementIds), [["S1", "S3"], ["S2"]]);
 });
 
 test("The text-size threshold skips an overflowing candidate but keeps extending", () => {
@@ -59,7 +60,8 @@ test("The text-size threshold skips an overflowing candidate but keeps extending
     requirement("T2", 1, { folder: ["ROOT", "M", "P"], text: "t".repeat(2_000) }),
     requirement("T3", 2, { folder: ["ROOT", "M", "P"], text: "t".repeat(900) }),
   ]);
-  assert.deepEqual(featureGroupPackets(catalog).packets.map(item => item.requirementIds), [["T1", "T3"], ["T2"]]);
+  assert.deepEqual(featureGroupPackets(catalog, { maxRequirements: 3, maxScenarios: 12, maxTextChars: 3_000 })
+    .packets.map(item => item.requirementIds), [["T1", "T3"], ["T2"]]);
 });
 
 test("A single requirement over the thresholds forms its own group", () => {
@@ -68,7 +70,7 @@ test("A single requirement over the thresholds forms its own group", () => {
     requirement("BIG", 1, { folder: ["ROOT", "M", "P"], text: "b".repeat(20_000) }),
     requirement("SMALL2", 2, { folder: ["ROOT", "M", "P"] }),
   ]);
-  const { packets, stats } = featureGroupPackets(catalog);
+  const { packets, stats } = featureGroupPackets(catalog, { maxRequirements: 3, maxScenarios: 12, maxTextChars: 3_000 });
   assert.deepEqual(packets.map(item => item.requirementIds), [["SMALL1", "SMALL2"], ["BIG"]]);
   assert.equal(stats.thresholdLimitedPackets, 1);
 });
@@ -114,8 +116,8 @@ test("Atomic audit covers every requirement and carries transitive textual prere
 });
 
 test("Real requirement trees group deterministically with unique coverage", async () => {
-  const expectedPackets: Record<string, number> = { "12306": 43, bookstack: 15, ctrip: 46, github: 43,
-    keep: 13, prestashop: 32, sheet: 19, stackoverflow: 25, ticketbooking: 1 };
+  const expectedPackets: Record<string, number> = { "12306": 42, bookstack: 15, ctrip: 46, github: 17,
+    keep: 13, prestashop: 32, sheet: 11, stackoverflow: 25, ticketbooking: 1 };
   for (const [name, count] of Object.entries(expectedPackets)) {
     const catalog = await loadRequirementCatalog(resolve(`data/${name}/requirements.yaml`));
     const { packets, stats } = featureGroupPackets(catalog);
@@ -132,25 +134,17 @@ test("Sheet groups deterministically from the design document", async () => {
   const catalog = await loadRequirementCatalog(resolve("data/sheet/requirements.yaml"));
   const { packets } = featureGroupPackets(catalog);
   assert.deepEqual(packets.map(item => item.requirementIds), [
-    ["REQ-1-1-1", "REQ-1-2-2"],
-    ["REQ-1-2-1", "REQ-1-3-1"],
-    ["REQ-1-3-2"],
-    ["REQ-2-1-3", "REQ-2-1-1"],
-    ["REQ-2-2-1"],
+    ["REQ-1-1-1", "REQ-1-2-2", "REQ-1-2-1"],
+    ["REQ-1-3-1", "REQ-1-3-2"],
+    ["REQ-2-1-3", "REQ-2-1-1", "REQ-2-2-1"],
     ["REQ-2-2-2"],
-    ["REQ-3-1-1", "REQ-3-1-2"],
-    ["REQ-3-1-3"],
-    ["REQ-3-2-1"],
-    ["REQ-3-2-2"],
-    ["REQ-4-1-1"],
-    ["REQ-4-2-1", "REQ-4-2-2"],
+    ["REQ-3-1-1", "REQ-3-1-2", "REQ-3-1-3"],
+    ["REQ-3-2-1", "REQ-3-2-2"],
+    ["REQ-4-1-1", "REQ-4-2-1", "REQ-4-2-2"],
     ["REQ-4-1-2"],
-    ["REQ-5-1-2"],
-    ["REQ-5-2-1"],
-    ["REQ-2-1-2"],
+    ["REQ-5-1-2", "REQ-5-3-1", "REQ-5-2-1"],
+    ["REQ-2-1-2", "REQ-2-1-4"],
     ["REQ-5-1-1"],
-    ["REQ-5-3-1"],
-    ["REQ-2-1-4"],
   ]);
 });
 
