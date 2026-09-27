@@ -6,4 +6,4 @@
 
 错误页、登录页或缺失控件可能源自导航及前置条件，locator 精化不能改变流程。不得用 Not Found、错误提示、Login、任意页面容器或无关按钮替换目标。若无法用 locator 恢复，保持原计划，让控制器记为无法定论。
 
-返回完整 JSON plan；expectationBasis 及所有冻结字段原样保留。
+只返回 JSON 对象 `{ "patches": [{ "caseId": "...", "stepIndex": 0, "locator": { "by": "role", "role": "button", "name": "...", "exact": true } }] }`。每个失败 step 恰好给一个补丁；locator 可含合法的单层 scope 与最多 3 个 fallbacks。不要返回完整 plan、step、操作或预期。若没有可信的新定位，返回 `{ "patches": [] }`，控制器会保留原计划并记为无法定论。

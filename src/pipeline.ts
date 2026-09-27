@@ -139,7 +139,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
   let gatewayPhase: PipelinePhase = "implementation";
-  const pendingPlans = new Map<string, Promise<unknown>>();
+  const pendingPlans = new Map<string, { ready: boolean; failed: boolean; promise: Promise<void> }>();
+  const noProgressRefinements = new Set<string>();
+  const recoveryAuditPolicy = { refineLocators: true, noProgressRefinements };
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
   const dependencyClosure = (requirementIds: readonly string[]): Set<string> => {
     const closure = new Set<string>();
@@ -355,7 +357,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
   };
   const runModuleBoundaryAudit = async (packetIds: string[], moduleId: string, moduleName: string | undefined): Promise<void> => {
-    await Promise.allSettled(packetIds.map(id => pendingPlans.get(id)).filter((plan): plan is Promise<unknown> => plan !== undefined));
     gatewayPhase = "audit";
     if (budget.remaining("audit") <= 0) return;
     // Reset per-module boundary repair quota when switching modules.
@@ -367,16 +368,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       round: undefined, memory: await memorySnapshot(),
       ...(Number.isFinite(budget.remaining("audit")) ? { remainingMs: budget.remaining("audit") } : {}) } });
     const targetPackets = packets.filter(p => packetIds.includes(p.id));
-    const ordered = [...targetPackets].sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
+    const ordered = [...targetPackets]
+      .filter(packet => packet.requirementIds.every(id => implemented.has(id)))
+      .sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
     const boundaryResults = new Map<string, AuditResult>();
-    for (const packet of ordered) {
-      if (!packet.requirementIds.every(id => implemented.has(id))) continue;
+    while (ordered.length > 0) {
+      let nextIndex = ordered.findIndex(packet => {
+        const pending = pendingPlans.get(packet.id);
+        return !pending || (pending.ready && !pending.failed);
+      });
+      if (nextIndex < 0) nextIndex = ordered.findIndex(packet => pendingPlans.get(packet.id)?.ready);
+      if (nextIndex < 0) {
+        await Promise.race(ordered.map(packet => pendingPlans.get(packet.id)!.promise));
+        continue;
+      }
+      const [packet] = ordered.splice(nextIndex, 1);
       const cached = results.get(packet.id)?.plan ?? await planCache.read(packet);
       if (budget.remaining("audit") <= 0) {
         boundaryResults.set(packet.id, { status: "inconclusive", plan: cached, reason: "module boundary audit budget exhausted" });
         continue;
       }
-      const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"));
+      const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"),
+        { ...recoveryAuditPolicy, retryPlan: pendingPlans.get(packet.id)?.failed !== true });
       if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
@@ -432,7 +445,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           if (results.get(packet.id)?.status !== "verified") continue;
           if (budget.remaining("repair") <= 0) { regressed = true; break; }
           const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
-          const recheck = await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
+          const recheck = await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"), recoveryAuditPolicy);
           if (recheck.status !== "verified") { regressed = true; break; }
           rechecked.set(packet.id, recheck);
         }
@@ -443,7 +456,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
             const r = budget.remaining("repair") <= 0
               ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
-              : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"));
+              : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"), recoveryAuditPolicy);
             reAudit.set(packet.id, r);
           }
         }
@@ -550,11 +563,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const planTimeoutMs = budget.remaining("implementation");
       for (const auditPacket of relatedAuditPackets) {
         if (!results.has(auditPacket.id) && !pendingPlans.has(auditPacket.id)) {
-          pendingPlans.set(auditPacket.id, spawnPlanGeneration(auditPacket, auditPacket.id, deps.planner, planCache, planTimeoutMs,
+          const pending = { ready: false, failed: false, promise: Promise.resolve() };
+          pending.promise = spawnPlanGeneration(auditPacket, auditPacket.id, deps.planner, planCache, planTimeoutMs,
             error => state.record({ at: now(), type: "probe_preplan_failed", packetId: auditPacket.id,
               detail: error instanceof ProbePlannerError
                 ? { source: "planner", ...error.diagnostics }
-                : { source: "planner", message: errorMessage(error) } })));
+                : { source: "planner", message: errorMessage(error) } }))
+            .then(plan => { pending.failed = !plan; pending.ready = true; });
+          pendingPlans.set(auditPacket.id, pending);
         }
       }
       // Every packet is implemented in a fresh session; handoff across packets
@@ -734,7 +750,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     throw error;
   } finally {
     try { await deps.builder.close(); }
-    finally { await Promise.allSettled(pendingPlans.values()); }
+    finally { await Promise.allSettled([...pendingPlans.values()].map(item => item.promise)); }
   }
 }
 

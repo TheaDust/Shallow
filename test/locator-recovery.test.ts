@@ -62,7 +62,7 @@ for (const mode of ["required", "transient", "guessed", "no-navigation"] as cons
 }
 
 for (const first of ["unchanged", "ambiguous"] as const) {
-  test(`Locator ambiguity recovers after ${first} refinement in Chromium, keeping evidence private`, async () => {
+  test(`Locator ambiguity ${first === "unchanged" ? "stops" : "recovers"} after ${first} refinement in Chromium, keeping evidence private`, async () => {
     await withModulePipeline(async f => {
       const server = createServer((_request, response) => { response.setHeader("content-type", "text/html");
         response.end('<nav><button><span class="private-sidebar">home</span></button></nav><main><ul><li>home</li></ul></main>'); });
@@ -77,9 +77,8 @@ for (const first of ["unchanged", "ambiguous"] as const) {
       const logs: string[] = [];
       f.deps.logSink = { write: line => { logs.push(line); } };
       try {
-        assert.equal((await audit(f)).status, "verified");
-        assert.equal(planner.refinements.length, 2);
-        if (first === "unchanged") assert.match(planner.refinements[1].feedback?.validationError ?? "", /new locator candidate/);
+        assert.equal((await audit(f)).status, first === "unchanged" ? "inconclusive" : "verified");
+        assert.equal(planner.refinements.length, first === "unchanged" ? 1 : 2);
         const evidenceDir = join(dirname(f.options.ledgerFile), "evidence");
         const evidence = JSON.parse(await readFile(join(evidenceDir, (await readdir(evidenceDir))[0]), "utf8"));
         assert.equal(evidence.planSha256, probePlanSha256(original));
@@ -122,7 +121,7 @@ test("Unchanged, mutated behavior, and fatal refinements never rerun invalid pla
       f.deps.runner.run = async plan => { runs++; return fail(plan, "locator"); };
       assert.equal((await audit(f)).status, "inconclusive");
       assert.equal(runs, 1);
-      assert.equal(refinements, invalid === "fatal" ? 1 : 2);
+      assert.equal(refinements, invalid === "behavior" ? 2 : 1);
       assert.deepEqual(f.git.restoredShas, []);
     });
   }
@@ -219,6 +218,31 @@ test("A missing seeded link can be reached through visible search and must pass 
     assert.equal(runs, 3);
     assert.equal(launches, 2);
     assert.equal((await f.events()).filter(event => event.type === "probe_navigation_attempted").length, 1);
+  });
+});
+
+test("The same plan, failed step, and page snapshot do not repeat a no-progress refinement", async () => {
+  await withModulePipeline(async f => {
+    let refinements = 0;
+    let probes = 0;
+    let snapshot = '- main "Workspace"';
+    f.deps.planner.plan = async () => homePlan();
+    f.deps.planner.refineLocators = async original => { refinements++; return original; };
+    f.deps.runner.run = async plan => {
+      probes++;
+      const report = fail(plan, "locator");
+      report.failures[0].locatorSnapshot = snapshot;
+      return report;
+    };
+    const policy: AuditPolicy = { refineLocators: true, noProgressRefinements: new Set<string>() };
+    assert.equal((await audit(f, () => 60_000, policy)).status, "inconclusive");
+    assert.equal((await audit(f, () => 60_000, policy)).status, "inconclusive");
+    assert.equal(probes, 2);
+    assert.equal(refinements, 1);
+    assert.equal(policy.noProgressRefinements?.size, 1);
+    snapshot = '- main "Updated Workspace"';
+    assert.equal((await audit(f, () => 60_000, policy)).status, "inconclusive");
+    assert.equal(refinements, 2);
   });
 });
 

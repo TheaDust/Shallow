@@ -99,6 +99,59 @@ test("A non-reproducible foundation failure blocks downstream until it is indepe
   });
 });
 
+test("Module audit runs a ready plan while another background validation retry is pending", async () => {
+  await withModulePipeline(async f => {
+    let releaseRetry!: () => void;
+    const pendingRetry = new Promise<void>(resolve => { releaseRetry = resolve; });
+    const guard = setTimeout(releaseRetry, 2_000);
+    const probes: string[] = [];
+    const planning: string[] = [];
+    f.deps.planner.plan = async (packet, feedback) => {
+      planning.push(`${packet.id}:${feedback ? "retry" : "first"}`);
+      if (packet.id === "packet-a" && !feedback) {
+        throw new ProbePlannerError("schema", "invalid plan", { cause: new Error("missing locator fallback") });
+      }
+      if (packet.id === "packet-a") await pendingRetry;
+      return testPlan(packet);
+    };
+    f.deps.runner.run = async plan => {
+      probes.push(plan.packetId);
+      if (plan.packetId === "packet-b") releaseRetry();
+      return pass(plan);
+    };
+    try {
+      assert.equal((await f.run()).status, "delivered");
+    } finally { clearTimeout(guard); }
+    assert.deepEqual(planning, ["packet-a:first", "packet-b:first", "packet-a:retry", "packet-c:first"]);
+    assert.equal(probes[0], "packet-b");
+    assert.equal(probes[1], "packet-a");
+    assert.ok(!(await f.events()).some(event => event.type === "probe_preplan_failed"));
+  });
+});
+
+test("A failed background feedback retry gets only one more boundary planning attempt", async () => {
+  await withModulePipeline(async f => {
+    let firstModuleCalls = 0;
+    let callsAtBoundary = 0;
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") {
+        firstModuleCalls++;
+        throw new ProbePlannerError("schema", "invalid plan", { cause: new Error("missing locator fallback") });
+      }
+      return testPlan(packet);
+    };
+    f.deps.logSink = { write: line => {
+      const event = JSON.parse(line);
+      if (event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "FIRST") {
+        callsAtBoundary = firstModuleCalls;
+      }
+    } };
+    const summary = await f.run();
+    assert.equal(callsAtBoundary, 3);
+    assert.deepEqual(summary.inconclusiveRequirementIds, ["A"]);
+  });
+});
+
 test("An independently passed happy path permits downstream implementation while full audit stays inconclusive", async () => {
   await withModulePipeline(async f => {
     f.deps.planner.plan = async packet => {

@@ -6,9 +6,11 @@ import { loadPrompt } from "../prompt-assets.js";
 import { httpGatewayFailure, type GatewayFailure } from "../gateway-failure.js";
 import {
   PROBE_PLAN_JSON_SCHEMA,
+  PROBE_REFINEMENT_JSON_SCHEMA,
   toWireProbePlan,
-  assertLocatorOnlyRefinement,
+  applyLocatorPatches,
   groundedLocatorAnchors,
+  NoLocatorProgressError,
   parseProbePlan,
   type ProbePlan,
 } from "./probe-schema.js";
@@ -29,6 +31,16 @@ export interface ProbePlanner {
 export interface ProbePlannerFeedback {
   validationError: string;
   contentPreview?: string;
+}
+
+/** One feedback retry for a malformed plan; transport recovery stays with the gateway. */
+export function planValidationFeedback(error: unknown): ProbePlannerFeedback | undefined {
+  if (!(error instanceof ProbePlannerError) ||
+    (error.category !== "json" && error.category !== "schema" && !isModelLengthCutoff(error))) return undefined;
+  return {
+    validationError: error.diagnostics.validationError ?? error.diagnostics.message,
+    ...(error.diagnostics.contentPreview ? { contentPreview: error.diagnostics.contentPreview } : {}),
+  };
 }
 
 export interface ProbePlannerConfig {
@@ -183,21 +195,17 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs);
-    const refined = this.parse(content, {
-      id: original.packetId,
-      requirementIds: [...new Set(original.cases.flatMap((item) => item.requirementIds))],
-    });
+    ], options?.timeoutMs, PROBE_REFINEMENT_JSON_SCHEMA);
     try {
-      assertLocatorOnlyRefinement(original, refined, failures);
+      return applyLocatorPatches(original, failures, JSON.parse(extractJsonPayload(content)));
     } catch (error) {
+      if (error instanceof NoLocatorProgressError) throw error;
       throw new ProbePlannerError(
         "refinement",
         "Planner returned an invalid locator refinement",
         { cause: error, content, apiKey: this.config.apiKey },
       );
     }
-    return refined;
   }
 
   async reviewPlan(packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<PlanReview> {

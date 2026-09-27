@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { WorkPacket } from "../types.js";
-import { isModelLengthCutoff, type ProbePlanner } from "./llm-probe-planner.js";
+import { planValidationFeedback, type ProbePlanner } from "./llm-probe-planner.js";
 import { parseProbePlan, type ProbePlan } from "./probe-schema.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
@@ -13,9 +13,9 @@ type CachedPacket = Pick<WorkPacket, "id" | "requirementIds"> &
 /**
  * Disk-backed probe plan cache keyed by audit packet ID.
  *
- * Plans are generated in parallel with Builder execution and read from disk
- * during the consolidated or module-boundary audit, eliminating the serial
- * LLM latency. After locator refinement the refined plan overwrites the entry.
+ * Plans and one validation-feedback retry run alongside Builder execution.
+ * Module audits consume ready plans while remaining generation continues.
+ * After locator refinement the refined plan overwrites the entry.
  * A cached plan is only reused when it still validates against its packet, so
  * coverage and locator-anchoring rules hold for the cache path too.
  */
@@ -76,10 +76,11 @@ export function spawnPlanGeneration(
   onFailure?: (error: unknown) => Promise<void>,
 ): Promise<ProbePlan | undefined> {
   const generate = async (): Promise<ProbePlan> => {
-    try { return await planner.plan(packet, undefined, { timeoutMs }); }
+    try { return parseProbePlan(await planner.plan(packet, undefined, { timeoutMs }), packet); }
     catch (error) {
-      if (!isModelLengthCutoff(error)) throw error;
-      return planner.plan(packet, { validationError: error.diagnostics.validationError ?? error.message }, { timeoutMs });
+      const feedback = planValidationFeedback(error);
+      if (!feedback) throw error;
+      return parseProbePlan(await planner.plan(packet, feedback, { timeoutMs }), packet);
     }
   };
   return generate()

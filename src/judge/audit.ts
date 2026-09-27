@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import type { PipelineDeps, PipelineOptions, AppLifecycle } from "../pipeline.js";
 import type { WorkPacket, ShadowReport } from "../types.js";
 import type { RunStateStore } from "../run-state.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { GatewayRequestError } from "../gateway-failure.js";
-import { isModelLengthCutoff, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
+import { isModelLengthCutoff, planValidationFeedback, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { rootSearchNavigationPlan } from "./navigation-recovery.js";
-import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
+import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, NoLocatorProgressError, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
 export interface AuditResult {
@@ -24,6 +25,10 @@ export interface AuditPolicy {
    * (they still run the probes), since they publish results without repairing.
    */
   refineLocators: boolean;
+  /** Background planning already used its feedback retry for this packet. */
+  retryPlan?: boolean;
+  /** Shared across audits so an identical failed page does not ask the model again. */
+  noProgressRefinements?: Set<string>;
 }
 
 const DEFAULT_AUDIT_POLICY: AuditPolicy = { refineLocators: true };
@@ -36,7 +41,7 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
   let plan = cached;
   try {
     if (remaining() <= 0) return { status: "inconclusive", plan, reason: "audit budget exhausted" };
-    plan ??= await planProbe(packet, options, deps, state, remaining);
+    plan ??= await planProbe(packet, options, deps, state, remaining, policy.retryPlan !== false);
     if (!plan) return { status: "inconclusive", reason: "probe planner failed" };
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
@@ -268,16 +273,21 @@ async function runShadowProbes(
       refinableFailures().length > 0 &&
       recovery.locatorRefinements < MAX_LOCATOR_REFINEMENTS &&
       remaining() > 0) {
+      const failures = refinableFailures();
+      const noProgressKey = createHash("sha256").update(JSON.stringify([
+        probePlanSha256(currentPlan), failures.map(item => [item.caseId, item.stepIndex, item.locatorSnapshot]),
+      ])).digest("hex");
+      if (policy.noProgressRefinements?.has(noProgressKey)) break;
       const refinementAttempt = ++recovery.locatorRefinements;
       const beforePlanSha256 = probePlanSha256(currentPlan);
       let refined: ProbePlan;
       try {
         // Pass a copy so a planner implementation cannot mutate the behavior being checked.
         refined = parseProbePlan(await deps.planner.refineLocators(
-          structuredClone(currentPlan), structuredClone(refinableFailures()), feedback,
+          structuredClone(currentPlan), structuredClone(failures), feedback,
           { timeoutMs: Math.max(1, remaining()), anchoredNames },
         ));
-        assertLocatorOnlyRefinement(currentPlan, refined, refinableFailures());
+        assertLocatorOnlyRefinement(currentPlan, refined, failures);
         // Keep anchors from the original plan across successive refinements.
         assertLocatorOnlyRefinement(plan, refined, [], packet);
       } catch (error) {
@@ -289,6 +299,10 @@ async function runShadowProbes(
         };
         await state.record({ at: now(), type: "probe_refinement_failed", packetId: packet.id,
           detail: { ...detail, refinementAttempt, planSha256: beforePlanSha256 } });
+        if (error instanceof NoLocatorProgressError) {
+          policy.noProgressRefinements?.add(noProgressKey);
+          break;
+        }
         if (error instanceof GatewayRequestError) break;
         continue;
       }
@@ -323,6 +337,7 @@ async function planProbe(
   deps: PipelineDeps,
   state: RunStateStore,
   remaining: () => number,
+  retry: boolean,
 ): Promise<ProbePlan | undefined> {
   await state.record({ at: now(), type: "probe_planning", packetId: packet.id });
   let feedback: ProbePlannerFeedback | undefined;
@@ -330,21 +345,18 @@ async function planProbe(
     return parseProbePlan(await deps.planner.plan(packet, undefined, { timeoutMs: Math.max(1, remaining()) }), packet);
   } catch (error) {
     const cutOffByModel = isModelLengthCutoff(error);
-    if (error instanceof ProbePlannerError && (error.category === "json" || error.category === "schema" || cutOffByModel)) {
-      feedback = {
-        validationError: error.diagnostics.validationError ?? error.diagnostics.message,
-        contentPreview: error.diagnostics.contentPreview,
-      };
-    }
+    feedback = planValidationFeedback(error);
     await state.record({
       at: now(),
-      type: error instanceof ProbePlannerError && error.fatal && !cutOffByModel ? "probe_planner_failed" : "probe_planner_retry",
+      type: !retry || (error instanceof ProbePlannerError && error.fatal && !cutOffByModel)
+        ? "probe_planner_failed" : "probe_planner_retry",
       packetId: packet.id,
       detail: { ...plannerFailureDetail(error), attempt: packet.attempt, retryCount: 0 },
     });
     if (error instanceof ProbePlannerError && error.fatal && !cutOffByModel) throw error;
     if (error instanceof GatewayRequestError) throw error;
   }
+  if (!retry) return undefined;
   if (remaining() <= 0) return undefined;
   const retryDelayMs = options.plannerRetryDelayMs ?? 2_000;
   if (retryDelayMs > 0) {

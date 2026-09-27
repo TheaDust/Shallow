@@ -74,6 +74,29 @@ test("Background planning retries a model-length cutoff and caches the complete 
   });
 });
 
+test("Background planning repairs a schema error before the module audit", async () => {
+  await withTempDir("shallow-plan-cache-", async directory => {
+    const packet = { id: "packet-a", requirementIds: ["A"] } as WorkPacket;
+    const cache = new PlanCache(directory);
+    let calls = 0;
+    let failures = 0;
+    const generated = await spawnPlanGeneration(packet, packet.id, {
+      plan: async (_packet, feedback) => {
+        calls++;
+        if (calls === 1) throw new ProbePlannerError("schema", "Probe planner content violates ProbePlan",
+          { cause: new Error("unanchored text locator"), content: "invalid plan" });
+        assert.equal(feedback?.validationError, "unanchored text locator");
+        assert.equal(feedback?.contentPreview, "invalid plan");
+        return plan(packet.id, packet.requirementIds);
+      },
+    }, cache, 60_000, async () => { failures++; });
+    assert.equal(calls, 2);
+    assert.equal(failures, 0);
+    assert.equal(generated?.packetId, packet.id);
+    assert.equal((await cache.read(packet))?.packetId, packet.id);
+  });
+});
+
 test("Background planning leaves other response failures unretried", async () => {
   await withTempDir("shallow-plan-cache-", async directory => {
     const packet = { id: "packet-a", requirementIds: ["A"] } as WorkPacket;

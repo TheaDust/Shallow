@@ -214,6 +214,53 @@ export const PROBE_PLAN_JSON_SCHEMA = {
   ...PROBE_PLAN_BODY,
 } as const;
 
+export const PROBE_REFINEMENT_JSON_SCHEMA = {
+  $defs: PROBE_PLAN_JSON_SCHEMA.$defs,
+  ...objectSchema({
+    patches: { type: "array", maxItems: MAX_CASES * MAX_STEPS, items: objectSchema({
+      caseId: NONEMPTY_STRING_SCHEMA,
+      stepIndex: { type: "integer", minimum: 0, maximum: MAX_STEPS - 1 },
+      locator: LOCATOR_REF,
+    }) },
+  }),
+} as const;
+
+export class NoLocatorProgressError extends Error {}
+
+/** Apply only failed-step locator patches; all other probe behavior remains controller-owned. */
+export function applyLocatorPatches(original: ProbePlan, failures: readonly Pick<ProbeFailure, "caseId" | "stepIndex">[],
+  value: unknown): ProbePlan {
+  const response = record(value, "ProbeRefinement");
+  keys(response, ["patches"], "ProbeRefinement");
+  const patches = array(response.patches, "ProbeRefinement.patches");
+  if (patches.length > MAX_CASES * MAX_STEPS) throw new Error("ProbeRefinement has too many patches");
+  if (patches.length === 0) throw new NoLocatorProgressError("Refinement has no new locator candidate");
+  const targets = new Set(failures.map(item => `${item.caseId}\0${item.stepIndex}`));
+  const seen = new Set<string>();
+  const refined = structuredClone(original);
+  for (const [index, value] of patches.entries()) {
+    const location = `ProbeRefinement.patches[${index}]`;
+    const patch = record(value, location);
+    keys(patch, ["caseId", "stepIndex", "locator"], location);
+    const caseId = text(patch.caseId, `${location}.caseId`);
+    const stepIndex = patch.stepIndex;
+    if (!Number.isSafeInteger(stepIndex) || (stepIndex as number) < 0 || (stepIndex as number) >= MAX_STEPS) {
+      throw new Error(`${location}.stepIndex must be a valid zero-based index`);
+    }
+    const target = `${caseId}\0${stepIndex}`;
+    if (!targets.has(target)) throw new Error(`${location} does not target a failed locator step`);
+    if (seen.has(target)) throw new Error(`${location} duplicates a locator patch`);
+    seen.add(target);
+    const step = refined.cases.find(item => item.id === caseId)?.steps[stepIndex as number];
+    if (!step || !("locator" in step)) throw new Error(`${location} target has no locator`);
+    step.locator = parseLocator(patch.locator, `${location}.locator`);
+  }
+  if (seen.size !== targets.size) throw new Error("ProbeRefinement must patch every failed locator step");
+  const parsed = parseProbePlan(refined);
+  assertLocatorOnlyRefinement(original, parsed, failures);
+  return parsed;
+}
+
 export function parseProbePlan(
   value: unknown,
   packet?: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements" | "prerequisites">>,
@@ -369,7 +416,7 @@ export function assertLocatorOnlyRefinement(
     }
     const exhausted = new Set(locatorCandidates(before.locator).map(locatorKey));
     if (!locatorCandidates(after.locator).some((candidate) => !exhausted.has(locatorKey(candidate)))) {
-      throw new Error(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
+      throw new NoLocatorProgressError(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
     }
   }
 }

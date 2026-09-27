@@ -7,8 +7,10 @@ import {
 } from "../src/judge/llm-probe-planner.js";
 import {
   assertLocatorOnlyRefinement,
+  NoLocatorProgressError,
   parseProbePlan,
   PROBE_PLAN_JSON_SCHEMA,
+  PROBE_REFINEMENT_JSON_SCHEMA,
 } from "../src/judge/probe-schema.js";
 import type { ProbeFailure, SeedDataCategory, WorkPacket } from "../src/types.js";
 
@@ -126,6 +128,7 @@ test("Wire schema fully describes the DSL and closes every structured-output obj
     Object.values(item).forEach(visit);
   };
   visit(PROBE_PLAN_JSON_SCHEMA);
+  visit(PROBE_REFINEMENT_JSON_SCHEMA);
   const wire = JSON.stringify(PROBE_PLAN_JSON_SCHEMA);
   assert.match(wire, /"locator"/);
   assert.match(wire, /"expectValue"/);
@@ -581,9 +584,9 @@ test("Probe Planner preserves bounded, redacted validation diagnostics", async (
   });
 });
 
-test("Probe Planner reports rejected behavior changes and accepts controller-owned retry feedback", async () => {
-  const changed = validPlan();
-  changed.cases[0].steps[1].value = "different-input";
+test("Probe Planner rejects behavior fields in locator patches and accepts retry feedback", async () => {
+  const changed = { patches: [{ caseId: "save-profile", stepIndex: 1,
+    locator: { by: "role", role: "textbox", name: "Profile name" }, value: "different-input" }] };
   let calls = 0;
   const planner = new LlmProbePlanner(config(), async () => {
     calls += 1;
@@ -593,7 +596,7 @@ test("Probe Planner reports rejected behavior changes and accepts controller-own
   await assert.rejects(planner.refineLocators(original, locatorFailures()), (error: unknown) => {
     assert.ok(error instanceof ProbePlannerError);
     assert.equal(error.category, "refinement");
-    assert.match(error.diagnostics.validationError ?? "", /only locator fields/);
+    assert.match(error.diagnostics.validationError ?? "", /unsupported ProbePlan field: value/);
     assert.match(error.diagnostics.contentPreview ?? "", /different-input/);
     return true;
   });
@@ -607,15 +610,10 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
   const bodies: string[] = [];
   const fetchFn: typeof fetch = async (_input, init) => {
     bodies.push(String(init?.body));
-    const refined = validPlan();
-    refined.cases[0].steps[1] = {
-      op: "fill",
-      locator: { by: "role", role: "textbox", name: "Profile name" },
-      value: "Ada",
-    };
-    refined.cases[1].steps[2] = {
-      op: "expectValue", locator: { by: "role", role: "textbox", name: "Profile name" }, value: "Ada",
-    };
+    const refined = { patches: [
+      { caseId: "save-profile", stepIndex: 1, locator: { by: "role", role: "textbox", name: "Profile name" } },
+      { caseId: "refresh-profile", stepIndex: 2, locator: { by: "role", role: "textbox", name: "Profile name" } },
+    ] };
     return jsonResponse({
       choices: [{ message: { content: JSON.stringify(refined) } }],
     });
@@ -623,16 +621,23 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
   const planner = new LlmProbePlanner(config(), fetchFn);
   const original = parseProbePlan(validPlan(), packet());
 
-  await planner.refineLocators(
+  const updated = await planner.refineLocators(
     original,
     [...locatorFailures(`- textbox "Profile name"\npassword: super-secret\ntoken=abc123\n${"x".repeat(10_000)}`),
       { caseId: "refresh-profile", stepIndex: 2, category: "locator", message: "secret-key missing", locatorSnapshot: "- main" }],
     { validationError: "unchanged failed step secret-key", contentPreview: "password=hidden" },
   );
+  assert.equal(updated.cases[0].steps[1].op, "fill");
+  assert.equal(updated.cases[1].steps[2].op, "expectValue");
+  assert.deepEqual(updated.cases[0].steps[1], {
+    op: "fill", locator: { by: "role", role: "textbox", name: "Profile name" }, value: "Ada",
+  });
 
   assert.equal(bodies.length, 1);
   assert.doesNotMatch(JSON.parse(bodies[0]).messages[1].content, /super-secret|abc123|secret-key|hidden/);
   const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
+  assert.match(request.messages[0].content, /"patches"/);
+  assert.doesNotMatch(request.messages[0].content, /"expectationBasis"/);
   const refinement = JSON.parse(request.messages[1].content);
   assert.equal(refinement.failures.length, 2);
   assert.equal(refinement.failures[0].caseId, "save-profile");
@@ -649,10 +654,8 @@ test("Probe Planner forwards requirement-grounded anchor names and omits them wh
   const bodies: string[] = [];
   const fetchFn: typeof fetch = async (_input, init) => {
     bodies.push(String(init?.body));
-    const refined = validPlan();
-    refined.cases[0].steps[1] = {
-      op: "fill", locator: { by: "role", role: "textbox", name: "Profile name" }, value: "Ada",
-    };
+    const refined = { patches: [{ caseId: "save-profile", stepIndex: 1,
+      locator: { by: "role", role: "textbox", name: "Profile name" } }] };
     return jsonResponse({ choices: [{ message: { content: JSON.stringify(refined) } }] });
   };
   const planner = new LlmProbePlanner(config(), fetchFn);
@@ -667,16 +670,36 @@ test("Probe Planner forwards requirement-grounded anchor names and omits them wh
   assert.equal("anchoredRequirementNames" in requests[1], false);
 });
 
-test("LLM returning an unchanged failed locator is a refinement error with actionable diagnostics", async () => {
+test("LLM returning an unchanged failed locator stops refinement with an actionable reason", async () => {
   const original = parseProbePlan(validPlan(), packet());
   const planner = new LlmProbePlanner(config(), async () =>
-    jsonResponse({ choices: [{ message: { content: JSON.stringify(original) } }] }));
+    jsonResponse({ choices: [{ message: { content: JSON.stringify({ patches: [{ caseId: "save-profile", stepIndex: 1,
+      locator: { by: "label", text: "Profile name", exact: true } }] }) } }] }));
   await assert.rejects(planner.refineLocators(original, locatorFailures()), (error: unknown) => {
-    assert.ok(error instanceof ProbePlannerError);
-    assert.equal(error.category, "refinement");
-    assert.match(error.diagnostics.validationError ?? "", /save-profile step 1/);
+    assert.ok(error instanceof NoLocatorProgressError);
+    assert.match(error.message, /save-profile step 1/);
     return true;
   });
+});
+
+test("Locator patches reject missing, duplicate, unrelated, and full-plan output", async () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const good = { caseId: "save-profile", stepIndex: 1,
+    locator: { by: "role", role: "textbox", name: "Profile name" } };
+  for (const [payload, pattern] of [
+    [{ patches: [] }, /no new locator candidate/],
+    [{ patches: [good, good] }, /duplicates a locator patch/],
+    [{ patches: [{ ...good, caseId: "refresh-profile" }] }, /does not target a failed locator step/],
+    [{ patches: [{ ...good, locator: { by: "css", selector: "#name" } }] }, /must use role, label, or text/],
+    [validPlan(), /unsupported ProbePlan field: packetId/],
+  ] as const) {
+    const planner = new LlmProbePlanner(config(), async () =>
+      jsonResponse({ choices: [{ message: { content: JSON.stringify(payload) } }] }));
+    await assert.rejects(planner.refineLocators(original, locatorFailures()), (error: unknown) => {
+      assert.match(error instanceof ProbePlannerError ? error.diagnostics.validationError ?? "" : String(error), pattern);
+      return true;
+    });
+  }
 });
 
 function locatorFailures(snapshot = '- textbox "Profile name"'): ProbeFailure[] {
