@@ -1,0 +1,275 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: #f6f8fa;
+  color: #1f2328;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  background: #24292f;
+  color: #ffffff;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.btn {
+  display: inline-block;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid rgba(31, 35, 40, 0.15);
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #1f2328;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.btn-primary {
+  background: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #ffffff;
+}
+
+.btn-danger {
+  background: #cf222e;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #ffffff;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.auth-box {
+  max-width: 360px;
+  margin: 0 0 16px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.auth-form .field {
+  margin-bottom: 14px;
+}
+
+.field label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.field input[type='text'],
+.field input[type='password'] {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 14px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.field input[type='text']:focus,
+.field input[type='password']:focus {
+  border-color: #0969da;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);
+}
+
+.checkbox-field .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.field-error,
+.form-error {
+  color: #cf222e;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.success-message {
+  color: #1a7f37;
+  font-size: 14px;
+  font-weight: 600;
+  background: #dafbe1;
+  border: 1px solid rgba(31, 127, 55, 0.4);
+  border-radius: 6px;
+  padding: 10px 14px;
+  max-width: 360px;
+}
+
+.code-note {
+  max-width: 360px;
+}
+
+.verification-code {
+  font-size: 16px;
+  font-weight: 700;
+  background: #eff2f5;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.auth-links {
+  font-size: 14px;
+}
+
+.home-links {
+  display: flex;
+  gap: 16px;
+  font-size: 16px;
+}
+
+.workspace-greeting {
+  font-size: 16px;
+}
+
+/* Settings */
+.settings-nav {
+  max-width: 360px;
+  margin-bottom: 16px;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 12px 0;
+}
+
+.settings-nav a {
+  display: block;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #1f2328;
+}
+
+.settings-nav a:hover {
+  background: #f6f8fa;
+  text-decoration: none;
+}
+
+/* Account menu */
+.account-menu {
+  position: relative;
+}
+
+.account-menu-button {
+  background: #32383f;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.menu-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: #ffffff;
+  color: #1f2328;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(66, 74, 83, 0.2);
+  padding: 8px 0;
+  z-index: 20;
+}
+
+.menu-account {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.menu-item {
+  display: block;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #1f2328;
+}
+
+.menu-item:hover {
+  background: #f6f8fa;
+  text-decoration: none;
+}
+
+/* Dialog */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 35, 40, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 440px;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(66, 74, 83, 0.3);
+  padding: 20px;
+}
+
+.dialog-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.dialog-body {
+  font-size: 14px;
+  color: #57606a;
+  margin: 0 0 16px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
