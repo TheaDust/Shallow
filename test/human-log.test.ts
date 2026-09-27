@@ -44,6 +44,10 @@ test("HumanRunFormatter explains dependency gate savings", () => {
       dependencyStatuses: { A: "failed", B: "inconclusive" } },
   }));
   assert.match(line, /跳过下游实现.*C.*A、B/);
+  assert.match(line, /基础依赖尚无已完成的可运行实现/);
+  assert.match(formatLine(formatter, eventLine("2026-09-26T00:00:00Z", "dependency_gate_provisional", {
+    packetId: "downstream", detail: { requirementIds: ["C"], dependencyIds: ["A"] },
+  })), /前置需求已有可运行检查点.*继续下游实现.*尚未通过独立验收 A/);
 });
 
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {

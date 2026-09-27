@@ -146,7 +146,7 @@ function projectContextSection(context: BuilderProjectContext): string {
           .join("\n")
       : "无",
     "",
-    "已有实现（待独立验收）的直接依赖：",
+    "已有可运行实现的直接依赖：",
     context.satisfiedDependencies.length > 0
       ? context.satisfiedDependencies
           .map(
@@ -156,7 +156,7 @@ function projectContextSection(context: BuilderProjectContext): string {
           .join("\n")
       : "无",
     "",
-    "这些依赖已经被外部控制器接受。可以复用和兼容它们，但不要重新设计或破坏它们。",
+    "这些依赖已有可运行实现，功能仍以独立验收为准。复用现有代码；若阻碍本包需求，可按需求原文修正并在回执说明。",
   ].join("\n");
 }
 

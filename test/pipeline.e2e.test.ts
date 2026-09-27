@@ -40,7 +40,7 @@ test("Pipeline checks module paths before the full atomic audit and keeps verifi
 });
 
 for (const fault of ["schema", "auth", "locator", "browser"] as const) {
-  test(`Judge ${fault} fault retains implemented features and does not request application repair`, async () => {
+  test(`Judge ${fault} fault retains implemented features and permits downstream work`, async () => {
     await withModulePipeline(async f => {
       if (fault === "schema" || fault === "auth") f.deps.planner.plan = async () => {
         throw new ProbePlannerError(fault === "schema" ? "schema" : "transport", "judge failed", { httpStatus: fault === "auth" ? 401 : undefined });
@@ -51,13 +51,15 @@ for (const fault of ["schema", "auth", "locator", "browser"] as const) {
       };
       const summary = await f.run();
       assert.equal(summary.status, "partial");
-      assert.deepEqual(summary.inconclusiveRequirementIds, ["A", "B"]);
-      assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+      assert.deepEqual(summary.inconclusiveRequirementIds, ["A", "B", "C"]);
+      assert.deepEqual(summary.blockedRequirementIds, []);
+      assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+      assert.deepEqual(summary.verifiedRequirementIds, []);
       assert.deepEqual(f.git.restoredShas, []);
-      assert.equal(summary.acceptedSha, "first");
-      assert.equal(f.builder.requests.length, 1);
-      const gate = (await f.events()).find(item => item.type === "dependency_gate_blocked");
-      assert.deepEqual(gate?.detail?.unmetDependencyIds, ["A", "B"]);
+      assert.equal(summary.acceptedSha, "second");
+      assert.equal(f.builder.requests.length, 2);
+      const gate = (await f.events()).find(item => item.type === "dependency_gate_provisional");
+      assert.deepEqual(gate?.detail?.dependencyIds, ["A", "B"]);
     });
   });
 }
@@ -85,16 +87,14 @@ test("Audit replays a business failure in a fresh application before requesting 
   });
 });
 
-test("A non-reproducible foundation failure blocks downstream until it is independently verified", async () => {
+test("A non-reproducible foundation failure leaves downstream implementation eligible", async () => {
   await withModulePipeline(async f => {
     const seen = new Set<string>();
     f.deps.runner.run = async plan => { if (seen.has(plan.packetId)) return pass(plan); seen.add(plan.packetId); return fail(plan); };
     const summary = await f.run();
-    // The final detection pass can verify the retained foundation, but it is too
-    // late to spend a Builder call on a dependency that was uncertain at its gate.
-    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
-    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
-    assert.equal(f.builder.requests.length, 1);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.blockedRequirementIds, []);
+    assert.equal(f.builder.requests.length, 2);
     assert.deepEqual(f.git.restoredShas, []);
   });
 });
@@ -152,7 +152,7 @@ test("A failed background feedback retry gets only one more boundary planning at
   });
 });
 
-test("An independently passed happy path permits downstream implementation while full audit stays inconclusive", async () => {
+test("An independently passed happy path remains inconclusive while downstream implementation proceeds", async () => {
   await withModulePipeline(async f => {
     f.deps.planner.plan = async packet => {
       const plan = testPlan(packet);
@@ -196,17 +196,18 @@ for (const regression of [true, false]) {
       // Module boundary audit uses the repair rounds on the first module;
       // the final audit is detection-only and never launches more repairs.
       if (regression) {
-        // Boundary repair causes regression in packet-b; transitive dependency A
-        // was not verified at the gate, so C is never implemented.
+        // Boundary repair causes regression in packet-b; C can still be built
+        // on the retained runnable checkpoint.
         assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
-        assert.deepEqual(summary.failedRequirementIds, ["B"]);
-        assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+        assert.deepEqual(summary.failedRequirementIds, ["B", "C"]);
+        assert.deepEqual(summary.blockedRequirementIds, []);
+        assert.ok(summary.implementedRequirementIds?.includes("C"));
         assert.equal(summary.status, "partial");
       } else {
         // packet-a always fails regardless of repair state.
-        assert.deepEqual(summary.verifiedRequirementIds, ["B"]);
+        assert.deepEqual(summary.verifiedRequirementIds, ["B", "C"]);
         assert.deepEqual(summary.failedRequirementIds, ["A"]);
-        assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+        assert.deepEqual(summary.blockedRequirementIds, []);
         assert.equal(summary.status, "partial");
       }
     });
@@ -227,12 +228,12 @@ test("A module boundary repair that breaks a verified path is discarded instead 
     const batches = events.filter(item => item.type === "repair_batch_finished");
     assert.equal(batches[0]?.detail?.retained, false);
     assert.match(String(batches[0]?.detail?.reason), /previously verified behavior was lost/);
-    // The regressing boundary repair is never checkpointed, and the dependent
-    // module is not built on the unresolved foundation.
-    assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 1);
-    assert.deepEqual(summary.verifiedRequirementIds, ["A"]);
+    // The regressing boundary repair is never checkpointed; the dependent
+    // module can still use the previous runnable checkpoint.
+    assert.equal(events.filter(item => item.type === "checkpoint_saved").length, 2);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "C"]);
     assert.deepEqual(summary.failedRequirementIds, ["B"]);
-    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+    assert.deepEqual(summary.blockedRequirementIds, []);
     assert.equal(summary.status, "partial");
   });
 });
@@ -604,11 +605,11 @@ test("Folder rollup reflects blocked and failed descendants", async () => {
     // FIRST: A implemented+verified, B implemented but failed audit -> implement completed, test failed.
     assert.deepEqual(sequence("FIRST"),
       ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
-    // SECOND: C depends transitively on failed B, so no Builder call is spent.
+    // SECOND: C uses B's runnable checkpoint and passes its own audit.
     assert.deepEqual(sequence("SECOND"),
-      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
-    // ROOT aggregates the whole tree: the blocked descendant prevents completion.
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:passed"]);
+    // ROOT aggregates the whole tree; B's failed audit keeps its test failed.
     assert.deepEqual(sequence("ROOT"),
-      ["design:running", "design:completed", "implement:running", "implement:failed", "test:failed"]);
+      ["design:running", "design:completed", "implement:running", "implement:completed", "test:failed"]);
   });
 });

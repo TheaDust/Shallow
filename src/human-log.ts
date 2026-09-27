@@ -84,9 +84,9 @@ function describe(type: string, event: RunEvent): string | null {
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "dependency_gate_blocked":
-      return `基础依赖尚未通过独立验收，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未通过依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
+      return `基础依赖尚无已完成的可运行实现，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未完成依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
     case "dependency_gate_provisional":
-      return `前置需求已有独立成功路径，继续下游实现（${packetId}）；尚待完整验收 ${strings(detail?.dependencyIds).join("、")}`;
+      return `前置需求已有可运行检查点，继续下游实现（${packetId}）；尚未通过独立验收 ${strings(detail?.dependencyIds).join("、")}`;
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
     case "gateway_wait":

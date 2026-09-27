@@ -160,25 +160,6 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       ?? state.snapshot.statusByRequirementId[requirementId]
       ?? "todo";
   };
-  const hasIndependentHappyPath = (id: string): boolean => {
-    if (!implemented.has(id)) return false;
-    const auditPacket = auditPacketByRequirementId.get(id);
-    const result = auditPacket && results.get(auditPacket.id);
-    if (result?.status !== "inconclusive" || !result.plan || !result.report || result.repairableLocatorFailure ||
-      result.report.failures.some(failure => !["locator", "runner"].includes(failure.category))) return false;
-    const passedCases = new Set(result.report.passedCases);
-    return result.plan.cases.some(probeCase => {
-      if (!probeCase.requirementIds.includes(id) || probeCase.purpose !== "happy_path" ||
-        !passedCases.has(probeCase.id)) return false;
-      const actionIndex = probeCase.steps.findIndex(step =>
-        ["click", "rightClick", "doubleClick", "press", "fill", "select", "uploadFile", "drag"].includes(step.op));
-      const assertion = probeCase.steps.at(-1);
-      return actionIndex >= 0 && probeCase.steps.length - 1 > actionIndex &&
-        assertion?.op.startsWith("expect") === true &&
-        !(assertion.op === "expectVisible" && assertion.locator.by === "role" &&
-          assertion.locator.role === "main" && !assertion.locator.name);
-    });
-  };
   const dependencyGate = (packet: WorkPacket, moduleId: string): {
     unmet: Array<{ id: string; status: RequirementStatus }>;
     provisional: string[];
@@ -191,16 +172,15 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         const dependencyModuleId = dependency?.folderPath[1] ?? dependency?.id;
         const auditPacket = auditPacketByRequirementId.get(id);
         // Dependencies in the current, not-yet-audited module remain eligible.
-        // Cross-module dependencies and already-decided local dependencies must
-        // independently pass before more code is generated on top of them.
+        // Other dependencies need a runnable checkpoint before downstream work.
         return dependencyModuleId !== moduleId
           || (auditPacket !== undefined && results.has(auditPacket.id))
           || verificationStatus(id) !== "todo";
       })
       .map(id => ({ id, status: verificationStatus(id) }))
       .sort((left, right) => left.id.localeCompare(right.id));
-    return { unmet: decided.filter(item => item.status !== "verified" && !hasIndependentHappyPath(item.id)),
-      provisional: decided.filter(item => item.status !== "verified" && hasIndependentHappyPath(item.id)).map(item => item.id) };
+    return { unmet: decided.filter(item => !implemented.has(item.id)),
+      provisional: decided.filter(item => implemented.has(item.id) && item.status !== "verified").map(item => item.id) };
   };
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
