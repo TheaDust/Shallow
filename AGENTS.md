@@ -93,6 +93,7 @@ src/
     builder-app.ts              父进程持有的开发应用生命周期：串行 start/status/stop，Worker 结束后清理
     pi-app-tool.ts              app 工具：通过 IPC 请求父进程执行平台启动合同
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
+    vision-probe.ts            VisionCapability：一次 1×1 PNG 请求判定网关模型是否接受图片输入，结果按运行缓存
     prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
     prompt.ts                   compileBuilderPrompt / buildBuilderTaskPrompt：系统合同 + 模板填充 + fragments 拼装
                                 + 本包初始数据原文摘录（seedDeclarations 聚合）
@@ -149,6 +150,7 @@ data/official-competition/    初赛题目的需求树（原文、结构化 YAML
 - `SHALLOW_BUILDER_CONTEXT_WINDOW`：主线 Builder 上下文窗口（缺省 256000，允许 131072..1000000）；较小窗口让长工具历史更早压缩，baseline 仍固定使用 1M。
 - `SHALLOW_MEMORY_GATE_MAX_WAIT_MS`：cgroup 内存背压的最长等待毫秒数（缺省 60000；`0` 表示不在候选安装/构建与探针浏览器启动前等待）。等待超时后放行并写 stderr 诊断行。
 - `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。抓捕开关独立于容错：`src/builder/sse-resilience.ts` 始终启用，先于客户端丢弃截断事件并补 `[DONE]`；抓包在容错内层，仍记录网关原始字节。
+- `SHALLOW_REFERENCE_IMAGES`：参考图片是否进入模型上下文，**缺省关闭**。取真值（`1`/`true`/`yes`/`on`）时开启，`PromptBuilder` 在第一次附带前用 `VisionCapability`（`src/builder/vision-probe.ts`）向网关发一个 1×1 PNG 探测请求，单次预探测受 Builder 剩余时间约束：成功响应表示支持，明确图片输入拒绝才关闭附件；429、5xx、超时等不确定结果继续携图，由既有网关恢复与 `imageUnsupported` 回退处理。关闭时 `pi-worker.ts` 连磁盘都不读图。`builder_reference_images` 事件的 `mode` 区分 `disabled`/`unsupported`/`text_fallback`/`attached`/`unavailable`。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
 - `ARCBENCH_TESTS_DIR`（评测由 runner 注入；本地可无）：验收 spec 目录。入口只用于按 `http://127.0.0.1:<port>`/`localhost:<port>` 字面量发现额外端口（排除评测端口），spec 内容不进入 Builder/Judge。缺省再尝试 `/workspace/tests`，都没有则回退 `[3301]`。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：主线和 baseline 的 Python 适配入口读取真实环境。

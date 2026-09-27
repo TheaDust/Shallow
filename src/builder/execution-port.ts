@@ -12,6 +12,10 @@ export interface CodingAgentRequest {
   requirementsDir?: string;
   references?: string[];
   textOnly?: boolean;
+  /** false keeps declared references out of the model input entirely. */
+  attachReferences?: boolean;
+  /** Preflight probe found the model accepts no image input. */
+  visionUnsupported?: boolean;
   /** Override the model context window; omitted runs use the shared default. */
   contextWindow?: number;
 }

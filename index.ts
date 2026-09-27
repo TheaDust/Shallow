@@ -6,6 +6,7 @@ import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { PromptBuilder } from "./src/builder/prompt-builder.js";
+import { VisionCapability } from "./src/builder/vision-probe.js";
 import { PiWorkerClient } from "./src/builder/pi-worker-client.js";
 import { ArcEventSink } from "./src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "./src/cli.js";
@@ -36,6 +37,7 @@ import {
   resolvePlatformExtraPorts,
   resolveSseCaptureDir,
   readGatewayConfig,
+  referenceImagesEnabled,
   type GatewayConfig,
 } from "./src/runtime-config.js";
 
@@ -50,6 +52,8 @@ export interface AgentExecutionContext {
   builderContextWindow: number;
   /** Opt-in raw SSE capture directory for the Pi worker (`SHALLOW_CAPTURE_SSE`). */
   sseCaptureDir?: string | null;
+  /** Whether requirement reference images may enter the model input (`SHALLOW_REFERENCE_IMAGES`). */
+  referenceImages: boolean;
 }
 
 export type AgentExecution = (
@@ -84,6 +88,7 @@ export async function main(
   const probePort = probePortOverride ?? (await pickFreePort([evaluationPort, ...extraPorts]));
   const runDir = parseRunDirOverride(mergedEnv) ?? join(tmpdir(), "shallowcode-runs");
   const sseCaptureDir = resolveSseCaptureDir(mergedEnv, join(runDir, runId, "sse-capture"));
+  const referenceImages = referenceImagesEnabled(mergedEnv);
   const pipelineOptions: PipelineOptions = {
     requirementsFile,
     outputDir: cli.outputDir,
@@ -98,6 +103,7 @@ export async function main(
     modelTimeouts: deriveModelTimeouts(cli.budgetMs),
     builderContextWindow: parseBuilderContextWindow(mergedEnv),
     sseCaptureDir,
+    referenceImages,
   }).catch((error: unknown) => {
     throw new Error(sanitizeDiagnosticText(error instanceof Error ? error.message : String(error), [gateway.apiKey]));
   });
@@ -121,12 +127,13 @@ async function mergeGatewayEnv(
 async function executeProduction(
   context: AgentExecutionContext,
 ): Promise<RunSummary> {
-  const { gateway, pipelineOptions, modelTimeouts, builderContextWindow, sseCaptureDir } = context;
+  const { gateway, pipelineOptions, modelTimeouts, builderContextWindow, sseCaptureDir, referenceImages } = context;
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
   process.stderr.write(`[ShallowCode] 平台额外端口（由验收 spec 发现）：${pipelineOptions.platformContract.extraPorts?.join(", ") || "无"}\n`);
   if (sseCaptureDir) process.stderr.write(`[ShallowCode] SSE 抓包已启用（仅诊断用途）：${sseCaptureDir}\n`);
+  process.stderr.write(`[ShallowCode] 参考图片：${referenceImages ? "已开启（首次附带前预探测模型视觉能力）" : "已关闭"}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
   try {
@@ -134,6 +141,8 @@ async function executeProduction(
       timeoutMs: modelTimeouts.builderTimeoutMs,
       requirementsDir: dirname(pipelineOptions.requirementsFile),
       contextWindow: builderContextWindow,
+      referenceImages,
+      visionProbe: new VisionCapability(gateway),
     });
     const planner = new LlmProbePlanner({
       ...gateway,

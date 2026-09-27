@@ -13,7 +13,8 @@ export interface BuilderResult {
     durationMs: number; cleanupMs: number; toolCalls?: number; compactions?: number; peakRssBytes?: number;
     usage: ExecutionUsage; timing?: ExecutionTiming };
   referenceImages?: {
-    mode: "attached" | "text_fallback" | "unavailable";
+    /** disabled: run switch off; unsupported: preflight probe found no vision. */
+    mode: "attached" | "text_fallback" | "unavailable" | "disabled" | "unsupported";
     attachedCount: number;
     skipped: Array<{ reference: string; reason: string }>;
   };

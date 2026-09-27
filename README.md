@@ -46,7 +46,7 @@ python main.py data/official-competition/hackathon--sheet --output-dir tmp/main 
 
 Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
 
-主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_BUILDER_CONTEXT_WINDOW` 指定主线 Builder 上下文窗口（默认 256000，范围 131072..1000000）；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）。
+主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_BUILDER_CONTEXT_WINDOW` 指定主线 Builder 上下文窗口（默认 256000，范围 131072..1000000）；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）；`SHALLOW_REFERENCE_IMAGES` 开启参考图片进入模型上下文（**默认关闭**，取 `1`/`true`/`yes`/`on` 开启）。
 
 运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
 
@@ -134,13 +134,15 @@ Pi Worker、会话续接、进程组/作业回收、图片回退、网关 SSE �
 
 ### 参考图片
 
-`src/builder/reference-images.ts` 读取当前 packet 原子需求与祖先描述、`visual_reference` 引用的本地 PNG、JPEG、WebP、GIF，优先原子图片，校验需求目录归属、真实路径及文件签名，去重后以 SDK 文件附件发送。每张图片上限 10 MiB，每包合计上限 30 MiB。附件由控制器传入，引用路径相对于需求目录；图片用于补充布局和交互结构，业务规则仍以文字和场景为准。
+参考图片**默认不进入模型上下文**，由 `SHALLOW_REFERENCE_IMAGES` 显式开启。关闭时 `pi-worker.ts` 连磁盘都不读图，Builder 纯按文字与场景工作；启动时 stderr 会打印当前开关状态。
+
+开启后，`src/builder/reference-images.ts` 读取当前 packet 原子需求与祖先描述、`visual_reference` 引用的本地 PNG、JPEG、WebP、GIF，优先原子图片，校验需求目录归属、真实路径及文件签名，去重后以 SDK 文件附件发送。每张图片上限 10 MiB，每包合计上限 30 MiB。附件由控制器传入，引用路径相对于需求目录；图片用于补充布局和交互结构，业务规则仍以文字和场景为准。
+
+**开启时会先做视觉能力预探测。** `src/builder/vision-probe.ts` 的 `VisionCapability` 在第一次附带前向网关发一个 1×1 PNG 请求，最多占本次 Builder 调用剩余时间的十分之一，且单次至多 15 秒。成功响应表示支持；只有错误内容明确指出图片输入不受支持才禁用后续附件。429、5xx、超时及其他不明确响应保留为“未知”，继续携图，由现有网关恢复和携图失败回退处理。预探测只请求一次；实际 Builder 调用使用扣除探测耗时后的剩余额度。
 
 缺失、越界、格式不支持或超限的引用会记录跳过原因，Builder 依据文字继续。读取范围仅限需求目录内的本地文件。
 
-当携图请求返回明确的图片输入不支持错误，且响应中没有工具或已完成步骤的执行证据时，Builder 停止原会话，在同一次尝试的剩余超时额度内新建纯文本会话，最多回退一次。后续 packet 沿用该模型的文本模式；普通调用错误仍进入失败处理。SDK 的图片模态配置用于允许附件传输，实际模型能力由网关响应确认。
-
-`builder_reference_images` 事件记录 `attached / text_fallback / unavailable` 模式、附件数量及跳过原因，写入台账和中文日志。诊断仅保存图片使用状态，图片载荷经模型输入通道传递。
+`builder_reference_images` 事件记录模式、附件数量及跳过原因，写入台账和中文日志：`disabled`（开关关闭）、`unsupported`（预探测判定不支持）、`text_fallback`（事后回退）、`attached`、`unavailable`。诊断仅保存图片使用状态，图片载荷经模型输入通道传递。
 
 ## 独立验收
 

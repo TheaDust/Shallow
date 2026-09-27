@@ -238,6 +238,17 @@ export function resolveSseCaptureDir(
   return resolve(raw);
 }
 
+/**
+ * Reference images are opt-in. Off by default: they add base64 weight to every
+ * turn, and the official run showed the textual requirements already carry the
+ * signal. When enabled, `VisionCapability` probes the gateway once before the
+ * first attached call so a text-only model is detected up front.
+ */
+export function referenceImagesEnabled(env: Record<string, string | undefined>): boolean {
+  const raw = env["SHALLOW_REFERENCE_IMAGES"]?.trim();
+  return raw !== undefined && /^(1|true|yes|on)$/i.test(raw);
+}
+
 export async function pickFreePort(exclude: readonly number[] = []): Promise<number> {
   for (let attempt = 0; ; attempt += 1) {
     const port = await new Promise<number>((resolvePort, reject) => {

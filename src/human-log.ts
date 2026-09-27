@@ -129,6 +129,8 @@ function describe(type: string, event: RunEvent): string | null {
       const mode = pickString(detail, "mode");
       const skipped = Array.isArray(detail?.skipped) ? detail.skipped.length : 0;
       const description = mode === "text_fallback" ? "图片输入不受支持，已回退纯文本"
+        : mode === "unsupported" ? "模型不支持图片输入，预探测已跳过附带"
+        : mode === "disabled" ? "参考图片已按运行开关关闭"
         : mode === "attached" ? `发送 ${pickNumber(detail, "attachedCount") ?? 0} 张参考图片`
         : "参考图片不可用，按文字继续";
       return `${description}（${packetId}）；跳过 ${skipped} 项`;
