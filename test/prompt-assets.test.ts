@@ -113,6 +113,8 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /持续增量扩展/);
   assert.match(loadPrompt("system", "builder-system"), /不为通过当前检查引入一次性变通/);
   assert.match(loadPrompt("system", "builder-system"), /React \+ Vite \+ TypeScript/);
+  assert.match(loadPrompt("system", "builder-system"), /通用最小脚手架/);
+  assert.match(loadPrompt("system", "builder-system"), /不代表任何业务需求已经实现/);
   assert.match(loadPrompt("system", "builder-system"), /hash 路由/);
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);

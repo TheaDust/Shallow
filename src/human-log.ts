@@ -79,7 +79,9 @@ function describe(type: string, event: RunEvent): string | null {
         ? detail.grouping as Record<string, unknown> : undefined;
       const groups = pickNumber(grouping, "packets");
       const contextWindow = pickNumber(detail, "builderContextWindow");
-      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}${contextWindow !== null ? `；Builder 上下文 ${contextWindow}` : ""}${groups !== null ? `；功能组 ${groups}` : ""}` : ""}`;
+      const scaffold = asRecord(detail?.starterScaffold);
+      const scaffoldStatus = scaffold && typeof scaffold.status === "string" ? scaffold.status : null;
+      return `流水线启动${detail ? `；原子需求 ${pickNumber(detail, "requirements") ?? "未知"}；预算 ${detail.totalBudgetMs === 0 ? "不限时" : renderDuration(pickNumber(detail, "totalBudgetMs") ?? 0)}；探针端口 ${pickNumber(detail, "port") ?? "未知"}${pickString(detail, "model") ? `；模型 ${pickString(detail, "model")}` : ""}${contextWindow !== null ? `；Builder 上下文 ${contextWindow}` : ""}${groups !== null ? `；功能组 ${groups}` : ""}${scaffoldStatus ? `；通用脚手架 ${scaffoldStatus}` : ""}` : ""}`;
     }
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;

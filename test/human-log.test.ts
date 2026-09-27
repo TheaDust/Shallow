@@ -46,6 +46,15 @@ test("HumanRunFormatter explains dependency gate savings", () => {
   assert.match(line, /跳过下游实现.*C.*A、B/);
 });
 
+test("HumanRunFormatter records whether the generic starter scaffold was installed", () => {
+  const formatter = new HumanRunFormatter();
+  const line = formatLine(formatter, eventLine("2026-09-27T00:00:00Z", "pipeline_started", {
+    detail: { requirements: 2, totalBudgetMs: 0, port: 43210,
+      starterScaffold: { status: "installed", reason: "empty output", files: ["frontend/package.json"] } },
+  }));
+  assert.match(line, /通用脚手架 installed/);
+});
+
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
   const formatter = new HumanRunFormatter();
   const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {
