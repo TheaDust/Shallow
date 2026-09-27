@@ -15,6 +15,7 @@ import { CandidateRuntime } from "./src/candidate-runtime.js";
 import { GitCliOps } from "./src/git-ops.js";
 import { HumanRunFormatter } from "./src/human-log.js";
 import { ProgressJournal, PROGRESS_DIR_NAME } from "./src/progress-journal.js";
+import { installStarterScaffold } from "./src/starter-scaffold.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "./src/judge/playwright-probe-runner.js";
 import {
@@ -151,6 +152,13 @@ async function executeProduction(
     const runner = new PlaywrightProbeRunner();
     const lifecycle = candidate;
     const git = await GitCliOps.open(pipelineOptions.outputDir);
+    // Git owns rollback from this point onward. Install the generic shell before
+    // runPipeline captures its initial baseline, and never touch an existing app.
+    const starterScaffold = await installStarterScaffold(
+      pipelineOptions.outputDir,
+      pipelineOptions.platformContract,
+    );
+    process.stderr.write(`[ShallowCode] 通用脚手架：${starterScaffold.status}（${starterScaffold.reason}）\n`);
     const finalVerifier = new FinalVerifier(runner, lifecycle, candidate);
     const logSink = createRunLogSink(runLogFile, new ProgressJournal(pipelineOptions.outputDir));
     const projectionWarning = (error: unknown): void => {
@@ -182,6 +190,7 @@ async function executeProduction(
         diagnosticSecrets: [gateway.apiKey],
         runMetadata: { model: gateway.model, builderTimeoutMs: modelTimeouts.builderTimeoutMs,
           builderContextWindow,
+          starterScaffold,
           promptSha256: promptHash.digest("hex"),
           probeSchemaSha256: createHash("sha256").update(JSON.stringify(PROBE_PLAN_JSON_SCHEMA)).digest("hex"),
         },

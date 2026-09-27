@@ -257,6 +257,8 @@ python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 `main.py`（仅用 Python 标准库）只做四件事：解析参数与 `ARCBENCH_*` 回退、准备 Node 运行时（`npm ci` + `npx playwright install chromium`）、以 `npx tsx index.ts` 驱动管线（参数映射为 `--requirements-dir/--output-dir/--budget-ms`，总预算可用 `SHALLOW_BUDGET_MS` 注入）、收尾检查交付目录含 `frontend/` 与 `backend/`。
 
+主线打开一个真正没有应用代码的输出仓库后，会在第一次基线提交前安装同一份任务无关最小脚手架：React + Vite + TypeScript 空白入口、锁定依赖、Vitest/Testing Library 测试环境、同源 JSON 请求与 Hash URL 工具、零依赖 Node HTTP 后端、原子 JSON 文件存储、健康检查、按本次平台合同生成的多端口监听以及生产静态文件服务。通用能力只作为未接线的基础设施；它不包含导航、领域数据、API 路由、视觉组件或任何 GitHub/Sheet 业务行为。已有 `frontend/` + `backend/` 的 evolution 模板以及含其他项目文件的目录均保持原样。Builder 继续负责全部业务代码。脚手架状态会进入 `pipeline_started.starterScaffold`，用于对照首次可运行时间、Builder 耗时和 token，不把提示词字符数当费用。
+
 平台通过交付目录内的文件观察进度，管线运行时写入：
 
 - `<交付目录>/.arc/runner-events.jsonl`：`runner_state` / `requirement_state` / `signal` 事件流（`src/arc-protocol.ts`，时间戳为 UTC `YYYY-MM-DD HH:MM:SS`）
@@ -314,6 +316,7 @@ prompts/
                                seed-data、reference-images* 与 platform-extra-ports 输入说明资产
   fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
   judge/                       Probe Planner 系统提示词（计划生成与 locator 精化，英文）
+scaffold/minimal-web/          真空项目通用外壳：空入口、路由/API/持久化底座、测试环境与零依赖 Node 后端
 src/
   types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
   cli.ts                       严格 CLI 参数解析
@@ -323,6 +326,7 @@ src/
   run-budget.ts                显式正预算的阶段预留与调用剩余额度
   run-state.ts                 验收状态、可运行检查点 SHA、脱敏 ledger 与 logSink
   git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
+  starter-scaffold.ts          仅向没有应用代码的输出仓库安装通用外壳，并写入平台额外端口
   final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke→grader-like 额外端口复验）与 CommandAppLifecycle
   arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
   diagnostics.ts              自由文本凭证脱敏、控制字符清理及长度限制

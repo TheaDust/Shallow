@@ -135,6 +135,7 @@ interface RunEventDetails {
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
     promptSha256?: string; probeSchemaSha256?: string;
+    starterScaffold?: { status: import("./starter-scaffold.js").StarterScaffoldStatus; reason: string; files: string[] };
     grouping?: GroupingStats };
   dependency_gate_blocked: { requirementIds: string[]; unmetDependencyIds: string[];
     dependencyStatuses: Record<string, RequirementStatus> };

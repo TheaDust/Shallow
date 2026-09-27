@@ -35,7 +35,7 @@ baseline/
   system.md                     baseline 系统提示词与平台合同（与 prompts/system/platform-contract.md 措辞对齐，无工作包概念）
 
 prompts/                        Prompt 资产（system/、fragments/ 为 Builder 中文 Markdown；judge/ 为 Judge 中文 Markdown；改文案改这里，不改 TS）
-  system/builder-system.md      Builder 固定系统合同（含全新项目 React+Vite+TypeScript 缺省栈：既有栈一律延续，
+  system/builder-system.md      Builder 固定系统合同（含真空项目通用脚手架交接与 React+Vite+TypeScript 缺省栈：既有栈一律延续，
                                 缺省手写 hash 路由、规模需要时允许 react-router-dom 且必须 HashRouter、
                                 零依赖原生 http 后端、Vitest + @testing-library/react 角色查询测试）
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
@@ -63,6 +63,8 @@ src/
                                 sanitizeDiagnosticText（诊断文本清洗）
   git-ops.ts                    GitCliOps.open（仓库校验 + .gitignore 初始化并提交）、captureAccepted/
                                 restoreAccepted（保留 .arc 的应用回滚）、runGit（单命令 30s 超时）
+  starter-scaffold.ts           真空项目的任务无关最小脚手架安装：只复制 frontend/backend 通用能力与平台外壳，
+                                已有应用或其他项目文件时跳过；额外端口按本次 PlatformContract 写入
   final-verifier.ts             FinalVerifier（install→build→启动→/health readiness→浏览器 smoke→grader-like 复验）与
                                 CommandAppLifecycle（平台合同进程启停）、verifyGraderLikeStart（只设 PORT 时额外端口与未知路径）
   arc-protocol.ts               ArcEventSink：官方 .arc 事件、完整需求树、投影 journal 与幂等重建
@@ -180,6 +182,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
+- 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听和静态文件服务；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或视觉组件。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
 - `GitCliOps.open` 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置脚手架 `.arc/`、`requirements/`；其他残留会被拒绝。目录同时含 `frontend/` 与 `backend/` 时视为 evolution 模板（上一轮产物），整目录被接受：跳过空目录校验，脏的第三方仓库也直接采纳为基线，并用仓库本地的 `.git/info/exclude` 排除 `node_modules/`、`dist/` 等（不改模板自身的 `.gitignore`）。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。

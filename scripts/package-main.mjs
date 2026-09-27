@@ -4,7 +4,7 @@
 // The evaluator only recognizes the root `python main.py ...` entrypoint. The
 // repo-root main.py already is that entrypoint, so it is copied verbatim; it
 // drives `npx tsx index.ts` inside the package root. Everything the runtime
-// import chain needs is included (index.ts, src/, prompts/); dev-only trees
+// import chain needs is included (index.ts, src/, prompts/, scaffold/); dev-only trees
 // (test/, docs/, data/, scripts/, baseline/) and machine-local state (node_modules, .git,
 // .env, __pycache__, runs/, tmp/) are excluded.
 //
@@ -20,7 +20,7 @@ import { zipDirectory } from "./zip-directory.mjs";
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const outputDir = resolve(process.argv[2] ?? join(repoRoot, "dist", "shallowcode-main"));
 
-const INCLUDED_DIRS = ["src", "prompts"];
+const INCLUDED_DIRS = ["src", "prompts", "scaffold"];
 const INCLUDED_FILES = [
   "main.py",
   "index.ts",
@@ -29,7 +29,7 @@ const INCLUDED_FILES = [
   "tsconfig.json",
   "requirements.txt",
 ];
-const SKIP_DIR_NAMES = new Set(["node_modules", "__pycache__", ".git"]);
+const SKIP_DIR_NAMES = new Set(["node_modules", "dist", "build", "__pycache__", ".git"]);
 
 async function main() {
   await rm(outputDir, { recursive: true, force: true });

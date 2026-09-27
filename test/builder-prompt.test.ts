@@ -37,6 +37,8 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /browser 是昂贵工具/);
   assert.match(compiled.systemPrompt, /清晰稳定的模块与接口边界/);
   assert.match(compiled.systemPrompt, /延续既有栈，不得换栈重写/);
+  assert.match(compiled.systemPrompt, /通用最小脚手架只建立 React\/Vite\/TypeScript/);
+  assert.match(compiled.systemPrompt, /不代表任何业务需求已经实现/);
   assert.match(compiled.systemPrompt, /React \+ Vite \+ TypeScript/);
   assert.match(compiled.systemPrompt, /hash 路由/);
   assert.match(compiled.systemPrompt, /必须使用 HashRouter/);
