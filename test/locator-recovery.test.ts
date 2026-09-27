@@ -222,6 +222,39 @@ test("A missing seeded link can be reached through visible search and must pass 
   });
 });
 
+test("Partial search navigation keeps the improved plan and evidence for the next audit", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = "Seed data: repository `acme-docs`. A search result opens the repository. Opening it shows Issues.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const plan: ProbePlan = { packetId: "packet-a", cases: ["list", "detail"].map(id => ({
+      id, requirementIds: ["A"], purpose: "happy_path" as const,
+      expectationBasis: ["Opening it shows Issues."], steps: [
+        { op: "goto" as const, path: "/" },
+        { op: "click" as const, locator: { by: "role" as const, role: "link", name: "acme-docs", exact: true } },
+        { op: "expectVisible" as const, locator: { by: "role" as const, role: "link", name: "Issues" } },
+      ],
+    })) };
+    f.deps.planner = new FakeProbePlanner([plan]);
+    f.deps.runner.run = async current => current.cases[0].steps.length === 3 ? {
+      packetId: current.packetId, verdict: "inconclusive", passedCases: [],
+      failures: current.cases.map(item => ({ caseId: item.id, stepIndex: 1,
+        category: "locator" as const, message: "missing home link", locatorSnapshot: '- searchbox "Search"' })),
+    } : {
+      packetId: current.packetId, verdict: "inconclusive", passedCases: ["list"],
+      failures: [{ caseId: "detail", stepIndex: 4, category: "locator", message: "missing detail control",
+        locatorSnapshot: '- link "Issues"' }],
+    };
+    const result = await audit(f, () => 60_000, { refineLocators: false });
+    assert.equal(result.status, "inconclusive");
+    assert.deepEqual(result.report?.passedCases, ["list"]);
+    assert.equal(result.plan?.cases[0].steps.length, 5);
+    const attempted = (await f.events()).find(event => event.type === "probe_navigation_attempted");
+    assert.equal(attempted?.detail?.improved, true);
+    assert.equal(attempted?.detail?.recovered, false);
+  });
+});
+
 test("Chromium recovers a seeded repository entry through the visible searchbox", async () => {
   await withModulePipeline(async f => {
     const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

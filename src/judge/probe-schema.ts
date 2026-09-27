@@ -22,6 +22,10 @@ export const PRESS_KEYS = [
   "ArrowRight",
   "Home",
   "End",
+  "ControlOrMeta+C",
+  "ControlOrMeta+X",
+  "ControlOrMeta+V",
+  "Shift+F10",
 ] as const;
 
 export const STATE_ATTRIBUTES = ["aria-expanded", "aria-pressed", "aria-selected", "aria-checked"] as const;
@@ -31,10 +35,14 @@ export type ProbePressKey = (typeof PRESS_KEYS)[number];
 export type ProbeStep =
   | { op: "goto"; path: string }
   | { op: "click"; locator: ProbeLocator }
+  | { op: "rightClick"; locator: ProbeLocator }
+  | { op: "drag"; from: ProbeLocator; to: ProbeLocator }
   | { op: "doubleClick"; locator: ProbeLocator }
   | { op: "hover"; locator: ProbeLocator }
   | { op: "press"; locator: ProbeLocator; key: ProbePressKey }
   | { op: "fill"; locator: ProbeLocator; value: string }
+  | { op: "uploadFile"; locator: ProbeLocator; fileName: string; content: string }
+  | { op: "setClipboardText"; text: string }
   | { op: "select"; locator: ProbeLocator; value: string }
   | { op: "expectVisible"; locator: ProbeLocator }
   | { op: "expectHidden"; locator: ProbeLocator }
@@ -123,9 +131,13 @@ const LOCATOR_REF = { $ref: "#/$defs/locator" };
 const STEP_SCHEMA = {
   anyOf: [
     objectSchema({ op: literalSchema("goto"), path: NONEMPTY_STRING_SCHEMA }),
-    ...["click", "expectVisible", "expectHidden", "doubleClick", "hover"].map((op) => objectSchema({
+    ...["click", "rightClick", "expectVisible", "expectHidden", "doubleClick", "hover"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF,
     })),
+    objectSchema({ op: literalSchema("drag"), from: LOCATOR_REF, to: LOCATOR_REF }),
+    objectSchema({ op: literalSchema("uploadFile"), locator: LOCATOR_REF,
+      fileName: NONEMPTY_STRING_SCHEMA, content: STRING_SCHEMA }),
+    objectSchema({ op: literalSchema("setClipboardText"), text: STRING_SCHEMA }),
     objectSchema({ op: literalSchema("expectAttribute"), locator: LOCATOR_REF,
       attribute: { type: "string", enum: [...STATE_ATTRIBUTES] },
       value: { type: "string", enum: ["true", "false", "mixed"] } }),
@@ -188,7 +200,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, doubleClick, hover, press, fill, select, expectVisible, expectHidden, expectAttribute, expectText, expectValue, expectCount, reload, newContext. expectAttribute checks only enumerated ARIA state attributes. press key must be one of: Enter, Tab, Escape, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings, expectText text, and anyOf entries are literal, not regular expressions; expectText matches the full text unless exact: false, and anyOf lists alternative accepted texts; expectCount count 0 asserts absence.",
+              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, expectVisible, expectHidden, expectAttribute, expectText, expectValue, expectCount, reload, newContext. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -238,6 +250,7 @@ export function parseProbePlan(
     for (const probeCase of cases) {
       const scoped = packet.requirements.filter(item => probeCase.requirementIds.includes(item.id));
       const evidence = [...scoped, ...(packet.prerequisites ?? [])];
+      validateScenarioActions(probeCase, evidence);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         if (step.op === "goto" && step.path !== "/") {
@@ -522,6 +535,47 @@ function parseCase(
   return { id, requirementIds, purpose, expectationBasis, steps };
 }
 
+/** Reject plans whose stated setup cannot reach the action being tested. */
+function validateScenarioActions(probeCase: ProbeCase, evidence: readonly AtomicRequirement[]): void {
+  const description = evidence.flatMap(item => [item.text, ...item.scenarios]).join(" ");
+  const fileLabels = [...description.matchAll(/file control labeled\s*[“"']([^”"']+)[”"']/gi)]
+    .map(match => match[1].toLowerCase());
+  const spreadsheet = evidence.some(item => item.product.kind === "spreadsheet");
+  let contextMenuOpen = false;
+  let clipboardReady = false;
+  for (const [index, step] of probeCase.steps.entries()) {
+    const location = `ProbePlan case ${probeCase.id} step ${index}`;
+    if (step.op === "goto" || step.op === "reload" || step.op === "newContext") contextMenuOpen = false;
+    if (step.op === "newContext") clipboardReady = false;
+    if (step.op === "rightClick" || (step.op === "press" && step.key === "Shift+F10")) contextMenuOpen = true;
+    if (step.op === "setClipboardText" || (step.op === "press" &&
+      (step.key === "ControlOrMeta+C" || step.key === "ControlOrMeta+X"))) clipboardReady = true;
+    if (step.op === "fill" && fileLabels.length > 0 && locatorCandidates(step.locator).some(candidate => {
+      const name = candidate.by === "role" ? candidate.name : candidate.by === "label" ? candidate.text : undefined;
+      return name !== undefined && fileLabels.includes(name.toLowerCase());
+    })) {
+      throw new Error(`${location}: file control requires uploadFile, not fill`);
+    }
+    if (step.op === "press" && step.key === "ControlOrMeta+V" && !clipboardReady) {
+      throw new Error(`${location}: paste requires clipboard setup or a prior copy/cut action`);
+    }
+    if (step.op !== "click" || !spreadsheet) continue;
+    const menuCandidate = locatorCandidates(step.locator).find(candidate =>
+      candidate.by === "role" && candidate.role === "menuitem");
+    const name = menuCandidate?.by === "role" ? menuCandidate.name : undefined;
+    const contextAction = name === "Paste" || name === "Copy" || name === "Cut" ||
+      name === "Insert 1 row above" || name === "Insert 1 row below" || name === "Delete row" ||
+      name === "Insert 1 column left" || name === "Insert 1 column right" || name === "Delete column";
+    if (!contextAction) continue;
+    if (!contextMenuOpen) throw new Error(`${location}: ${name} menuitem requires rightClick on its target`);
+    if (name === "Paste" && !clipboardReady) {
+      throw new Error(`${location}: Paste requires clipboard setup or a prior copy/cut action`);
+    }
+    if (name === "Copy" || name === "Cut") clipboardReady = true;
+    contextMenuOpen = false;
+  }
+}
+
 function parseStep(value: unknown, location: string): ProbeStep {
   const step = record(value, location);
   const op = text(step.op, `${location}.op`);
@@ -541,12 +595,32 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return { op, path };
     }
     case "click":
+    case "rightClick":
     case "doubleClick":
     case "hover":
     case "expectHidden":
     case "expectVisible": {
       keys(step, ["op", "locator"], location);
       return { op, locator: parseLocator(step.locator, `${location}.locator`) };
+    }
+    case "drag": {
+      keys(step, ["op", "from", "to"], location);
+      return { op, from: parseLocator(step.from, `${location}.from`),
+        to: parseLocator(step.to, `${location}.to`) };
+    }
+    case "uploadFile": {
+      keys(step, ["op", "locator", "fileName", "content"], location);
+      const fileName = text(step.fileName, `${location}.fileName`);
+      if (fileName.length > 200 || fileName === "." || fileName === ".." || /[\\/\u0000-\u001f\u007f]/.test(fileName)) {
+        throw new Error(`${location}.fileName must be a plain file name`);
+      }
+      const content = dataText(step.content, `${location}.content`);
+      return { op, locator: parseLocator(step.locator, `${location}.locator`), fileName, content };
+    }
+    case "setClipboardText": {
+      keys(step, ["op", "text"], location);
+      const clipboardText = dataText(step.text, `${location}.text`);
+      return { op, text: clipboardText };
     }
     case "expectAttribute": {
       keys(step, ["op", "locator", "attribute", "value"], location);

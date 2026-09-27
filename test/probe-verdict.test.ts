@@ -30,7 +30,7 @@ test("deriveProbeVerdict is inconclusive only for locator-only failures with a s
   );
 });
 
-test("deriveProbeVerdict fails when behavior assertions break the locator-only run", () => {
+test("deriveProbeVerdict separates behavior failures from runner faults", () => {
   assert.equal(
     deriveProbeVerdict([failure({ category: "assertion", message: "wrong text" })]),
     "fail",
@@ -47,8 +47,12 @@ test("deriveProbeVerdict fails when behavior assertions break the locator-only r
       failure({ locatorSnapshot: "- button" }),
       failure({ caseId: "case-2", category: "runner", message: "browser crashed" }),
     ]),
-    "fail",
+    "inconclusive",
   );
+  assert.equal(deriveProbeVerdict([
+    failure({ category: "assertion", message: "wrong value" }),
+    failure({ caseId: "case-2", category: "runner", message: "browser crashed" }),
+  ]), "fail");
 });
 
 test("deriveProbeVerdict stays inconclusive when a refinement is still possible", () => {

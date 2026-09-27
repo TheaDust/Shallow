@@ -71,6 +71,8 @@
 每个 case 以 goto 开始。默认 path 为 `/`，再通过需求证据支持的可见入口导航到所需视图。种子实体存在不等于首页提供指向该实体的链接；只有证据明确说首页显示该链接时，才可在 goto 后直接点击它。场景允许通过搜索结果或列表进入时，先使用证据声明的搜索或列表入口，再点击目标。只有需求或前置需求原文明确给出完整路径时才能使用 deep link，并保留其中的 hash 和 query；禁止根据页面名称、产品习惯或记录 ID 猜测 `/items`、`/account` 等路径，不能假定应用使用服务端路径而非 hash 路由。未声明路径会被程序拒绝。
 用 click 触发需求要求的可见入口点；当操作位于列表项、卡片或行内，且证据暗示次要操作默认收起时，先用 hover 指向承载它的行/卡片 scope 使控件显现，再 click，必要时用 doubleClick。用 fill 和 select 填入已声明的有效数据；仅当场景要求键盘提交时才用 press Enter，不要在 fill 后附加 Enter 再点提交按钮。用 reload 验证状态在页面刷新后存活，仅在切换到不同 actor 或 session 时使用 newContext。
 
+原生文件控件使用 `uploadFile`，提供 `locator`、纯文件名 `fileName` 和内联 UTF-8 `content`；不得对文件控件使用 fill，也不得猜测或读取 `fixtures/...` 路径。CSV 内容只从需求给出的格式与值构造，并在同一 case 内断言实际导入结果。网格右键菜单先对行号、列头或单元格使用 `rightClick`，再点击菜单项；矩形选区用 `drag` 的 `from`/`to` 可访问 locator。外部粘贴先用 `setClipboardText` 设置明确的文本，再用右键菜单 Paste 或 `press` 的 `ControlOrMeta+V`；内部复制/剪切先选择源区域并执行 Copy/Cut，随后选择目标再粘贴。`press` 还支持 `ControlOrMeta+C`、`ControlOrMeta+X` 和 `Shift+F10`。每个 case 自行建立这些前置条件，不能从别的 case 继承浏览器剪贴板或菜单状态。确认对话框须执行需求声明的确认按钮，才能把动作当作已完成。
+
 ## 断言模式
 expectText 匹配完整的可见文本，除非 exact: false（此时匹配子串）；用简短稳定的子串加 exact: false 断言消息。当证据为同一条消息声明了多种措辞时，用 expectText 的 anyOf 逐字列出这些候选；绝不臆造替代措辞。用 expectValue 断言输入状态，用 count 为 0 的 expectCount 断言不存在，例如没有已登录 session 或没有已创建的记录。对于被拒绝的操作，若需求同时规定错误反馈和成功效果不存在，在 steps 与终末 assertion 中分别检查。绝不臆造证据未声明的 operation、locator 或行为。
 

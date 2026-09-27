@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { test } from "node:test";
 
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
@@ -89,6 +90,50 @@ test("Playwright Probe Runner executes press, doubleClick, and hover actions in 
     assert.deepEqual(report.passedCases, ["keyboard-and-pointer"]);
   } finally {
     await server.stop();
+  }
+});
+
+test("Playwright Probe Runner executes file upload, clipboard setup, right click, and drag", async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(`<label for="csv">CSV file</label><input id="csv" type="file" onchange="this.files[0].text().then(text => document.querySelector('[role=status]').textContent = this.files[0].name + ':' + text)">
+      <div role="rowheader" aria-label="2" oncontextmenu="event.preventDefault(); document.querySelector('[role=menuitem]').hidden = false">2</div>
+      <button role="menuitem" hidden onclick="document.querySelector('[role=status]').textContent = 'row added'">Insert 1 row above</button>
+      <button onclick="navigator.clipboard.readText().then(text => document.querySelector('[role=status]').textContent = text)">Read clipboard</button>
+      <div role="gridcell" aria-label="A1" draggable="true">A1</div>
+      <div role="gridcell" aria-label="B2" ondragover="event.preventDefault()" ondrop="event.preventDefault(); document.querySelector('[role=status]').textContent = 'dragged'">B2</div>
+      <output role="status"></output>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const run = (plan: ProbePlan) => new PlaywrightProbeRunner().run(plan, {
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 2_000, caseTimeoutMs: 15_000,
+    });
+    const plan: ProbePlan = { packetId: "sheet-actions", cases: [{ id: "actions", requirementIds: ["S"],
+      purpose: "happy_path", expectationBasis: ["fixture"], steps: [
+        { op: "goto", path: "/" },
+        { op: "uploadFile", locator: { by: "label", text: "CSV file" }, fileName: "data.csv", content: "East,1200" },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "data.csv:East,1200" },
+        { op: "rightClick", locator: { by: "role", role: "rowheader", name: "2" } },
+        { op: "click", locator: { by: "role", role: "menuitem", name: "Insert 1 row above" } },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "row added" },
+        { op: "setClipboardText", text: "North\t800" },
+        { op: "click", locator: { by: "role", role: "button", name: "Read clipboard" } },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "North\t800" },
+        { op: "drag", from: { by: "role", role: "gridcell", name: "A1" },
+          to: { by: "role", role: "gridcell", name: "B2" } },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "dragged" },
+      ] }] };
+    assert.equal((await run(plan)).verdict, "pass");
+    plan.cases[0].steps = [{ op: "goto", path: "/" },
+      { op: "fill", locator: { by: "label", text: "CSV file" }, value: "fixtures/data.csv" }];
+    const invalid = await run(plan);
+    assert.equal(invalid.verdict, "inconclusive");
+    assert.equal(invalid.failures[0].category, "runner");
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
 

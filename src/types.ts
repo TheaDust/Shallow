@@ -138,6 +138,7 @@ interface RunEventDetails {
     grouping?: GroupingStats };
   dependency_gate_blocked: { requirementIds: string[]; unmetDependencyIds: string[];
     dependencyStatuses: Record<string, RequirementStatus> };
+  dependency_gate_provisional: { requirementIds: string[]; dependencyIds: string[] };
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;
@@ -153,7 +154,7 @@ interface RunEventDetails {
   probe_finished: { verdict: ShadowReport["verdict"]; refined?: boolean; passed?: number; failed?: number;
     durationMs?: number; categories?: ProbeFailure["category"][]; evidenceId?: string; candidate?: CandidateEvidence };
   probe_refined: { plan?: ProbePlan; refinementAttempt?: number; beforePlanSha256?: string; planSha256?: string };
-  probe_navigation_attempted: { recovered: boolean; beforePlanSha256: string; planSha256: string };
+  probe_navigation_attempted: { recovered: boolean; improved?: boolean; beforePlanSha256: string; planSha256: string };
   probe_refinement_failed: DiagnosticDetail & { refinementAttempt?: number; planSha256?: string };
   probe_review_started: { cases: number; failed: number };
   probe_reviewed: { verdict: "sound" | "corrected"; rationale?: string;

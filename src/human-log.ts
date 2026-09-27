@@ -85,6 +85,8 @@ function describe(type: string, event: RunEvent): string | null {
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "dependency_gate_blocked":
       return `基础依赖尚未通过独立验收，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未通过依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
+    case "dependency_gate_provisional":
+      return `前置需求已有独立成功路径，继续下游实现（${packetId}）；尚待完整验收 ${strings(detail?.dependencyIds).join("、")}`;
     case "builder_started":
       return `Builder 开始编写代码（${packetId}）`;
     case "gateway_wait":
@@ -146,7 +148,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "probe_refined":
       return `定位器已精化，重跑探针（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}`;
     case "probe_navigation_attempted":
-      return `首页搜索导航复查${detail?.recovered ? "通过，待新实例确认" : "未通过"}（${packetId}）`;
+      return `首页搜索导航复查${detail?.recovered ? "通过，待新实例确认" : detail?.improved ? "部分路径通过，继续检查" : "未通过"}（${packetId}）`;
     case "probe_refinement_failed":
       return `定位器精化失败（${packetId}）${detail?.refinementAttempt ? `；定位恢复第 ${detail.refinementAttempt}/2 轮` : ""}${plannerFailureText(detail)}`;
     case "probe_review_started":

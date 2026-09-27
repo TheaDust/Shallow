@@ -158,9 +158,31 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       ?? state.snapshot.statusByRequirementId[requirementId]
       ?? "todo";
   };
-  const unmetVerifiedDependencies = (packet: WorkPacket, moduleId: string): Array<{ id: string; status: RequirementStatus }> => {
+  const hasIndependentHappyPath = (id: string): boolean => {
+    if (!implemented.has(id)) return false;
+    const auditPacket = auditPacketByRequirementId.get(id);
+    const result = auditPacket && results.get(auditPacket.id);
+    if (result?.status !== "inconclusive" || !result.plan || !result.report || result.repairableLocatorFailure ||
+      result.report.failures.some(failure => !["locator", "runner"].includes(failure.category))) return false;
+    const passedCases = new Set(result.report.passedCases);
+    return result.plan.cases.some(probeCase => {
+      if (!probeCase.requirementIds.includes(id) || probeCase.purpose !== "happy_path" ||
+        !passedCases.has(probeCase.id)) return false;
+      const actionIndex = probeCase.steps.findIndex(step =>
+        ["click", "rightClick", "doubleClick", "press", "fill", "select", "uploadFile", "drag"].includes(step.op));
+      const assertion = probeCase.steps.at(-1);
+      return actionIndex >= 0 && probeCase.steps.length - 1 > actionIndex &&
+        assertion?.op.startsWith("expect") === true &&
+        !(assertion.op === "expectVisible" && assertion.locator.by === "role" &&
+          assertion.locator.role === "main" && !assertion.locator.name);
+    });
+  };
+  const dependencyGate = (packet: WorkPacket, moduleId: string): {
+    unmet: Array<{ id: string; status: RequirementStatus }>;
+    provisional: string[];
+  } => {
     const packetIds = new Set(packet.requirementIds);
-    return [...dependencyClosure(packet.requirementIds)]
+    const decided = [...dependencyClosure(packet.requirementIds)]
       .filter(id => !packetIds.has(id))
       .filter(id => {
         const dependency = requirementById.get(id);
@@ -174,8 +196,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           || verificationStatus(id) !== "todo";
       })
       .map(id => ({ id, status: verificationStatus(id) }))
-      .filter(item => item.status !== "verified")
       .sort((left, right) => left.id.localeCompare(right.id));
+    return { unmet: decided.filter(item => item.status !== "verified" && !hasIndependentHappyPath(item.id)),
+      provisional: decided.filter(item => item.status !== "verified" && hasIndependentHappyPath(item.id)).map(item => item.id) };
   };
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
@@ -502,7 +525,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
         await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
       }
-      const unmetDependencies = unmetVerifiedDependencies(packet, currentModuleId);
+      const { unmet: unmetDependencies, provisional: provisionalDependencies } = dependencyGate(packet, currentModuleId);
       if (unmetDependencies.length > 0) {
         state.markRequirements(packet.requirementIds, "blocked");
         await state.record({ at: now(), type: "dependency_gate_blocked", packetId: packet.id,
@@ -514,6 +537,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         }
         previousModuleId = currentModuleId;
         continue;
+      }
+      if (provisionalDependencies.length > 0) {
+        await state.record({ at: now(), type: "dependency_gate_provisional", packetId: packet.id,
+          detail: { requirementIds: packet.requirementIds, dependencyIds: provisionalDependencies } });
       }
       // Spawn plan generation in parallel with Builder execution.
       // The corresponding audit packets get their plans pre-computed.

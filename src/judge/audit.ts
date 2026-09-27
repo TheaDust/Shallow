@@ -243,11 +243,13 @@ async function runShadowProbes(
     const searchPlan = remaining() > 0 ? rootSearchNavigationPlan(packet, currentPlan, report) : undefined;
     if (searchPlan) {
       const beforePlan = currentPlan;
+      const previousReport = report;
       currentPlan = searchPlan;
       const searched = await run();
-      navigationRecovered = searched.verdict === "pass";
+      navigationRecovered = searched.passedCases.length > previousReport.passedCases.length;
       await state.record({ at: now(), type: "probe_navigation_attempted", packetId: packet.id,
-        detail: { recovered: navigationRecovered, beforePlanSha256: probePlanSha256(beforePlan),
+        detail: { recovered: searched.verdict === "pass", improved: navigationRecovered,
+          beforePlanSha256: probePlanSha256(beforePlan),
           planSha256: probePlanSha256(searchPlan) } });
       if (navigationRecovered) report = searched;
       else return { source: "probe", report, plan: beforePlan };
@@ -258,9 +260,12 @@ async function runShadowProbes(
     const anchoredNames = groundedLocatorAnchors(plan, packet);
 
     let feedback: ProbePlannerFeedback | undefined;
+    const refinableFailures = () => report.failures.filter(failure => failure.category === "locator" &&
+      failure.locatorSnapshot &&
+      "locator" in (currentPlan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex] ?? {}));
     while (policy.refineLocators &&
       report.verdict !== "pass" &&
-      report.failures.some((failure) => failure.locatorSnapshot) &&
+      refinableFailures().length > 0 &&
       recovery.locatorRefinements < MAX_LOCATOR_REFINEMENTS &&
       remaining() > 0) {
       const refinementAttempt = ++recovery.locatorRefinements;
@@ -269,10 +274,10 @@ async function runShadowProbes(
       try {
         // Pass a copy so a planner implementation cannot mutate the behavior being checked.
         refined = parseProbePlan(await deps.planner.refineLocators(
-          structuredClone(currentPlan), structuredClone(report.failures.filter(failure => failure.category === "locator")), feedback,
+          structuredClone(currentPlan), structuredClone(refinableFailures()), feedback,
           { timeoutMs: Math.max(1, remaining()), anchoredNames },
         ));
-        assertLocatorOnlyRefinement(currentPlan, refined, report.failures.filter(failure => failure.category === "locator"));
+        assertLocatorOnlyRefinement(currentPlan, refined, refinableFailures());
         // Keep anchors from the original plan across successive refinements.
         assertLocatorOnlyRefinement(plan, refined, [], packet);
       } catch (error) {

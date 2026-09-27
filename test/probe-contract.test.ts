@@ -50,6 +50,44 @@ test("Root product contract can ground a probe expectation", () => {
   assert.doesNotThrow(() => parseProbePlan(grounded, input));
 });
 
+test("Spreadsheet plans require real file, menu, and clipboard setup", () => {
+  const input = packet('A file control labeled "CSV file" imports CSV. The grid context menu provides "Paste".');
+  input.requirements[0].product.kind = "spreadsheet";
+  const csv = plan();
+  csv.cases[0].expectationBasis = ["A file control labeled"];
+  csv.cases[0].steps = [
+    { op: "goto", path: "/" },
+    { op: "fill", locator: { by: "label", text: "CSV file" }, value: "fixtures/data.csv" },
+    { op: "expectVisible", locator: { by: "role", role: "main" } },
+  ];
+  assert.throws(() => parseProbePlan(csv, input), /requires uploadFile/);
+  csv.cases[0].steps[1] = { op: "uploadFile", locator: { by: "label", text: "CSV file" },
+    fileName: "data.csv", content: "Name,Value\nEast,1200" };
+  assert.doesNotThrow(() => parseProbePlan(csv, input));
+  csv.cases[0].steps[1] = { op: "uploadFile", locator: { by: "label", text: "CSV file" },
+    fileName: "fixtures/data.csv", content: "Name,Value" };
+  assert.throws(() => parseProbePlan(csv, input), /plain file name/);
+
+  const paste = plan();
+  paste.cases[0].expectationBasis = ["The grid context menu provides"];
+  paste.cases[0].steps = [
+    { op: "goto", path: "/" },
+    { op: "click", locator: { by: "role", role: "menuitem", name: "Paste" } },
+    { op: "expectVisible", locator: { by: "role", role: "main" } },
+  ];
+  assert.throws(() => parseProbePlan(paste, input), /requires rightClick/);
+  paste.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Paste",
+    fallbacks: [{ by: "role", role: "menuitem", name: "Paste" }] } };
+  assert.throws(() => parseProbePlan(paste, input), /requires rightClick/);
+  paste.cases[0].steps.splice(1, 0, { op: "rightClick", locator: { by: "role", role: "gridcell", name: "D1" } });
+  assert.throws(() => parseProbePlan(paste, input), /requires clipboard setup/);
+  paste.cases[0].steps.splice(1, 0, { op: "setClipboardText", text: "East\t1200" });
+  assert.doesNotThrow(() => parseProbePlan(paste, input));
+  paste.cases[0].steps.splice(2, 0, { op: "drag", from: { by: "role", role: "gridcell", name: "A1" },
+    to: { by: "role", role: "gridcell", name: "B2" } });
+  assert.doesNotThrow(() => parseProbePlan(paste, input));
+});
+
 test("Refinement can change rendering but cannot replace a declared action with an error or unrelated control", () => {
   const original = plan();
   const target = [{ caseId: "publish", stepIndex: 1 }];

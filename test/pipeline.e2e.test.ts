@@ -99,6 +99,38 @@ test("A non-reproducible foundation failure blocks downstream until it is indepe
   });
 });
 
+test("An independently passed happy path permits downstream implementation while full audit stays inconclusive", async () => {
+  await withModulePipeline(async f => {
+    f.deps.planner.plan = async packet => {
+      const plan = testPlan(packet);
+      if (packet.requirementIds[0] !== "C") {
+        plan.cases[0].steps.splice(1, 0,
+          { op: "click", locator: { by: "role", role: "button", name: "Open workspace" } });
+        plan.cases[0].steps[2] = { op: "expectVisible", locator: { by: "role", role: "status", name: "Workspace ready" } };
+        plan.cases.push({ id: `edge-${packet.requirementIds[0]}`, requirementIds: packet.requirementIds,
+          purpose: "negative", expectationBasis: [packet.requirements[0].text], steps: [
+            { op: "goto", path: "/" },
+            { op: "click", locator: { by: "role", role: "button", name: "Missing detail" } },
+            { op: "expectVisible", locator: { by: "role", role: "main" } },
+          ] });
+      }
+      return plan;
+    };
+    f.deps.runner.run = async plan => plan.packetId === "packet-c" ? pass(plan) : {
+      packetId: plan.packetId, verdict: "inconclusive", passedCases: [plan.cases[0].id],
+      failures: [{ caseId: plan.cases[1].id, stepIndex: 1, category: "locator",
+        message: "missing edge control", locatorSnapshot: '- main "Workspace"' }],
+    };
+    const summary = await f.run();
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.blockedRequirementIds, []);
+    assert.deepEqual(summary.verifiedRequirementIds, ["C"]);
+    assert.equal(f.builder.requests.length, 2);
+    const gate = (await f.events()).find(item => item.type === "dependency_gate_provisional");
+    assert.deepEqual(gate?.detail?.dependencyIds, ["A", "B"]);
+  });
+});
+
 for (const regression of [true, false]) {
   test(`Unhelpful repair restores the runnable checkpoint: regression=${regression}`, async () => {
     await withModulePipeline(async f => {

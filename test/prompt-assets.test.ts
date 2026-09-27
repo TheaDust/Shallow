@@ -137,6 +137,8 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
   assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
+  assert.match(implement, /严格控制单文件规模/);
+  assert.match(implement, /约 1,000 行/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));

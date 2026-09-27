@@ -43,6 +43,8 @@ export function deriveProbeVerdict(
   failures: ProbeFailure[],
 ): ShadowReport["verdict"] {
   if (failures.length === 0) return "pass";
+  if (failures.some(failure => ["assertion", "navigation", "timeout"].includes(failure.category))) return "fail";
+  if (failures.some(failure => failure.category === "runner")) return "inconclusive";
   const locatorOnly = failures.every((failure) => failure.category === "locator");
   const hasSnapshot = failures.some(
     (failure) => failure.locatorSnapshot !== undefined,
@@ -187,6 +189,25 @@ async function executeStep(
       throw new ProbeExecutionError("navigation", compactError(error));
     }
   }
+  if (step.op === "setClipboardText") {
+    try {
+      await session.context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await session.page.evaluate(value => navigator.clipboard.writeText(value), step.text);
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("runner", `Clipboard setup failed: ${compactError(error)}`);
+    }
+  }
+  if (step.op === "drag") {
+    const from = await resolveLocator(session, { op: "click", locator: step.from }, timeoutMs);
+    const to = await resolveLocator(session, { op: "click", locator: step.to }, timeoutMs);
+    try {
+      await from.dragTo(to, { timeout: timeoutMs });
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("timeout", compactError(error));
+    }
+  }
 
   const locator = await resolveLocator(session, step, timeoutMs);
 
@@ -194,6 +215,9 @@ async function executeStep(
     switch (step.op) {
       case "click":
         await locator.click({ timeout: timeoutMs });
+        break;
+      case "rightClick":
+        await locator.click({ button: "right", timeout: timeoutMs });
         break;
       case "doubleClick":
         await locator.dblclick({ timeout: timeoutMs });
@@ -206,6 +230,11 @@ async function executeStep(
         break;
       case "fill":
         await locator.fill(step.value, { timeout: timeoutMs });
+        break;
+      case "uploadFile":
+        await locator.setInputFiles({ name: step.fileName,
+          mimeType: step.fileName.toLowerCase().endsWith(".csv") ? "text/csv" : "text/plain",
+          buffer: Buffer.from(step.content, "utf8") }, { timeout: timeoutMs });
         break;
       case "select":
         await locator.selectOption(step.value, { timeout: timeoutMs });
@@ -235,7 +264,8 @@ async function executeStep(
     }
   } catch (error) {
     const assertion = step.op.startsWith("expect");
-    throw new ProbeExecutionError(assertion ? "assertion" : "timeout", compactError(error));
+    const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(compactError(error));
+    throw new ProbeExecutionError(invalidProbeOperation ? "runner" : assertion ? "assertion" : "timeout", compactError(error));
   }
   return session;
 }

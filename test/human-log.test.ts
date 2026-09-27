@@ -114,6 +114,9 @@ test("HumanRunFormatter identifies both locator recovery rounds", () => {
   assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "probe_navigation_attempted", {
     packetId: "p", detail: { recovered: true },
   })), /首页搜索导航复查通过，待新实例确认/);
+  assert.match(formatLine(formatter, eventLine("2026-09-13T00:00:00Z", "probe_navigation_attempted", {
+    packetId: "p", detail: { recovered: false, improved: true },
+  })), /部分路径通过，继续检查/);
 });
 
 test("HumanRunFormatter renders a happy path in Chinese with elapsed time", () => {
