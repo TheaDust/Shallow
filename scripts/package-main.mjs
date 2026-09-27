@@ -29,7 +29,7 @@ const INCLUDED_FILES = [
   "tsconfig.json",
   "requirements.txt",
 ];
-const SKIP_DIR_NAMES = new Set(["node_modules", "__pycache__", ".git"]);
+const SKIP_DIR_NAMES = new Set(["node_modules", "dist", "build", "__pycache__", ".git"]);
 
 async function main() {
   await rm(outputDir, { recursive: true, force: true });

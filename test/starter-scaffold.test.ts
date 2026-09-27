@@ -31,15 +31,21 @@ test("starter scaffold installs the generic platform shell into metadata-only ou
 
     assert.equal(result.status, "installed");
     assert.ok(result.files.includes("frontend/package-lock.json"));
+    assert.ok(result.files.includes("frontend/src/lib/hash-route.ts"));
+    assert.ok(result.files.includes("frontend/src/lib/api.ts"));
     assert.ok(result.files.includes("backend/src/server.mjs"));
+    assert.ok(result.files.includes("backend/src/lib/json-store.mjs"));
     assert.deepEqual(JSON.parse(await readFile(join(directory, "backend/src/platform-ports.json"), "utf8")), [3301, 4312]);
     const frontend = await readFile(join(directory, "frontend/src/App.tsx"), "utf8");
     const backend = await readFile(join(directory, "backend/src/server.mjs"), "utf8");
+    const store = await readFile(join(directory, "backend/src/lib/json-store.mjs"), "utf8");
     assert.match(frontend, /<main>/);
-    assert.doesNotMatch(`${frontend}\n${backend}`, /github|spreadsheet|repository|workbook/i);
+    assert.doesNotMatch(`${frontend}\n${backend}\n${store}`, /github|spreadsheet|repository|workbook/i);
     assert.match(backend, /\/api\/health/);
     assert.match(backend, /ARC_EXTRA_PORTS/);
     assert.match(backend, /frontend\/dist/);
+    await assert.rejects(access(join(directory, "frontend", "node_modules")));
+    await assert.rejects(access(join(directory, "frontend", "dist")));
   });
 });
 

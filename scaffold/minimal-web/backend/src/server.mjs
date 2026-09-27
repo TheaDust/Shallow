@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { sendJson } from "./lib/http.mjs";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const staticRoot = resolve(here, "../../frontend/dist");
 const extraPorts = JSON.parse(await readFile(join(here, "platform-ports.json"), "utf8"));
@@ -13,11 +15,6 @@ const contentTypes = new Map([
   [".json", "application/json; charset=utf-8"],
   [".svg", "image/svg+xml"],
 ]);
-
-function sendJson(response, status, body) {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  response.end(JSON.stringify(body));
-}
 
 async function handler(request, response) {
   try {

@@ -1,6 +1,6 @@
 import { cp, readdir, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import type { PlatformContract } from "./types.js";
 
@@ -22,10 +22,12 @@ const EMPTY_OUTPUT_METADATA = new Set([
   "requirements",
   "shallow-progress",
 ]);
+const SCAFFOLD_RUNTIME_ARTIFACTS = new Set(["node_modules", "dist", "build"]);
 
 /**
- * Installs only the task-neutral platform shell. Business navigation, domain
- * data, visual components and requirement behavior remain Builder-owned.
+ * Installs only the task-neutral platform shell and unconnected infrastructure
+ * helpers. Business navigation, API routes, domain data, visual components and
+ * requirement behavior remain Builder-owned.
  */
 export async function installStarterScaffold(
   outputDir: string,
@@ -61,11 +63,13 @@ export async function installStarterScaffold(
     recursive: true,
     errorOnExist: true,
     force: false,
+    filter: source => !SCAFFOLD_RUNTIME_ARTIFACTS.has(basename(source)),
   });
   await cp(join(assetRoot, "backend"), join(root, "backend"), {
     recursive: true,
     errorOnExist: true,
     force: false,
+    filter: source => !SCAFFOLD_RUNTIME_ARTIFACTS.has(basename(source)),
   });
   await writeFile(
     join(root, "backend", "src", "platform-ports.json"),
@@ -75,7 +79,7 @@ export async function installStarterScaffold(
   const files = await listFiles(root, ["frontend", "backend"]);
   return {
     status: "installed",
-    reason: "installed task-neutral React/Vite/TypeScript and Node platform shell",
+    reason: "installed task-neutral web capability and platform shell",
     files,
   };
 }
