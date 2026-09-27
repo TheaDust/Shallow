@@ -246,6 +246,37 @@ test("The same plan, failed step, and page snapshot do not repeat a no-progress 
   });
 });
 
+test("A partial locator refinement preserves the newly passing case", async () => {
+  await withModulePipeline(async f => {
+    const original = homePlan();
+    original.cases = [
+      { ...structuredClone(original.cases[0]), id: "primary" },
+      { ...structuredClone(original.cases[0]), id: "secondary" },
+    ];
+    const refined = structuredClone(original);
+    refined.cases[0].steps[1] = { op: "expectVisible",
+      locator: { by: "role", role: "button", name: "Home", exact: true } };
+    const planner = new FakeProbePlanner([original, refined, refined]);
+    f.deps.planner = planner;
+    let runs = 0;
+    const failure = (caseId: string) => ({ caseId, stepIndex: 1, category: "locator" as const,
+      message: "missing locator", locatorSnapshot: '- button "Home"' });
+    f.deps.runner.run = async plan => {
+      runs++;
+      return { packetId: plan.packetId, verdict: "inconclusive" as const,
+        passedCases: runs === 1 ? [] : ["primary"],
+        failures: runs === 1 ? [failure("primary"), failure("secondary")] : [failure("secondary")] };
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.deepEqual(result.report?.passedCases, ["primary"]);
+    assert.deepEqual(result.plan?.cases[0].steps[1], refined.cases[0].steps[1]);
+    assert.deepEqual(result.plan?.cases[1].steps[1], original.cases[1].steps[1]);
+    assert.equal(runs, 2);
+    assert.equal(planner.refinements.length, 2);
+  });
+});
+
 test("Partial search navigation keeps the improved plan and evidence for the next audit", async () => {
   await withModulePipeline(async f => {
     const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

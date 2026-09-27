@@ -227,7 +227,7 @@ export const PROBE_REFINEMENT_JSON_SCHEMA = {
 
 export class NoLocatorProgressError extends Error {}
 
-/** Apply only failed-step locator patches; all other probe behavior remains controller-owned. */
+/** Apply valid failed-step locator patches; unresolved steps keep their original locators. */
 export function applyLocatorPatches(original: ProbePlan, failures: readonly Pick<ProbeFailure, "caseId" | "stepIndex">[],
   value: unknown): ProbePlan {
   const response = record(value, "ProbeRefinement");
@@ -255,7 +255,6 @@ export function applyLocatorPatches(original: ProbePlan, failures: readonly Pick
     if (!step || !("locator" in step)) throw new Error(`${location} target has no locator`);
     step.locator = parseLocator(patch.locator, `${location}.locator`);
   }
-  if (seen.size !== targets.size) throw new Error("ProbeRefinement must patch every failed locator step");
   const parsed = parseProbePlan(refined);
   assertLocatorOnlyRefinement(original, parsed, failures);
   return parsed;
@@ -408,6 +407,7 @@ export function assertLocatorOnlyRefinement(
     }
   }
 
+  let improved = false;
   for (const failure of failures) {
     const before = original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex];
     const after = refined.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex];
@@ -415,9 +415,11 @@ export function assertLocatorOnlyRefinement(
       throw new Error(`Refinement failure target ${failure.caseId} step ${failure.stepIndex} has no locator`);
     }
     const exhausted = new Set(locatorCandidates(before.locator).map(locatorKey));
-    if (!locatorCandidates(after.locator).some((candidate) => !exhausted.has(locatorKey(candidate)))) {
-      throw new NoLocatorProgressError(`Refinement must introduce a new locator candidate for failed case ${failure.caseId} step ${failure.stepIndex}; unchanged, reordered, or equivalent candidates were already exhausted`);
-    }
+    if (locatorCandidates(after.locator).some((candidate) => !exhausted.has(locatorKey(candidate)))) improved = true;
+  }
+  if (failures.length > 0 && !improved) {
+    const targets = failures.map(item => `${item.caseId} step ${item.stepIndex}`).join(", ");
+    throw new NoLocatorProgressError(`Refinement must introduce a new locator candidate for at least one failed step (${targets}); unchanged, reordered, or equivalent candidates were already exhausted`);
   }
 }
 

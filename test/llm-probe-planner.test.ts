@@ -80,7 +80,7 @@ test("Inline seed prose alone does not authorize a bare text locator", () => {
   assert.doesNotThrow(() => parseProbePlan(plan, input));
 });
 
-test("Refinement rejects unchanged, reordered and equivalent candidates at every failed step", () => {
+test("Refinement rejects unchanged, reordered and equivalent candidates when no failed step improves", () => {
   const original = parseProbePlan(validPlan(), packet());
   const fill = original.cases[0].steps[1];
   if (fill.op !== "fill") assert.fail("expected fill");
@@ -96,9 +96,9 @@ test("Refinement rejects unchanged, reordered and equivalent candidates at every
   const changed = structuredClone(original);
   changed.cases[0].steps[1] = { ...fill, locator: { by: "role", role: "textbox", name: "Profile name" } };
   assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, changed, locatorFailures()));
-  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, changed, [
     ...locatorFailures(), { caseId: "refresh-profile", stepIndex: 2 },
-  ]), /refresh-profile step 2/);
+  ]));
 });
 
 test("Probe plans support empty inputs and empty-value assertions with strict-schema null optionals", () => {
@@ -682,7 +682,7 @@ test("LLM returning an unchanged failed locator stops refinement with an actiona
   });
 });
 
-test("Locator patches reject missing, duplicate, unrelated, and full-plan output", async () => {
+test("Locator patches reject empty, duplicate, unrelated, and full-plan output", async () => {
   const original = parseProbePlan(validPlan(), packet());
   const good = { caseId: "save-profile", stepIndex: 1,
     locator: { by: "role", role: "textbox", name: "Profile name" } };
@@ -699,6 +699,27 @@ test("Locator patches reject missing, duplicate, unrelated, and full-plan output
       assert.match(error instanceof ProbePlannerError ? error.diagnostics.validationError ?? "" : String(error), pattern);
       return true;
     });
+  }
+});
+
+test("A locator patch can recover one failed step while another remains unresolved", async () => {
+  const original = parseProbePlan(validPlan(), packet());
+  const failures: ProbeFailure[] = [...locatorFailures(), {
+    caseId: "refresh-profile", stepIndex: 2, category: "locator", message: "missing input",
+    locatorSnapshot: '- textbox "Profile name"',
+  }];
+  const improved = { caseId: "save-profile", stepIndex: 1,
+    locator: { by: "role", role: "textbox", name: "Profile name", exact: true } };
+  for (const patches of [[improved], [improved, { caseId: "refresh-profile", stepIndex: 2,
+    locator: { by: "label", text: "Profile name" } }]]) {
+    const planner = new LlmProbePlanner(config(), async () =>
+      jsonResponse({ choices: [{ message: { content: JSON.stringify({ patches }) } }] }));
+    const refined = await planner.refineLocators(original, failures);
+    assert.deepEqual(refined.cases[0].steps[1], {
+      op: "fill", locator: improved.locator, value: "Ada",
+    });
+    assert.deepEqual(refined.cases[1], original.cases[1]);
+    assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, refined, failures, packet()));
   }
 });
 
