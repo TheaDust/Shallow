@@ -257,6 +257,12 @@ test("HumanRunFormatter breaks Builder time into model and tool and reports toke
   assert.match(detailed, /轮次 12/);
   assert.match(detailed, /工具调用 29（最慢 shell 2m10s、read 1m3s）/);
   assert.match(detailed, /tokens 入 1000 \/ 出 200 \/ 缓存读 300 \/ 总计 1500/);
+  // A cache write is part of the total, so it has to be printed or the parts stop adding up.
+  assert.match(formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+    packetId: "p",
+    detail: { outcome: "completed", execution: {
+      usage: { status: "available", input: 700, output: 50, cacheRead: 200, cacheWrite: 100, total: 1050 } } },
+  })), /tokens 入 700 \/ 出 50 \/ 缓存读 200 \/ 缓存写 100 \/ 总计 1050/);
   assert.match(detailed, /输出 2\.0KiB/);
   assert.match(detailed, /各工具 shell 20、read 9/);
   assert.match(detailed, /压缩 2/);
@@ -385,4 +391,18 @@ test("Human logs explain semantic review outcomes", () => {
   assert.match(formatLine(formatter, eventLine(base, "probe_review_failed", {
     packetId: "p", detail: { message: "schema drift" },
   })), /语义复核失败（p）：schema drift$/);
+});
+
+test("Human logs report Probe Planner token usage per operation", () => {
+  const formatter = new HumanRunFormatter();
+  const base = "2026-09-27T00:00:00.000Z";
+  assert.match(formatLine(formatter, eventLine(base, "probe_planner_usage", {
+    packetId: "p", detail: { operation: "plan", input: 700, output: 50, cacheRead: 200, cacheWrite: 100, total: 1050 },
+  })), /^\[\d{2}:\d{2}:\d{2} \+0s\] 探针规划 token 用量（p）；tokens 入 700 \/ 出 50 \/ 缓存读 200 \/ 缓存写 100 \/ 总计 1050$/);
+  assert.match(formatLine(formatter, eventLine(base, "probe_planner_usage", {
+    packetId: "p", detail: { operation: "refine", input: 10, output: 2, cacheRead: 0, cacheWrite: 0, total: 12 },
+  })), /探针定位精化 token 用量（p）；tokens 入 10 \/ 出 2 \/ 总计 12$/);
+  assert.match(formatLine(formatter, eventLine(base, "probe_planner_usage", {
+    packetId: "p", detail: { operation: "review", input: 10, output: 2, cacheRead: 0, cacheWrite: 0, total: 12 },
+  })), /探针语义复核 token 用量（p）/);
 });

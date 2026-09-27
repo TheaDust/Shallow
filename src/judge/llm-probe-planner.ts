@@ -16,12 +16,25 @@ import {
 } from "./probe-schema.js";
 import { parsePlanReview, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
-export interface ProbePlanOptions { timeoutMs: number }
+export interface ProbePlanOptions { timeoutMs: number; onUsage?: ProbePlannerUsageListener }
 export interface ProbeRefinementOptions {
   timeoutMs: number;
   /** Requirement-declared names the original plan already relies on; refinement must reuse them verbatim. */
   anchoredNames?: readonly string[];
+  onUsage?: ProbePlannerUsageListener;
 }
+
+/** Normalized planner token counts, matching the Builder's usage semantics. */
+export interface ProbePlannerUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+/** Diagnostics sink; failures must never change the planner decision path. */
+export type ProbePlannerUsageListener = (usage: ProbePlannerUsage) => void | Promise<void>;
 export interface ProbePlanner {
   plan(packet: WorkPacket, feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<ProbePlan>;
   refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbeRefinementOptions): Promise<ProbePlan>;
@@ -161,7 +174,7 @@ export class LlmProbePlanner implements ProbePlanner {
         }),
       });
     }
-    const content = await this.complete(messages, options?.timeoutMs);
+    const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage);
     return this.parse(content, packet);
   }
 
@@ -195,7 +208,7 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs, PROBE_REFINEMENT_JSON_SCHEMA);
+    ], options?.timeoutMs, PROBE_REFINEMENT_JSON_SCHEMA, options?.onUsage);
     try {
       return applyLocatorPatches(original, failures, JSON.parse(extractJsonPayload(content)));
     } catch (error) {
@@ -258,7 +271,7 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA);
+    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA, options?.onUsage);
     let value: unknown;
     try {
       value = JSON.parse(extractJsonPayload(content));
@@ -280,6 +293,7 @@ export class LlmProbePlanner implements ProbePlanner {
     messages: Array<{ role: "system" | "user"; content: string }>,
     timeoutMs = this.config.timeoutMs,
     schema: unknown = PROBE_PLAN_JSON_SCHEMA,
+    onUsage?: ProbePlannerUsageListener,
   ): Promise<string> {
     // Structured outputs (`json_schema`) are unavailable on several
     // OpenAI-compatible gateways, including the ARC-Bench model proxy, so the
@@ -304,6 +318,7 @@ export class LlmProbePlanner implements ProbePlanner {
           messages: requestMessages,
           response_format: { type: "json_object" },
           stream: true,
+          stream_options: { include_usage: true },
         }),
         ...(Number.isFinite(timeoutMs) ? { signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))) } : {}),
       });
@@ -322,17 +337,26 @@ export class LlmProbePlanner implements ProbePlanner {
     }
 
     let content: string | undefined;
+    let usage: ProbePlannerUsage | undefined;
     try {
       if (/^text\/event-stream\b/i.test(response.headers.get("content-type") ?? "")) {
-        content = extractSseContent(await response.text());
+        const parsed = extractSseContent(await response.text());
+        content = parsed.content;
+        usage = parsed.usage;
       } else {
-        content = extractContent(await response.json());
+        const parsed = extractContent(await response.json());
+        content = parsed.content;
+        usage = parsed.usage;
       }
     } catch (error) {
       throw new ProbePlannerError(error instanceof SyntaxError ? "response" : "transport", "Probe planner response body failed", {
         cause: error,
         apiKey: this.config.apiKey,
       });
+    }
+    // Token accounting is diagnostics and includes attempts that fail validation below.
+    if (usage !== undefined && onUsage) {
+      try { await onUsage(usage); } catch { /* Diagnostics must never change the decision path. */ }
     }
     if (content === undefined) {
       throw new ProbePlannerError("response", "Probe planner response has no message content");
@@ -431,8 +455,9 @@ function balancedBlocks(content: string): string[] {
   return blocks;
 }
 
-function extractSseContent(body: string): string | undefined {
+function extractSseContent(body: string): { content?: string; usage?: ProbePlannerUsage } {
   let content = "";
+  let usage: ProbePlannerUsage | undefined;
   let finished = false;
   let done = false;
   for (const block of body.split(/\r\n\r\n|\n\n|\r\r/)) {
@@ -448,11 +473,12 @@ function extractSseContent(body: string): string | undefined {
       throw new Error("Probe planner stream contains an incomplete content event", { cause: error });
     }
     if (typeof event !== "object" || event === null) continue;
-    const envelope = event as { error?: { message?: string }; choices?: Array<{
-      index?: number; delta?: { content?: unknown }; finish_reason?: unknown;
+    const envelope = event as { error?: { message?: string }; usage?: unknown; choices?: Array<{
+      index?: number; delta?: { content?: unknown }; finish_reason?: unknown; usage?: unknown;
     }> };
     if (envelope.error) throw new Error(envelope.error.message ?? "Probe planner stream returned an error");
     const choice = envelope.choices?.find(item => item?.index === 0);
+    usage = parseUsage(envelope.usage ?? choice?.usage) ?? usage;
     if (!choice) continue;
     if (typeof choice.delta?.content === "string") content += choice.delta.content;
     if (typeof choice.finish_reason === "string") {
@@ -461,7 +487,7 @@ function extractSseContent(body: string): string | undefined {
     }
   }
   if (!done && !finished) throw new Error("Probe planner stream ended before completion");
-  return content || undefined;
+  return { ...(content ? { content } : {}), ...(usage ? { usage } : {}) };
 }
 
 export function isModelLengthCutoff(error: unknown): error is ProbePlannerError {
@@ -469,14 +495,42 @@ export function isModelLengthCutoff(error: unknown): error is ProbePlannerError 
     error.diagnostics.validationError === "Probe planner stream was cut off by the model";
 }
 
-function extractContent(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const choices = (value as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return undefined;
+function extractContent(value: unknown): { content?: string; usage?: ProbePlannerUsage } {
+  if (typeof value !== "object" || value === null) return {};
+  const record = value as { choices?: unknown; usage?: unknown };
+  const result: { content?: string; usage?: ProbePlannerUsage } = {};
+  const usage = parseUsage(record.usage);
+  if (usage) result.usage = usage;
+  const choices = record.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return result;
   const first = choices[0];
-  if (typeof first !== "object" || first === null) return undefined;
+  if (typeof first !== "object" || first === null) return result;
   const message = (first as { message?: unknown }).message;
-  if (typeof message !== "object" || message === null) return undefined;
+  if (typeof message !== "object" || message === null) return result;
   const content = (message as { content?: unknown }).content;
-  return typeof content === "string" ? content : undefined;
+  if (typeof content === "string") result.content = content;
+  return result;
+}
+
+/** Mirrors the Pi provider's normalization: input excludes cached tokens; total is the sum. */
+function parseUsage(raw: unknown): ProbePlannerUsage | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const usage = raw as Record<string, unknown>;
+  const details = typeof usage.prompt_tokens_details === "object" && usage.prompt_tokens_details !== null
+    ? usage.prompt_tokens_details as Record<string, unknown> : undefined;
+  const reported = [usage.prompt_tokens, usage.completion_tokens, details?.cached_tokens,
+    usage.prompt_cache_hit_tokens, details?.cache_write_tokens];
+  if (!reported.some(value => typeof value === "number" && Number.isFinite(value))) return undefined;
+  const promptTokens = finiteNumber(usage.prompt_tokens) ?? 0;
+  const reportedCached = finiteNumber(details?.cached_tokens) ?? finiteNumber(usage.prompt_cache_hit_tokens) ?? 0;
+  const cacheWrite = finiteNumber(details?.cache_write_tokens) ?? 0;
+  // Some OpenAI-compatible providers report cached_tokens as (previous hits + current writes).
+  const cacheRead = cacheWrite > 0 ? Math.max(0, reportedCached - cacheWrite) : Math.max(0, reportedCached);
+  const output = Math.max(0, finiteNumber(usage.completion_tokens) ?? 0);
+  const input = Math.max(0, promptTokens - cacheRead - cacheWrite);
+  return { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite };
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

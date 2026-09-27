@@ -413,3 +413,21 @@ test("Semantic review is routed through planner gateway recovery", async () => {
     assert.ok((await f.events()).some(event => event.type === "gateway_wait" && event.detail?.source === "planner"));
   });
 });
+
+test("Probe Planner token usage is recorded as planner-phase diagnostics", async () => {
+  await withModulePipeline(async f => {
+    const generate = f.deps.planner.plan.bind(f.deps.planner);
+    f.deps.planner.plan = async (packet, feedback, options) => {
+      await options?.onUsage?.({ input: 700, output: 50, cacheRead: 200, cacheWrite: 100, total: 1050 });
+      return generate(packet, feedback, options);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    const usage = (await f.events()).filter(event => event.type === "probe_planner_usage");
+    assert.ok(usage.length >= 1);
+    assert.equal(usage[0].phase, "planner");
+    assert.equal(usage[0].detail?.operation, "plan");
+    assert.equal(usage[0].detail?.input, 700);
+    assert.equal(usage[0].detail?.total, 1050);
+  });
+});

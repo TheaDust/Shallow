@@ -141,6 +141,13 @@ function describe(type: string, event: RunEvent): string | null {
         ? `探针用例已生成（${packetId}）`
         : `已生成 ${cases} 个探针用例（${packetId}）`;
     }
+    case "probe_planner_usage": {
+      const label = ({ plan: "探针规划", refine: "探针定位精化", review: "探针语义复核" } as Record<string, string>)[
+        pickString(detail, "operation") ?? ""
+      ] ?? "探针调用";
+      const tokens = tokenUsageParts(detail);
+      return tokens.length ? `${label} token 用量（${packetId}）；tokens ${tokens.join(" / ")}` : null;
+    }
     case "application_start_failed":
       return `应用启动失败（${packetId}）${message ? `：${message}` : ""}`;
     case "probe_finished":
@@ -241,12 +248,7 @@ function describeBuilderExecution(value: unknown): string {
   }
   const usage = asRecord(execution.usage);
   if (usage?.status === "available") {
-    const cacheRead = asNumber(usage.cacheRead);
-    const tokens = [
-      tokenPart("入", usage.input), tokenPart("出", usage.output),
-      cacheRead !== null && cacheRead > 0 ? `缓存读 ${cacheRead}` : null,
-      tokenPart("总计", usage.total),
-    ].filter((token): token is string => token !== null);
+    const tokens = tokenUsageParts(usage);
     if (tokens.length) parts.push(`tokens ${tokens.join(" / ")}`);
   }
   // Size and call counts only; assistant text and tool payloads stay out of the log.
@@ -267,6 +269,24 @@ function describeBuilderExecution(value: unknown): string {
 function tokenPart(label: string, value: unknown): string | null {
   const number = asNumber(value);
   return number === null ? null : `${label} ${number}`;
+}
+
+/**
+ * Renders 入/出/缓存读/缓存写/总计. The total is the sum of all four, so a
+ * non-zero cache write has to appear or the printed parts stop adding up.
+ * Shared by the Builder summary and the Probe Planner usage line.
+ */
+function tokenUsageParts(usage: unknown): string[] {
+  const record = asRecord(usage);
+  if (!record) return [];
+  const cacheRead = asNumber(record.cacheRead);
+  const cacheWrite = asNumber(record.cacheWrite);
+  return [
+    tokenPart("入", record.input), tokenPart("出", record.output),
+    cacheRead !== null && cacheRead > 0 ? `缓存读 ${cacheRead}` : null,
+    cacheWrite !== null && cacheWrite > 0 ? `缓存写 ${cacheWrite}` : null,
+    tokenPart("总计", record.total),
+  ].filter((token): token is string => token !== null);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

@@ -22,7 +22,7 @@ import type {
   FinalVerificationReport,
   FinalVerifierPort,
 } from "./final-verifier.js";
-import { ProbePlannerError, type ProbePlanner } from "./judge/llm-probe-planner.js";
+import { ProbePlannerError, type ProbePlanner, type ProbePlannerUsage } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
 import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
@@ -189,21 +189,26 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const deadline = options.totalBudgetMs <= 0 ? deps.clock.nowMs() + PLANNER_RECOVERY_WINDOW_MS : Infinity;
     return () => Math.min(budget.remaining(phase), deadline - deps.clock.nowMs());
   };
+  const plannerUsage = (packetId: string, operation: "plan" | "refine" | "review") =>
+    (usage: ProbePlannerUsage) => state.record({ at: now(), type: "probe_planner_usage", packetId, detail: { operation, ...usage } });
   deps = { ...deps, planner: {
     plan: (packet, feedback, callOptions) => {
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
-        () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+        () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
+          onUsage: plannerUsage(packet.id, "plan") }));
     },
     refineLocators: (original, failures, feedback, callOptions) => {
       const remaining = plannerWindow();
       return gateway.run("planner", original.packetId, remaining,
-        () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+        () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
+          onUsage: plannerUsage(original.packetId, "refine") }));
     },
     reviewPlan: (packet, original, failures, feedback, callOptions) => {
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
-        () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())) }));
+        () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
+          onUsage: plannerUsage(packet.id, "review") }));
     },
   } };
   deps.candidate?.setRecorder(event => state.record(event));

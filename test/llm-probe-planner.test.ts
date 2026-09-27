@@ -338,14 +338,60 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   assert.equal(headers.get("authorization"), "Bearer secret-key");
   assert.equal(headers.get("user-agent"), "ShallowCode/1.0");
   assert.ok(headers.get("x-opencode-session"));
-  const body = JSON.stringify(JSON.parse(String(calls[0].init?.body)));
-  assert.equal(JSON.parse(String(calls[0].init?.body)).stream, true);
+  const parsedBody = JSON.parse(String(calls[0].init?.body)) as { stream?: unknown; stream_options?: unknown };
+  const body = JSON.stringify(parsedBody);
+  assert.equal(parsedBody.stream, true);
+  assert.deepEqual(parsedBody.stream_options, { include_usage: true });
   assert.match(body, /Keep the profile after refresh/);
   assert.match(body, /happy_path/);
   assert.doesNotMatch(
     body,
     /candidate-app|source code|git diff|acceptedSha|SECRET-OTHER-REQ|\/workspace\/tests/,
   );
+});
+
+test("Probe Planner reports normalized token usage from a streaming usage trailer", async () => {
+  const json = JSON.stringify(validPlan());
+  const payload = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: json }, finish_reason: null }] })}\n\n`
+    + 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+    + `data: ${JSON.stringify({ choices: [], usage: {
+      prompt_tokens: 1000, completion_tokens: 50,
+      prompt_tokens_details: { cached_tokens: 300, cache_write_tokens: 100 },
+    } })}\n\n`
+    + "data: [DONE]\n\n";
+  const seen: unknown[] = [];
+  const planner = new LlmProbePlanner(config(), async () => sseResponse([payload]));
+  const plan = await planner.plan(packet(), undefined, { timeoutMs: 1_000,
+    onUsage: usage => { seen.push(usage); } });
+  assert.equal(plan.cases.length, 2);
+  assert.deepEqual(seen, [{ input: 700, output: 50, cacheRead: 200, cacheWrite: 100, total: 1050 }]);
+});
+
+test("Probe Planner reports usage from a non-stream JSON response", async () => {
+  const seen: unknown[] = [];
+  const planner = new LlmProbePlanner(config(), async () => jsonResponse({
+    choices: [{ message: { content: JSON.stringify(validPlan()) } }],
+    usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
+  }));
+  await planner.plan(packet(), undefined, { timeoutMs: 1_000, onUsage: usage => { seen.push(usage); } });
+  assert.deepEqual(seen, [{ input: 120, output: 30, cacheRead: 0, cacheWrite: 0, total: 150 }]);
+});
+
+test("Usage is reported even when the plan fails validation, and omitted when the gateway has none", async () => {
+  const seen: unknown[] = [];
+  const invalid = new LlmProbePlanner(config(), async () => jsonResponse({
+    choices: [{ message: { content: "{}" } }],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  }));
+  await assert.rejects(invalid.plan(packet(), undefined, { timeoutMs: 1_000,
+    onUsage: usage => { seen.push(usage); } }), ProbePlannerError);
+  assert.equal(seen.length, 1);
+
+  const silent = new LlmProbePlanner(config(), async () => jsonResponse({
+    choices: [{ message: { content: JSON.stringify(validPlan()) } }],
+  }));
+  await silent.plan(packet(), undefined, { timeoutMs: 1_000, onUsage: usage => { seen.push(usage); } });
+  assert.equal(seen.length, 1);
 });
 
 test("Probe Planner assembles split SSE deltas and tolerates a damaged usage trailer", async () => {
