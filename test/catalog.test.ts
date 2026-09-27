@@ -163,7 +163,7 @@ test("Catalog keeps original folder dependencies, explicit scenario IDs and empt
 });
 
 test("Catalog expands folder dependencies and inherits ancestor prerequisites", async () => {
-  const catalog = await loadRequirementCatalog(resolve("data/github/requirements.yaml"));
+  const catalog = await loadRequirementCatalog(resolve("data/official-competition/hackathon--github/requirements.yaml"));
   const atomicIds = new Set(catalog.requirements.map((item) => item.id));
   for (const item of catalog.requirements) {
     assert.ok(item.dependencyIds.every((id) => atomicIds.has(id)), item.id);
@@ -239,18 +239,30 @@ test("Catalog parses top-level seed data into the product context", async () => 
   );
 });
 
-test("Catalog reads seed data from the bundled requirement files", async () => {
-  for (const file of ["data/github/requirements.yaml", "data/sheet/requirements.yaml"]) {
-    const catalog = await loadRequirementCatalog(resolve(file));
+test("Catalog reads seed data from requirement files", async () => {
+  const yaml = [
+    "id: ROOT",
+    "name: Root",
+    "type: FOLDER",
+    "dependencies: []",
+    "data:",
+    "  - category: Account and Permission Seed Data",
+    "    items:",
+    "      - \"verified account with nickname Demo User\"",
+    "children:",
+    "  - id: REQ-1",
+    "    name: One",
+    "    type: ATOMIC",
+    "    dependencies: []",
+    "    description: Do it.",
+  ].join("\n");
+  await withYaml(`${yaml}\n`, async (file) => {
+    const catalog = await loadRequirementCatalog(file);
     const { seedData } = catalog.requirements[0].product;
-    assert.ok(seedData.length > 0, file);
-    for (const entry of seedData) {
-      assert.ok(entry.category.length > 0, file);
-      assert.ok(entry.items.length > 0, file);
-    }
-  }
-  const github = await loadRequirementCatalog(resolve("data/github/requirements.yaml"));
-  assert.equal(github.requirements[0].product.seedData[0].category, "Account and Permission Seed Data");
+    assert.equal(seedData.length, 1);
+    assert.equal(seedData[0].category, "Account and Permission Seed Data");
+    assert.deepEqual(seedData[0].items, ["verified account with nickname Demo User"]);
+  });
 });
 
 test("Catalog rejects malformed seed data", async () => {

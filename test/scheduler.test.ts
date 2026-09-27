@@ -92,9 +92,9 @@ test("Within one tier, dependency affinity breaks ties before declaration order"
     requirement("B", 3, { folder: ["ROOT", "M"], dependencies: ["D"] }),
     requirement("C", 4, { folder: ["ROOT", "M"] }),
   ]);
-  const { packets, stats } = featureGroupPackets(catalog);
-  assert.deepEqual(packets.map(item => item.requirementIds), [["D"], ["S", "A", "B", "C"]]);
-  assert.deepEqual(stats, { packets: 2, requirements: 5, maxPacketSize: 4,
+  const { packets, stats } = featureGroupPackets(catalog, { maxRequirements: 3, maxScenarios: 12, maxTextChars: 12_000 });
+  assert.deepEqual(packets.map(item => item.requirementIds), [["D"], ["S", "A", "B"], ["C"]]);
+  assert.deepEqual(stats, { packets: 3, requirements: 5, maxPacketSize: 3,
     crossModulePackets: 0, cohesionRate: 1 / 3, thresholdLimitedPackets: 2 });
 });
 
@@ -116,8 +116,9 @@ test("Atomic audit covers every requirement and carries transitive textual prere
 });
 
 test("Real requirement trees group deterministically with unique coverage", async () => {
-  const expectedPackets: Record<string, number> = { "12306": 33, bookstack: 13, ctrip: 36, github: 14,
-    keep: 11, prestashop: 25, sheet: 9, stackoverflow: 21, ticketbooking: 1 };
+  const expectedPackets: Record<string, number> = { "12306": 33, bookstack: 13, ctrip: 36,
+    keep: 11, prestashop: 25, stackoverflow: 21, ticketbooking: 1,
+    "official-competition/hackathon--github": 16, "official-competition/hackathon--sheet": 13 };
   for (const [name, count] of Object.entries(expectedPackets)) {
     const catalog = await loadRequirementCatalog(resolve(`data/${name}/requirements.yaml`));
     const { packets, stats } = featureGroupPackets(catalog);
@@ -131,18 +132,22 @@ test("Real requirement trees group deterministically with unique coverage", asyn
 });
 
 test("Sheet groups deterministically from the design document", async () => {
-  const catalog = await loadRequirementCatalog(resolve("data/sheet/requirements.yaml"));
+  const catalog = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
   const { packets } = featureGroupPackets(catalog);
   assert.deepEqual(packets.map(item => item.requirementIds), [
     ["REQ-1-1-1", "REQ-1-2-2", "REQ-1-2-1", "REQ-1-3-1"],
     ["REQ-1-3-2"],
-    ["REQ-2-1-3", "REQ-2-1-1", "REQ-2-2-1", "REQ-2-2-2"],
-    ["REQ-3-1-1", "REQ-3-1-2", "REQ-3-1-3", "REQ-3-2-1"],
-    ["REQ-3-2-2"],
-    ["REQ-4-1-1", "REQ-4-2-1", "REQ-4-2-2", "REQ-4-1-2"],
-    ["REQ-5-1-2", "REQ-5-3-1", "REQ-5-2-1"],
-    ["REQ-2-1-2", "REQ-2-1-4"],
+    ["REQ-2-1-3", "REQ-2-1-1", "REQ-2-2-1"],
+    ["REQ-2-2-2"],
+    ["REQ-3-1-1", "REQ-3-1-2", "REQ-3-1-3"],
+    ["REQ-3-2-1", "REQ-3-2-2"],
+    ["REQ-4-1-1", "REQ-4-2-1", "REQ-4-2-2"],
+    ["REQ-4-1-2"],
+    ["REQ-5-1-2", "REQ-5-2-1"],
+    ["REQ-2-1-2"],
     ["REQ-5-1-1"],
+    ["REQ-5-3-1"],
+    ["REQ-2-1-4"],
   ]);
 });
 

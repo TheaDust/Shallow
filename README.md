@@ -27,7 +27,7 @@ Pi 在独立 Worker 子进程中把网关注册为进程内 `shallow-gateway` pr
 启动一次完整运行：
 
 ```powershell
-npm start -- --requirements-dir data/sheet --output-dir tmp/main --budget-ms 600000
+npm start -- --requirements-dir data/official-competition/hackathon--sheet --output-dir tmp/main --budget-ms 600000
 ```
 
 | 参数 | 说明 |
@@ -36,12 +36,12 @@ npm start -- --requirements-dir data/sheet --output-dir tmp/main --budget-ms 600
 | `--output-dir` | 目标应用输出目录（会作为独立 Git 仓库维护 accepted 状态） |
 | `--budget-ms` | 可选，开发调度预算（非负整数毫秒）；缺省或 `0` 表示不限时，阶段调用与交付的边界见“预算与超时” |
 
-初赛需求位于 `data/github`（仓库协作）与 `data/sheet`（电子表格），更换 `--requirements-dir` 即可切换题目。本地约定主线使用 `tmp/main`，baseline 使用 `tmp/baseline`；两者分别维护输出与 `.arc`。每次新实验前先保存需要保留的结果，再手动清空对应实验目录。
+初赛需求位于 `data/official-competition/hackathon--github`（仓库协作）与 `data/official-competition/hackathon--sheet`（电子表格），更换 `--requirements-dir` 即可切换题目。本地约定主线使用 `tmp/main`，baseline 使用 `tmp/baseline`；两者分别维护输出与 `.arc`。每次新实验前先保存需要保留的结果，再手动清空对应实验目录。
 
 通过 Python 适配入口运行主线，使用：
 
 ```powershell
-python main.py data/sheet --output-dir tmp/main --type web
+python main.py data/official-competition/hackathon--sheet --output-dir tmp/main --type web
 ```
 
 Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
@@ -57,13 +57,13 @@ Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网
 baseline 通过 `baseline/main.py` 或 `baseline/index.ts` 运行，用于比较直接驱动同一 Pi 执行层（raw Pi）的效果：
 
 ```powershell
-python baseline/main.py data/sheet --output-dir tmp/baseline --type web
-npx tsx baseline/index.ts --requirements-dir data/sheet --output-dir tmp/baseline
+python baseline/main.py data/official-competition/hackathon--sheet --output-dir tmp/baseline --type web
+npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon--sheet --output-dir tmp/baseline
 ```
 
 | 维度 | ShallowCode 主线 | baseline |
 | --- | --- | --- |
-| 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，4 条/12 场景/12k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
+| 工作单元 | 确定性有界功能组（同父目录/同 ROOT 子树扩展，4 条/16 场景/20k 字符封口），按原子依赖排序 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
 | 会话 | 实现阶段每个工作包使用全新会话；修复使用新会话 | 一次运行复用同一个会话 |
 | 模型上下文窗口 | 256k（缺省，可用 `SHALLOW_BUILDER_CONTEXT_WINDOW` 覆盖） | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
 | 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
@@ -94,7 +94,7 @@ flowchart TD
     DR --> F
 ```
 
-1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖；`featureGroupPackets` 把原子需求确定性组成有界功能组（4 条/12 场景/12,000 字符）。
+1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖；`featureGroupPackets` 把原子需求确定性组成有界功能组（4 条/16 场景/20,000 字符）。
 2. 按功能组逐包实现，每包使用全新会话，跨包交接只经代码、测试与 ARCHITECTURE.md。每包开始后并行生成该组相关审计包的探针计划并落盘，供后续验收复用。
 3. 功能组完成后做安装、构建与启动检查，保存可运行检查点。它不授予功能 verified；切换模块时对上一模块执行模块边界审计，失败按模块独立配额至多两轮修复。跨模块依赖 verified 时继续；若仅因 locator/Runner 故障 inconclusive，且上游代码可运行、独立 happy path 的交互与断言已经通过、没有业务失败，也允许下游实现并记录 `dependency_gate_provisional`，但上游仍需完整验收。其他未满足的依赖阻塞下游 Builder 与探针预规划。组内及当前尚未验收模块内的依赖不受此门禁影响。修复后必须既有 verified 全保持且至少一个修复目标变为 verified；没有改善、出现回归或无法重新验证既有 pass 时恢复修复前版本。
 4. 全部功能组实现或实现预算耗尽后，按原子需求逐项独立验收（已通过优先）；Judge 仅看需求与浏览器观察。最终验收只检测不修复：可复现业务失败标记 failed 计入交付状态，不再发起跨模块的集中修复。
@@ -357,7 +357,7 @@ test/
   browser/                     真实 Chromium 测试
   fakes/ fixtures/ helpers/    测试专用 fake、fixture app 与工具（不属于生产架构）
 docs/superpowers/              设计文档（specs/）与实施计划（plans/）
-data/github、data/sheet        初赛需求树、种子数据及参考图片
+data/official-competition/        初赛需求树（hackathon--github / hackathon--sheet）及参考图片；data/ 下其余目录为练习题树
 ```
 
 ## 设计边界

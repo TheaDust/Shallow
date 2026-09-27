@@ -56,7 +56,7 @@ src/
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树、ProductContext.seedData 与原子级 seedDeclarations
                                 （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
-  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/12k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
+  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/16 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
   run-state.ts                  RunStateStore（功能状态、可运行检查点 SHA、ledger+logSink）、
@@ -124,9 +124,10 @@ test/
   helpers/                      withTempDir、fixture-server 等工具
 
 docs/superpowers/               设计文档（specs/）与实施计划（plans/）
-data/github、data/sheet         初赛题目的需求树（原文、结构化 YAML）：github 对应
-                                repository_collaboration、sheet 对应 spreadsheet；各自包含 reference/。
-                                generic_web 是未识别根名时的分类。
+data/official-competition/    初赛题目的需求树（原文、结构化 YAML）：hackathon--github 对应
+  hackathon--github、           repository_collaboration、hackathon--sheet 对应 spreadsheet；
+  hackathon--sheet              各自包含 reference/。generic_web 是未识别根名时的分类。
+                                data/ 下其余目录（12306、bookstack 等）是更稀疏的练习题树。
 ```
 
 排错速查：想知道"跑哪一步了"→ run-log.txt（路径在启动时打印到 stderr）；想知道"某事件的原始字段"→ run-ledger.jsonl 或 stderr JSON 行；想知道"平台看到了什么"→ `<output-dir>/.arc/`。
@@ -162,17 +163,17 @@ ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-
 
 ```powershell
 # 主线（ShallowCode 管线）：以 sheet 题目为例，产物缺省到 %TEMP%\shallowcode-local\main
-npm start -- --requirements-dir data/sheet
+npm start -- --requirements-dir data/official-competition/hackathon--sheet
 # 或走评测同款适配入口
-python main.py data/sheet --type web
+python main.py data/official-competition/hackathon--sheet --type web
 
 # baseline（raw Pi 对照），产物缺省到 %TEMP%\shallowcode-local\baseline
-python baseline/main.py data/sheet --type web
+python baseline/main.py data/official-competition/hackathon--sheet --type web
 # 或直接驱动 TS
-npx tsx baseline/index.ts --requirements-dir data/sheet
+npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon--sheet
 ```
 
-题目换成 `data/github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
+题目换成 `data/official-competition/hackathon--github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
@@ -191,7 +192,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。入口仅按字面量从验收 spec 提取 `http://127.0.0.1:<port>`/`localhost:<port>` 端口用于交付验证，spec 内容不进入任何 prompt 或判词。
-2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 4 条/12 场景/12,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；跨模块依赖 verified 时正常放行。若上游仅因 locator 或 Runner 故障 inconclusive，但已保存可运行检查点、独立探针至少一条带交互动作的 happy path 通过，且没有业务失败，则允许下游继续实现并记录 `dependency_gate_provisional`；上游仍是 inconclusive，最终交付仍须完整验收。其余未满足的依赖阻塞下游 Builder 和探针预规划。
+2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 4 条/16 场景/20,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；跨模块依赖 verified 时正常放行。若上游仅因 locator 或 Runner 故障 inconclusive，但已保存可运行检查点、独立探针至少一条带交互动作的 happy path 通过，且没有业务失败，则允许下游继续实现并记录 `dependency_gate_provisional`；上游仍是 inconclusive，最终交付仍须完整验收。其余未满足的依赖阻塞下游 Builder 和探针预规划。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时最多以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；可运行部分保存为空需求检查点，再次超时标 blocked，不记 implemented。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收。实现阶段后台生成探针计划，Builder 完成后先保存可运行检查点；模块边界验收前收敛该模块的预规划任务，再读取有效缓存（见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或需求明示的操作控件在此前已有成功交互、且两次新应用实例中均于同一步缺失时触发模块边界修复（后者仍记 inconclusive，Builder 按需求诊断），每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。修复后重跑缓存计划，优先复查已通过路径。失去既有 pass、无法重新验证它或没有任何修复目标→verified 改善时恢复原检查点并停止修复。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。
