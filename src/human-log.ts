@@ -249,6 +249,18 @@ function describeBuilderExecution(value: unknown): string {
     ].filter((token): token is string => token !== null);
     if (tokens.length) parts.push(`tokens ${tokens.join(" / ")}`);
   }
+  // Size and call counts only; assistant text and tool payloads stay out of the log.
+  const outputBytes = asNumber(timing?.outputBytes);
+  if (outputBytes !== null && outputBytes > 0) parts.push(`输出 ${renderBytes(outputBytes)}`);
+  const byTool = (Array.isArray(timing?.toolCounts) ? timing.toolCounts : [])
+    .map(item => asRecord(item))
+    .map(item => ({ name: item && typeof item.name === "string" ? sanitizeDiagnosticText(item.name) : null,
+      count: asNumber(item?.count) }))
+    .filter((item): item is { name: string; count: number } => item.name !== null && item.count !== null)
+    .map(item => `${item.name} ${item.count}`);
+  if (byTool.length) parts.push(`各工具 ${byTool.join("、")}`);
+  const compactions = asNumber(execution.compactions);
+  if (compactions !== null) parts.push(`压缩 ${compactions}`);
   return parts.length ? `；${parts.join("；")}` : "";
 }
 
@@ -308,4 +320,10 @@ function renderDuration(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m${seconds}s`;
+}
+
+function renderBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
 }

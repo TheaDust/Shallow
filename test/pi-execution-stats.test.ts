@@ -34,6 +34,8 @@ test("Pi execution stats separate model and tool time and bound the slowest tool
     modelMsTotal: 2_500,
     toolMsTotal: 3_400,
     longestTools: [{ name: "shell", durationMs: 3_000 }],
+    toolCounts: [{ name: "read", count: 1 }, { name: "shell", count: 1 }],
+    outputBytes: 0,
   });
 });
 
@@ -55,6 +57,9 @@ test("Pi execution stats ignore unmatched spans and duplicate starts", () => {
     modelMsTotal: 0,
     toolMsTotal: 300,
     longestTools: [{ name: "read", durationMs: 300 }],
+    // A duplicate start for the same call must not inflate the per-tool count.
+    toolCounts: [{ name: "read", count: 1 }],
+    outputBytes: 0,
   });
 });
 
@@ -74,5 +79,26 @@ test("Pi execution stats clamp negative spans and cap the slowest list", () => {
     modelMsTotal: 0,
     toolMsTotal: 150,
     longestTools: [{ name: "shell", durationMs: 50 }, { name: "write", durationMs: 50 }],
+    toolCounts: [{ name: "browser", count: 1 }, { name: "read", count: 1 },
+      { name: "shell", count: 1 }, { name: "write", count: 1 }],
+    outputBytes: 0,
   });
+});
+
+test("Pi execution stats count per-tool calls and assistant output size without keeping text", () => {
+  const collector = new PiExecutionCollector();
+  for (const [id, name] of [["a", "shell"], ["b", "shell"], ["c", "read"]] as const) {
+    collector.toolStarted(id, name, 0);
+    collector.toolEnded(id, 10);
+  }
+  collector.outputProduced(1_500);
+  collector.outputProduced(2_500);
+  collector.outputProduced(-5);
+  collector.outputProduced(Number.NaN);
+
+  const summary = collector.summarize();
+
+  assert.deepEqual(summary.timing.toolCounts, [{ name: "shell", count: 2 }, { name: "read", count: 1 }]);
+  assert.equal(summary.timing.outputBytes, 4_000);
+  assert.equal("text" in summary, false);
 });

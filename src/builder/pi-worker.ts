@@ -61,7 +61,12 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     else if (event.type === "tool_execution_end") collector.toolEnded(event.toolCallId, atMs);
     else if (event.type === "turn_end") collector.turnEnded();
     else if (event.type === "message_start" && event.message.role === "assistant") collector.modelStarted(atMs);
-    else if (event.type === "message_end" && event.message.role === "assistant") collector.modelEnded(atMs);
+    else if (event.type === "message_end" && event.message.role === "assistant") {
+      collector.modelEnded(atMs);
+      // Size only: the summary log reports how much the model produced, never what it said.
+      collector.outputProduced(event.message.content.filter(part => part.type === "text")
+        .reduce((total, part) => total + Buffer.byteLength(part.text, "utf8"), 0));
+    }
     if (event.type === "compaction_end") compactions++;
   });
   // attachReferences=false is the run's switch: references stay declared for the

@@ -245,9 +245,11 @@ test("HumanRunFormatter breaks Builder time into model and tool and reports toke
       durationMs: 1_471_000,
       execution: {
         toolCalls: 29,
+        compactions: 2,
         usage: { status: "available", input: 1000, output: 200, cacheRead: 300, cacheWrite: 0, total: 1500 },
-        timing: { turns: 12, modelMsTotal: 1_082_000, toolMsTotal: 389_000,
-          longestTools: [{ name: "shell", durationMs: 130_000 }, { name: "read", durationMs: 63_000 }] },
+        timing: { turns: 12, modelMsTotal: 1_082_000, toolMsTotal: 389_000, outputBytes: 2048,
+          longestTools: [{ name: "shell", durationMs: 130_000 }, { name: "read", durationMs: 63_000 }],
+          toolCounts: [{ name: "shell", count: 20 }, { name: "read", count: 9 }] },
       },
     },
   }));
@@ -255,8 +257,10 @@ test("HumanRunFormatter breaks Builder time into model and tool and reports toke
   assert.match(detailed, /轮次 12/);
   assert.match(detailed, /工具调用 29（最慢 shell 2m10s、read 1m3s）/);
   assert.match(detailed, /tokens 入 1000 \/ 出 200 \/ 缓存读 300 \/ 总计 1500/);
+  assert.match(detailed, /输出 2\.0KiB/);
+  assert.match(detailed, /各工具 shell 20、read 9/);
+  assert.match(detailed, /压缩 2/);
   assert.match(detailed, /本阶段耗时 24m31s/);
-
   const partial = formatLine(formatter, eventLine("2026-09-17T00:00:01.000Z", "builder_finished", {
     packetId: "p", detail: { outcome: "failed", execution: { usage: { status: "unavailable" } } },
   }));
