@@ -3,7 +3,7 @@
 只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。最多 6 个 case、每 case 30 步。示例：
 
 ```json
-{"packetId":"<输入 packetId>","cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"happy_path","setupStepCount":null,"expectationBasis":["<需求原文逐字引用>"],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name"},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save"}}],"assertion":{"op":"expectVisible","locator":{"by":"role","role":"status"}}}]}
+{"packetId":"<输入 packetId>","cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"persistence","setupStepCount":null,"expectationBasis":["<需求原文逐字声明保存值在刷新后保留>"],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name","exact":true},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save","exact":true}},{"op":"reload"}],"assertion":{"op":"expectValue","locator":{"by":"label","text":"Name","exact":true},"value":"Example"}}]}
 ```
 
 顶层只用 packetId、cases；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
@@ -28,10 +28,14 @@ Seed data、Seed values、evaluation seed 与既有实体：把它们视为动�
 
 定位只用 role、label、text；role 必须是 schema 列出的有效 ARIA role，普通显示文本使用 by:text，text 不是 role。字符串为字面值，需求明示的控件名用 exact:true。交互优先带名称的 role，表单优先 label。重复控件用单层 row、article、listitem、dialog 等 scope 限定，同一对象上的 hover 和 click 保持相同 scope。hasText 只允许出现在 locator 的 `scope` 对象内部。交互控件 fallback 不能降级为纯 text；仅在证据允许同一目标不同可访问角色时，给同名 button/link 提供等价候选。显示文本可用 text；需求指定角色或容器时必须保留。纯 text locator 的字面依据限于 exactUiStrings、顶层 `seedData` 条目或本 case 已填值；内联 `seedDeclarations` 仍须 role 或 label fallback。需求没有控件名时用无猜测 name 的结构化 role，不把数据值或“首页”描述变成按钮名。expectHidden 检查所有 fallback；count 为 0 的 expectCount 只检查当前 locator。
 
+需求把控件限定在某个卡片、行、列表项、区域或对话框内时，默认在该容器下用 scope 定位操作和结果；容器及对象身份须有需求依据。示例：`{"by":"role","role":"button","name":"Edit","exact":true,"scope":{"by":"role","role":"row","hasText":"<需求给出的目标记录标识>"}}`。页面唯一的全局入口直接定位；不能为了添加 scope 臆造容器名，也不能靠第一个匹配项消除同名歧义。
+
 每个 case 以 goto `/` 开始，再按可见入口进入目标视图。种子实体存在不等于首页有链接；首页直点只在需求明确给出该入口时使用。若允许经搜索结果或列表进入，先使用该入口再点目标。账号菜单中的入口先打开账号菜单；页面名或区域名不能据此推断成需要再次点击的链接。deep link 的非根 goto 必须在需求或前置需求中逐字声明完整路径，保留 hash/query；未声明路径会被程序拒绝。用 click、hover、doubleClick、fill、select 按需求交互；原生 combobox 用 select，不能依靠点击原生 option；只有键盘提交时 press Enter。reload 验证状态在刷新后存活。需求要求确认对话框时执行确认按钮，不能把打开对话框当成操作完成。
 
 原生文件控件用 `uploadFile` 的 locator、纯文件名 fileName 和内联 UTF-8 content，不用 fill 或虚构 `fixtures/...` 路径。CSV 内容按需求格式和值构造，断言实际导入结果。网格菜单先 rightClick 行号、列头或单元格，再 click menuitem；矩形选区用 drag 的 from/to locator。外部粘贴先 setClipboardText，再点 Paste 或 press ControlOrMeta+V；内部复制/剪切先选源区、执行 Copy/Cut，再选目标粘贴。press 也支持 ControlOrMeta+C/X 和 Shift+F10。每个 case 自行建立菜单、剪贴板及选区前提。
 
 ## 断言
 
-expectText 默认匹配完整文本；子串要 exact: false，需求允许多种措辞时用 anyOf，绝不臆造替代措辞。expectValue 检查输入值；expectCount 0 检查不存在；expectHidden 与不存在不同。expectAttribute 只用于 aria-expanded、aria-pressed、aria-selected、aria-checked，值限 true/false/mixed。错误拒绝时同时核对错误与没有发生的成功效果；不得以仅可见的控件代替行为结果。
+expectText 默认匹配完整文本；子串要 exact: false，需求允许多种措辞时用 anyOf，绝不臆造替代措辞。expectValue 检查输入值；expectCount 0 检查不存在；expectHidden 与不存在不同。expectAttribute 只用于 aria-expanded、aria-pressed、aria-selected、aria-checked，值限 true/false/mixed。expectDisabled/expectEnabled 检查控件的原生或 ARIA 禁用状态，目标及所有 fallback 使用交互 role 或 label。需求规定“可见但禁用”时同时检查 expectVisible 和 expectDisabled；取消、撤销或权限变化后核对对应状态。禁用控件通过状态断言验证，拒绝结果仍须核对记录未改变。错误拒绝时同时核对错误与没有发生的成功效果；不得以仅可见的控件代替行为结果。
+
+结果优先用 expectText、expectValue、expectCount 或 expectAttribute 校验内容与状态。expectVisible 用于需求明确要求出现的具体结果，如新建对象的精确标题、已登录账号或错误文案；main/grid 可见及操作按钮仍在不能独立证明保存、筛选、权限或状态变更成功。需求同时规定多个结果时，在 steps 中逐项核对关键结果，再以最后一项作为 assertion；例如编辑标题和描述须核对两项保存内容，筛选须核对应出现及应消失的记录，关闭再重开须核对 Closed 和 Open 状态。核对当前 case 必需的结果，保持既有步数上限。

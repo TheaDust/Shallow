@@ -211,6 +211,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 ## 验收准备、数据隔离与中断恢复
 
+- 控件禁用/恢复使用 `expectDisabled` / `expectEnabled`，按 Playwright 的原生及 ARIA 语义检查；目标与所有 fallback 限交互 role 或 label，需求规定可见时另加可见断言。操作及 expectVisible 的候选等待可见后再使用，隐藏文件输入的 uploadFile 仍只要求挂载。保持原有定位额度、strict 唯一性及 case 隔离；修改时验证 `test/probe-contract.test.ts`、`test/browser/probe-state.test.ts`。
 - Judge 每个独立 case 使用全新应用实例与数据目录；同一 case 内的 reload、重开和 newContext 保持该 case 的服务端数据。复用候选依赖和构建，每份计划只启动一次 Chromium。重跑或浏览器重试同样从新数据开始；每次重启保留候选一致性检查与应用启停事件。
 - ProbeCase 的 `setupStepCount` 标记准备前缀，必须以初始状态 assertion 结束，待测业务和结果 assertion 位于其后。wire schema 要求该字段，null/0 表示无需准备；内部及历史计划兼容省略。前缀失败记 `precondition`，先复核计划，合理且可复现的缺口允许 Builder 诊断，目标业务仍为 inconclusive；其他 case 的有效业务失败独立处理。Planner 通过需求允许的可见控件准备互斥初始状态，核对数值、公式、选区、权限和对象身份，保持每 case 30 步上限。newContext 的 actor 不自动登录，必须通过公开登录表单建立新会话。
 - 带种子的业务 sound 必须有已执行的状态检查点；声明的种子和单纯页面/网格可见不能替代状态证据。Judge 接收 preparationCheckpointPassed 与先前成功断言，缺证据时在既有复核额度内纠正准备。模型 rationale 只作语义判断，不能授予运行事实。

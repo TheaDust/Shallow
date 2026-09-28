@@ -241,3 +241,26 @@ test("State assertions round-trip through the wire schema and cannot be changed 
     assert.throws(() => parseProbePlan(invalid), /allowed ARIA state/);
   }
 });
+
+test("Enabled-state assertions preserve their predicate and reject non-control candidates", () => {
+  for (const op of ["expectDisabled", "expectEnabled"] as const) {
+    const original = plan();
+    original.cases[0].steps.push({ op, locator: { by: "role", role: "button", name: "Publish", exact: true } });
+    assert.deepEqual(parseProbePlan(toWireProbePlan(original), packet()), original);
+    const changed = structuredClone(original);
+    changed.cases[0].steps[3] = { op: op === "expectDisabled" ? "expectEnabled" : "expectDisabled",
+      locator: { by: "role", role: "button", name: "Publish", exact: true } };
+    assert.throws(() => assertLocatorOnlyRefinement(original, changed), /only locator fields/);
+    for (const locator of [
+      { by: "text", text: "Publish", exact: true },
+      { by: "role", role: "heading", name: "Publish" },
+      { by: "role", role: "button", name: "Publish", fallbacks: [{ by: "text", text: "Publish" }] },
+    ] satisfies ProbeLocator[]) {
+      const invalid = structuredClone(original);
+      invalid.cases[0].steps[3] = { op, locator };
+      assert.throws(() => parseProbePlan(toWireProbePlan(invalid)), /interactive control, including fallbacks/);
+    }
+    original.cases[0].steps[3] = { op, locator: { by: "label", text: "Name", exact: true } };
+    assert.doesNotThrow(() => parseProbePlan(toWireProbePlan(original)));
+  }
+});

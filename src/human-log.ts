@@ -202,7 +202,7 @@ function describe(type: string, event: RunEvent): string | null {
       const stage = pickString(detail, "stage");
       const stageSuffix = stage ? `（${stage}）` : "";
       return detail?.ok === true
-        ? `交付完成${stageSuffix}`
+        ? `交付运行检查通过${stageSuffix}`
         : `交付失败${stageSuffix}${message ? `：${message}` : ""}`;
     }
     case "module_boundary_audit_finished": {

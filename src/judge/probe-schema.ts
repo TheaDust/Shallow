@@ -47,6 +47,7 @@ export type ProbeStep =
   | { op: "select"; locator: ProbeLocator; value: string }
   | { op: "expectVisible"; locator: ProbeLocator }
   | { op: "expectHidden"; locator: ProbeLocator }
+  | { op: "expectDisabled" | "expectEnabled"; locator: ProbeLocator }
   | { op: "expectAttribute"; locator: ProbeLocator; attribute: (typeof STATE_ATTRIBUTES)[number]; value: "true" | "false" | "mixed" }
   | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
@@ -151,6 +152,10 @@ const STEP_SCHEMA = {
     ...["click", "rightClick", "expectVisible", "expectHidden", "doubleClick", "hover"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF,
     })),
+    ...["expectDisabled", "expectEnabled"].map(op => objectSchema({
+      op: literalSchema(op), locator: { ...LOCATOR_REF,
+        description: "Check an interactive control's enabled/disabled state. Every candidate must use an interactive role or label; text locators are not permitted." },
+    })),
     objectSchema({ op: literalSchema("drag"), from: LOCATOR_REF, to: LOCATOR_REF }),
     objectSchema({ op: literalSchema("uploadFile"), locator: LOCATOR_REF,
       fileName: NONEMPTY_STRING_SCHEMA, content: STRING_SCHEMA }),
@@ -219,7 +224,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, expectVisible, expectHidden, expectAttribute, expectText, expectValue, expectCount, reload, newContext. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectValue, expectCount, reload, newContext. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -682,6 +687,16 @@ function parseStep(value: unknown, location: string): ProbeStep {
     case "expectVisible": {
       keys(step, ["op", "locator"], location);
       return { op, locator: parseLocator(step.locator, `${location}.locator`) };
+    }
+    case "expectDisabled":
+    case "expectEnabled": {
+      keys(step, ["op", "locator"], location);
+      const locator = parseLocator(step.locator, `${location}.locator`);
+      if (locatorCandidates(locator).some(candidate => candidate.by !== "label" &&
+        (candidate.by !== "role" || !INTERACTIVE_ROLES.has(candidate.role)))) {
+        throw new Error(`${location}: ${op} requires role or label locators for an interactive control, including fallbacks`);
+      }
+      return { op, locator };
     }
     case "drag": {
       keys(step, ["op", "from", "to"], location);

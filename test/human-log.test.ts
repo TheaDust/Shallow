@@ -339,7 +339,7 @@ test("HumanRunFormatter covers remaining planner, refinement, and delivery event
       formatter,
       eventLine(base, "delivery_finished", { detail: { ok: true, stage: "browser" } }),
     ),
-    /^\[\d{2}:\d{2}:\d{2} \+0s\] 交付完成（browser）$/,
+    /^\[\d{2}:\d{2}:\d{2} \+0s\] 交付运行检查通过（browser）$/,
   );
   assert.match(
     formatLine(

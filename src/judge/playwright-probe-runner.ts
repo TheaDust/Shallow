@@ -256,6 +256,12 @@ async function executeStep(
       case "expectVisible":
         await expect(locator).toBeVisible({ timeout: timeoutMs });
         break;
+      case "expectDisabled":
+        await expect(locator).toBeDisabled({ timeout: timeoutMs });
+        break;
+      case "expectEnabled":
+        await expect(locator).toBeEnabled({ timeout: timeoutMs });
+        break;
       case "expectHidden":
         // Every alternative must be hidden: a missing primary must not hide a
         // still-visible fallback from a negative assertion.
@@ -299,6 +305,9 @@ async function resolveLocator(
   const primary = locate(session.page, step.locator);
   if (step.op === "expectCount" || step.op === "expectHidden") return primary;
   const candidates = locatorCandidates(step.locator);
+  // Actions must reach a visible candidate. Uploads can target a hidden native
+  // file input, and state/value assertions need only an attached target.
+  const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "expectVisible"].includes(step.op);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
   for (let index = 0; index < candidates.length; index += 1) {
@@ -306,7 +315,7 @@ async function resolveLocator(
     const candidate = locate(session.page, candidates[index]);
     try {
       await candidate.waitFor({
-        state: "attached",
+        state: needsVisible ? "visible" : "attached",
         timeout: isFinal ? timeoutMs : Math.min(LOCATOR_PROBE_TIMEOUT_MS, timeoutMs),
       });
       return candidate;
