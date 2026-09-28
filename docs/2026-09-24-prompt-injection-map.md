@@ -93,14 +93,15 @@ pipeline.ts build()
       → compileBuilderPrompt()             （prompt.ts：选模板、填占位符、拼 receipt）
       → PiWorkerClient.run()               （fork 独立 Worker，一次调用一个子进程）
           → pi-worker.ts：
-              DefaultResourceLoader({ systemPrompt })   ← 系统提示词
+              DefaultResourceLoader({ systemPrompt, additionalSkillPaths })
+                                                    ← 系统提示词 + 控制器批准的 Skill 元数据
               session.prompt(taskPrompt + imageNote, { images })  ← 任务正文 + 图片
 ```
 
 要点：
 
 - 每次 Builder 调用都是一个独立 Worker 子进程；`sessionKey` 决定它是否续接已有 Pi 会话文件。只有上一次调用 `completed` 且产出 sessionFile 时，会话才会被记住（`pi-worker-client.ts:113-116`）；失败会丢弃会话。
-- Worker 里 `noContextFiles: true`、`noSkills: true`、`noPromptTemplates: true`（`pi-worker.ts:42-44`）：目标项目里的 `AGENTS.md` 之类上下文文件**不会**被 Pi 自动读入；Builder 的系统提示词只有下面拼的两份资产。
+- Worker 里 `noContextFiles: true`、`noSkills: true`、`noExtensions: true`、`noPromptTemplates: true`：目标项目里的 `AGENTS.md`、`.pi/skills`、扩展和模板**不会**被 Pi 自动读入。`additionalSkillPaths` 只显式加入控制器仓库的 `builder-resources/skills/`；匹配任务时 Builder 可通过只读白名单加载完整 `SKILL.md`，不能修改这些资源。固定系统合同仍由下面两份 prompt 资产拼成。
 
 ### 2.2 系统提示词：进程内一次性拼接，四种模式共用
 
@@ -109,7 +110,7 @@ pipeline.ts build()
 const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("system", "self-test")].join("\n\n");
 ```
 
-- 系统提示词不随工作包/模式变化，是 Builder 的固定"合同"。
+- 固定系统合同不随工作包/模式变化；Pi 另附控制器批准 Skill 的名称、描述与只读位置，完整正文按任务需要加载。
 - 改 `builder-system.md` 或 `self-test.md` 会同时影响实现、模块边界修复、交付修复所有调用。
 - 因为模块级常量 + 缓存，长驻进程不会感知文件改动；测试里每次都是新进程所以无感（见 §6）。
 

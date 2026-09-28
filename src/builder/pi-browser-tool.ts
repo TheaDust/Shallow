@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
@@ -12,9 +12,18 @@ const MAX_RESULT_TEXT = 2_000;
 // The worker's owned process tree is killed after the call regardless, so a
 // leaked browser cannot outlive the Builder turn.
 let sharedBrowser: Browser | undefined;
+type PlaywrightRuntime = Pick<typeof import("@playwright/test"), "chromium" | "expect">;
+let playwrightModule: Promise<PlaywrightRuntime> | undefined;
+
+function loadPlaywright(): Promise<PlaywrightRuntime> {
+  const loaded = playwrightModule ?? import("@playwright/test").then(({ chromium, expect }) => ({ chromium, expect }));
+  playwrightModule = loaded;
+  return loaded;
+}
 
 async function sharedBrowserInstance(): Promise<Browser> {
   if (!sharedBrowser || !sharedBrowser.isConnected()) {
+    const { chromium } = await loadPlaywright();
     sharedBrowser = await chromium.launch({ headless: true });
   }
   return sharedBrowser;
@@ -35,7 +44,7 @@ const parameters = Type.Object({
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
-) => (page: Page, context: BrowserContext, assertion: typeof expect) => Promise<unknown>;
+) => (page: Page, context: BrowserContext, assertion: PlaywrightRuntime["expect"]) => Promise<unknown>;
 
 export function createBrowserTool(): ToolDefinition<typeof parameters> {
   return {
@@ -49,6 +58,7 @@ export function createBrowserTool(): ToolDefinition<typeof parameters> {
     parameters,
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
+      const { expect } = await loadPlaywright();
       const instance = await sharedBrowserInstance();
       const context = await instance.newContext();
       const page = await context.newPage();

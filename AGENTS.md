@@ -87,8 +87,10 @@ src/
     pi-worker.ts                唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、SDK 事件与终态判定
     pi-model-config.ts          piProviderModel / DEFAULT_CONTEXT_WINDOW：网关 provider 模型描述，上下文窗口可按运行覆盖
     sse-resilience.ts           始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]，内容/工具事件截断则报可重试错误
+    builder-resources.ts        控制器批准 Builder Skills 的固定只读目录
+    capability-catalog.ts       任务无关组件能力清单、状态检查与拒绝覆盖安装
     pi-tools.ts                 read/edit/write 路径限制与 shell 命令白名单后端（复用 SDK schema/截断，替换执行后端）；
-                                shell 确定性拒绝临时测试命令并引导到 run_tests；装配 run_tests 与会话内 browser 工具
+                                shell 确定性拒绝临时测试命令并引导到 run_tests；装配 capability、run_tests 与会话内 browser 工具
     pi-test-tool.ts             run_tests 工具：限内存的传统测试执行（frontend Vitest 固定 --maxWorkers=1、backend
                                 node:test 固定 --test-concurrency=1、直起 node 不经 npm shim、输出尾部截断、超时/中止杀进程）
     pi-browser-tool.ts          Builder browser：脚本/expect、页面文字与可访问结构、可选截图；失败带诊断报错
@@ -100,6 +102,9 @@ src/
                                 + 本包初始数据原文摘录（seedDeclarations 聚合）
     prompt-fragments.ts         selectPromptFragments：产品 kind 基础集 + generic_web 关键词 lexicon + 观测扩展
     shadow-observation.ts       toBuilderShadowObservation：ShadowReport → 白名单观测（控制字符清洗、1500 截断）
+builder-resources/skills/       显式加载的控制器 Skills；目标项目 Skill/扩展仍禁止自动发现
+scaffold/minimal-web/frontend/src/ui/
+                                任务无关可访问 React primitives（Button/Dialog/Menu/Tabs/FormField/Combobox/Toast）
   judge/
     audit.ts                    auditPacket：计划恢复、定位恢复、行为失败先经受限语义复核（依据成立或按需求重建）再复现/修复；
                                 Judge 故障返回 inconclusive
@@ -178,7 +183,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
-- 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听和静态文件服务；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或视觉组件。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。
+- 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听、静态文件服务与不含业务含义的可访问 UI primitives；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或组合后的产品视图。`builder-resources/skills/` 同样只允许跨任务方法，不得包含当前赛题领域名词、业务答案或可直接释放的功能实现；`test/preloaded-assets-compliance.test.ts` 固化该边界。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
 - `GitCliOps.open` 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置脚手架 `.arc/`、`requirements/`；其他残留会被拒绝。目录同时含 `frontend/` 与 `backend/` 时视为 evolution 模板（上一轮产物），整目录被接受：跳过空目录校验，脏的第三方仓库也直接采纳为基线，并用仓库本地的 `.git/info/exclude` 排除 `node_modules/`、`dist/` 等（不改模板自身的 `.gitignore`）。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
@@ -200,7 +205,7 @@ npx tsx baseline/index.ts --requirements-dir data/sheet
 6. **Probe DSL**：role/label/text 定位可附单层 `scope`（及字面 hasText），用于卡片/行/对话框内定位；禁止嵌套 scope、CSS/XPath、动态代码和跨源导航。wire case 必须有终末 `assertion`；内部解析成统一 steps。goto 默认从 `/` 进入，非根路径须在需求文字中明示；精化仅改 locator，保留需求明示的目标名称与 exact 匹配，固定操作、输入与预期，且不得降低定位强度（带名称的交互控件角色不得降级为纯 text，label 不得降级为纯 text；button/link/menuitem 等同类角色互换允许）。终末断言对需求给出的控件名使用 role + exact，不用 text 兜底。支持 expectHidden 与有限 ARIA 状态 expectAttribute 断言，检查每次状态变化。混合失败先处理带快照的 locator 部分；会触发修复的每次原子验收至多两轮精化、一次浏览器基础设施重试（只检测审计不做精化）。业务失败复现共享这些额度。语义复核只改需求依据冲突，不改定位（定位仍走精化）；检测型审计不触发复核；每 case 每运行至多一次语义修正，旧判词作废、只采纳纠正后重跑的结果。
 7. **交付**：最终验证为安装/构建/就绪/浏览器 smoke/grader-like 复验（只设 `PORT`，额外端口与未知路径），至多一次浏览器基础设施重试。剩余额度允许时至多三轮交付修复：每轮 Builder 未完成回执即直接回滚、不做无效复验（其结果必然被丢弃），完成回执才复验；未通过复验的轮次回滚到接受基线后再开下一轮。修复被保留后重新验收，未重验的功能标 inconclusive，不能沿用旧版本的 pass。
 8. **预算**：默认和显式 `0` 均不限总时长；正预算分别预留实现60%、初验20%、修复15%、交付5%，未用时间向后结转。main 单次实现上限90min（正预算时另受实现阶段剩余预算限制），模块边界修复上限90min（最多剩余修复阶段一半），交付修复单次上限30min（至多三轮）；无总预算时单次 Planner 操作含网关恢复最多12min，正预算时受当前阶段剩余额度限制。构建/清理/最终检查有独立超时，因此总预算不是进程硬截止时刻。
-9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。文案外置 `prompts/`；Builder 持文件、shell、`app`（父进程管理开发服务 start/status/stop）、`run_tests`（限内存传统测试执行，见 `src/builder/pi-test-tool.ts`）与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写传统测试并用 run_tests 运行。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
+9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。目标项目的 Skill、扩展、模板、主题与上下文文件不自动发现；Worker 只显式加载 `builder-resources/skills/`，read 对该目录只读，edit/write 仍限候选目录。技能只提供跨任务工程方法，capability 只复制任务无关 primitives；二者都不能替代本次 Pi/LLM 调用生成领域模型、页面、业务 API 与行为。公开、任务无关且精确锁版本的 npm 通用库可按当前需求安装；禁止成品页面、业务模板、当前任务专用包、git URL、远程脚本和未批准 Pi package。文案外置 `prompts/`；Builder 持文件、shell、`list_capabilities`/`install_capability`（只安装固定任务无关组件且不覆盖冲突文件）、`app`（父进程管理开发服务 start/status/stop）、`run_tests`（限内存传统测试执行，见 `src/builder/pi-test-tool.ts`）与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写传统测试并用 run_tests 运行。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
 10. **运行时恢复**：主线 Builder 与 Planner 通过 `gateway-recovery.ts` 共享临时网关故障退避；Planner 单路排队。控制器在同一调用窗口内持续退避重试（429 限流 30s 起、上限 5min；5xx/408/断连 5s 起、上限 1min；均遵守 Retry-After，不越过阶段/调用剩余额度）。Builder 窗口耗尽后用新窗口重试同一包；无总预算时单次 Planner 操作最多恢复12min，窗口耗尽按 Judge 故障保留应用并记 inconclusive，同一候选的最终检测不重复规划该无计划包。Planner 以 SSE 汇集完整 JSON 内容；普通 JSON 响应也可读取。后台预规划故障记录 `probe_preplan_failed`，模块边界前收敛，不延迟 Builder 检查点。网关将上游 `connection reset by peer` 包装成 HTTP 400 时，Worker 只根据实际网关状态与 SDK/provider 错误消息的精确组合将其按连接故障重试，模型内容不参与分类；普通请求错误不重试，Builder 的请求错误与认证失败一样停止派发（需求保持待处理）；Planner 单独的认证/协议错误不停止仍可工作的 Builder。git 单命令30s；Pi Worker 进程组/作业回收最多5s。每次调用结束后父进程回收拥有的进程组并等待退出确认，启动故障终止运行并恢复检查点，清理失败按执行故障终止本轮。cgroup 计数仅用于诊断。新增事件同步 types/human-log；app 工具启动的服务由父进程在 Worker 结束后回收，再清理临时数据；启动中的请求先收敛再停止服务。源码或构建发生变化会使候选证据失效。接受输入 digest 只覆盖 Git 回滚能还原的文件（tracked + 未被忽略的 untracked），被忽略的运行/构建产物（dist、data、依赖）不计入，否则失败修复留下的产物会让回滚口径对不上。
 
 Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功能分组验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`、`test/semantic-correction.test.ts`、`test/semantic-review.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。

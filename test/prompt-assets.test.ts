@@ -115,6 +115,12 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /React \+ Vite \+ TypeScript/);
   assert.match(loadPrompt("system", "builder-system"), /通用最小脚手架/);
   assert.match(loadPrompt("system", "builder-system"), /不代表任何业务需求已经实现/);
+  assert.match(loadPrompt("system", "builder-system"), /frontend\/src\/ui/);
+  assert.match(loadPrompt("system", "builder-system"), /list_capabilities/);
+  assert.match(loadPrompt("system", "builder-system"), /install_capability/);
+  assert.match(loadPrompt("system", "builder-system"), /允许从 npm 安装公开、任务无关/);
+  assert.match(loadPrompt("system", "builder-system"), /不得安装含成品页面、业务流程/);
+  assert.match(loadPrompt("system", "builder-system"), /不得从 git URL、任意远程脚本或未批准的 Pi package 加载/);
   assert.match(loadPrompt("system", "builder-system"), /hash 路由/);
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
