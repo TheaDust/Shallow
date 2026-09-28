@@ -232,8 +232,11 @@ test("Playwright Probe Runner returns inconclusive with an aria snapshot for a m
 
     const report = await new PlaywrightProbeRunner().run(plan, {
       baseUrl: server.baseUrl,
-      stepTimeoutMs: 100,
-      caseTimeoutMs: 1_000,
+      // Navigation must not consume the whole case budget even when other
+      // Chromium test files run concurrently; the click still classifies as a
+      // locator miss within the same step timeout.
+      stepTimeoutMs: 1_000,
+      caseTimeoutMs: 5_000,
     });
 
     assert.equal(report.verdict, "inconclusive");
