@@ -14,6 +14,7 @@ export function toBuilderShadowObservation(
       stepIndex: failure.stepIndex,
       category: failure.category,
       message: sanitizeDiagnosticText(failure.message, secrets),
+      ...(failure.inputSummary ? { inputSummary: sanitizeDiagnosticText(failure.inputSummary, secrets) } : {}),
       ...(failure.locatorSnapshot
         ? {
             accessibilityExcerpt: sanitizeDiagnosticText(

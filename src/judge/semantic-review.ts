@@ -102,6 +102,18 @@ export function parsePlanReview(
     }
     return { caseId, conflict, basis };
   });
+  if (original.cases.length !== plan.cases.length || plan.cases.some(item => !originalIds.has(item.id))) {
+    throw new Error("PlanReview must preserve the reviewed case set");
+  }
+  for (const before of original.cases) {
+    const after = plan.cases.find(item => item.id === before.id)!;
+    if (before.purpose !== after.purpose || JSON.stringify(before.requirementIds) !== JSON.stringify(after.requirementIds)) {
+      throw new Error("PlanReview must preserve each case's purpose and requirementIds");
+    }
+    if (JSON.stringify(before) !== JSON.stringify(after) && !seen.has(before.id)) {
+      throw new Error("PlanReview must cite a correction for every changed case");
+    }
+  }
   return { status: "corrected", rationale, plan, corrections };
 }
 

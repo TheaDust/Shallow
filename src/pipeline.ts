@@ -47,12 +47,18 @@ import type {
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
+const INCOMPLETE_IMPLEMENTATION_RETRY_CEILING_MS = 600_000;
 /** A single Judge operation may recover from transient faults, but cannot own an unlimited run. */
 const PLANNER_RECOVERY_WINDOW_MS = 720_000;
 /** Delivery repairs get longer calls and more rounds than other fixes: the
  * candidate goes straight to the grader, so delivery must be given every chance. */
 const DELIVERY_REPAIR_CALL_CEILING_MS = 1_800_000;
 const MAX_DELIVERY_REPAIR_ROUNDS = 3;
+
+function needsImplementationRetry(result: BuilderResult): boolean {
+  return !result.gatewayFailure && (result.outcome === "timed_out" ||
+    (result.outcome === "failed" && result.terminationReason === "missing_terminal_response"));
+}
 
 export interface AppLifecycle {
   start(
@@ -390,7 +396,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
       const failures = targetPackets.filter(p => {
         const result = results.get(p.id);
-        return result?.status === "failed" || result?.repairableLocatorFailure;
+        return result?.status === "failed" || result?.repairableProbeFailure;
       });
       if (!failures.length) break;
       const round = ++boundaryRepairCount;
@@ -561,6 +567,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       // Every packet is implemented in a fresh session; handoff across packets
       // goes through the project itself (code, tests, ARCHITECTURE.md).
       let result: BuilderResult;
+      const implementationBaselineSha = state.snapshot.acceptedSha;
       const implementationDeadline = deps.clock.nowMs() + budget.callTimeout("implementation", IMPLEMENTATION_CALL_CEILING_MS);
       const sessionKey = randomUUID();
       let mayContinue = true;
@@ -575,31 +582,33 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         () => build({ mode: "implement", packet, outputDir: options.outputDir,
           platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
         "implementation", { sessionKey }));
-      if (result.outcome === "timed_out" && !result.gatewayFailure) {
+      if (needsImplementationRetry(result)) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
-        const retryTimeoutMs = budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
+        const retryTimeoutMs = budget.callTimeout("implementation", result.terminationReason === "missing_terminal_response"
+          ? INCOMPLETE_IMPLEMENTATION_RETRY_CEILING_MS : IMPLEMENTATION_RETRY_CEILING_MS);
         if (retryTimeoutMs > 0 && !gateway.exhausted) {
           const retryPacket: WorkPacket = { ...packet, attempt: 2 };
           state.setPacketAttempt(packet.id, retryPacket.attempt);
           for (const auditPacket of relatedAuditPackets) state.setPacketAttempt(auditPacket.id, retryPacket.attempt);
           await state.record({ at: now(), type: "implementation_retry", packetId: packet.id,
-            detail: { requirementIds: packet.requirementIds, timeoutMs: retryTimeoutMs } });
+            detail: { requirementIds: packet.requirementIds, timeoutMs: retryTimeoutMs,
+              reason: result.terminationReason ?? "timeout" } });
           result = await build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
             platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
-          "implementation", { timeoutMs: retryTimeoutMs });
+            "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true });
           result = await resumeGatewayWork(result,
             failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
               detail: { requirementIds: packet.requirementIds, failure } }),
             () => build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
               platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
-            "implementation", { timeoutMs: retryTimeoutMs }));
+              "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true }));
           if (result.outcome === "timed_out" && !result.gatewayFailure) await preserveInterruptedWork(retryPacket);
         }
         if (result.outcome === "timed_out" && !result.gatewayFailure) {
           state.markRequirements(packet.requirementIds, "blocked");
           await state.record({ at: now(), type: "module_failed", packetId: packet.id,
-            detail: { requirementIds: packet.requirementIds, reason: "Builder deadline exhausted; partial work is not a completed implementation" } });
+            detail: { requirementIds: packet.requirementIds, reason: "Builder did not complete within the bounded implementation attempts; partial work is not a completed implementation" } });
           for (const id of packet.requirementIds) await emitArc(deps, state, arc => arc.requirementState(id, "implement", "failed"));
           continue;
         }
@@ -643,7 +652,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
         const receiptFailure = result.summary || result.outcome;
         try {
-          if (!await deps.git.hasApplicationChanges(state.snapshot.acceptedSha)) throw new Error("Builder failed without application changes");
+          if (!await deps.git.hasApplicationChanges(implementationBaselineSha)) throw new Error("Builder failed without application changes");
           candidate = await runnable(); reason = undefined;
         }
         catch (error) { reason = errorMessage(error); }

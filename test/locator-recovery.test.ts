@@ -53,10 +53,10 @@ for (const mode of ["required", "transient", "guessed", "no-navigation"] as cons
       };
       const result = await audit(f);
       assert.equal(result.status, mode === "transient" ? "verified" : "inconclusive");
-      assert.equal(result.repairableLocatorFailure === true, mode === "required");
+      assert.equal(result.repairableProbeFailure === true, mode === "required");
       assert.equal(runs, mode === "required" || mode === "transient" ? 2 : 1);
       assert.equal(f.builder.requests.length, 0);
-      assert.equal(planner.reviews.length, 0);
+      assert.equal(planner.reviews.length, 1);
     });
   });
 }
@@ -121,7 +121,7 @@ test("Unchanged, mutated behavior, and fatal refinements never rerun invalid pla
       f.deps.runner.run = async plan => { runs++; return fail(plan, "locator"); };
       assert.equal((await audit(f)).status, "inconclusive");
       assert.equal(runs, 1);
-      assert.equal(refinements, invalid === "behavior" ? 2 : 1);
+      assert.equal(refinements, 1);
       assert.deepEqual(f.git.restoredShas, []);
     });
   }
@@ -239,7 +239,7 @@ test("The same plan, failed step, and page snapshot do not repeat a no-progress 
     assert.equal((await audit(f, () => 60_000, policy)).status, "inconclusive");
     assert.equal(probes, 2);
     assert.equal(refinements, 1);
-    assert.equal(policy.noProgressRefinements?.size, 1);
+    assert.equal(policy.noProgressRefinements?.size, 2);
     snapshot = '- main "Updated Workspace"';
     assert.equal((await audit(f, () => 60_000, policy)).status, "inconclusive");
     assert.equal(refinements, 2);
@@ -358,6 +358,97 @@ test("Search navigation is unavailable without a seeded target or a unique visib
     packet.requirements[0].text = "A search result opens the repository.";
     report.failures[0].locatorSnapshot = '- searchbox "Search"\n- searchbox "Search code"';
     assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+  });
+});
+
+test("Seed navigation after sign-in scopes same-name results to the declared owner", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    packet.requirements[0].text = "The search opens a public repository. Opening it shows Issues.";
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`, owner `alice`."];
+    packet.requirements[0].scenarios = ["Seed data: repository `docs`, owner `alice`."];
+    const original: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening it shows Issues."], steps: [
+        { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "button", name: "Sign in" } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const absent = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 2, category: "locator" as const, message: "missing", locatorSnapshot: '- searchbox "Search"',
+    }] };
+    const searched = rootSearchNavigationPlan(packet, original, absent)!;
+    assert.equal(searched.cases[0].steps[2].op, "fill");
+    assert.deepEqual(searched.cases[0].steps.at(-1), original.cases[0].steps.at(-1));
+    const ambiguous = { ...absent, failures: [{ ...absent.failures[0], stepIndex: 4,
+      locatorSnapshot: '- list:\n  - listitem:\n    - link "docs":\n      - /url: "/alice/docs"\n    - paragraph: alice/docs\n  - listitem:\n    - link "docs":\n      - /url: "/org/docs"\n    - paragraph: org/docs',
+    }] };
+    const scoped = rootSearchNavigationPlan(packet, searched, ambiguous)!;
+    const click = scoped.cases[0].steps[4];
+    assert.ok(click.op === "click");
+    assert.deepEqual(click.locator.scope, { by: "role", role: "listitem", hasText: "alice/docs" });
+    packet.requirements[0].scenarios = [];
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`."];
+    packet.requirements[0].seedDeclarations.push("Seed data: repository `other`, owner `alice`.");
+    assert.equal(rootSearchNavigationPlan(packet, searched, ambiguous), undefined);
+  });
+});
+
+test("A failed preparation checkpoint can be corrected before the target behavior is graded", async () => {
+  await withModulePipeline(async f => {
+    let runs = 0;
+    f.deps.runner.run = async plan => ++runs === 1 ? { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
+      failures: [{ caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "initial state mismatch" }] } : pass(plan);
+    f.deps.planner.reviewPlan = async (_packet, original) => ({ status: "corrected", rationale: "The initial state needs preparation",
+      corrections: [{ caseId: original.cases[0].id, conflict: "missing preparation", basis: ["Display the main workspace."] }],
+      plan: { ...original, cases: original.cases.map(item => ({ ...item, steps: [item.steps[0],
+        { op: "click", locator: { by: "role", role: "button", name: "Prepare" } }, ...item.steps.slice(1)] })) } });
+    assert.equal((await audit(f)).status, "verified");
+    assert.ok((await f.events()).some(event => event.type === "probe_review_started"));
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
+test("A reviewed preparation gap stays inconclusive and becomes a diagnostic repair target after fresh confirmation", async () => {
+  await withModulePipeline(async f => {
+    let runs = 0;
+    f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
+      failures: [{ caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "required seed missing" }] }; };
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.repairableProbeFailure, true);
+    assert.equal(runs, 2);
+  });
+});
+
+test("An independent preparation failure does not suppress a reviewed and reproduced business failure", async () => {
+  await withModulePipeline(async f => {
+    const original = homePlan();
+    original.cases.push({ ...structuredClone(original.cases[0]), id: "prepared-business" });
+    f.deps.planner = new FakeProbePlanner([original]);
+    let runs = 0;
+    f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [
+      { caseId: original.cases[0].id, stepIndex: 1, category: "precondition", message: "initial state mismatch" },
+      { caseId: "prepared-business", stepIndex: 1, category: "assertion", message: "saved value missing" },
+    ] }; };
+    const result = await audit(f);
+    assert.equal(result.status, "failed");
+    assert.deepEqual(result.report?.failures.map(item => item.caseId), ["prepared-business"]);
+    assert.equal(runs, 2);
+  });
+});
+
+test("An identical reviewed preparation gap is freshly confirmed without repeating the Planner call", async () => {
+  await withModulePipeline(async f => {
+    let reviews = 0, runs = 0;
+    f.deps.planner.reviewPlan = async () => { reviews++; return { status: "sound", rationale: "Required initial seed is missing" }; };
+    f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
+      failures: [{ caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "seed missing" }] }; };
+    const policy = { refineLocators: true, noProgressRefinements: new Set<string>() };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.equal((await audit(f, () => 60_000, policy)).repairableProbeFailure, true);
+    }
+    assert.equal(reviews, 1);
+    assert.equal(runs, 4);
   });
 });
 

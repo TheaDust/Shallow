@@ -27,6 +27,14 @@ test("Builder forwards structured gateway failure metadata to the controller", a
   assert.deepEqual((await f.builder.run(f.request)).gatewayFailure, gatewayFailure);
 });
 
+test("Builder preserves the engine termination reason and asks a fresh session to finish existing work", async () => {
+  const f = await fixture([{ ...completed, outcome: "failed", terminationReason: "missing_terminal_response" }]);
+  const result = await f.builder.run(f.request, { resumeInterrupted: true });
+  assert.equal(result.terminationReason, "missing_terminal_response");
+  assert.match(f.calls[0].taskPrompt, /使用新会话.*当前文件/);
+  assert.match(f.calls[0].taskPrompt, /已完成的全量检查沿用结果/);
+});
+
 test("Engine-neutral Builder preserves separate prompts, references, key and smaller timeout", async () => {
   const f = await fixture([completed], { referenceImages: true });
   await f.builder.run(f.request, { timeoutMs: 300, sessionKey: "module" });

@@ -20,6 +20,33 @@ function plan(path = "/"): ProbePlan {
   ] }] };
 }
 
+test("Locators reject impossible ARIA roles in targets, fallbacks and scopes", () => {
+  for (const variant of ["target", "fallback", "scope"]) {
+    const invalid = plan();
+    const step = invalid.cases[0].steps[1];
+    if (step.op !== "click") assert.fail("missing action");
+    if (variant === "target") step.locator = { by: "role", role: "text", name: "Publish" };
+    if (variant === "fallback") step.locator.fallbacks = [{ by: "role", role: "text", name: "Publish" }];
+    if (variant === "scope") step.locator.scope = { by: "role", role: "input" };
+    assert.throws(() => parseProbePlan(invalid, packet()), /valid ARIA role/);
+  }
+});
+
+test("Preparation ends in an initial-state assertion and cannot absorb the result assertion", () => {
+  const prepared = plan();
+  prepared.cases[0].steps.splice(1, 0, { op: "expectVisible", locator: { by: "role", role: "main" } });
+  prepared.cases[0].setupStepCount = 2;
+  assert.equal(parseProbePlan(toWireProbePlan(prepared)).cases[0].setupStepCount, 2);
+  for (const count of [-1, 1.5, 3, 4]) {
+    const invalid = structuredClone(prepared);
+    invalid.cases[0].setupStepCount = count;
+    assert.throws(() => parseProbePlan(invalid), /setupStepCount/);
+  }
+  const changed = structuredClone(prepared);
+  changed.cases[0].setupStepCount = 0;
+  assert.throws(() => assertLocatorOnlyRefinement(prepared, changed), /only locator/);
+});
+
 test("Deep links require exact public path evidence, including hash and query", () => {
   assert.doesNotThrow(() => parseProbePlan(plan(), packet()));
   for (const path of ["/items", "/login", "/items/42", "/#/items"]) {

@@ -96,7 +96,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "builder_work_preserved":
       return `中断任务的代码${detail?.preserved ? "已保存为可运行检查点" : "无法运行，已恢复上一检查点"}（${packetId}）；当前需求仍待完成`;
     case "implementation_retry":
-      return `实现超时后以新会话续做原需求包（${packetId}）；仅重试一次，上限 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}`;
+      return `实现${detail?.reason === "missing_terminal_response" ? "未收到终态回执" : "超时"}后以新会话续做原需求包（${packetId}）；仅重试一次，上限 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}`;
     case "implementation_continued":
       return `实现检查失败，同会话续做一次（${packetId}）；剩余额度 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}；${pickString(detail, "reason")}`;
     case "implementation_paused":

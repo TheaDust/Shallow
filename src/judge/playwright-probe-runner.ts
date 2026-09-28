@@ -19,6 +19,8 @@ export interface ProbeRunOptions {
   baseUrl: string;
   stepTimeoutMs: number;
   caseTimeoutMs: number;
+  /** Controller-owned fresh application data, preserving one browser launch per plan. */
+  prepareCase?: () => Promise<string>;
 }
 
 interface BrowserSession {
@@ -44,6 +46,7 @@ export function deriveProbeVerdict(
 ): ShadowReport["verdict"] {
   if (failures.length === 0) return "pass";
   if (failures.some(failure => ["assertion", "navigation", "timeout"].includes(failure.category))) return "fail";
+  if (failures.some(failure => failure.category === "precondition")) return "inconclusive";
   if (failures.some(failure => failure.category === "runner")) return "inconclusive";
   const locatorOnly = failures.every((failure) => failure.category === "locator");
   const hasSnapshot = failures.some(
@@ -71,7 +74,8 @@ export class PlaywrightProbeRunner {
         throw new ExecutionFault("browser", "browser_launch", false, { cause: error });
       }
       for (const probeCase of plan.cases) {
-        const failure = await this.runCase(browser, probeCase, options);
+        const baseUrl = await options.prepareCase?.() ?? options.baseUrl;
+        const failure = await this.runCase(browser, probeCase, { ...options, baseUrl });
         if (failure) failures.push(failure);
         else passedCases.push(probeCase.id);
       }
@@ -114,7 +118,7 @@ export class PlaywrightProbeRunner {
           return {
             caseId: probeCase.id,
             stepIndex,
-            category: "timeout",
+            category: stepIndex < (probeCase.setupStepCount ?? 0) ? "precondition" : "timeout",
             message: `Case exceeded ${options.caseTimeoutMs}ms`,
           };
         }
@@ -138,8 +142,10 @@ export class PlaywrightProbeRunner {
           return {
             caseId: probeCase.id,
             stepIndex,
-            category: executionError.category,
+            category: stepIndex < (probeCase.setupStepCount ?? 0) && executionError.category !== "runner"
+              ? "precondition" : executionError.category,
             message: compactError(executionError),
+            ...fileInputSummary(probeCase.steps.slice(0, stepIndex)),
             ...(executionError.locatorAttempts ? { locatorAttempts: executionError.locatorAttempts } : {}),
             ...(executionError.locatorSnapshot
               ? { locatorSnapshot: executionError.locatorSnapshot }
@@ -152,6 +158,14 @@ export class PlaywrightProbeRunner {
       await session.context.close().catch(() => undefined);
     }
   }
+}
+
+/** Input shape only: no uploaded content or hidden step sequence reaches Builder. */
+function fileInputSummary(completedSteps: ProbeStep[]): { inputSummary?: string } {
+  const file = completedSteps.reverse().find(step => step.op === "uploadFile");
+  if (file?.op !== "uploadFile") return {};
+  return { inputSummary: `最近成功上传的文件：UTF-8 ${Buffer.byteLength(file.content, "utf8")} 字节；` +
+    `换行符 ${(file.content.match(/\r\n|\r|\n/g) ?? []).length} 个；文件末尾${/[\r\n]$/.test(file.content) ? "有" : "无"}换行。` };
 }
 
 async function executeStep(
@@ -265,7 +279,8 @@ async function executeStep(
   } catch (error) {
     const assertion = step.op.startsWith("expect");
     const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(compactError(error));
-    throw new ProbeExecutionError(invalidProbeOperation ? "runner" : assertion ? "assertion" : "timeout", compactError(error));
+    throw new ProbeExecutionError(invalidProbeOperation ? "runner" : assertion ? "assertion" : "timeout",
+      compactError(error), await ariaSnapshot(session.page, timeoutMs, locator));
   }
   return session;
 }
@@ -273,8 +288,8 @@ async function executeStep(
 /**
  * Try candidates in order; non-final candidates get a short probe so a wrong
  * guess does not consume the step budget, the final one keeps the full timeout.
- * Only an all-candidates miss is a locator failure; a hit followed by a failing
- * operation stays an assertion/timeout failure.
+ * A missing assertion target is an observed unmet expectation. Ambiguous
+ * assertion targets and missing action targets still need locator recovery.
  */
 async function resolveLocator(
   session: BrowserSession,
@@ -301,7 +316,8 @@ async function resolveLocator(
     }
   }
   throw new ProbeExecutionError(
-    "locator",
+    step.op.startsWith("expect") && !attempts.some(attempt => attempt.message.includes("strict mode violation"))
+      ? "assertion" : "locator",
     compactError(lastMiss),
     await ariaSnapshot(session.page, timeoutMs),
     attempts,
@@ -367,12 +383,13 @@ function locate(page: Page | Locator, locator: ProbeLocator): Locator {
   });
 }
 
-async function ariaSnapshot(page: Page, timeoutMs: number): Promise<string | undefined> {
+async function ariaSnapshot(page: Page, timeoutMs: number, target?: Locator): Promise<string | undefined> {
   try {
-    const snapshot = await page.locator("body").ariaSnapshot({
-      timeout: Math.min(timeoutMs, 500),
-    });
-    return snapshot
+    const options = { timeout: Math.min(timeoutMs, 500) };
+    const targetSnapshot = target && await target.count() === 1
+      ? await target.ariaSnapshot(options).catch(() => undefined) : undefined;
+    const pageSnapshot = await page.locator("body").ariaSnapshot(options);
+    return [targetSnapshot, pageSnapshot].filter(Boolean).join("\n")
       .replace(/\b(password|token|api[_-]?key|cookie)\s*[:=]\s*\S+/gi, "$1=[redacted]")
       .slice(0, 4_000);
   } catch {

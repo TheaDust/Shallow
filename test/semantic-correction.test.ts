@@ -112,6 +112,72 @@ test("An unavailable semantic review never becomes a failed verdict", async () =
   });
 });
 
+for (const checkpoint of ["missing", "view-only"] as const) {
+  test(`A declared seed cannot replace executed state evidence: ${checkpoint}`, async () => {
+    await withModulePipeline(async f => {
+      const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      const basis = 'Seed data: cell `A1` contains `2`. Enter a formula and show the calculated result.';
+      catalog.children[0].children[0].description = basis;
+      await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+      const original = groundedPlan([
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "grid" } },
+        { op: "fill", locator: { by: "label", text: "Formula bar" }, value: "=A1+2" },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "4" },
+      ], [basis]);
+      if (checkpoint === "view-only") original.cases[0].setupStepCount = 2;
+      const planner = new FakeProbePlanner([original]);
+      f.deps.planner = planner;
+      let runs = 0;
+      f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "fail", passedCases: [],
+        failures: [{ caseId: "case-A", stepIndex: 3, category: "assertion", message: "expected 4, got #ERROR",
+          locatorSnapshot: '- grid:\n  - gridcell "A1": Region' }] }; };
+      const result = await auditWith(f, makeState(f), original);
+      assert.equal(result.status, "inconclusive");
+      assert.equal(result.repairableProbeFailure, undefined);
+      assert.equal(planner.reviews.length, 2);
+      assert.equal(runs, 1);
+      assert.ok((await f.events()).some(event => event.type === "probe_review_failed" &&
+        String(event.detail?.message).includes("initial-state checkpoint")));
+      assert.equal(f.builder.requests.length, 0);
+    });
+  });
+}
+
+test("A misleading sound verdict gets preparation feedback within the existing review quota", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    const basis = 'Seed data: cell `A1` contains `2`. Enter a formula and show the calculated result.';
+    catalog.children[0].children[0].description = basis;
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const original = groundedPlan([{ op: "goto", path: "/" },
+      { op: "expectVisible", locator: { by: "role", role: "grid" } },
+      { op: "fill", locator: { by: "label", text: "Formula bar" }, value: "=A1+2" },
+      { op: "expectText", locator: { by: "role", role: "status" }, text: "4" }], [basis]);
+    const corrected = structuredClone(original);
+    corrected.cases[0].steps.splice(1, 0,
+      { op: "click", locator: { by: "role", role: "gridcell", name: "A1", exact: true } },
+      { op: "fill", locator: { by: "label", text: "Formula bar" }, value: "2" },
+      { op: "press", locator: { by: "label", text: "Formula bar" }, key: "Enter" },
+      { op: "expectText", locator: { by: "role", role: "gridcell", name: "A1", exact: true }, text: "2" });
+    corrected.cases[0].setupStepCount = 5;
+    let reviews = 0;
+    f.deps.planner.reviewPlan = async (_packet, _plan, _failures, feedback) => {
+      if (++reviews === 1) return { status: "sound", rationale: "The declared seed should contain 2" };
+      assert.match(feedback?.validationError ?? "", /executed initial-state checkpoint/);
+      return correctedReview(corrected, [{ caseId: "case-A", conflict: "The seed value was never established", basis: [basis] }]);
+    };
+    f.deps.runner.run = async plan => plan.cases[0].setupStepCount ? pass(plan) : {
+      packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [{
+        caseId: "case-A", stepIndex: 3, category: "assertion", message: "expected 4, got #ERROR" }],
+    };
+    const result = await auditWith(f, makeState(f), original);
+    assert.equal(result.status, "verified");
+    assert.equal(reviews, 2);
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
 test("A corrected plan is re-run on the real browser before any verified verdict", async () => {
   await withModulePipeline(async f => {
     const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

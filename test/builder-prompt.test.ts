@@ -172,7 +172,7 @@ test("Repair prompt carries only the cleaned shadow observation", () => {
   const compiled = compileBuilderPrompt(repairRequest("repair"));
 
   assert.match(compiled.taskPrompt, /# 行动：检查并修复需求偏差/);
-  assert.match(compiled.taskPrompt, /category 为 locator 的观测尚不能证明业务失败/);
+  assert.match(compiled.taskPrompt, /category 为 locator 或 precondition 的观测表示需要诊断，目标业务尚未完成验收/);
   assert.match(compiled.taskPrompt, /已通过的用例标识/);
   assert.match(compiled.taskPrompt, /open-page/);
   assert.match(compiled.taskPrompt, /允许使用的失败观测/);

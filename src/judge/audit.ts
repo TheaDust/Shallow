@@ -6,7 +6,7 @@ import { ExecutionFault } from "../execution-fault.js";
 import { GatewayRequestError } from "../gateway-failure.js";
 import { isModelLengthCutoff, planValidationFeedback, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { rootSearchNavigationPlan } from "./navigation-recovery.js";
-import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, NoLocatorProgressError, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
+import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, locatorCandidates, parseProbePlan, probePlanSha256, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
 export interface AuditResult {
@@ -14,8 +14,8 @@ export interface AuditResult {
   plan?: ProbePlan;
   report?: ShadowReport;
   reason?: string;
-  /** Reproduced missing requirement-named control; diagnostic repair, not a failed verdict. */
-  repairableLocatorFailure?: boolean;
+  /** Reviewed, reproduced preparation/control gap; diagnostic repair, not a failed verdict. */
+  repairableProbeFailure?: boolean;
 }
 
 export interface AuditPolicy {
@@ -47,17 +47,25 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
     let first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
     plan = first.plan;
-    // Semantic attribution: a reproducible behavior failure is not yet a probe
-    // verdict. Only recovery-enabled audits review; detection-only audits publish
-    // without repairing.
+    const reviewKey = createHash("sha256").update(JSON.stringify([probePlanSha256(plan), first.report.failures])).digest("hex");
+    let reviewed = policy.refineLocators && policy.noProgressRefinements?.has(`review:sound:${reviewKey}`) === true;
+    const probeGap = first.report.failures.some(item => item.category === "locator" || item.category === "precondition");
+    // Missing navigation/setup may require new steps, which locator patches cannot
+    // supply. Use the unused locator-recovery quota for a grounded plan review.
+    const reviewAttempts = probeGap ? MAX_LOCATOR_REFINEMENTS - recovery.locatorRefinements : DEFAULT_SEMANTIC_REVIEW_ATTEMPTS;
     if (policy.refineLocators && first.report.verdict !== "pass" && first.source === "probe" &&
-      first.report.failures.length > 0 &&
-      first.report.failures.every(item => item.category !== "locator" && item.category !== "runner") &&
-      remaining() > 0) {
-      const review = await reviewBehaviorFailures(packet, plan, first.report, deps, state, remaining);
+      first.report.failures.some(item => item.category !== "runner") && !reviewed && reviewAttempts > 0 && remaining() > 0) {
+      if (policy.noProgressRefinements?.has(`review:unavailable:${reviewKey}`)) {
+        return { status: "inconclusive", plan, report: first.report, reason: "Identical plan review previously could not establish valid evidence" };
+      }
+      const review = await reviewBehaviorFailures(packet, plan, first.report, deps, state, remaining, reviewAttempts,
+        probeGap ? recovery : undefined);
       if (review.status === "unavailable") {
+        policy.noProgressRefinements?.add(`review:unavailable:${reviewKey}`);
         return { status: "inconclusive", plan, report: first.report, reason: review.reason };
       }
+      reviewed = true;
+      if (review.status === "sound") policy.noProgressRefinements?.add(`review:sound:${reviewKey}`);
       if (review.status === "corrected") {
         plan = review.plan;
         first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
@@ -72,29 +80,31 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
         ? { status: "verified", plan, report: confirmed.report }
         : { status: "inconclusive", plan, report: confirmed.report, reason: "navigation recovery did not pass on a fresh application" };
     }
-    if (first.source !== "probe" || first.report.failures.some(item => item.category === "locator" || item.category === "runner")) {
-      // A planner guess remains inconclusive. A stable absence of an explicitly
-      // required action can still be sent to Builder for diagnosis, without
-      // claiming that the Judge established a business failure.
-      if (policy.refineLocators && first.source === "probe" && remaining() > 0 &&
-        missingRequiredControl(packet, plan, first.report)) {
-        const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
-        if (confirmed.report.verdict === "pass") return { status: "verified", plan, report: confirmed.report };
-        if (confirmed.source === "probe" && missingRequiredControl(packet, plan, confirmed.report) &&
-          failureKey(first.report) === failureKey(confirmed.report)) {
-          return { status: "inconclusive", plan, report: confirmed.report, repairableLocatorFailure: true,
-            reason: "A requirement-named control was missing on two fresh application runs; implementation diagnosis needed" };
-        }
-      }
+    const businessFailures = first.report.failures.filter(isBehaviorFailure);
+    const diagnosis = reviewed ? diagnosticFailures(packet, plan, first.report) : [];
+    if (first.source !== "probe" || (!businessFailures.length && !diagnosis.length) ||
+      (policy.refineLocators && businessFailures.length > 0 && !reviewed)) {
       return { status: "inconclusive", plan, report: first.report, reason: "Judge could not establish valid behavior evidence" };
     }
     if (remaining() <= 0) return { status: "inconclusive", plan, reason: "failure confirmation budget exhausted" };
     // Fresh application state: failed actions may have changed server-side data.
-    const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
+    const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
     plan = confirmed.plan;
-    const stable = confirmed.source === "probe" && confirmed.report.verdict === "fail" && failureKey(first.report) === failureKey(confirmed.report);
-    return { status: stable ? "failed" : "inconclusive", plan, report: confirmed.report,
-      ...(stable ? {} : { reason: "failure was not reproducible" }) };
+    if (diagnosis.length > 0 && businessFailures.length === 0 && confirmed.source === "probe" && confirmed.report.verdict === "pass") {
+      return { status: "verified", plan, report: confirmed.report };
+    }
+    const repeated = confirmed.source === "probe" ? confirmed.report.failures.filter(item =>
+      [...businessFailures, ...diagnosis].some(previous => failureKey(previous) === failureKey(item))) : [];
+    const reproducedBusiness = repeated.filter(isBehaviorFailure);
+    if (reproducedBusiness.length > 0) {
+      return { status: "failed", plan, report: { ...confirmed.report, verdict: "fail", failures: reproducedBusiness } };
+    }
+    const reproducedDiagnosis = repeated.filter(item => diagnosis.some(previous => failureKey(previous) === failureKey(item)));
+    return { status: "inconclusive", plan,
+      report: reproducedDiagnosis.length ? { ...confirmed.report, verdict: "inconclusive", failures: reproducedDiagnosis } : confirmed.report,
+      ...(reproducedDiagnosis.length ? { repairableProbeFailure: true,
+        reason: "A reviewed preparation or required-control gap repeated on fresh application data; implementation diagnosis needed" }
+        : { reason: "failure was not reproducible" }) };
   } catch (error) {
     if (error instanceof GatewayRequestError) {
       return { status: "inconclusive", plan, reason: "gateway recovery window exhausted" };
@@ -106,8 +116,12 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
   }
 }
 
-function failureKey(report: ShadowReport): string {
-  return JSON.stringify(report.failures.map(item => [item.caseId, item.stepIndex, item.category]).sort());
+function failureKey(failure: ShadowReport["failures"][number]): string {
+  return JSON.stringify([failure.caseId, failure.stepIndex, failure.category]);
+}
+
+function isBehaviorFailure(failure: ShadowReport["failures"][number]): boolean {
+  return ["assertion", "navigation", "timeout"].includes(failure.category);
 }
 
 const DEFAULT_SEMANTIC_REVIEW_ATTEMPTS = 2;
@@ -124,18 +138,35 @@ async function reviewBehaviorFailures(
   deps: PipelineDeps,
   state: RunStateStore,
   remaining: () => number,
+  attempts: number,
+  recovery?: { locatorRefinements: number },
 ): Promise<SemanticReviewOutcome> {
   await state.record({ at: now(), type: "probe_review_started", packetId: packet.id,
     detail: { cases: plan.cases.length, failed: report.failures.length } });
   const beforePlanSha256 = probePlanSha256(plan);
   let feedback: ProbePlannerFeedback | undefined;
-  for (let attempt = 0; attempt < DEFAULT_SEMANTIC_REVIEW_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (remaining() <= 0) break;
     try {
+      if (recovery) recovery.locatorRefinements++;
       const review = await deps.planner.reviewPlan(packet, plan, report.failures, feedback, {
         timeoutMs: Math.max(1, remaining()),
       });
       if (review.status === "sound") {
+        const unprepared = report.failures.filter(isBehaviorFailure).filter(failure => {
+          const probeCase = plan.cases.find(item => item.id === failure.caseId);
+          const seeded = packet.requirements.some(item => probeCase?.requirementIds.includes(item.id) && item.seedDeclarations.length > 0);
+          if (!seeded) return false;
+          const count = probeCase?.setupStepCount ?? 0;
+          const stateAssertion = probeCase?.steps.slice(0, count).some(step => step.op.startsWith("expect") &&
+            !(step.op === "expectVisible" && step.locator.by === "role" &&
+              ["main", "grid", "region", "group", "list", "dialog", "article"].includes(step.locator.role)));
+          return count === 0 || failure.stepIndex < count || !stateAssertion;
+        });
+        if (unprepared.length) {
+          throw new Error(`Sound review requires an executed initial-state checkpoint for seeded cases: ${unprepared.map(item => item.caseId).join(", ")}. ` +
+            "Seed declarations and a visible page/grid do not prove the required values, identity or permissions. Reconstruct preparation with grounded state assertions and setupStepCount.");
+        }
         await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
           detail: { verdict: "sound", rationale: review.rationale, beforePlanSha256 } });
         return { status: "sound" };
@@ -168,9 +199,28 @@ async function reviewBehaviorFailures(
   return { status: "unavailable", reason: "semantic review could not establish valid probe evidence" };
 }
 
-function missingRequiredControl(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): boolean {
-  return report.failures.length > 0 && report.failures.every(failure => {
-    if (failure.category !== "locator" || !failure.locatorSnapshot) return false;
+/** Candidate misses with no equivalent visible control require path/setup review. */
+function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: ProbeStep): boolean {
+  if (!failure.locatorAttempts || !failure.locatorSnapshot || failure.message.includes("strict mode violation") ||
+    step.op.startsWith("expect") || !("locator" in step)) return true;
+  const roles = /^(button|link|menuitem|menuitemcheckbox|menuitemradio|checkbox|radio|switch|tab|treeitem|option|textbox|searchbox|combobox|spinbutton|gridcell|rowheader|columnheader)$/;
+  const controls = [...failure.locatorSnapshot.matchAll(/^\s*- ([a-z]+) ("(?:\\.|[^"\\])*")/gm)];
+  return controls.some(([, role, encoded]) => {
+    if (!roles.test(role)) return false;
+    let name: string;
+    try { name = JSON.parse(encoded); } catch { return false; }
+    return locatorCandidates(step.locator).some(candidate => {
+      const target = candidate.by === "role" ? candidate.name : candidate.text;
+      return target === undefined ? candidate.by === "role" && role === candidate.role
+        : candidate.exact === false ? name.includes(target) : name === target;
+    });
+  });
+}
+
+function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ShadowReport["failures"] {
+  return report.failures.filter(failure => {
+    if (failure.category === "precondition") return true;
+    if (failure.category !== "locator" || !failure.locatorSnapshot || failure.message.includes("strict mode violation")) return false;
     const steps = plan.cases.find(item => item.id === failure.caseId)?.steps;
     const step = steps?.[failure.stepIndex];
     // A prior successful interaction establishes that we reached the flow;
@@ -208,11 +258,44 @@ async function runShadowProbes(
     return { source: "application", report: applicationFailureReport(packet.id, error), plan };
   }
 
+  let applicationRunning = true;
+  const stopApplication = async (): Promise<void> => {
+    if (!applicationRunning) return;
+    try {
+      await application.stop();
+      await application.assertUnchanged?.();
+      if (application.candidate) await deps.candidate?.assertCurrent(application.candidate);
+    } finally {
+      applicationRunning = false;
+      await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
+    }
+  };
   try {
     await state.record({ at: now(), type: "application_ready", packetId: packet.id,
       detail: { baseUrl: application.baseUrl, ...(application.candidate ? { candidate: application.candidate } : {}) } });
     let currentPlan = plan;
     const runOptions = { stepTimeoutMs: 2_000, caseTimeoutMs: 15_000 };
+    let applicationUsed = false;
+    const prepareCase = async (): Promise<string> => {
+      if (remaining() <= 0) throw new Error("Audit phase budget exhausted");
+      if (applicationUsed) {
+        await application.assertUnchanged?.();
+        await stopApplication();
+        await state.record({ at: now(), type: "application_starting", packetId: packet.id });
+        try {
+          application = await deps.appLifecycle.start(options.outputDir, options.platformContract);
+          applicationRunning = true;
+        } catch (error) {
+          await state.record({ at: now(), type: "application_start_failed", packetId: packet.id,
+            detail: { message: errorMessage(error) } });
+          throw error;
+        }
+        await state.record({ at: now(), type: "application_ready", packetId: packet.id,
+          detail: { baseUrl: application.baseUrl, ...(application.candidate ? { candidate: application.candidate } : {}) } });
+      }
+      applicationUsed = true;
+      return application.baseUrl;
+    };
     const run = async (): Promise<ShadowReport> => {
       while (true) {
         if (remaining() <= 0) throw new Error("Audit phase budget exhausted");
@@ -221,7 +304,8 @@ async function runShadowProbes(
           detail: { cases: currentPlan.cases.length, retryCount: recovery.browserRetries,
             planSha256: probePlanSha256(currentPlan) } });
         try {
-          const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions, caseTimeoutMs: Math.max(1, Math.min(runOptions.caseTimeoutMs, remaining())) });
+          const report = await deps.runner.run(currentPlan, { baseUrl: application.baseUrl, ...runOptions, prepareCase,
+            caseTimeoutMs: Math.max(1, Math.min(runOptions.caseTimeoutMs, remaining())) });
           await application.assertUnchanged?.();
           if (application.candidate) report.candidate = application.candidate;
           const evidenceId = await state.saveEvidence(report, currentPlan);
@@ -245,29 +329,49 @@ async function runShadowProbes(
     };
     let report = await run();
     let navigationRecovered = false;
-    const searchPlan = remaining() > 0 ? rootSearchNavigationPlan(packet, currentPlan, report) : undefined;
-    if (searchPlan) {
+    const beforeNavigationPlan = currentPlan;
+    const beforeNavigationReport = report;
+    for (let attempt = 0; attempt < 2 && remaining() > 0; attempt++) {
+      let searchPlan: ProbePlan | undefined;
+      try { searchPlan = rootSearchNavigationPlan(packet, currentPlan, report); }
+      catch (error) {
+        await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
+          detail: { source: "judge", message: `Navigation recovery plan rejected: ${errorMessage(error)}`, retry: false } });
+        break;
+      }
+      if (!searchPlan) break;
       const beforePlan = currentPlan;
       const previousReport = report;
       currentPlan = searchPlan;
       const searched = await run();
-      navigationRecovered = searched.passedCases.length > previousReport.passedCases.length;
+      navigationRecovered ||= searched.passedCases.length > previousReport.passedCases.length ||
+        searched.failures.some(failure => {
+          const previous = previousReport.failures.find(item => item.caseId === failure.caseId);
+          const step = beforePlan.cases.find(item => item.id === failure.caseId)?.steps[previous?.stepIndex ?? -1];
+          if (step?.op !== "click" || step.locator.by !== "role" || step.locator.role !== "link") return false;
+          const targetName = step.locator.name;
+          const targetIndex = currentPlan.cases.find(item => item.id === failure.caseId)?.steps.findIndex(item =>
+            item.op === "click" && item.locator.by === "role" && item.locator.name === targetName) ?? -1;
+          return targetIndex >= 0 && failure.stepIndex > targetIndex;
+        });
       await state.record({ at: now(), type: "probe_navigation_attempted", packetId: packet.id,
         detail: { recovered: searched.verdict === "pass", improved: navigationRecovered,
           beforePlanSha256: probePlanSha256(beforePlan),
           planSha256: probePlanSha256(searchPlan) } });
-      if (navigationRecovered) report = searched;
-      else return { source: "probe", report, plan: beforePlan };
+      report = searched;
     }
-
+    if (currentPlan !== beforeNavigationPlan && !navigationRecovered) {
+      return { source: "probe", report: beforeNavigationReport, plan: beforeNavigationPlan };
+    }
     // The same anchors the plan was grounded on travel with each refinement request,
     // so the planner can tell requirement-declared names from its own guesses.
     const anchoredNames = groundedLocatorAnchors(plan, packet);
 
     let feedback: ProbePlannerFeedback | undefined;
-    const refinableFailures = () => report.failures.filter(failure => failure.category === "locator" &&
-      failure.locatorSnapshot &&
-      "locator" in (currentPlan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex] ?? {}));
+    const refinableFailures = () => report.failures.filter(failure => {
+      const step = currentPlan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex];
+      return failure.category === "locator" && failure.locatorSnapshot && step && "locator" in step && locatorPatchMayHelp(failure, step);
+    });
     while (policy.refineLocators &&
       report.verdict !== "pass" &&
       refinableFailures().length > 0 &&
@@ -299,12 +403,12 @@ async function runShadowProbes(
         };
         await state.record({ at: now(), type: "probe_refinement_failed", packetId: packet.id,
           detail: { ...detail, refinementAttempt, planSha256: beforePlanSha256 } });
-        if (error instanceof NoLocatorProgressError) {
+        if (!(error instanceof GatewayRequestError)) {
           policy.noProgressRefinements?.add(noProgressKey);
-          break;
         }
-        if (error instanceof GatewayRequestError) break;
-        continue;
+        // Rejected/unchanged patches cannot repair missing steps. Reserve the
+        // remaining recovery call for reviewing the navigation and preparation.
+        break;
       }
       if (remaining() <= 0) break;
       currentPlan = refined;
@@ -316,16 +420,7 @@ async function runShadowProbes(
     }
     return { source: "probe", report, plan: currentPlan, navigationRecovered };
   } finally {
-    // application_stopped pairs with application_starting/ready and must be
-    // recorded even if shutdown or the post-stop integrity check throws;
-    // otherwise the run log shows a started-but-never-stopped application.
-    try {
-      await application.stop();
-      await application.assertUnchanged?.();
-      if (application.candidate) await deps.candidate?.assertCurrent(application.candidate);
-    } finally {
-      await state.record({ at: now(), type: "application_stopped", packetId: packet.id });
-    }
+    await stopApplication();
   }
 }
 

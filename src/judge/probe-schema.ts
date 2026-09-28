@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Page } from "@playwright/test";
 import type { AtomicRequirement, ProbeFailure, WorkPacket } from "../types.js";
 
 export type ProbeScope =
@@ -59,6 +60,8 @@ export interface ProbeCase {
   purpose: "happy_path" | "persistence" | "negative" | "permission";
   /** Verbatim requirement-evidence quotes supporting the expected outcome (1-3). */
   expectationBasis: string[];
+  /** Prefix ending in an assertion that establishes the scenario's initial state. */
+  setupStepCount?: number;
   steps: ProbeStep[];
 }
 
@@ -73,6 +76,20 @@ const MAX_STRING = 2_000;
 const MAX_FALLBACKS = 3;
 const MAX_TEXT_ALTERNATIVES = 4;
 const MAX_BASIS_QUOTES = 3;
+
+/** Roles accepted by Playwright getByRole; "text" is a locator kind, not a role. */
+const ARIA_ROLES = [
+  "alert", "alertdialog", "application", "article", "banner", "blockquote", "button", "caption", "cell",
+  "checkbox", "code", "columnheader", "combobox", "complementary", "contentinfo", "definition", "deletion",
+  "dialog", "directory", "document", "emphasis", "feed", "figure", "form", "generic", "grid", "gridcell",
+  "group", "heading", "img", "insertion", "link", "list", "listbox", "listitem", "log", "main", "marquee",
+  "math", "meter", "menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio", "navigation", "none",
+  "note", "option", "paragraph", "presentation", "progressbar", "radio", "radiogroup", "region", "row",
+  "rowgroup", "rowheader", "scrollbar", "search", "searchbox", "separator", "slider", "spinbutton", "status",
+  "strong", "subscript", "superscript", "switch", "tab", "table", "tablist", "tabpanel", "term", "textbox",
+  "time", "timer", "toolbar", "tooltip", "tree", "treegrid", "treeitem",
+] as const satisfies readonly Parameters<Page["getByRole"]>[0][];
+const ARIA_ROLE_SCHEMA = { type: "string", enum: ARIA_ROLES };
 
 const STRING_SCHEMA = { type: "string", maxLength: 2_000 };
 const NONEMPTY_STRING_SCHEMA = { ...STRING_SCHEMA, minLength: 1 };
@@ -94,7 +111,7 @@ function literalSchema(value: string) {
 
 const SCOPE_SCHEMA = {
   anyOf: [
-    objectSchema({ by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+    objectSchema({ by: literalSchema("role"), role: ARIA_ROLE_SCHEMA,
       name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, hasText: OPTIONAL_STRING_SCHEMA }),
     ...["label", "text"].map(by => objectSchema({ by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA,
       exact: OPTIONAL_BOOLEAN_SCHEMA, hasText: OPTIONAL_STRING_SCHEMA })),
@@ -106,7 +123,7 @@ const SCOPE_REF = { $ref: "#/$defs/scope" };
 const LOCATOR_FLAT_SCHEMA = {
   anyOf: [
     objectSchema({
-      by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+      by: literalSchema("role"), role: ARIA_ROLE_SCHEMA,
       name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
     }),
     ...["label", "text"].map((by) => objectSchema({
@@ -117,7 +134,7 @@ const LOCATOR_FLAT_SCHEMA = {
 const LOCATOR_SCHEMA = {
   anyOf: [
     objectSchema({
-      by: literalSchema("role"), role: NONEMPTY_STRING_SCHEMA,
+      by: literalSchema("role"), role: ARIA_ROLE_SCHEMA,
       name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
       fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     }),
@@ -175,7 +192,7 @@ export const PROBE_PLAN_BODY = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "requirementIds", "purpose", "expectationBasis", "assertion", "steps"],
+        required: ["id", "requirementIds", "purpose", "setupStepCount", "expectationBasis", "assertion", "steps"],
         properties: {
           id: { type: "string" },
           requirementIds: { type: "array", minItems: 1, items: { type: "string" } },
@@ -183,6 +200,8 @@ export const PROBE_PLAN_BODY = {
             type: "string",
             enum: ["happy_path", "persistence", "negative", "permission"],
           },
+          setupStepCount: { type: ["integer", "null"], minimum: 0, maximum: MAX_STEPS - 1,
+            description: "Number of initial preparation steps, including a final initial-state assertion. Preparation failures are inconclusive; do not include the behavior being tested or its result assertion." },
           expectationBasis: {
             type: "array",
             minItems: 1,
@@ -335,7 +354,7 @@ export function toWireProbePlan(plan: ProbePlan): unknown {
   return { ...plan, cases: plan.cases.map(item => {
     const last = item.steps.at(-1);
     if (!last?.op.startsWith("expect")) throw new Error("Wire cases must end in an assertion");
-    return { ...item, steps: item.steps.slice(0, -1), assertion: last };
+    return { ...item, setupStepCount: item.setupStepCount ?? null, steps: item.steps.slice(0, -1), assertion: last };
   }) };
 }
 
@@ -371,6 +390,7 @@ export function assertLocatorOnlyRefinement(
     if (
       beforeCase.id !== afterCase.id ||
       beforeCase.purpose !== afterCase.purpose ||
+      beforeCase.setupStepCount !== afterCase.setupStepCount ||
       JSON.stringify(beforeCase.requirementIds) !== JSON.stringify(afterCase.requirementIds) ||
       JSON.stringify(beforeCase.expectationBasis) !== JSON.stringify(afterCase.expectationBasis) ||
       beforeCase.steps.length !== afterCase.steps.length
@@ -534,7 +554,7 @@ function parseCase(
 ): ProbeCase {
   const location = `ProbePlan.cases[${index}]`;
   const candidate = record(value, location);
-  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion", "expectationBasis"], location);
+  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion", "expectationBasis", "setupStepCount"], location);
   const id = text(candidate.id, `${location}.id`);
   const requirementIds = array(candidate.requirementIds, `${location}.requirementIds`).map(
     (item, requirementIndex) =>
@@ -581,7 +601,18 @@ function parseCase(
   if (!steps.some((step) => step.op.startsWith("expect"))) {
     throw new Error(`${location} requires at least one assertion`);
   }
-  return { id, requirementIds, purpose, expectationBasis, steps };
+  const setupStepCount = candidate.setupStepCount ?? 0;
+  if (!Number.isSafeInteger(setupStepCount) || (setupStepCount as number) < 0 || (setupStepCount as number) >= steps.length) {
+    throw new Error(`${location}.setupStepCount must leave the tested behavior and its assertion outside preparation`);
+  }
+  if (setupStepCount && !steps[(setupStepCount as number) - 1].op.startsWith("expect")) {
+    throw new Error(`${location}.setupStepCount must end preparation with an initial-state assertion`);
+  }
+  if (!steps.slice(setupStepCount as number).some(step => step.op.startsWith("expect"))) {
+    throw new Error(`${location} requires a result assertion after preparation`);
+  }
+  return { id, requirementIds, purpose, expectationBasis, steps,
+    ...(setupStepCount ? { setupStepCount: setupStepCount as number } : {}) };
 }
 
 /** Reject plans whose stated setup cannot reach the action being tested. */
@@ -754,9 +785,13 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
   let base: ProbeLocator;
   if (by === "role") {
     keys(locator, ["by", "role", "name", "exact", "fallbacks", "scope"], location);
+    const role = text(locator.role, `${location}.role`);
+    if (!(ARIA_ROLES as readonly string[]).includes(role)) {
+      throw new Error(`${location}.role must be a valid ARIA role; use by:text for body text, not role ${role}`);
+    }
     base = {
       by,
-      role: text(locator.role, `${location}.role`),
+      role,
       ...(locator.name == null ? {} : { name: dataText(locator.name, `${location}.name`) }),
       ...(locator.exact == null
         ? {}

@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { GitCliOps } from "../src/git-ops.js";
 import { withModulePipeline } from "./helpers/module-pipeline.js";
+import type { BuilderResult } from "../src/builder/port.js";
 
-for (const runnable of [true, false]) {
-  test(`Timed-out implementation retries the same packet after ${runnable ? "preserving" : "rolling back"} partial work`, async () => {
+for (const termination of ["timeout", "missing_terminal_response"] as const) for (const runnable of [true, false]) {
+  test(`${termination} retries the same packet after ${runnable ? "preserving" : "rolling back"} partial work`, async () => {
     await withModulePipeline(async f => {
       f.options.totalBudgetMs = 0;
       f.deps.git = await GitCliOps.open(f.options.outputDir);
@@ -21,7 +22,9 @@ for (const runnable of [true, false]) {
         if (++calls === 1) {
           await original(request, options);
           await writeFile(marker, "partial work");
-          return { sessionId: "timeout", outcome: "timed_out", summary: "Pi call deadline reached" };
+          const result: BuilderResult = { sessionId: "interrupted", outcome: termination === "timeout" ? "timed_out" : "failed",
+            summary: "implementation interrupted", ...(termination === "timeout" ? {} : { terminationReason: termination }) };
+          return result;
         }
         if (calls === 2) {
           assert.equal(request.mode, "implement");
@@ -29,7 +32,8 @@ for (const runnable of [true, false]) {
           assert.equal(request.packet.id, (f.builder.requests[0] as typeof request).packet.id);
           assert.equal(request.packet.attempt, 2);
           assert.equal(options?.sessionKey, undefined);
-          assert.equal(options?.timeoutMs, 2_700_000);
+          assert.equal(options?.timeoutMs, termination === "timeout" ? 2_700_000 : 600_000);
+          assert.equal(options?.resumeInterrupted, true);
           if (runnable) assert.equal(await readFile(marker, "utf8"), "partial work");
           else await assert.rejects(readFile(marker), { code: "ENOENT" });
         }
@@ -39,13 +43,14 @@ for (const runnable of [true, false]) {
       assert.equal(calls, 3);
       const events = await f.events();
       assert.equal(events.filter(e => e.type === "implementation_retry").length, 1);
+      assert.equal(events.find(e => e.type === "implementation_retry")?.detail?.reason, termination);
       assert.ok(events.some(e => e.type === "builder_work_preserved" && e.detail?.preserved === runnable));
       assert.ok(!events.some(e => e.type === "module_rescued"));
     });
   });
 }
 
-test("Repeated timeouts preserve runnable code without falsely completing its requirements", async () => {
+test("Repeated timeout preserves runnable code without falsely completing its requirements", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
     f.deps.git = await GitCliOps.open(f.options.outputDir);
@@ -54,7 +59,7 @@ test("Repeated timeouts preserve runnable code without falsely completing its re
     f.deps.builder.run = async (request, options) => {
       await original(request, options);
       await writeFile(join(request.outputDir, "partial.txt"), `work ${++calls}`);
-      return { sessionId: "timeout", outcome: "timed_out", summary: "Pi call deadline reached" };
+      return { sessionId: "interrupted", outcome: "timed_out", summary: "implementation interrupted" };
     };
     const summary = await f.run();
     assert.equal(calls, 2); // the failed foundation gets two calls; its dependent gets none
@@ -68,7 +73,50 @@ test("Repeated timeouts preserve runnable code without falsely completing its re
   });
 });
 
-test("Implementation timeout does not spend the delivery reserve on another attempt", async () => {
+for (const runnable of [true, false]) test(`Repeated missing terminal uses the existing rescue gate: ${runnable ? "runnable" : "broken"}`, async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    f.deps.git = await GitCliOps.open(f.options.outputDir);
+    const original = f.builder.run.bind(f.builder);
+    let calls = 0;
+    f.deps.appLifecycle.start = async () => {
+      if (!runnable && calls === 2) throw new Error("Continuation left a broken application");
+      return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
+    };
+    f.deps.builder.run = async (request, options) => {
+      calls++;
+      if (calls === 1) await original(request, options);
+      // The second interruption writes nothing: rescue must also consider the
+      // partial implementation already preserved from this same packet.
+      if (calls <= 2) return { sessionId: "interrupted", outcome: "failed", terminationReason: "missing_terminal_response",
+        summary: "implementation interrupted" };
+      return original(request, options);
+    };
+    const summary = await f.run();
+    assert.equal(calls, runnable ? 3 : 2);
+    assert.deepEqual(summary.implementedRequirementIds, runnable ? ["A", "B", "C"] : []);
+    assert.deepEqual(summary.blockedRequirementIds, runnable ? [] : ["A", "B", "C"]);
+    const events = await f.events();
+    assert.equal(events.filter(event => event.type === "implementation_retry").length, 1);
+    assert.equal(events.some(event => event.type === "module_rescued"), runnable);
+  });
+});
+
+test("A Builder summary cannot request the missing-terminal retry", async () => {
+  await withModulePipeline(async f => {
+    const original = f.builder.run.bind(f.builder);
+    let calls = 0;
+    f.deps.builder.run = async (request, options) => {
+      const result = await original(request, options);
+      return ++calls === 1 ? { ...result, outcome: "failed", summary: "Pi did not reach a terminal assistant response" } : result;
+    };
+    assert.equal((await f.run()).status, "delivered");
+    assert.equal(calls, 2);
+    assert.ok(!(await f.events()).some(event => event.type === "implementation_retry"));
+  });
+});
+
+for (const termination of ["timeout", "missing_terminal_response"] as const) test(`${termination} does not spend the delivery reserve on another attempt`, async () => {
   await withModulePipeline(async f => {
     let now = 0;
     let calls = 0;
@@ -78,7 +126,8 @@ test("Implementation timeout does not spend the delivery reserve on another atte
     f.deps.builder.run = async () => {
       calls++;
       now = f.options.totalBudgetMs * 0.6;
-      return { sessionId: "timeout", outcome: "timed_out", summary: "Pi call deadline reached" };
+      return { sessionId: "interrupted", outcome: termination === "timeout" ? "timed_out" : "failed",
+        summary: "implementation interrupted", ...(termination === "timeout" ? {} : { terminationReason: termination }) };
     };
     f.deps.finalVerifier.verify = async () => { delivered = true; return { ok: true, stage: "complete", message: "ready" }; };
     const summary = await f.run();

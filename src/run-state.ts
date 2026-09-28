@@ -103,6 +103,7 @@ export class RunStateStore {
         return {
           caseId: sanitizeDiagnosticText(failure.caseId, this.secrets), stepIndex: failure.stepIndex,
           category: failure.category, message: sanitizeDiagnosticText(failure.message, this.secrets),
+          ...(failure.inputSummary ? { inputSummary: sanitizeDiagnosticText(failure.inputSummary, this.secrets) } : {}),
           ...(failure.locatorSnapshot ? { accessibilityExcerpt: sanitizeDiagnosticText(failure.locatorSnapshot, this.secrets) } : {}),
           ...(step && "locator" in step ? {
             locators: locatorCandidates(step.locator).map((locator) => sanitizeEvidenceLocator(locator, this.secrets)),

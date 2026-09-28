@@ -70,6 +70,7 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
     const report = { packetId: "p", verdict: "fail" as const, passedCases: [], failures: Array.from({ length: 20 }, () => ({
       caseId: "c", stepIndex: 2, category: "locator" as const,
       message: "opaque-credential", locatorSnapshot: "Cookie: sid=private\n" + "x".repeat(5000),
+      inputSummary: "opaque-credential\n" + "x".repeat(5000),
       locatorAttempts: [{ locator: { by: "text" as const, text: "opaque-credential" }, message: "password=attempt-secret" }],
     })), probePlan: "HIDDEN-PLAN" };
     const plan: ProbePlan = { packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
@@ -83,12 +84,14 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
     const evidence = JSON.parse(raw);
     assert.equal(evidence.failures.length, 8);
     assert.equal(evidence.failureCount, 20);
+    assert.ok(evidence.failures[0].inputSummary.length <= 1500);
     assert.doesNotMatch(raw, /opaque-credential|sid=private|HIDDEN-PLAN|HIDDEN-ASSERTION|attempt-secret/);
     assert.match(evidence.planSha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(evidence.failures[0].locators, [{ by: "text", text: "[redacted]" }]);
     assert.equal(evidence.failures[0].locatorAttempts[0].locator.text, "[redacted]");
     assert.ok(evidence.failures[0].accessibilityExcerpt.length <= 1500);
     const feedback = toBuilderShadowObservation(report, ["opaque-credential"]);
+    assert.equal(feedback.failures[0].inputSummary, evidence.failures[0].inputSummary);
     assert.doesNotMatch(JSON.stringify(feedback), /opaque-credential|sid=private|HIDDEN-PLAN/);
     for (let index = 1; index < 128; index++) await store.saveEvidence(report);
     assert.equal(await store.saveEvidence(report), undefined);

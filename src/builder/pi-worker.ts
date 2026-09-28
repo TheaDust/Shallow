@@ -105,6 +105,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     const observedFailure = gateway.failure();
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       outcome: success ? "completed" : "failed", summary: summary.slice(-8_000), toolCalls, compactions, peakRssBytes: process.resourceUsage().maxRSS * 1024,
+      ...(!promptError && last?.role !== "assistant" ? { terminationReason: "missing_terminal_response" as const } : {}),
       ...(!success && observedFailure ? { gatewayFailure: classifyGatewayFailure(observedFailure, providerError) } : {}),
       usage: stats.usage, timing: stats.timing,
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && isImageUnsupportedMessage(summary),

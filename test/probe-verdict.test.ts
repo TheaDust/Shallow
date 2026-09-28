@@ -64,3 +64,11 @@ test("deriveProbeVerdict stays inconclusive when a refinement is still possible"
     "inconclusive",
   );
 });
+
+test("A failed preparation case does not erase another case's business failure", () => {
+  assert.equal(deriveProbeVerdict([failure({ category: "precondition" })]), "inconclusive");
+  assert.equal(deriveProbeVerdict([
+    failure({ category: "precondition" }),
+    failure({ caseId: "prepared-business", category: "assertion" }),
+  ]), "fail");
+});

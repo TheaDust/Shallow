@@ -209,6 +209,7 @@ function renderFailures(observation: BuilderShadowObservation): string {
       if (failure.accessibilityExcerpt) {
         lines.push(`  可访问性节选：${failure.accessibilityExcerpt}`);
       }
+      if (failure.inputSummary) lines.push(`  输入观测：${failure.inputSummary}`);
       return lines.join("\n");
     })
     .join("\n");

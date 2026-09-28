@@ -259,6 +259,10 @@ export class LlmProbePlanner implements ProbePlanner {
             caseId: failure.caseId,
             stepIndex: failure.stepIndex,
             step: original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex],
+            preparationCheckpointPassed: original.cases.some(item => item.id === failure.caseId &&
+              (item.setupStepCount ?? 0) > 0 && failure.stepIndex >= item.setupStepCount!),
+            passedAssertionsBeforeFailure: original.cases.find(item => item.id === failure.caseId)?.steps
+              .slice(0, failure.stepIndex).filter(step => step.op.startsWith("expect")),
             category: failure.category,
             message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
             accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined

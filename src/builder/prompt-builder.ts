@@ -33,6 +33,7 @@ export class PromptBuilder implements BuilderPort {
       contextWindow: this.options.contextWindow };
     if (options.continuationFeedback) input.taskPrompt += "\n\n" + loadPrompt("system", "implementation-continuation")
       .replace("{{FAILURE}}", () => options.continuationFeedback!);
+    if (options.resumeInterrupted) input.taskPrompt += "\n\n" + loadPrompt("system", "implementation-resume");
     let result = await this.client.run(input);
     if (result.imageUnsupported && !this.textOnly && remainingMs() > 0) {
       this.textOnly = true;
@@ -40,6 +41,7 @@ export class PromptBuilder implements BuilderPort {
     }
     // Session paths and SDK internals stay private to the execution adapter.
     return { sessionId: result.sessionId, outcome: result.outcome, summary: result.summary, referenceImages: result.referenceImages, execution: result.execution,
+      ...(result.terminationReason ? { terminationReason: result.terminationReason } : {}),
       ...(result.gatewayFailure ? { gatewayFailure: result.gatewayFailure } : {}) };
   }
   close(): Promise<void> { return this.client.close(); }

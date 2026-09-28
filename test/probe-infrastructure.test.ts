@@ -105,7 +105,7 @@ test("Locator fallbacks rescue missed primaries; hits keep assertion failures st
   }
 });
 
-test("All locator candidates missing stays a locator failure eligible for refinement", async () => {
+test("All assertion targets missing preserves attempts and becomes an unmet expectation for review", async () => {
   const server = await startFixtureServer();
   try {
     const report = await new PlaywrightProbeRunner().run({
@@ -121,8 +121,9 @@ test("All locator candidates missing stays a locator failure eligible for refine
         },
       ],
     }, { baseUrl: server.baseUrl, stepTimeoutMs: 1_000, caseTimeoutMs: 10_000 });
-    assert.equal(report.verdict, "inconclusive");
-    assert.equal(report.failures[0].category, "locator");
+    assert.equal(report.verdict, "fail");
+    assert.equal(report.failures[0].category, "assertion");
+    assert.equal(report.failures[0].locatorAttempts?.length, 2);
     assert.ok(report.failures[0].locatorSnapshot);
   } finally {
     await server.stop();

@@ -362,6 +362,9 @@ test("Human logs explain the bounded implementation retry", () => {
   assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_retry", {
     packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 2_700_000 },
   })), /新会话续做原需求包.*仅重试一次.*45m/);
+  assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_retry", {
+    packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 600_000, reason: "missing_terminal_response" },
+  })), /未收到终态回执.*仅重试一次.*10m/);
 });
 
 test("Human logs explain a same-session continuation with its actual failure", () => {

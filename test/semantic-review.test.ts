@@ -41,6 +41,21 @@ test("Corrected reviews reject unchanged plans, phantom cases, weak citations, a
   assert.throws(() => parsePlanReview({ ...base, plan: uncovered }, packet(), original()), /outside packet/);
 });
 
+test("Plan reconstruction preserves independent cases, their purposes and requirement mapping", () => {
+  const base = { verdict: "corrected", rationale: "missing navigation",
+    corrections: [{ caseId: "case-A", conflict: "omitted entry", basis: ["Display the main workspace."] }] };
+  const before = original();
+  before.cases.push({ ...structuredClone(before.cases[0]), id: "case-B", purpose: "persistence" });
+  assert.throws(() => parsePlanReview({ ...base, plan: corrected() }, packet(), before), /case set/);
+  const after = corrected();
+  after.cases.push(structuredClone(before.cases[1]));
+  after.cases[1].steps[1] = { op: "expectVisible", locator: { by: "role", role: "main" } };
+  assert.throws(() => parsePlanReview({ ...base, plan: after }, packet(), before), /every changed case/);
+  after.cases[1] = structuredClone(before.cases[1]);
+  after.cases[0].purpose = "negative";
+  assert.throws(() => parsePlanReview({ ...base, plan: after }, packet(), before), /purpose and requirementIds/);
+});
+
 function packet(): WorkPacket {
   return { id: "packet-a", requirementIds: ["A"], attempt: 1, requirements: [{
     id: "A", name: "Workspace", text: "Display the main workspace.", declarationIndex: 0, folderPath: ["ROOT"],

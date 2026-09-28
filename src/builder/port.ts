@@ -8,6 +8,7 @@ export interface BuilderResult {
   sessionId: string;
   outcome: "completed" | "failed" | "timed_out";
   summary: string;
+  terminationReason?: "missing_terminal_response";
   gatewayFailure?: GatewayFailure;
   execution?: { engine: string; version: string; nodeVersion: string; workerPid: number; resumed: boolean;
     durationMs: number; cleanupMs: number; toolCalls?: number; compactions?: number; peakRssBytes?: number;
@@ -26,6 +27,8 @@ export interface BuilderRunOptions {
   sessionKey?: string;
   /** Concrete controller build/start failure, never hidden Judge plans. */
   continuationFeedback?: string;
+  /** Fresh-session completion of a controller-observed interrupted implementation. */
+  resumeInterrupted?: boolean;
 }
 
 export interface BuilderPort {

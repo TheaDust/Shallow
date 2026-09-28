@@ -23,8 +23,9 @@ export interface BuilderShadowObservation {
   failures: Array<{
     caseId: string;
     stepIndex: number;
-    category: "assertion" | "locator" | "navigation" | "timeout" | "runner";
+    category: "assertion" | "locator" | "navigation" | "timeout" | "runner" | "precondition";
     message: string;
+    inputSummary?: string;
     accessibilityExcerpt?: string;
   }>;
   applicationStartupFailed: boolean;
