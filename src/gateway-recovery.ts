@@ -1,4 +1,13 @@
 import { GatewayRequestError, type GatewayFailure } from "./gateway-failure.js";
+import { setTimeout as sleep } from "node:timers/promises";
+
+const MAX_CONCURRENT_PLANNERS = 2;
+
+interface PlannerWaiter {
+  resume(): void;
+  signal?: AbortSignal;
+  abort?: () => void;
+}
 
 export interface GatewayWait {
   source: "builder" | "planner";
@@ -26,31 +35,26 @@ export class GatewayRecovery {
   private failures = 0;
   private version = 0;
   private stopped?: GatewayUnavailableError;
-  private plannerTail: Promise<void> = Promise.resolve();
+  private activePlanners = 0;
+  private readonly plannerQueue: PlannerWaiter[] = [];
   private recorder?: (event: GatewayWait) => Promise<void>;
   private lastFailure?: GatewayFailure;
   private lastReason?: string;
 
   constructor(private readonly time = {
     now: () => Date.now(),
-    sleep: (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)),
+    sleep: (ms: number, signal?: AbortSignal): Promise<void> => sleep(ms, undefined, { signal }),
   }) {}
 
   get exhausted(): boolean { return this.stopped !== undefined; }
   setRecorder(recorder: (event: GatewayWait) => Promise<void>): void { this.recorder = recorder; }
 
   async run<T>(source: GatewayWait["source"], packetId: string, remainingMs: () => number,
-    operation: () => Promise<T>): Promise<T> {
-    // Keep a single planner attempt stream alongside Builder, rather than
-    // bursting one model request per atomic requirement at every group start.
-    let release: (() => void) | undefined;
-    if (source === "planner") {
-      const before = this.plannerTail;
-      this.plannerTail = new Promise<void>(resolve => { release = resolve; });
-      await before;
-    }
+    operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const release = source === "planner" ? await this.acquirePlanner(signal) : undefined;
     try {
       for (let retry = 0; ; retry++) {
+        signal?.throwIfAborted();
         if (this.stopped) throw this.stopped;
         while (this.blockedUntil > this.time.now()) {
           // Waiting never outlives the caller's window: a fresh window is the
@@ -59,7 +63,8 @@ export class GatewayRecovery {
           if (delayMs <= 0) throw this.gatewayError();
           await this.recorder?.({ source, packetId, retry, delayMs, failure: this.lastFailure!,
             ...(this.lastReason ? { reason: this.lastReason } : {}) });
-          await this.time.sleep(Math.min(delayMs, 30_000));
+          await this.time.sleep(Math.min(delayMs, 30_000), signal);
+          signal?.throwIfAborted();
           if (this.stopped) throw this.stopped;
         }
         if (remainingMs() <= 0) throw this.gatewayError();
@@ -70,6 +75,7 @@ export class GatewayRecovery {
           if (version === this.version) this.failures = 0;
           return result;
         } catch (error) {
+          if (signal?.aborted) throw error;
           const failure = error instanceof GatewayRequestError ? error.gatewayFailure
             : (error as { gatewayFailure?: GatewayFailure } | null)?.gatewayFailure;
           if (!failure || error instanceof GatewayUnavailableError) throw error;
@@ -88,6 +94,32 @@ export class GatewayRecovery {
         }
       }
     } finally { release?.(); }
+  }
+
+  private async acquirePlanner(signal?: AbortSignal): Promise<() => void> {
+    signal?.throwIfAborted();
+    if (this.activePlanners < MAX_CONCURRENT_PLANNERS) {
+      this.activePlanners++;
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const waiter: PlannerWaiter = { resume: resolve, signal };
+        if (signal) {
+          waiter.abort = () => {
+            this.plannerQueue.splice(this.plannerQueue.indexOf(waiter), 1);
+            reject(signal.reason);
+          };
+          signal.addEventListener("abort", waiter.abort, { once: true });
+        }
+        this.plannerQueue.push(waiter);
+      });
+    }
+    return () => {
+      const next = this.plannerQueue.shift();
+      if (next) {
+        if (next.abort) next.signal!.removeEventListener("abort", next.abort);
+        next.resume();
+      } else this.activePlanners--;
+    };
   }
 
   private gatewayError(): GatewayRequestError {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { httpGatewayFailure } from "../src/gateway-failure.js";
 import { GatewayRecovery } from "../src/gateway-recovery.js";
+import { ExecutionFault } from "../src/execution-fault.js";
 import { GitCliOps } from "../src/git-ops.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import { withModulePipeline, testPlan, fail, pass } from "./helpers/module-pipeline.js";
@@ -274,9 +275,48 @@ test("Builder checkpoints before a background probe plan settles", async () => {
   });
 });
 
-test("A stalled foundation probe planner exhausts its window without blocking runnable downstream work", async () => {
+test("Background planning renews an exhausted window before Builder finishes", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    let builderRunning = false;
+    let attempts = 0;
+    let recovered!: () => void;
+    const recovery = new Promise<void>(resolve => { recovered = resolve; });
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") {
+        if (++attempts === 1) {
+          elapsed = 720_000;
+          throw new ProbePlannerError("transport", "headers timeout");
+        }
+        assert.equal(builderRunning, true, "recovery was deferred until the module audit");
+        recovered();
+      }
+      return testPlan(packet);
+    };
+    const originalBuild = f.builder.run.bind(f.builder);
+    f.deps.builder.run = async (request, options) => {
+      builderRunning = true;
+      try {
+        await Promise.race([recovery, new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => reject(new Error("background planning did not resume")), 1_000);
+          timer.unref();
+        })]);
+        return originalBuild(request, options);
+      } finally { builderRunning = false; }
+    };
+    assert.equal((await f.run()).status, "delivered");
+    const events = await f.events();
+    assert.ok(events.some(event => event.type === "probe_planner_retry" && event.packetId === "packet-a"));
+    assert.ok(!events.some(event => event.type === "probe_preplan_failed"));
+  });
+});
+
+test("A planning outage respects stage budgets and retains completed code", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 1_000_000;
     let elapsed = 0;
     f.deps.clock = { nowMs: () => elapsed };
     f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
@@ -285,13 +325,78 @@ test("A stalled foundation probe planner exhausts its window without blocking ru
       return testPlan(packet);
     };
     const summary = await f.run();
-    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
-    assert.deepEqual(summary.blockedRequirementIds, []);
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.blockedRequirementIds, ["C"]);
+    assert.deepEqual(summary.pendingRequirementIds, []);
     assert.ok(summary.inconclusiveRequirementIds?.includes("A"));
-    assert.ok(elapsed < 26 * 60_000, `planner exceeded two recovery windows: ${elapsed}ms`);
+    assert.ok(elapsed <= 800_000, `planner exceeded the audit budget: ${elapsed}ms`);
     const events = await f.events();
-    assert.ok(events.some(event => event.type === "dependency_gate_provisional" && event.detail?.requirementIds.includes("C")));
+    assert.ok(events.some(event => event.type === "checkpoint_saved" && event.detail?.requirementIds.includes("A")));
     assert.ok(events.some(event => event.type === "probe_preplan_failed" && event.packetId === "packet-a" && event.phase === "planner"));
+  });
+});
+
+test("Queued background plans receive full windows after slow earlier plans", async () => {
+  await withModulePipeline(async f => {
+    const ids = ["A", "B", "D", "E", "F"];
+    await writeFile(f.options.requirementsFile, JSON.stringify({ id: "ROOT", name: "Product", type: "FOLDER",
+      dependencies: [], children: [{ id: "FIRST", name: "First", type: "FOLDER", dependencies: [],
+        children: ids.map(id => ({ id, name: id, type: "ATOMIC", dependencies: [], description: "Display the main workspace." })) }] }));
+    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    let started = 0;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const timeouts = new Map<string, number>();
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.planner.plan = async (packet, _feedback, options) => {
+      timeouts.set(packet.id, options!.timeoutMs);
+      if (packet.id === "packet-a" || packet.id === "packet-b") {
+        if (++started === 2) { elapsed = 640_000; release(); }
+        await held;
+      }
+      return testPlan(packet);
+    };
+    assert.equal((await f.run()).status, "delivered");
+    assert.equal(timeouts.size, ids.length);
+    assert.ok([...timeouts.values()].every(timeout => timeout === 720_000), JSON.stringify([...timeouts]));
+    assert.ok(!(await f.events()).some(event => event.type === "probe_preplan_failed"));
+  });
+});
+
+test("A permanent planning error stays isolated to its packet", async () => {
+  await withModulePipeline(async f => {
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") throw new ProbePlannerError("response", "Probe planner response has no message content");
+      return testPlan(packet);
+    };
+    const summary = await f.run();
+    assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(summary.verifiedRequirementIds, ["B", "C"]);
+    assert.deepEqual(summary.inconclusiveRequirementIds, ["A"]);
+    assert.deepEqual((await f.events()).filter(event => event.type === "probe_preplan_failed").map(event => event.packetId), ["packet-a"]);
+  });
+});
+
+test("Pipeline failure cancels active background planning before cleanup completes", async () => {
+  await withModulePipeline(async f => {
+    let started!: () => void;
+    let cancelled = 0;
+    const planning = new Promise<void>(resolve => { started = resolve; });
+    f.deps.planner.plan = async (_packet, _feedback, options) => {
+      assert.ok(options?.signal);
+      started();
+      return new Promise((_, reject) => {
+        options.signal!.addEventListener("abort", () => { cancelled++; reject(options.signal!.reason); }, { once: true });
+      });
+    };
+    f.deps.builder.run = async () => {
+      await planning;
+      throw new ExecutionFault("builder", "builder_start", false);
+    };
+    await assert.rejects(f.run(), ExecutionFault);
+    assert.ok(cancelled > 0);
+    assert.ok(!(await f.events()).some(event => event.type === "probe_preplan_failed"));
   });
 });
 

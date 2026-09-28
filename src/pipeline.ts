@@ -145,6 +145,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let boundaryRepairCount = 0;
   let currentBoundaryModule: string | undefined;
   let gatewayPhase: PipelinePhase = "implementation";
+  const preplanAbort = new AbortController();
   const pendingPlans = new Map<string, { ready: boolean; failed: boolean; promise: Promise<void> }>();
   const noProgressRefinements = new Set<string>();
   const recoveryAuditPolicy = { refineLocators: true, noProgressRefinements };
@@ -192,8 +193,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const planner = deps.planner;
   const plannerWindow = (): (() => number) => {
     const phase = gatewayPhase;
-    const deadline = options.totalBudgetMs <= 0 ? deps.clock.nowMs() + PLANNER_RECOVERY_WINDOW_MS : Infinity;
-    return () => Math.min(budget.remaining(phase), deadline - deps.clock.nowMs());
+    // GatewayRecovery first reads this after admitting the Planner request.
+    let deadline: number | undefined;
+    return () => {
+      deadline ??= options.totalBudgetMs <= 0 ? deps.clock.nowMs() + PLANNER_RECOVERY_WINDOW_MS : Infinity;
+      return Math.min(budget.remaining(phase), deadline - deps.clock.nowMs());
+    };
   };
   const plannerUsage = (packetId: string, operation: "plan" | "refine" | "review") =>
     (usage: ProbePlannerUsage) => state.record({ at: now(), type: "probe_planner_usage", packetId, detail: { operation, ...usage } });
@@ -202,21 +207,39 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
         () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
-          onUsage: plannerUsage(packet.id, "plan") }));
+          onUsage: plannerUsage(packet.id, "plan"), signal: callOptions?.signal }), callOptions?.signal);
     },
     refineLocators: (original, failures, feedback, callOptions) => {
       const remaining = plannerWindow();
       return gateway.run("planner", original.packetId, remaining,
         () => planner.refineLocators(original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
-          onUsage: plannerUsage(original.packetId, "refine") }));
+          onUsage: plannerUsage(original.packetId, "refine"), signal: callOptions?.signal }), callOptions?.signal);
     },
     reviewPlan: (packet, original, failures, feedback, callOptions) => {
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
         () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
-          onUsage: plannerUsage(packet.id, "review") }));
+          onUsage: plannerUsage(packet.id, "review"), signal: callOptions?.signal }), callOptions?.signal);
     },
   } };
+  const backgroundPlanner: Pick<ProbePlanner, "plan"> = {
+    plan: async (packet, feedback, callOptions) => {
+      for (;;) {
+        preplanAbort.signal.throwIfAborted();
+        try {
+          return await deps.planner.plan(packet, feedback, {
+            timeoutMs: callOptions?.timeoutMs ?? Infinity, signal: preplanAbort.signal,
+          });
+        } catch (error) {
+          if (preplanAbort.signal.aborted || !(error instanceof GatewayRequestError) ||
+            !error.gatewayFailure.retryable || gateway.exhausted || budget.remaining(gatewayPhase) <= 0) throw error;
+          await state.record({ at: now(), type: "probe_planner_retry", packetId: packet.id,
+            detail: { source: "planner", message: "后台预规划恢复窗口耗尽，继续后台重试",
+              validationError: errorMessage(error) } });
+        }
+      }
+    },
+  };
   deps.candidate?.setRecorder(event => state.record(event));
 
   const phase = async (name: PipelinePhase, round?: number): Promise<void> => {
@@ -555,11 +578,14 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       for (const auditPacket of relatedAuditPackets) {
         if (!results.has(auditPacket.id) && !pendingPlans.has(auditPacket.id)) {
           const pending = { ready: false, failed: false, promise: Promise.resolve() };
-          pending.promise = spawnPlanGeneration(auditPacket, auditPacket.id, deps.planner, planCache, planTimeoutMs,
-            error => state.record({ at: now(), type: "probe_preplan_failed", packetId: auditPacket.id,
-              detail: error instanceof ProbePlannerError
-                ? { source: "planner", ...error.diagnostics }
-                : { source: "planner", message: errorMessage(error) } }))
+          pending.promise = spawnPlanGeneration(auditPacket, auditPacket.id, backgroundPlanner, planCache, planTimeoutMs,
+            async error => {
+              if (preplanAbort.signal.aborted) return;
+              await state.record({ at: now(), type: "probe_preplan_failed", packetId: auditPacket.id,
+                detail: error instanceof ProbePlannerError
+                  ? { source: "planner", ...error.diagnostics }
+                  : { source: "planner", message: errorMessage(error) } });
+            })
             .then(plan => { pending.failed = !plan; pending.ready = true; });
           pendingPlans.set(auditPacket.id, pending);
         }
@@ -743,6 +769,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await emitArc(deps, state, arc => arc.runnerState("failed", sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets)));
     throw error;
   } finally {
+    preplanAbort.abort();
     try { await deps.builder.close(); }
     finally { await Promise.allSettled([...pendingPlans.values()].map(item => item.promise)); }
   }

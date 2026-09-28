@@ -437,6 +437,25 @@ test("Probe Planner retries a damaged content-bearing SSE event", async () => {
   });
 });
 
+test("Planner requests honour caller cancellation as well as their local timeout", async () => {
+  const controller = new AbortController();
+  let requestSignal: AbortSignal | null | undefined;
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    requestSignal = init?.signal;
+    return new Promise((_, reject) => {
+      requestSignal!.addEventListener("abort", () => reject(requestSignal!.reason), { once: true });
+    });
+  });
+  const cancelled = assert.rejects(planner.plan(packet(), undefined, { timeoutMs: 30_000, signal: controller.signal }), error => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal((error.cause as Error).name, "AbortError");
+    return true;
+  });
+  controller.abort();
+  await cancelled;
+  assert.equal(requestSignal?.aborted, true);
+});
+
 test("An unbounded Planner call keeps its request pending without a local abort timer", async () => {
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });

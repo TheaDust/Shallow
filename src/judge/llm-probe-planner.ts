@@ -16,12 +16,13 @@ import {
 } from "./probe-schema.js";
 import { parsePlanReview, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
-export interface ProbePlanOptions { timeoutMs: number; onUsage?: ProbePlannerUsageListener }
+export interface ProbePlanOptions { timeoutMs: number; onUsage?: ProbePlannerUsageListener; signal?: AbortSignal }
 export interface ProbeRefinementOptions {
   timeoutMs: number;
   /** Requirement-declared names the original plan already relies on; refinement must reuse them verbatim. */
   anchoredNames?: readonly string[];
   onUsage?: ProbePlannerUsageListener;
+  signal?: AbortSignal;
 }
 
 /** Normalized planner token counts, matching the Builder's usage semantics. */
@@ -174,7 +175,7 @@ export class LlmProbePlanner implements ProbePlanner {
         }),
       });
     }
-    const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage);
+    const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage, options?.signal);
     return this.parse(content, packet);
   }
 
@@ -208,7 +209,7 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs, PROBE_REFINEMENT_JSON_SCHEMA, options?.onUsage);
+    ], options?.timeoutMs, PROBE_REFINEMENT_JSON_SCHEMA, options?.onUsage, options?.signal);
     try {
       return applyLocatorPatches(original, failures, JSON.parse(extractJsonPayload(content)));
     } catch (error) {
@@ -275,7 +276,7 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA, options?.onUsage);
+    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA, options?.onUsage, options?.signal);
     let value: unknown;
     try {
       value = JSON.parse(extractJsonPayload(content));
@@ -298,6 +299,7 @@ export class LlmProbePlanner implements ProbePlanner {
     timeoutMs = this.config.timeoutMs,
     schema: unknown = PROBE_PLAN_JSON_SCHEMA,
     onUsage?: ProbePlannerUsageListener,
+    signal?: AbortSignal,
   ): Promise<string> {
     // Structured outputs (`json_schema`) are unavailable on several
     // OpenAI-compatible gateways, including the ARC-Bench model proxy, so the
@@ -307,6 +309,8 @@ export class LlmProbePlanner implements ProbePlanner {
     const requestMessages = messages.map((message, index) => index === 0
       ? { ...message, content: `${message.content}\n\n仅返回符合此 schema 的 JSON：\n${JSON.stringify(schema)}` }
       : message);
+    const timeoutSignal = Number.isFinite(timeoutMs) ? AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))) : undefined;
+    const requestSignal = signal && timeoutSignal ? AbortSignal.any([signal, timeoutSignal]) : signal ?? timeoutSignal;
     let response: Response;
     try {
       response = await this.fetchFn(`${this.config.baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -324,7 +328,7 @@ export class LlmProbePlanner implements ProbePlanner {
           stream: true,
           stream_options: { include_usage: true },
         }),
-        ...(Number.isFinite(timeoutMs) ? { signal: AbortSignal.timeout(Math.max(1, Math.floor(timeoutMs))) } : {}),
+        ...(requestSignal ? { signal: requestSignal } : {}),
       });
     } catch (error) {
       throw new ProbePlannerError("transport", "Probe planner request failed", {
