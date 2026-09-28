@@ -1,0 +1,561 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172033;
+  background: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #c4c8cf;
+  border-radius: 6px;
+  background: #f8f9fa;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #eef0f3;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.primary {
+  background: #1a73e8;
+  border-color: #1a73e8;
+  color: #ffffff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #1765cc;
+}
+
+button.secondary {
+  background: #ffffff;
+}
+
+.home-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.workbook-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.workbook-record {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.workbook-link {
+  color: #1a73e8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.workbook-link:hover {
+  text-decoration: underline;
+}
+
+.workbook-updated {
+  color: #5f6368;
+  font-size: 0.875rem;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  max-width: 24rem;
+}
+
+.form-field input {
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #c4c8cf;
+  border-radius: 6px;
+}
+
+.form-error {
+  color: #b3261e;
+  margin: 0.5rem 0;
+}
+
+.busy {
+  color: #5f6368;
+}
+
+/* Editor */
+
+.editor-page {
+  max-width: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.editor-header {
+  padding: 0.75rem 1rem 0.5rem;
+  border-bottom: 1px solid #e4e7ec;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.home-link {
+  color: #1a73e8;
+  text-decoration: none;
+}
+
+.editor-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+.editor-title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.last-updated {
+  color: #5f6368;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.sheet-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 1rem 0;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.sheet-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.sheet-tabs [role="tab"] {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 0.4rem 1rem;
+}
+
+.sheet-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: #1a73e8;
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.sheet-options-button {
+  border: none;
+  background: transparent;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  color: #5f6368;
+}
+
+.sheet-options-button:hover:not(:disabled) {
+  background: #eef0f3;
+}
+
+.add-sheet-button {
+  margin-left: 0.25rem;
+  border: 1px dashed #c4c8cf;
+  background: transparent;
+  color: #172033;
+}
+
+.formula-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #e4e7ec;
+}
+
+.formula-bar-row label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.formula-bar-row input {
+  font: inherit;
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #c4c8cf;
+  border-radius: 6px;
+}
+
+.commit-error {
+  margin: 0.5rem 1rem 0;
+  color: #b3261e;
+}
+
+/* Worksheet grid */
+
+.grid-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 0 0 0 0.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.grid {
+  display: grid;
+  min-width: max-content;
+  flex: 1;
+  align-content: start;
+}
+
+.grid-row {
+  display: contents;
+}
+
+.grid-corner,
+.col-header {
+  border-right: 1px solid #e4e7ec;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #5f6368;
+  padding: 0.25rem 0;
+}
+
+.col-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8f9fa;
+  border-bottom: 1px solid #c4c8cf;
+}
+
+.grid-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  background: #f8f9fa;
+  border-bottom: 1px solid #c4c8cf;
+}
+
+.row-header {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #f8f9fa;
+  border-right: 1px solid #c4c8cf;
+  border-bottom: 1px solid #e4e7ec;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #5f6368;
+  padding: 0.25rem 0;
+}
+
+.cell {
+  border-right: 1px solid #eef0f3;
+  border-bottom: 1px solid #eef0f3;
+  padding: 0.25rem 0.4rem;
+  min-height: 1.25rem;
+  cursor: cell;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cell.selected {
+  background: #e8f0fe;
+}
+
+.cell.current-cell {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.cell-value {
+  display: block;
+}
+
+.cell-editor {
+  font: inherit;
+  width: 100%;
+  border: none;
+  outline: none;
+  padding: 0;
+  background: transparent;
+}
+
+/* Filter and validation entry buttons inside grid cells (REQ-5) */
+
+.cell.dropdown-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.cell.dropdown-cell .cell-value {
+  flex: 1;
+}
+
+.filter-header-button,
+.dropdown-cell-button {
+  border: none;
+  background: transparent;
+  color: #5f6368;
+  padding: 0 0.15rem;
+  margin-left: 0.15rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.filter-header-button {
+  color: #1a73e8;
+}
+
+.filter-header-button:hover:not(:disabled),
+.dropdown-cell-button:hover:not(:disabled) {
+  background: #eef0f3;
+}
+
+.dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.dropdown-popup {
+  position: fixed;
+  z-index: 71;
+  background: #ffffff;
+  border: 1px solid #c4c8cf;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  min-width: 8rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-option {
+  padding: 0.4rem 0.75rem;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-option:hover,
+.dropdown-option:focus-visible {
+  background: #eef0f3;
+}
+
+/* Dialogs */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 50;
+  padding-top: 12vh;
+}
+
+.dialog {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  padding: 1.25rem 1.5rem;
+  min-width: 22rem;
+  max-width: 32rem;
+}
+
+.dialog h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* Data menu / filter / validation dialogs (REQ-5) */
+
+.dialog-field {
+  margin-bottom: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.dialog-field label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.dialog-field input,
+.dialog-field select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #c4c8cf;
+  border-radius: 6px;
+}
+
+.dialog-number-fields {
+  flex-direction: row;
+  gap: 1rem;
+}
+
+.dialog-number-fields > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.filter-values {
+  border-top: 1px solid #eef0f3;
+  padding-top: 0.75rem;
+}
+
+.clear-selection {
+  align-self: flex-start;
+}
+
+.filter-checkbox-list {
+  max-height: 12rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.filter-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.filter-empty-hint {
+  color: #5f6368;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.dialog-error {
+  color: #b3261e;
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}
+
+/* Pivot table editor region and create dialog (REQ-5-3-1) */
+
+.source-range-text {
+  font-size: 0.9rem;
+  margin: 0 0 0.85rem;
+}
+
+.pivot-editor {
+  margin: 1rem 0 0;
+  border: 1px solid #c4c8cf;
+  border-radius: 8px;
+  padding: 0.75rem 1rem 1rem;
+  background: #f8f9fa;
+}
+
+.pivot-editor-title {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.pivot-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.25rem;
+}
+
+.pivot-fields .dialog-field {
+  flex: 1 1 11rem;
+  min-width: 11rem;
+}
+
+.pivot-error {
+  color: #b3261e;
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}
+
+.pivot-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Context menus (worksheet options, row/column headers) */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  background: #ffffff;
+  border: 1px solid #c4c8cf;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  min-width: 11rem;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: #eef0f3;
+}
