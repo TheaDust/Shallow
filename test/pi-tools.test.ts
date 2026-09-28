@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertNotTestCommand, assertReadableToolPath, assertToolCommand, assertToolPath } from "../src/builder/pi-tools.js";
+import { assertNotTestCommand, assertToolCommand, assertToolPath, createPiTools } from "../src/builder/pi-tools.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Builder tools cannot reach the product-visible progress journal", async () => {
@@ -25,25 +25,21 @@ test("Builder tools cannot reach the product-visible progress journal", async ()
   });
 });
 
-test("Builder read can access only the application and explicit controller resources", async () => {
+test("Builder read stays within the application", async () => {
   await withTempDir("shallow-pi-read-roots-", async root => {
     const app = join(root, "app");
-    const skills = join(root, "skills");
     const privateDirectory = join(root, "private");
     await mkdir(app);
-    await mkdir(skills);
     await mkdir(privateDirectory);
     const appFile = join(app, "main.ts");
-    const skillFile = join(skills, "SKILL.md");
     const privateFile = join(privateDirectory, "secret.txt");
-    await writeFile(appFile, "", "utf8");
-    await writeFile(skillFile, "---\nname: example\ndescription: example\n---\n", "utf8");
+    await writeFile(appFile, "export const value = 1;\n", "utf8");
     await writeFile(privateFile, "hidden", "utf8");
 
-    await assert.doesNotReject(assertReadableToolPath(app, appFile, [skills]));
-    await assert.doesNotReject(assertReadableToolPath(app, skillFile, [skills]));
-    await assert.rejects(assertReadableToolPath(app, privateFile, [skills]), /approved read-only resources/);
-    await assert.rejects(assertToolPath(app, skillFile), /outside the application/);
+    const read = createPiTools(app).find(tool => tool.name === "read")!;
+    const execute = (path: string) => read.execute("read-boundary", { path }, undefined, undefined, {} as never);
+    await assert.doesNotReject(execute(appFile));
+    await assert.rejects(execute(privateFile), /outside the application/);
   });
 });
 

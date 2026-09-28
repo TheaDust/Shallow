@@ -21,6 +21,7 @@ export function Menu({ triggerLabel, menuLabel = triggerLabel, items, buttonVari
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const openingFocus = useRef(0);
   const menuId = useId();
 
   const focusItem = (index: number) => {
@@ -36,9 +37,10 @@ export function Menu({ triggerLabel, menuLabel = triggerLabel, items, buttonVari
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", closeOutside);
-    queueMicrotask(() => focusItem(0));
+    const enabled = itemRefs.current.filter(item => item && !item.disabled);
+    (openingFocus.current === -1 ? enabled.at(-1) : enabled[0])?.focus();
     return () => document.removeEventListener("pointerdown", closeOutside);
-  }, [open, items]);
+  }, [open]);
 
   return (
     <div className="ui-menu" ref={rootRef}>
@@ -48,12 +50,16 @@ export function Menu({ triggerLabel, menuLabel = triggerLabel, items, buttonVari
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          openingFocus.current = 0;
+          setOpen((value) => !value);
+        }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
-            setOpen(true);
-            queueMicrotask(() => focusItem(event.key === "ArrowDown" ? 0 : -1));
+            openingFocus.current = event.key === "ArrowDown" ? 0 : -1;
+            if (open) focusItem(openingFocus.current);
+            else setOpen(true);
           }
         }}
       >

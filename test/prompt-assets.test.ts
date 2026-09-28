@@ -118,7 +118,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /frontend\/src\/ui/);
   assert.match(loadPrompt("system", "builder-system"), /list_capabilities/);
   assert.match(loadPrompt("system", "builder-system"), /install_capability/);
-  assert.match(loadPrompt("system", "builder-system"), /允许从 npm 安装公开、任务无关/);
+  assert.match(loadPrompt("system", "builder-system"), /只有现有实现和适用的批准能力无法可靠满足当前需求时，才从 npm 安装公开、任务无关/);
   assert.match(loadPrompt("system", "builder-system"), /不得安装含成品页面、业务流程/);
   assert.match(loadPrompt("system", "builder-system"), /不得从 git URL、任意远程脚本或未批准的 Pi package 加载/);
   assert.match(loadPrompt("system", "builder-system"), /hash 路由/);

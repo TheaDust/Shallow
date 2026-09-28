@@ -1,4 +1,0 @@
-interface:
-  display_name: "Editable Data Models"
-  short_description: "Model editable structured data robustly"
-  default_prompt: "Use $model-editable-data to implement this editable data behavior and its invariants."

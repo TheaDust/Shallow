@@ -1,4 +1,4 @@
-import type { SelectHTMLAttributes } from "react";
+import { useId, type SelectHTMLAttributes } from "react";
 
 export interface ComboboxOption {
   value: string;
@@ -12,7 +12,8 @@ export interface ComboboxProps extends Omit<SelectHTMLAttributes<HTMLSelectEleme
 }
 
 export function Combobox({ id, label, options, className = "", ...props }: ComboboxProps) {
-  const selectId = id ?? `combobox-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const generatedId = useId();
+  const selectId = id ?? `combobox-${generatedId}`;
   return (
     <label className="ui-combobox" htmlFor={selectId}>
       <span>{label}</span>

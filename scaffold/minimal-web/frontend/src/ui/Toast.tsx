@@ -2,6 +2,7 @@ export interface ToastMessage {
   id: string;
   message: string;
   tone?: "info" | "success" | "error";
+  dismissLabel?: string;
 }
 
 export interface ToastRegionProps {
@@ -16,7 +17,7 @@ export function ToastRegion({ label = "Notifications", messages, onDismiss }: To
       {messages.map((message) => (
         <div key={message.id} className="ui-toast" data-tone={message.tone ?? "info"} role={message.tone === "error" ? "alert" : "status"}>
           <span>{message.message}</span>
-          {onDismiss ? <button type="button" aria-label={`Dismiss ${message.message}`} onClick={() => onDismiss(message.id)}>×</button> : null}
+          {onDismiss ? <button type="button" aria-label={message.dismissLabel ?? `Dismiss ${message.message}`} onClick={() => onDismiss(message.id)}>×</button> : null}
         </div>
       ))}
     </section>

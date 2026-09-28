@@ -33,17 +33,6 @@ export async function assertToolPath(root: string, input: string): Promise<strin
   return path;
 }
 
-export async function assertReadableToolPath(root: string, input: string, additionalReadRoots: string[] = []): Promise<string> {
-  for (const allowedRoot of [root, ...additionalReadRoots]) {
-    try {
-      return await assertToolPath(allowedRoot, input);
-    } catch {
-      // Try the next explicit root. The final error never discloses host paths.
-    }
-  }
-  throw new Error("Tool path is outside the application and approved read-only resources");
-}
-
 export function assertToolCommand(command: string): void {
   // Defense in depth, not an OS sandbox. Deployment controls filesystem visibility.
   if (/\.arc|run-ledger|run-log|shallow-progress|\/workspace\/tests|\.codex|\.pi[\\/]|(?:^|[\s"'])\.\.[\\/]/i.test(command)) {
@@ -137,11 +126,11 @@ function scriptNameIsTest(name: string): boolean {
   return normalized.split(/[:.\-]/).some(part => part === "test" || part === "tests");
 }
 
-export function createPiTools(cwd: string, managedApp = false, additionalReadRoots: string[] = []): ToolDefinition[] {
+export function createPiTools(cwd: string, managedApp = false): ToolDefinition[] {
   const read = createReadToolDefinition(cwd) as unknown as ToolDefinition;
   const guardedRead = { ...read, execute: async (...args: Parameters<typeof read.execute>) => {
     const params = args[1] as { path: string };
-    await assertReadableToolPath(cwd, params.path, additionalReadRoots);
+    await assertToolPath(cwd, params.path);
     return (read.execute as ToolDefinition["execute"])(args[0], args[1], args[2], args[3], args[4]);
   } } as ToolDefinition;
   const writable = [createEditToolDefinition(cwd), createWriteToolDefinition(cwd)] as unknown as ToolDefinition[];

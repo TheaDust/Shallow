@@ -35,7 +35,7 @@ test("starter scaffold installs the generic platform shell into metadata-only ou
     assert.ok(result.files.includes("frontend/src/lib/api.ts"));
     assert.ok(result.files.includes("frontend/src/ui/Dialog.tsx"));
     assert.ok(result.files.includes("frontend/src/ui/Menu.tsx"));
-    assert.ok(result.files.includes("frontend/src/ui/ui.test.tsx"));
+    assert.ok(!result.files.some(file => /\/ui\/.*\.test\.tsx?$/u.test(file)));
     assert.ok(result.files.includes("backend/src/server.mjs"));
     assert.ok(result.files.includes("backend/src/lib/json-store.mjs"));
     assert.deepEqual(JSON.parse(await readFile(join(directory, "backend/src/platform-ports.json"), "utf8")), [3301, 4312]);

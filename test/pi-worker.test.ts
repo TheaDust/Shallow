@@ -42,7 +42,7 @@ test("Pi SDK executes tools and resumes persisted history in a new worker", { ti
       assert.ok(JSON.stringify(requests.at(-1)?.messages).includes("remember alpha"));
       assert.ok(requests.every(request => request.model === "test/model"));
       assert.ok(!JSON.stringify(requests).includes("test-secret"));
-      assert.ok(JSON.stringify(requests).includes("compose-accessible-ui"));
+      assert.ok(!JSON.stringify(requests).includes("<available_skills>"));
       assert.ok(!JSON.stringify(requests).includes("must never load"));
     } finally { await client.close(); server.closeAllConnections(); await new Promise<void>(r => server.close(() => r())); }
   });

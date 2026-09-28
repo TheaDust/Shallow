@@ -1,4 +1,0 @@
-interface:
-  display_name: "Persistent State"
-  short_description: "Implement durable state transitions safely"
-  default_prompt: "Use $implement-persistent-state to implement this state change across UI, API, and persistence."

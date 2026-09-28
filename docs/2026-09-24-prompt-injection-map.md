@@ -93,7 +93,7 @@ pipeline.ts build()
       → compileBuilderPrompt()             （prompt.ts：选模板、填占位符、拼 receipt）
       → PiWorkerClient.run()               （fork 独立 Worker，一次调用一个子进程）
           → pi-worker.ts：
-              DefaultResourceLoader({ systemPrompt, additionalSkillPaths })
+              DefaultResourceLoader({ systemPrompt })
                                                     ← 系统提示词 + 控制器批准的 Skill 元数据
               session.prompt(taskPrompt + imageNote, { images })  ← 任务正文 + 图片
 ```
@@ -101,7 +101,7 @@ pipeline.ts build()
 要点：
 
 - 每次 Builder 调用都是一个独立 Worker 子进程；`sessionKey` 决定它是否续接已有 Pi 会话文件。只有上一次调用 `completed` 且产出 sessionFile 时，会话才会被记住（`pi-worker-client.ts:113-116`）；失败会丢弃会话。
-- Worker 里 `noContextFiles: true`、`noSkills: true`、`noExtensions: true`、`noPromptTemplates: true`：目标项目里的 `AGENTS.md`、`.pi/skills`、扩展和模板**不会**被 Pi 自动读入。`additionalSkillPaths` 只显式加入控制器仓库的 `builder-resources/skills/`；匹配任务时 Builder 可通过只读白名单加载完整 `SKILL.md`，不能修改这些资源。固定系统合同仍由下面两份 prompt 资产拼成。
+- Worker 里 `noContextFiles: true`、`noSkills: true`、`noExtensions: true`、`noPromptTemplates: true`：目标项目里的 `AGENTS.md`、`.pi/skills`、扩展和模板**不会**被 Pi 自动读入。Worker 的文件工具只访问候选项目。固定系统合同由下面两份 prompt 资产拼成，产品方法指导由条件 fragments 选择。
 
 ### 2.2 系统提示词：进程内一次性拼接，四种模式共用
 
