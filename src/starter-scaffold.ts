@@ -25,9 +25,9 @@ const EMPTY_OUTPUT_METADATA = new Set([
 const SCAFFOLD_RUNTIME_ARTIFACTS = new Set(["node_modules", "dist", "build"]);
 
 /**
- * Installs only the task-neutral platform shell and unconnected infrastructure
- * helpers. Business navigation, API routes, domain data, visual components and
- * requirement behavior remain Builder-owned.
+ * Installs only the task-neutral platform shell, accessible UI primitives and
+ * unconnected infrastructure helpers. Business navigation, API routes, domain
+ * data, composed product views and requirement behavior remain Builder-owned.
  */
 export async function installStarterScaffold(
   outputDir: string,

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Accessible UI Composition"
+  short_description: "Compose accessible UI primitives safely"
+  default_prompt: "Use $compose-accessible-ui to build this interaction from the approved UI capability."

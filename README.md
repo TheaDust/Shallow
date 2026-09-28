@@ -173,7 +173,7 @@ Planner 失败事件（`probe_preplan_failed`、`probe_planner_retry`、`probe_p
 
 `diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
 
-`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。Pi Worker 通过受控 ResourceLoader 与显式工具装配限制路径：`read`/`edit`/`write` 拒绝 `.arc` 路径与越界访问，shell 命令文本含 `.arc`、`run-ledger`、`run-log`、`/workspace/tests`、`.codex`、`.pi` 或 `../` 越界即拒绝；工具子进程继承最小环境变量（PATH、系统根、临时目录等），不继承网关密钥或任意宿主配置。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
+`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。Pi Worker 关闭目标项目的扩展、Skill 自动发现、模板、主题与上下文文件，只显式加载控制器拥有的 `builder-resources/skills/`；`read` 可读取候选与该批准目录，`edit`/`write` 仍只允许候选，全部拒绝 `.arc` 与 `shallow-progress`。`list_capabilities`/`install_capability` 只接受控制器内建 ID，复制任务无关组件且不覆盖已有不同文件。Builder 仍可按当前需求从 npm 安装公开、任务无关且精确锁版本的通用组件库；成品页面、业务模板、当前任务专用包、git URL、远程脚本和未批准 Pi package 明确禁止。shell 命令文本含 `.arc`、`run-ledger`、`run-log`、`/workspace/tests`、`.codex`、`.pi` 或 `../` 越界即拒绝；工具子进程继承最小环境变量（PATH、系统根、临时目录等），不继承网关密钥或任意宿主配置。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
 
 GitOps（`src/git-ops.ts`）细节：
 
@@ -257,7 +257,7 @@ python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
 
 `main.py`（仅用 Python 标准库）只做四件事：解析参数与 `ARCBENCH_*` 回退、准备 Node 运行时（`npm ci` + `npx playwright install chromium`）、以 `npx tsx index.ts` 驱动管线（参数映射为 `--requirements-dir/--output-dir/--budget-ms`，总预算可用 `SHALLOW_BUDGET_MS` 注入）、收尾检查交付目录含 `frontend/` 与 `backend/`。
 
-主线打开一个真正没有应用代码的输出仓库后，会在第一次基线提交前安装同一份任务无关最小脚手架：React + Vite + TypeScript 空白入口、锁定依赖、Vitest/Testing Library 测试环境、同源 JSON 请求与 Hash URL 工具、零依赖 Node HTTP 后端、原子 JSON 文件存储、健康检查、按本次平台合同生成的多端口监听以及生产静态文件服务。通用能力只作为未接线的基础设施；它不包含导航、领域数据、API 路由、视觉组件或任何 GitHub/Sheet 业务行为。已有 `frontend/` + `backend/` 的 evolution 模板以及含其他项目文件的目录均保持原样。Builder 继续负责全部业务代码。脚手架状态会进入 `pipeline_started.starterScaffold`，用于对照首次可运行时间、Builder 耗时和 token，不把提示词字符数当费用。
+主线打开一个真正没有应用代码的输出仓库后，会在第一次基线提交前安装同一份任务无关最小脚手架：React + Vite + TypeScript 空白入口、锁定依赖、Vitest/Testing Library 测试环境、同源 JSON 请求与 Hash URL 工具、零依赖 Node HTTP 后端、原子 JSON 文件存储、健康检查、按本次平台合同生成的多端口监听、生产静态文件服务以及未接线的可访问 UI primitives。它不包含导航、领域数据、业务 API 路由、组合后的产品视图或任何当前赛题业务行为。已有 `frontend/` + `backend/` 的 evolution 模板以及含其他项目文件的目录均保持原样。Builder 继续通过真实 Pi/LLM 调用负责全部业务代码；控制器不会把技能或 capability 当成固定程序直接生成页面或业务功能。脚手架状态会进入 `pipeline_started.starterScaffold`，用于对照首次可运行时间、Builder 耗时和 token，不把提示词字符数当费用。
 
 平台通过交付目录内的文件观察进度，管线运行时写入：
 
@@ -343,7 +343,9 @@ src/
     pi-execution-stats.ts      Pi 会话事件聚合：token 用量与模型/工具耗时分布
     sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
     sse-resilience.ts          始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]、内容截断走重试
-    pi-tools.ts                read/edit/write 路径限制与 shell 命令白名单后端（测试命令引导到 run_tests）
+    builder-resources.ts       控制器批准 Builder Skills 的固定只读目录
+    capability-catalog.ts      任务无关组件能力清单、状态检查与无覆盖安装
+    pi-tools.ts                read/edit/write 路径限制、shell 后端及 capability 工具（测试命令引导到 run_tests）
     pi-test-tool.ts            run_tests 工具：限内存传统测试执行（Vitest 单 worker、node:test 单并发；成功输出简述）
     reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
     prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
@@ -358,6 +360,9 @@ src/
   process-lifecycle.ts        Pi Worker 进程组/作业所有权、回收确认与工具最小环境
   memory-snapshot.ts           Linux cgroup 内存诊断采样（memory.current/peak/max/events）
   memory-gate.ts               cgroup 水位背压：候选安装/构建与探针浏览器启动前等待内存余量
+builder-resources/skills/      显式加载、控制器拥有的 Builder Skills；不从目标项目自动发现
+scaffold/minimal-web/frontend/src/ui/
+                               空项目预置的任务无关可访问 React primitives
 test/
   *.test.ts                    单元/集成测试（含无凭证全链路 e2e）
   browser/                     真实 Chromium 测试

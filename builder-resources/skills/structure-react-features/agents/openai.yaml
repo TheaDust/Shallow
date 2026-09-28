@@ -1,0 +1,4 @@
+interface:
+  display_name: "React Feature Structure"
+  short_description: "Split large React features into stable modules"
+  default_prompt: "Use $structure-react-features to organize this feature without creating a monolithic component."

@@ -13,6 +13,7 @@ import { isImageUnsupportedMessage } from "./vision-probe.js";
 import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
 import { classifyGatewayFailure, observeGatewayFailures } from "../gateway-failure.js";
+import { BUILDER_SKILLS_DIR } from "./builder-resources.js";
 
 // Wait for ownership to be established by the parent before executing anything.
 process.once("message", (request: PiWorkerRequest) => {
@@ -42,6 +43,7 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     provider: { maxRetries: 0, timeoutMs: input.timeoutMs } }, compaction: { enabled: true }, enableInstallTelemetry: false });
   const resourceLoader = new DefaultResourceLoader({ cwd: input.outputDir, agentDir, settingsManager,
     noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    additionalSkillPaths: [BUILDER_SKILLS_DIR],
     systemPrompt: input.systemPrompt });
   await resourceLoader.reload();
   const manager = input.sessionFile ? SessionManager.open(input.sessionFile) : SessionManager.create(input.outputDir, input.sessionDir);
@@ -49,8 +51,9 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const { session, modelFallbackMessage } = await createAgentSession({ cwd: input.outputDir, agentDir,
     authStorage, modelRegistry, model: modelRegistry.find("shallow-gateway", input.gateway.model),
     settingsManager, resourceLoader, sessionManager: manager,
-    tools: ["read", "edit", "write", "shell", "run_tests", "browser", ...(input.platformContract ? ["app"] : [])],
-    customTools: createPiTools(input.outputDir, Boolean(input.platformContract)) });
+    tools: ["read", "edit", "write", "shell", "run_tests", "browser", "list_capabilities", "install_capability",
+      ...(input.platformContract ? ["app"] : [])],
+    customTools: createPiTools(input.outputDir, Boolean(input.platformContract), [BUILDER_SKILLS_DIR]) });
   if (modelFallbackMessage) throw new Error(modelFallbackMessage);
   let toolCalls = 0;
   let compactions = 0;

@@ -1,12 +1,14 @@
 import { realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { Type } from "typebox";
 import { createReadToolDefinition, createEditToolDefinition, createWriteToolDefinition, createBashToolDefinition, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { toolEnvironment } from "../process-lifecycle.js";
 import { PROGRESS_DIR_NAME } from "../progress-journal.js";
 import { createBrowserTool } from "./pi-browser-tool.js";
 import { createTestTool } from "./pi-test-tool.js";
 import { createAppTool } from "./pi-app-tool.js";
+import { installCapability, listCapabilities } from "./capability-catalog.js";
 
 export async function assertToolPath(root: string, input: string): Promise<string> {
   const canonicalRoot = await realpath(root);
@@ -29,6 +31,17 @@ export async function assertToolPath(root: string, input: string): Promise<strin
     }
   }
   return path;
+}
+
+export async function assertReadableToolPath(root: string, input: string, additionalReadRoots: string[] = []): Promise<string> {
+  for (const allowedRoot of [root, ...additionalReadRoots]) {
+    try {
+      return await assertToolPath(allowedRoot, input);
+    } catch {
+      // Try the next explicit root. The final error never discloses host paths.
+    }
+  }
+  throw new Error("Tool path is outside the application and approved read-only resources");
 }
 
 export function assertToolCommand(command: string): void {
@@ -124,9 +137,15 @@ function scriptNameIsTest(name: string): boolean {
   return normalized.split(/[:.\-]/).some(part => part === "test" || part === "tests");
 }
 
-export function createPiTools(cwd: string, managedApp = false): ToolDefinition[] {
-  const files = [createReadToolDefinition(cwd), createEditToolDefinition(cwd), createWriteToolDefinition(cwd)] as unknown as ToolDefinition[];
-  const guarded = files.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+export function createPiTools(cwd: string, managedApp = false, additionalReadRoots: string[] = []): ToolDefinition[] {
+  const read = createReadToolDefinition(cwd) as unknown as ToolDefinition;
+  const guardedRead = { ...read, execute: async (...args: Parameters<typeof read.execute>) => {
+    const params = args[1] as { path: string };
+    await assertReadableToolPath(cwd, params.path, additionalReadRoots);
+    return (read.execute as ToolDefinition["execute"])(args[0], args[1], args[2], args[3], args[4]);
+  } } as ToolDefinition;
+  const writable = [createEditToolDefinition(cwd), createWriteToolDefinition(cwd)] as unknown as ToolDefinition[];
+  const guardedWritable = writable.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
     const params = args[1] as { path: string };
     await assertToolPath(cwd, params.path);
     return (tool.execute as ToolDefinition["execute"])(args[0], args[1], args[2], args[3], args[4]);
@@ -162,5 +181,36 @@ export function createPiTools(cwd: string, managedApp = false): ToolDefinition[]
   // Retain the SDK schema and output truncation, replace only the execution backend.
   shell.name = "shell";
   shell.description = `Run a short ${process.platform === "win32" ? "PowerShell" : "Bash"} command in the application. Use this for file searches, builds and type checks; run tests with the run_tests tool instead. ${managedApp ? "Use the app tool to start and stop the application for browser checks." : "Do not start persistent servers; briefly starting the app in the background for a browser-tool check is allowed when instructed."}`;
-  return [...guarded, shell as unknown as ToolDefinition, createTestTool(cwd), createBrowserTool(), ...(managedApp ? [createAppTool()] : [])];
+  const listCapabilityParameters = Type.Object({});
+  const installCapabilityParameters = Type.Object({
+    id: Type.String({ description: "Approved capability id returned by list_capabilities" }),
+  });
+  const listCapabilityTool: ToolDefinition<typeof listCapabilityParameters> = {
+    name: "list_capabilities",
+    label: "List approved capabilities",
+    description: "List controller-approved, task-neutral capability packs and whether each is already installed. The catalog never exposes business code or arbitrary packages.",
+    promptSnippet: "list_capabilities: inspect approved task-neutral component packs",
+    parameters: listCapabilityParameters,
+    executionMode: "sequential",
+    async execute() {
+      await assertToolPath(cwd, "frontend/src/ui");
+      const capabilities = await listCapabilities(cwd);
+      return { content: [{ type: "text" as const, text: JSON.stringify(capabilities, null, 2) }], details: { capabilities } };
+    },
+  };
+  const installCapabilityTool: ToolDefinition<typeof installCapabilityParameters> = {
+    name: "install_capability",
+    label: "Install approved capability",
+    description: "Install one controller-approved, task-neutral capability pack. Existing differing files are never overwritten; arbitrary npm/git sources are not accepted.",
+    promptSnippet: "install_capability: install an approved component pack without overwriting existing files",
+    parameters: installCapabilityParameters,
+    executionMode: "sequential",
+    async execute(_toolCallId, { id }) {
+      await assertToolPath(cwd, "frontend/src/ui");
+      const result = await installCapability(cwd, id);
+      return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result };
+    },
+  };
+  return [guardedRead, ...guardedWritable, shell as unknown as ToolDefinition, createTestTool(cwd), createBrowserTool(),
+    listCapabilityTool, installCapabilityTool, ...(managedApp ? [createAppTool()] : [])];
 }

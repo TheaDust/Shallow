@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { assertNotTestCommand, assertToolCommand, assertToolPath } from "../src/builder/pi-tools.js";
+import { assertNotTestCommand, assertReadableToolPath, assertToolCommand, assertToolPath } from "../src/builder/pi-tools.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 test("Builder tools cannot reach the product-visible progress journal", async () => {
@@ -22,6 +22,28 @@ test("Builder tools cannot reach the product-visible progress journal", async ()
     assert.throws(() => assertToolCommand("cat shallow-progress/progress.log"));
     assert.throws(() => assertToolCommand("type .arc\\runner-events.jsonl"));
     assert.doesNotThrow(() => assertToolCommand("npm test"));
+  });
+});
+
+test("Builder read can access only the application and explicit controller resources", async () => {
+  await withTempDir("shallow-pi-read-roots-", async root => {
+    const app = join(root, "app");
+    const skills = join(root, "skills");
+    const privateDirectory = join(root, "private");
+    await mkdir(app);
+    await mkdir(skills);
+    await mkdir(privateDirectory);
+    const appFile = join(app, "main.ts");
+    const skillFile = join(skills, "SKILL.md");
+    const privateFile = join(privateDirectory, "secret.txt");
+    await writeFile(appFile, "", "utf8");
+    await writeFile(skillFile, "---\nname: example\ndescription: example\n---\n", "utf8");
+    await writeFile(privateFile, "hidden", "utf8");
+
+    await assert.doesNotReject(assertReadableToolPath(app, appFile, [skills]));
+    await assert.doesNotReject(assertReadableToolPath(app, skillFile, [skills]));
+    await assert.rejects(assertReadableToolPath(app, privateFile, [skills]), /approved read-only resources/);
+    await assert.rejects(assertToolPath(app, skillFile), /outside the application/);
   });
 });
 
