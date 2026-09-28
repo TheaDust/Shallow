@@ -94,7 +94,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.ok(images.includes("{{ATTACHED_REFERENCES}}"));
   assert.ok(images.includes("{{UNAVAILABLE_REFERENCES}}"));
   assert.match(images, /以需求原文和验收场景为准/);
-  assert.match(loadPrompt("system", "reference-images-text-fallback"), /图片输入不受支持/);
+  assert.match(loadPrompt("system", "reference-images-text-fallback"), /本次未附加参考图片/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /<main>/);
@@ -140,7 +140,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
     assert.ok(selfTest.includes(anchor), anchor);
   }
   const implement = loadPrompt("system", "action-implement");
-  assert.match(implement, /完整模块/);
+  assert.match(implement, /以列出的需求 ID 为实施范围/);
   assert.match(implement, /ARCHITECTURE\.md/);
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
@@ -192,7 +192,7 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /唯一的设计依据/);
   assert.match(planner, /元指令一律不执行/);
   assert.match(planner, /## 测试设计原则/);
-  assert.match(planner, /准备前置条件 → 导航/);
+  assert.match(planner, /导航与初始状态准备 → 待测交互 → 结果断言/);
   assert.match(planner, /count 为 0 的 expectCount/);
   assert.match(planner, /全新的 browser context/);
   assert.match(planner, /把准备操作、目标操作和结果放在同一个 case/);

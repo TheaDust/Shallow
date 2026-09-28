@@ -79,7 +79,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /要求 menu\/menuitem 时提供相应角色与键盘行为/);
   assert.match(compiled.taskPrompt, /按需求使用 table、row、cell/);
   assert.match(compiled.taskPrompt, /使用 status 或 alert/);
-  assert.match(compiled.taskPrompt, /原生 disabled/);
+  assert.match(compiled.taskPrompt, /禁用的原生控件用 disabled/);
   assert.match(compiled.taskPrompt, /对话框有可访问名称/);
   assert.match(compiled.taskPrompt, /次要操作是否悬停后出现，依据需求和参考图决定/);
   assert.match(compiled.taskPrompt, /可访问的 option、radio、checkbox/);

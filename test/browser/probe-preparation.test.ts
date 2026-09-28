@@ -79,7 +79,8 @@ test("Preparation mismatch stops the target operation and file feedback exposes 
   try {
     const address = server.address();
     assert.ok(address && typeof address !== "string");
-    const options = { baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 250, caseTimeoutMs: 5_000 };
+    // Leave time for navigation so failure classification reaches the intended step.
+    const options = { baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000 };
     const plan: ProbePlan = { packetId: "prepare", cases: [{ id: "wrong-seed", requirementIds: ["A"], purpose: "happy_path",
       expectationBasis: ["fixture"], setupStepCount: 2, steps: [
         { op: "goto", path: "/" },
@@ -127,7 +128,7 @@ test("Missing results are assertion failures while ambiguous targets remain loca
       ],
     })) };
     const result = await new PlaywrightProbeRunner().run(plan, { baseUrl: `http://127.0.0.1:${address.port}`,
-      stepTimeoutMs: 250, caseTimeoutMs: 5000 });
+      stepTimeoutMs: 1_000, caseTimeoutMs: 5_000 });
     assert.deepEqual(result.failures.map(item => item.category), ["assertion", "locator", "assertion"]);
     assert.ok(result.failures.every(item => item.locatorSnapshot?.includes('status: Unchanged')));
     assert.match(result.failures[2].locatorSnapshot!, /^- status: Unchanged/);

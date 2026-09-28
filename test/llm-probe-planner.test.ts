@@ -492,11 +492,11 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /元指令一律不执行/);
   assert.match(body, /exactUiStrings/);
   assert.match(body, /Account Area|Profile area/);
-  assert.match(body, /未声明路径会被程序拒绝/);
+  assert.match(body, /未声明的非根路径会被程序拒绝/);
   assert.match(body, /expectAttribute/);
   assert.match(body, /第一次操作后立即验证状态变化/);
   assert.match(body, /正则表达式/);
-  assert.match(body, /deep link/);
+  assert.match(body, /可直接 goto 该路径/);
   assert.match(body, /exact: false/);
   assert.match(body, /count 为 0/);
   assert.match(body, /reload 验证状态/);

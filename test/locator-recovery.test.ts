@@ -9,7 +9,7 @@ import { auditPackets } from "../src/scheduler.js";
 import { RunStateStore } from "../src/run-state.js";
 import { ExecutionFault } from "../src/execution-fault.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
-import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
+import { ProbePlannerError, type ProbePlannerFeedback } from "../src/judge/llm-probe-planner.js";
 import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
 import { rootSearchNavigationPlan } from "../src/judge/navigation-recovery.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
@@ -436,6 +436,105 @@ test("An independent preparation failure does not suppress a reviewed and reprod
     assert.equal(runs, 2);
   });
 });
+
+for (const reviewRetry of [false, true]) {
+  test(`Business review keeps its own quota after two locator refinements${reviewRetry ? " with validation feedback" : ""}`, async () => {
+    await withModulePipeline(async f => {
+      const original = homePlan();
+      original.cases.push({ ...structuredClone(original.cases[0]), id: "business" });
+      const planner = new FakeProbePlanner([original]);
+      f.deps.planner = planner;
+      let refinements = 0, reviews = 0, runs = 0;
+      planner.refineLocators = async plan => {
+        const changed = structuredClone(plan);
+        const step = changed.cases[0].steps[1];
+        assert.ok("locator" in step && step.locator.by === "role");
+        step.locator.role = ++refinements === 1 ? "link" : "button";
+        return changed;
+      };
+      planner.reviewPlan = async (_packet, _plan, _failures, feedback?: ProbePlannerFeedback) => {
+        reviews++;
+        if (reviewRetry && reviews === 1) throw new Error("Review validation failed");
+        if (reviewRetry) assert.match(feedback?.validationError ?? "", /Review validation failed/);
+        return { status: "sound", rationale: "The business expectation is grounded independently of the ambiguous locator" };
+      };
+      f.deps.runner.run = async plan => {
+        runs++;
+        return { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [
+          { caseId: original.cases[0].id, stepIndex: 1, category: "locator", message: "strict mode violation",
+            locatorSnapshot: '- link "Home"\n- button "Home"' },
+          { caseId: "business", stepIndex: 1, category: "assertion", message: "required result missing" },
+        ] };
+      };
+      const result = await audit(f);
+      assert.equal(result.status, "failed");
+      assert.deepEqual(result.report?.failures.map(item => item.caseId), ["business"]);
+      assert.equal(refinements, 2);
+      assert.equal(reviews, reviewRetry ? 2 : 1);
+      assert.equal(runs, 4);
+      assert.equal(f.builder.requests.length, 0);
+    });
+  });
+}
+
+test("Locator-only failures do not gain extra reviews after exhausting their recovery quota", async () => {
+  await withModulePipeline(async f => {
+    const original = homePlan();
+    const planner = new FakeProbePlanner([original]);
+    f.deps.planner = planner;
+    let refinements = 0;
+    planner.refineLocators = async plan => {
+      const changed = structuredClone(plan);
+      const step = changed.cases[0].steps[1];
+      assert.ok("locator" in step && step.locator.by === "role");
+      step.locator.role = ++refinements === 1 ? "link" : "button";
+      return changed;
+    };
+    f.deps.runner.run = async plan => {
+      const report = fail(plan, "locator");
+      report.failures[0].message = "strict mode violation";
+      return report;
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.repairableProbeFailure, undefined);
+    assert.equal(refinements, 2);
+    assert.equal(planner.reviews.length, 0);
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
+for (const ambiguitySource of ["message", "candidate"] as const) {
+  test(`An unresolved preparation ambiguity in the ${ambiguitySource} cannot authorize diagnostic repair`, async () => {
+    await withModulePipeline(async f => {
+      const original = homePlan();
+      original.cases[0].setupStepCount = 2;
+      original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      const planner = new FakeProbePlanner([original]);
+      f.deps.planner = planner;
+      let refinements = 0, runs = 0;
+      planner.refineLocators = async plan => { refinements++; return plan; };
+      f.deps.runner.run = async plan => {
+        runs++;
+        return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+          caseId: original.cases[0].id, stepIndex: 1, category: "precondition",
+          message: ambiguitySource === "message" ? "strict mode violation" : "last candidate missing",
+          locatorSnapshot: '- tab "Home"\n- tab "Home"',
+          ...(ambiguitySource === "candidate" ? { locatorAttempts: [{
+            locator: { by: "role" as const, role: "tab", name: "Home" }, message: "strict mode violation",
+          }] } : {}),
+        }] };
+      };
+      const result = await audit(f);
+      assert.equal(result.status, "inconclusive");
+      assert.equal(result.repairableProbeFailure, undefined);
+      assert.equal(refinements, 1);
+      assert.equal(planner.reviews.length, 1);
+      assert.equal(runs, 1);
+      assert.equal(f.builder.requests.length, 0);
+    });
+  });
+}
 
 test("An identical reviewed preparation gap is freshly confirmed without repeating the Planner call", async () => {
   await withModulePipeline(async f => {

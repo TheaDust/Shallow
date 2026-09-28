@@ -50,16 +50,18 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     const reviewKey = createHash("sha256").update(JSON.stringify([probePlanSha256(plan), first.report.failures])).digest("hex");
     let reviewed = policy.refineLocators && policy.noProgressRefinements?.has(`review:sound:${reviewKey}`) === true;
     const probeGap = first.report.failures.some(item => item.category === "locator" || item.category === "precondition");
-    // Missing navigation/setup may require new steps, which locator patches cannot
-    // supply. Use the unused locator-recovery quota for a grounded plan review.
-    const reviewAttempts = probeGap ? MAX_LOCATOR_REFINEMENTS - recovery.locatorRefinements : DEFAULT_SEMANTIC_REVIEW_ATTEMPTS;
+    // Business review keeps its own quota even when another case cannot be
+    // prepared. Pure preparation/control gaps share the locator-recovery quota.
+    const reviewUsesRecoveryQuota = probeGap && !first.report.failures.some(isBehaviorFailure);
+    const reviewAttempts = reviewUsesRecoveryQuota
+      ? MAX_LOCATOR_REFINEMENTS - recovery.locatorRefinements : DEFAULT_SEMANTIC_REVIEW_ATTEMPTS;
     if (policy.refineLocators && first.report.verdict !== "pass" && first.source === "probe" &&
       first.report.failures.some(item => item.category !== "runner") && !reviewed && reviewAttempts > 0 && remaining() > 0) {
       if (policy.noProgressRefinements?.has(`review:unavailable:${reviewKey}`)) {
         return { status: "inconclusive", plan, report: first.report, reason: "Identical plan review previously could not establish valid evidence" };
       }
       const review = await reviewBehaviorFailures(packet, plan, first.report, deps, state, remaining, reviewAttempts,
-        probeGap ? recovery : undefined);
+        reviewUsesRecoveryQuota ? recovery : undefined);
       if (review.status === "unavailable") {
         policy.noProgressRefinements?.add(`review:unavailable:${reviewKey}`);
         return { status: "inconclusive", plan, report: first.report, reason: review.reason };
@@ -201,7 +203,7 @@ async function reviewBehaviorFailures(
 
 /** Candidate misses with no equivalent visible control require path/setup review. */
 function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: ProbeStep): boolean {
-  if (!failure.locatorAttempts || !failure.locatorSnapshot || failure.message.includes("strict mode violation") ||
+  if (!failure.locatorAttempts || !failure.locatorSnapshot || isLocatorAmbiguity(failure) ||
     step.op.startsWith("expect") || !("locator" in step)) return true;
   const roles = /^(button|link|menuitem|menuitemcheckbox|menuitemradio|checkbox|radio|switch|tab|treeitem|option|textbox|searchbox|combobox|spinbutton|gridcell|rowheader|columnheader)$/;
   const controls = [...failure.locatorSnapshot.matchAll(/^\s*- ([a-z]+) ("(?:\\.|[^"\\])*")/gm)];
@@ -217,10 +219,16 @@ function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: Pr
   });
 }
 
+function isLocatorAmbiguity(failure: ShadowReport["failures"][number]): boolean {
+  return failure.message.includes("strict mode violation") ||
+    failure.locatorAttempts?.some(attempt => attempt.message.includes("strict mode violation")) === true;
+}
+
 function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ShadowReport["failures"] {
   return report.failures.filter(failure => {
+    if (isLocatorAmbiguity(failure)) return false;
     if (failure.category === "precondition") return true;
-    if (failure.category !== "locator" || !failure.locatorSnapshot || failure.message.includes("strict mode violation")) return false;
+    if (failure.category !== "locator" || !failure.locatorSnapshot) return false;
     const steps = plan.cases.find(item => item.id === failure.caseId)?.steps;
     const step = steps?.[failure.stepIndex];
     // A prior successful interaction establishes that we reached the flow;
@@ -363,14 +371,17 @@ async function runShadowProbes(
     if (currentPlan !== beforeNavigationPlan && !navigationRecovered) {
       return { source: "probe", report: beforeNavigationReport, plan: beforeNavigationPlan };
     }
-    // The same anchors the plan was grounded on travel with each refinement request,
-    // so the planner can tell requirement-declared names from its own guesses.
-    const anchoredNames = groundedLocatorAnchors(plan, packet);
+    // Accepted navigation changes establish the baseline for locator-only
+    // patches. Keep its requirement anchors across successive refinements.
+    const refinementBaseline = currentPlan;
+    const anchoredNames = groundedLocatorAnchors(refinementBaseline, packet);
 
     let feedback: ProbePlannerFeedback | undefined;
     const refinableFailures = () => report.failures.filter(failure => {
       const step = currentPlan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex];
-      return failure.category === "locator" && failure.locatorSnapshot && step && "locator" in step && locatorPatchMayHelp(failure, step);
+      const locatorFailure = failure.category === "locator" ||
+        (failure.category === "precondition" && isLocatorAmbiguity(failure));
+      return locatorFailure && failure.locatorSnapshot && step && "locator" in step && locatorPatchMayHelp(failure, step);
     });
     while (policy.refineLocators &&
       report.verdict !== "pass" &&
@@ -392,8 +403,8 @@ async function runShadowProbes(
           { timeoutMs: Math.max(1, remaining()), anchoredNames },
         ));
         assertLocatorOnlyRefinement(currentPlan, refined, failures);
-        // Keep anchors from the original plan across successive refinements.
-        assertLocatorOnlyRefinement(plan, refined, [], packet);
+        // Keep the baseline's requirement anchors across successive refinements.
+        assertLocatorOnlyRefinement(refinementBaseline, refined, [], packet);
       } catch (error) {
         if (error instanceof ExecutionFault || (error instanceof ProbePlannerError && error.fatal)) throw error;
         const detail = plannerFailureDetail(error);

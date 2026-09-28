@@ -13,8 +13,9 @@ test("State probes reject no-op toggles and visible fallbacks in Chromium", asyn
   try {
     const address = server.address();
     if (!address || typeof address === "string") assert.fail("missing address");
+    // These tests check state and failure categories, not sub-second browser latency.
     const run = (plan: ProbePlan) => new PlaywrightProbeRunner().run(plan, {
-      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 300, caseTimeoutMs: 5_000,
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000,
     });
     const plan: ProbePlan = { packetId: "state", cases: [{ id: "toggle", requirementIds: ["A"], purpose: "happy_path",
       expectationBasis: ["fixture"], steps: [
@@ -78,7 +79,7 @@ test("Enabled-state probes verify undo transitions, inherited disabling and ARIA
         { op: op as "expectDisabled" | "expectEnabled", locator: control(name) }],
     }))] };
     const report = await new PlaywrightProbeRunner().run(parseProbePlan(toWireProbePlan(plan)), {
-      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 300, caseTimeoutMs: 5_000,
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000,
     });
     assert.deepEqual(report.passedCases, ["undo-new-edit"]);
     assert.equal(report.failures.length, 4);
@@ -122,7 +123,7 @@ test("Visible fallback actions skip hidden text while hidden file inputs remain 
       ],
     }] };
     const report = await new PlaywrightProbeRunner().run(parseProbePlan(toWireProbePlan(plan)), {
-      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 300, caseTimeoutMs: 5_000,
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000,
     });
     assert.deepEqual(report.passedCases, ["visible-action", "hidden-upload"]);
     assert.equal(report.failures.length, 1);
