@@ -1,0 +1,526 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172033;
+  background: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* Home page */
+
+.home-page__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.workbook-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.workbook-record {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #eaeef2;
+}
+
+.workbook-record__link {
+  font-weight: 600;
+  color: #0969da;
+  text-decoration: none;
+}
+
+.workbook-record__link:hover {
+  text-decoration: underline;
+}
+
+.workbook-record__updated,
+.editor-page__updated {
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.home-page__error,
+.create-page__error {
+  color: #cf222e;
+}
+
+/* Create page */
+
+.create-page form {
+  margin: 1rem 0;
+}
+
+/* Editor page */
+
+.editor-page__header {
+  margin-bottom: 1rem;
+}
+
+.editor-page__back {
+  margin: 0 0 0.5rem;
+}
+
+.editor-page__title-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.editor-page__title-row h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.editor-page__toolbar {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid #eaeef2;
+  border-bottom: 1px solid #eaeef2;
+  margin-bottom: 0.5rem;
+}
+
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.formula-bar__ref {
+  min-width: 3.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.25rem;
+  text-align: center;
+  background: #f6f8fa;
+  font-size: 0.9rem;
+}
+
+.formula-bar__input {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.25rem;
+  font: inherit;
+  background: #ffffff;
+  color: inherit;
+}
+
+/* Worksheet grid */
+
+.sheet-grid {
+  overflow: auto;
+  max-height: 34rem;
+  border: 1px solid #d0d7de;
+  display: inline-block;
+  min-width: 100%;
+}
+
+.sheet-grid__row {
+  display: flex;
+}
+
+.sheet-grid__row--header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f8fa;
+}
+
+.sheet-grid__corner {
+  position: sticky;
+  left: 0;
+  width: 2.5rem;
+  min-width: 2.5rem;
+  border-right: 1px solid #d0d7de;
+  border-bottom: 1px solid #d0d7de;
+  background: #eaeef2;
+}
+
+.sheet-grid__header,
+.sheet-grid__row-number {
+  min-width: 5.5rem;
+  padding: 0.2rem 0.4rem;
+  border-right: 1px solid #d0d7de;
+  border-bottom: 1px solid #d0d7de;
+  background: #f6f8fa;
+  color: #57606a;
+  text-align: center;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.sheet-grid__row-number {
+  position: sticky;
+  left: 0;
+  min-width: 2.5rem;
+  width: 2.5rem;
+  background: #eaeef2;
+}
+
+.sheet-grid__cell {
+  min-width: 5.5rem;
+  padding: 0.2rem 0.4rem;
+  border-right: 1px solid #eaeef2;
+  border-bottom: 1px solid #eaeef2;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  cursor: cell;
+  position: relative;
+}
+
+.sheet-grid__cell--filter {
+  padding-right: 1.6rem;
+}
+
+.sheet-grid__cell--dropdown {
+  padding-right: 1.4rem;
+}
+
+.sheet-grid__cell--dropdown-open {
+  overflow: visible;
+  z-index: 3;
+}
+
+.sheet-grid__dropdown-button {
+  position: absolute;
+  right: 0.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #57606a;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.sheet-grid__dropdown-button:hover,
+.sheet-grid__dropdown-button[aria-expanded="true"] {
+  background: #dff1ff;
+  color: #0969da;
+}
+
+.sheet-grid__dropdown-list {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 10;
+  min-width: 8rem;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 0.25rem;
+  box-shadow: 0 6px 16px rgb(140 149 159 / 0.18);
+  padding: 0.25rem 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-grid__dropdown-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  color: #172033;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sheet-grid__dropdown-option:hover,
+.sheet-grid__dropdown-option:focus-visible {
+  background: #dff1ff;
+  color: #0969da;
+}
+
+.sheet-grid__filter-button {
+  position: absolute;
+  right: 0.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #57606a;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.sheet-grid__filter-button:hover {
+  background: #dff1ff;
+  color: #0969da;
+}
+
+.sheet-grid__cell-text {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sheet-grid__cell--selected {
+  background: #dff1ff;
+}
+
+.sheet-grid__cell--active {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+.sheet-grid__editor {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.1rem 0.2rem;
+  border: 1px solid #0969da;
+  border-radius: 0;
+  font: inherit;
+  background: #ffffff;
+  color: inherit;
+}
+
+/* Worksheet tab bar */
+
+.worksheet-tabs {
+  margin-top: 0.5rem;
+}
+
+.worksheet-tabs__bar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.worksheet-tabs__list {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+}
+
+.worksheet-tab {
+  display: flex;
+  align-items: center;
+  border-right: 1px solid #eaeef2;
+}
+
+.worksheet-tab [role="tab"] {
+  padding: 0.65rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.worksheet-tab [role="tab"][aria-selected="true"] {
+  border-bottom-color: #0969da;
+  font-weight: 600;
+}
+
+.worksheet-tab .ui-menu__content {
+  margin-top: 0;
+}
+
+.worksheet-tabs__add {
+  align-self: stretch;
+  min-width: 2.5rem;
+  border: 0;
+  border-radius: 0;
+  font-size: 1.1rem;
+}
+
+.worksheet-tabs__panel {
+  padding-block: 1rem;
+}
+
+.editor-page__operation-error {
+  color: #cf222e;
+}
+
+.editor-page__operation-status {
+  color: #57606a;
+}
+
+/* Data menu filter dialog */
+
+.filter-dialog__section {
+  border: 1px solid #d0d7de;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.filter-dialog__section legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.filter-dialog__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.filter-dialog__values {
+  max-height: 12rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+.filter-dialog__value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.filter-dialog__empty {
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.filter-dialog__condition {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+
+.filter-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+/* Pivot creation dialog */
+
+.pivot-create-dialog__source {
+  margin: 0 0 0.75rem;
+}
+
+.pivot-create-dialog__destination {
+  border: 1px solid #d0d7de;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.pivot-create-dialog__destination legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.pivot-create-dialog__option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pivot-create-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Data validation dialog */
+
+.data-validation-dialog__range {
+  margin: 0 0 0.75rem;
+}
+
+.data-validation-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.data-validation-dialog__number-fields {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.data-validation-dialog__error,
+.sort-range-dialog__error {
+  margin: 0.75rem 0 0;
+  color: #cf222e;
+}
+
+/* Sort range dialog */
+
+.sort-range-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Pivot table editor */
+
+.pivot-editor {
+  border: 1px solid #d0d7de;
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #f6f8fa;
+}
+
+.pivot-editor__title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.pivot-editor__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pivot-editor__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.pivot-editor__error {
+  color: #cf222e;
+  margin: 0.5rem 0 0;
+}
+
+.editor-page__panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-grid__header,
+.sheet-grid__row-number {
+  cursor: context-menu;
+}
+
+.sheet-grid__header:focus-visible,
+.sheet-grid__row-number:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+.grid-context-menu {
+  margin-top: 0;
+}
