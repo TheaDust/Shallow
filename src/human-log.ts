@@ -85,6 +85,16 @@ function describe(type: string, event: RunEvent): string | null {
     }
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
+    case "feature_grouping_started":
+      return `开始运行时语义分组；原子需求 ${pickNumber(detail, "requirements") ?? 0}`;
+    case "feature_grouping_usage": {
+      const tokens = tokenUsageParts(detail);
+      return tokens.length ? `功能分组 token 用量；tokens ${tokens.join(" / ")}` : null;
+    }
+    case "feature_grouping_finished": {
+      const grouping = asRecord(detail?.grouping);
+      return `${detail?.source === "llm" ? "语义分组已通过校验" : "语义分组未采用，使用确定性分组"}；功能组 ${pickNumber(grouping, "packets") ?? 0}${reason ? `；原因：${reason}` : ""}`;
+    }
     case "dependency_gate_blocked":
       return `基础依赖尚无已完成的可运行实现，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未完成依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
     case "dependency_gate_provisional":

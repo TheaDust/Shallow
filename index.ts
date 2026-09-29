@@ -17,6 +17,7 @@ import { HumanRunFormatter } from "./src/human-log.js";
 import { ProgressJournal, PROGRESS_DIR_NAME } from "./src/progress-journal.js";
 import { installStarterScaffold } from "./src/starter-scaffold.js";
 import { LlmProbePlanner } from "./src/judge/llm-probe-planner.js";
+import { LlmFeatureGrouper } from "./src/llm-feature-grouper.js";
 import { PlaywrightProbeRunner } from "./src/judge/playwright-probe-runner.js";
 import {
   runPipeline,
@@ -177,6 +178,7 @@ async function executeProduction(
     }
     try {
       return await runPipeline(pipelineOptions, {
+        grouper: new LlmFeatureGrouper({ ...gateway, timeoutMs: Infinity }),
         builder,
         planner,
         runner,

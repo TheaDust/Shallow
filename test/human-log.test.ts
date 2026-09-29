@@ -13,6 +13,23 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {
+  const formatter = new HumanRunFormatter();
+  const at = "2026-09-29T00:00:00Z";
+  assert.match(formatLine(formatter, eventLine(at, "feature_grouping_started", {
+    detail: { requirements: 47 },
+  })), /运行时语义分组.*47/);
+  assert.match(formatLine(formatter, eventLine(at, "feature_grouping_usage", {
+    detail: { input: 60, output: 20, cacheRead: 40, cacheWrite: 0, total: 120 },
+  })), /功能分组 token 用量；tokens 入 60 \/ 出 20 \/ 缓存读 40 \/ 总计 120/);
+  assert.match(formatLine(formatter, eventLine(at, "feature_grouping_finished", {
+    detail: { source: "llm", grouping: { packets: 17 }, durationMs: 1000 },
+  })), /语义分组已通过校验.*17.*1s/);
+  assert.match(formatLine(formatter, eventLine(at, "feature_grouping_finished", {
+    detail: { source: "deterministic", grouping: { packets: 16 }, reason: "Unknown ID", durationMs: 1000 },
+  })), /使用确定性分组.*16.*Unknown ID/);
+});
+
 test("Repair logs distinguish case improvement from a fully verified requirement", () => {
   const line = formatLine(new HumanRunFormatter(), eventLine("2026-09-29T00:00:00Z", "repair_batch_finished", {
     detail: { round: 1, retained: true, improvedCases: 1, resolvedGaps: 2, reason: "verified improvement with regression coverage" },

@@ -25,7 +25,8 @@ import type {
 import { ProbePlannerError, type ProbePlanner, type ProbePlannerUsage } from "./judge/llm-probe-planner.js";
 import type { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
 import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state.js";
-import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from "./scheduler.js";
+import { featureGroupPackets, auditPackets, folderDescendants, makePacket, DEFAULT_FEATURE_GROUP_THRESHOLDS } from "./scheduler.js";
+import { parseFeatureGrouping, type FeatureGrouper } from "./feature-grouper.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { probePlanSha256 } from "./judge/probe-schema.js";
@@ -90,6 +91,7 @@ export interface ArcEventsPort {
 }
 
 export interface PipelineDeps {
+  grouper?: FeatureGrouper;
   builder: BuilderPort;
   planner: ProbePlanner;
   runner: Pick<PlaywrightProbeRunner, "run">;
@@ -136,7 +138,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     totalBudgetMs: options.totalBudgetMs }, options.ledgerFile, deps.logSink ?? null, deps.diagnosticSecrets);
   const implemented = new Set<string>();
   const packets = auditPackets(catalog);
-  const featureGrouping = featureGroupPackets(catalog);
+  let featureGrouping = featureGroupPackets(catalog);
   const requirementById = new Map(catalog.requirements.map(item => [item.id, item]));
   const auditPacketByRequirementId = new Map(packets.flatMap(packet =>
     packet.requirementIds.map(id => [id, packet] as const)));
@@ -537,7 +539,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
 
   await state.record({ at: now(), type: "pipeline_started", detail: {
     requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port,
-    grouping: featureGrouping.stats, ...deps.runMetadata } });
+    ...(deps.grouper && catalog.requirements.length > 0 ? { groupingSource: "pending_llm" as const }
+      : { grouping: featureGrouping.stats }), ...deps.runMetadata } });
   await emitArc(deps, state, arc => arc.runnerState("running", "feature-group pipeline started"));
   const rows = buildArcRequirementRows(catalog.tree);
   await emitArc(deps, state, arc => arc.storeRequirementTree(rows.requirementRows, rows.scenarioRows));
@@ -560,6 +563,31 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   try {
     await phase("implementation");
+    if (deps.grouper && catalog.requirements.length > 0) {
+      const groupingStarted = deps.clock.nowMs();
+      await state.record({ at: now(), type: "feature_grouping_started", detail: {
+        requirements: catalog.requirements.length, limits: DEFAULT_FEATURE_GROUP_THRESHOLDS } });
+      let source: "llm" | "deterministic" = "llm";
+      let reason: string | undefined;
+      try {
+        const remaining = () => budget.remaining("implementation");
+        if (remaining() <= 0) throw new Error("Feature grouping implementation budget exhausted");
+        // No independent wall-clock cutoff: pending responses wait within the run budget.
+        const proposal = await gateway.run("planner", "feature-grouping", remaining,
+          () => deps.grouper!.group(catalog, { timeoutMs: Math.max(1, remaining()), signal: preplanAbort.signal,
+            onUsage: usage => state.record({ at: now(), type: "feature_grouping_usage", detail: usage }) }),
+          preplanAbort.signal);
+        featureGrouping = parseFeatureGrouping(proposal, catalog);
+      } catch (error) {
+        source = "deterministic";
+        reason = sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets, 500);
+      }
+      await state.record({ at: now(), type: "feature_grouping_finished", detail: {
+        source, reason, grouping: featureGrouping.stats, durationMs: Math.max(0, deps.clock.nowMs() - groupingStarted),
+        groups: featureGrouping.packets.map((packet, index) => ({ packetId: packet.id,
+          requirementIds: packet.requirementIds, purpose: featureGrouping.purposes?.[index] })),
+      } });
+    }
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
     for (let packetIndex = 0; packetIndex < featureGrouping.packets.length; packetIndex++) {

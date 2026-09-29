@@ -50,6 +50,7 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   judge/probe-planner.md        Judge Planner 计划生成系统提示词（中文）
   judge/probe-refinement.md     Judge Planner locator 精化系统提示词（中文）
   judge/probe-review.md         Judge 语义复核系统提示词（中文）
+  planning/feature-grouping.md  运行时功能分组提示词：共享状态/操作链内聚、依赖与容量；输出仅作调度
 
 src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
@@ -57,6 +58,9 @@ src/
   catalog.ts                    requirements.yaml → 需求树、ProductContext.seedData 与原子级 seedDeclarations
                                 （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
+  feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
+  llm-feature-grouper.ts         启动时一次语义分组：完整描述/依赖/容量数据，省略场景正文；解释不作为行为合同
+  planner-json-client.ts        分组与 Probe Planner 共用 JSON/SSE 请求、usage 与网关错误解析
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长
   run-state.ts                  RunStateStore（功能状态、可运行检查点 SHA、ledger+logSink）、
@@ -197,7 +201,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
 1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。入口仅按字面量从验收 spec 提取 `http://127.0.0.1:<port>`/`localhost:<port>` 端口用于交付验证，spec 内容不进入任何 prompt 或判词。
-2. **功能组实现**：实现工作包是确定性有界功能组（设计文档 `docs/2026-09-15-feature-slices-and-builder-loop.md` §3）：种子取全局声明序中第一个依赖已调度的原子项，扩展限同一直接父目录与同 ROOT 子树，按依赖亲和与声明序 tie-break，达 4 条/12 场景/20,000 字符阈值封口，单条超限独立成组；组不跨模块合并，允许离开模块后再回来补齐。分组内置程序化验证：全部原子 ID 唯一覆盖、每条依赖在当前项之前或同组内之前、原文不截断。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；其他依赖已有可运行检查点时放行，尚未 verified 则记录 `dependency_gate_provisional`，最终交付仍须完整验收。依赖尚无已完成的可运行实现时阻塞下游 Builder 和探针预规划。
+2. **功能组实现**：主线在实现前正常调用一次 LLM 从本次 Catalog 生成有序功能组。分组输入保留完整需求描述、公共产品/祖先合同、目录、显式依赖、原始场景数和字符数，省略场景正文；Builder/Judge 仍接收完整场景。程序校验全部 ID 唯一覆盖、依赖序、单 ROOT 模块和 4 条/12 场景/20,000 字符上限，单条超限完整独立保留；分组目的只作诊断。JSON/分组无效或不可恢复的模型错误使用确定性分组（同父目录优先、依赖亲和与声明序 tie-break），记录原因，不增加语义修正调用。网关恢复使用共享 Planner 并发池；无总预算时持续等待在途响应，正预算计入实现阶段。组不跨模块合并，允许按依赖离开后再回来补齐。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；其他依赖已有可运行检查点时放行，尚未 verified 则记录 `dependency_gate_provisional`，最终交付仍须完整验收。依赖尚无已完成的可运行实现时阻塞下游 Builder 和探针预规划。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时最多以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；可运行部分保存为空需求检查点，再次超时标 blocked，不记 implemented。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收。实现阶段后台生成探针计划，Builder 完成后先保存可运行检查点；模块边界验收前收敛该模块的预规划任务，再读取有效缓存（见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或经需求复核确认合理的准备/控件缺口在两次新应用实例中于同一步重现时触发模块边界修复（后者仍记 inconclusive，`repairableProbeFailure` 只授予诊断机会；控件缺口还须有成功交互与需求明示名称，strict 歧义不触发修复）。每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。模块边界同时复查当前需求的已 verified 传递前置需求，复用缓存计划。修复优先保护既有 verified 和失败需求中已通过的 case；新增通过 case 须在新应用实例中确认，合理且重复的准备/控件缺口推进到后续已复现失败也可作为局部改善保留并继续下一轮。待测行为、输入与结果须保持一致。失去既有 pass、无法复验或无独立改善时恢复原检查点并停止；局部改善仍保留原子级 failed/inconclusive。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。
@@ -207,7 +211,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 9. **Builder 边界**：Pi coding-agent 是唯一业务代码写入者，每次调用运行在独立 Worker 子进程，结束后由控制器回收进程组并做安装/构建/独立浏览器检查。Worker 禁用 Skill、扩展、模板、主题与上下文文件的自动发现，read/edit/write 均限候选目录。Builder 方法指导由 `prompts/` 的固定合同及条件 fragments 提供；capability 只复制任务无关 primitives，领域模型、页面、业务 API 与行为仍由本次 Pi/LLM 调用生成。公开、任务无关且精确锁版本的 npm 通用库可按当前需求安装；禁止成品页面、业务模板、当前任务专用包、git URL、远程脚本和未批准 Pi package。文案外置 `prompts/`；Builder 持文件、shell、`list_capabilities`/`install_capability`（只安装固定任务无关组件且不覆盖冲突文件）、`app`（父进程管理开发服务 start/status/stop）、`run_tests`（限内存传统测试执行，见 `src/builder/pi-test-tool.ts`）与会话内 browser 工具（昂贵操作，惰性启动 Chromium，仅用于常规检查无法回答的真实浏览器行为；见 `src/builder/pi-browser-tool.ts`），不持常驻浏览器/MCP。实现按规划→实施→检查→交接进行，复杂或边界逻辑必须编写传统测试并用 run_tests 运行。模块边界由控制器抽样独立路径反馈（不授予整条需求 verified）。改文案同步 prompt 资产和测试。
 10. **运行时恢复**：主线 Builder 与 Planner 通过 `gateway-recovery.ts` 共享临时网关故障退避；Planner 最多两路并行，按包恢复。控制器在同一调用窗口内持续退避重试（429 限流 30s 起、上限 5min；5xx/408/断连 5s 起、上限 1min；均遵守 Retry-After，不越过阶段/调用剩余额度）。Builder 窗口耗尽后用新窗口重试同一包；无总预算时单次 Planner 操作最多恢复12min，排队不计入窗口，后台预规划续开窗口并重新排队；审计窗口耗尽按 Judge 故障保留应用并记 inconclusive，同一候选的最终检测不重复规划该无计划包。Planner 以 SSE 汇集完整 JSON 内容；普通 JSON 响应也可读取。模型因输出长度截断规划响应时，后台预规划或审计规划各用一次精简完整计划重试；其他响应协议错误仍按 Judge 故障处理。后台预规划续开窗口记录 `probe_planner_retry`，不可恢复故障或阶段预算耗尽记录 `probe_preplan_failed`；模块边界前收敛，不延迟 Builder 检查点，管线退出时取消未完成任务。网关将上游 `connection reset by peer` 包装成 HTTP 400 时，Worker 只根据实际网关状态与 SDK/provider 错误消息的精确组合将其按连接故障重试，模型内容不参与分类；普通请求错误不重试，Builder 的请求错误与认证失败一样停止派发（需求保持待处理）；Planner 单独的认证/协议错误不停止仍可工作的 Builder。git 单命令30s；Pi Worker 进程组/作业回收最多5s。每次调用结束后父进程回收拥有的进程组并等待退出确认，启动故障终止运行并恢复检查点，清理失败按执行故障终止本轮。cgroup 计数仅用于诊断。新增事件同步 types/human-log；app 工具启动的服务由父进程在 Worker 结束后回收，再清理临时数据；启动中的请求先收敛再停止服务。源码或构建发生变化会使候选证据失效。接受输入 digest 只覆盖 Git 回滚能还原的文件（tracked + 未被忽略的 untracked），被忽略的运行/构建产物（dist、data、依赖）不计入，否则失败修复留下的产物会让回滚口径对不上。
 
-Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功能分组验证 `test/scheduler.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`、`test/semantic-correction.test.ts`、`test/semantic-review.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
+Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功能分组验证 `test/scheduler.test.ts`、`test/feature-grouping.test.ts`、`test/feature-grouping-pipeline.test.ts`；修改主流程验证 `test/pipeline.e2e.test.ts`、`test/locator-recovery.test.ts`、`test/candidate-runtime.test.ts`、`test/run-budget.test.ts`、`test/semantic-correction.test.ts`、`test/semantic-review.test.ts`；修改 runtime 同时验证 baseline、自测与图片输入测试。
 
 ## 验收准备、数据隔离与中断恢复
 

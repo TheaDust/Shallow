@@ -23,6 +23,17 @@ export const DEFAULT_FEATURE_GROUP_THRESHOLDS: FeatureGroupThresholds = {
   maxTextChars: 20_000,
 };
 
+export interface FeatureGrouping {
+  packets: WorkPacket[];
+  stats: GroupingStats;
+  /** Model explanations are diagnostics, never Builder contracts. */
+  purposes?: string[];
+}
+
+export function requirementTextChars(requirement: AtomicRequirement): number {
+  return requirement.text.length + requirement.scenarios.reduce((total, scenario) => total + scenario.length, 0);
+}
+
 interface SchedulableRequirement {
   requirement: AtomicRequirement;
   moduleId: string;
@@ -33,19 +44,15 @@ interface SchedulableRequirement {
 export function featureGroupPackets(
   catalog: RequirementCatalog,
   thresholds: FeatureGroupThresholds = DEFAULT_FEATURE_GROUP_THRESHOLDS,
-): { packets: WorkPacket[]; stats: GroupingStats } {
+): FeatureGrouping {
   const items: SchedulableRequirement[] = catalog.requirements.map(requirement => ({
     requirement,
     moduleId: requirement.folderPath[1] ?? requirement.id,
     parentId: requirement.folderPath[requirement.folderPath.length - 1] ?? requirement.id,
-    textChars: requirement.text.length + requirement.scenarios.reduce((total, scenario) => total + scenario.length, 0),
+    textChars: requirementTextChars(requirement),
   }));
   const scheduled = new Set<string>();
   const packets: WorkPacket[] = [];
-  let crossModulePackets = 0;
-  let thresholdLimitedPackets = 0;
-  let intraGroupEdges = 0;
-  let totalEdges = 0;
 
   const schedulable = (item: SchedulableRequirement): boolean =>
     !scheduled.has(item.requirement.id) &&
@@ -105,17 +112,47 @@ export function featureGroupPackets(
     }
 
     const index = packets.length;
-    const modulesInPacket = new Set(group.map(member => member.moduleId));
-    if (modulesInPacket.size > 1) crossModulePackets += 1;
-    if (closedByThreshold) thresholdLimitedPackets += 1;
-    for (const member of group) {
-      for (const dependency of member.requirement.dependencyIds) {
-        totalEdges += 1;
-        if (groupIdsHas(group, dependency)) intraGroupEdges += 1;
-      }
-    }
     packets.push(makePacket(`feature-${slugify(seed.requirement.id)}-${index + 1}`, group.map(member => member.requirement)));
   }
+
+  return featureGroupingFromIds(catalog, packets.map(packet => packet.requirementIds), thresholds);
+}
+
+/** Compile either grouping source from original Catalog objects and enforce the same bounds. */
+export function featureGroupingFromIds(
+  catalog: RequirementCatalog,
+  groups: readonly (readonly string[])[],
+  thresholds: FeatureGroupThresholds = DEFAULT_FEATURE_GROUP_THRESHOLDS,
+): FeatureGrouping {
+  const byId = new Map(catalog.requirements.map(requirement => [requirement.id, requirement]));
+  let thresholdLimitedPackets = 0;
+  let intraGroupEdges = 0;
+  let totalEdges = 0;
+  const packets = groups.map((ids, index) => {
+    if (ids.length === 0) throw new Error(`Feature group ${index + 1} is empty`);
+    const requirements = ids.map(id => {
+      const requirement = byId.get(id);
+      if (!requirement) throw new Error(`Unknown feature group requirement: ${id}`);
+      return requirement;
+    });
+    const modules = new Set(requirements.map(requirement => requirement.folderPath[1] ?? requirement.id));
+    if (modules.size > 1) throw new Error(`Feature group ${index + 1} crosses ROOT modules`);
+    const scenarios = requirements.reduce((total, requirement) => total + requirement.scenarios.length, 0);
+    const chars = requirements.reduce((total, requirement) => total + requirementTextChars(requirement), 0);
+    if (requirements.length > thresholds.maxRequirements || (requirements.length > 1 &&
+      (scenarios > thresholds.maxScenarios || chars > thresholds.maxTextChars))) {
+      throw new Error(`Feature group ${index + 1} exceeds capacity: ${requirements.length} requirements, ${scenarios} scenarios, ${chars} characters`);
+    }
+    if (requirements.length >= thresholds.maxRequirements || scenarios >= thresholds.maxScenarios || chars >= thresholds.maxTextChars) thresholdLimitedPackets++;
+    const groupIds = new Set(ids);
+    for (const requirement of requirements) {
+      for (const dependency of requirement.dependencyIds) {
+        totalEdges++;
+        if (groupIds.has(dependency)) intraGroupEdges++;
+      }
+    }
+    return makePacket(`feature-${slugify(requirements[0].id)}-${index + 1}`, requirements);
+  });
 
   // Program verification (§3.2 rule 6): unique coverage, dependency order, no edits.
   const positionOf = new Map<string, number>();
@@ -126,16 +163,16 @@ export function featureGroupPackets(
       positionOf.set(id, emitted++);
     }
   }
-  if (emitted !== items.length) {
-    const missing = items.filter(item => !positionOf.has(item.requirement.id)).map(item => item.requirement.id);
+  if (emitted !== catalog.requirements.length) {
+    const missing = catalog.requirements.filter(item => !positionOf.has(item.id)).map(item => item.id);
     throw new Error(`Feature groups do not cover every requirement; missing: ${missing.join(", ")}`);
   }
-  for (const item of items) {
-    const at = positionOf.get(item.requirement.id)!;
-    for (const dependency of item.requirement.dependencyIds) {
+  for (const requirement of catalog.requirements) {
+    const at = positionOf.get(requirement.id)!;
+    for (const dependency of requirement.dependencyIds) {
       const dependencyAt = positionOf.get(dependency);
-      if (dependencyAt === undefined) throw new Error(`Dependency ${dependency} of ${item.requirement.id} was not scheduled`);
-      if (dependencyAt >= at) throw new Error(`Dependency ${dependency} must precede ${item.requirement.id} (earlier group or earlier in the same group)`);
+      if (dependencyAt === undefined) throw new Error(`Dependency ${dependency} of ${requirement.id} was not scheduled`);
+      if (dependencyAt >= at) throw new Error(`Dependency ${dependency} must precede ${requirement.id} (earlier group or earlier in the same group)`);
     }
   }
 
@@ -143,17 +180,13 @@ export function featureGroupPackets(
     packets,
     stats: {
       packets: packets.length,
-      requirements: items.length,
+      requirements: catalog.requirements.length,
       maxPacketSize: packets.reduce((max, packet) => Math.max(max, packet.requirements.length), 0),
-      crossModulePackets,
+      crossModulePackets: 0,
       cohesionRate: totalEdges === 0 ? 1 : intraGroupEdges / totalEdges,
       thresholdLimitedPackets,
     },
   };
-}
-
-function groupIdsHas(group: SchedulableRequirement[], id: string): boolean {
-  return group.some(member => member.requirement.id === id);
 }
 
 /** Audit atomics independently, with textual prerequisites but no application source. */

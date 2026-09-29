@@ -136,7 +136,11 @@ interface RunEventDetails {
     builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
     promptSha256?: string; probeSchemaSha256?: string;
     starterScaffold?: { status: import("./starter-scaffold.js").StarterScaffoldStatus; reason: string; files: string[] };
-    grouping?: GroupingStats };
+    grouping?: GroupingStats; groupingSource?: "pending_llm" };
+  feature_grouping_started: { requirements: number; limits: import("./scheduler.js").FeatureGroupThresholds };
+  feature_grouping_usage: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  feature_grouping_finished: { source: "llm" | "deterministic"; reason?: string; grouping: GroupingStats; durationMs: number;
+    groups: Array<{ packetId: string; requirementIds: string[]; purpose?: string }> };
   dependency_gate_blocked: { requirementIds: string[]; unmetDependencyIds: string[];
     dependencyStatuses: Record<string, RequirementStatus> };
   dependency_gate_provisional: { requirementIds: string[]; dependencyIds: string[] };

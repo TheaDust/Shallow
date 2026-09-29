@@ -1,0 +1,110 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { GatewayRequestError, httpGatewayFailure } from "../src/gateway-failure.js";
+import { withModulePipeline } from "./helpers/module-pipeline.js";
+
+const proposal = { groups: [
+  { requirementIds: ["A"], purpose: "模型说明不能修改原文" },
+  { requirementIds: ["B"], purpose: "独立业务增量" },
+  { requirementIds: ["C"], purpose: "后续模块" },
+] };
+
+test("The main pipeline uses the runtime proposal once while auditing every original atomic", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.grouper = { group: async (catalog, options) => {
+      calls++;
+      assert.equal(f.builder.requests.length, 0);
+      assert.equal(catalog.requirements.length, 3);
+      await options.onUsage?.({ input: 30, output: 10, cacheRead: 20, cacheWrite: 0, total: 60 });
+      return proposal;
+    } };
+    const result = await f.run();
+    assert.equal(calls, 1);
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []), [["A"], ["B"], ["C"]]);
+    assert.deepEqual(result.verifiedRequirementIds.sort(), ["A", "B", "C"]);
+    const first = f.builder.requests[0];
+    assert.ok(first.mode === "implement");
+    assert.equal(first.packet.requirements[0].text, "Display the main workspace.");
+    const events = await f.events();
+    const grouping = events.find(event => event.type === "feature_grouping_finished");
+    assert.ok(grouping?.type === "feature_grouping_finished");
+    assert.equal(grouping.detail?.source, "llm");
+    assert.equal(grouping.detail?.grouping.packets, 3);
+    assert.equal(events.filter(event => event.type === "feature_grouping_usage").length, 1);
+    assert.equal(events.find(event => event.type === "pipeline_started")?.detail?.groupingSource, "pending_llm");
+  });
+});
+
+test("Invalid model coverage falls back without a second semantic request or losing requirements", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.diagnosticSecrets = ["fixture-key"];
+    f.deps.grouper = { group: async () => { calls++; return { groups: [{ requirementIds: ["fixture-key"], purpose: "unknown" }] }; } };
+    const result = await f.run();
+    assert.equal(calls, 1);
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []), [["A", "B"], ["C"]]);
+    const event = (await f.events()).find(event => event.type === "feature_grouping_finished");
+    assert.ok(event?.type === "feature_grouping_finished");
+    assert.equal(event.detail?.source, "deterministic");
+    assert.match(event.detail?.reason ?? "", /Unknown/);
+    assert.doesNotMatch(event.detail?.reason ?? "", /fixture-key/);
+  });
+});
+
+test("Gateway transport recovery retries grouping before any Builder dispatch", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.grouper = { group: async () => {
+      assert.equal(f.builder.requests.length, 0);
+      if (++calls === 1) throw new GatewayRequestError(httpGatewayFailure(503));
+      return proposal;
+    } };
+    assert.equal((await f.run()).status, "delivered");
+    assert.equal(calls, 2);
+    const events = await f.events();
+    assert.equal(events.filter(event => event.type === "feature_grouping_started").length, 1);
+    assert.ok(events.some(event => event.type === "gateway_wait" && event.packetId === "feature-grouping"));
+    assert.equal(events.filter(event => event.type === "feature_grouping_finished").length, 1);
+  });
+});
+
+test("Unlimited grouping waits for its pending response and preserves caller cancellation", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let ready!: () => void, release!: () => void;
+    const started = new Promise<void>(resolve => { ready = resolve; });
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    f.deps.grouper = { group: async (_catalog, options) => {
+      assert.equal(options.timeoutMs, Infinity);
+      assert.ok(options.signal);
+      assert.equal(options.signal.aborted, false);
+      ready();
+      await pending;
+      return proposal;
+    } };
+    const running = f.run();
+    await started;
+    assert.equal(f.builder.requests.length, 0);
+    release();
+    assert.equal((await running).status, "delivered");
+  });
+});
+
+test("Grouping time is charged to the explicit implementation budget", async () => {
+  await withModulePipeline(async f => {
+    let now = 0;
+    f.deps.clock = { nowMs: () => now };
+    f.deps.grouper = { group: async (_catalog, options) => {
+      assert.equal(options.timeoutMs, 36000);
+      now = 37000;
+      return proposal;
+    } };
+    const result = await f.run();
+    assert.equal(f.builder.requests.length, 0);
+    assert.equal(result.status, "partial");
+    assert.deepEqual(result.implementedRequirementIds, []);
+  });
+});
