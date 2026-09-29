@@ -621,13 +621,17 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
     const implementationQueue = [...featureGrouping.packets];
-    const splitForRecovery = async (packet: WorkPacket, index: number, reason: string): Promise<boolean> => {
+    // "recovery" atoms follow an unfinished attempt and get one bounded call;
+    // "dependency" atoms have not run yet and keep the first-attempt window and continuation.
+    const splitPacket = async (packet: WorkPacket, index: number, reason: string,
+      kind: "recovery" | "dependency"): Promise<boolean> => {
       if (packet.requirements.length < 2 || budget.remaining("implementation") <= 0 || gateway.exhausted) return false;
-      const recovery = packet.requirements.map((requirement, i) =>
-        makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 3));
+      const recovery = packet.requirements.map((requirement, i) => kind === "recovery"
+        ? makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 3)
+        : makePacket(`${packet.id}-split-${i + 1}`, [requirement]));
       implementationQueue.splice(index + 1, 0, ...recovery);
       await state.record({ at: now(), type: "implementation_split", packetId: packet.id,
-        detail: { requirementIds: packet.requirementIds, reason,
+        detail: { requirementIds: packet.requirementIds, reason, kind,
           packets: recovery.map(item => ({ packetId: item.id, requirementIds: item.requirementIds })) } });
       return true;
     };
@@ -654,7 +658,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (unmetDependencies.length > 0) {
         const hasEligibleMember = packet.requirements.some(requirement =>
           dependencyGate(makePacket(packet.id, [requirement]), currentModuleId).unmet.length === 0);
-        if (hasEligibleMember && await splitForRecovery(packet, packetIndex, "Separate requirements with ready dependencies from blocked members")) continue;
+        if (hasEligibleMember && await splitPacket(packet, packetIndex, "Separate requirements with ready dependencies from blocked members", "dependency")) continue;
         state.markRequirements(packet.requirementIds, "blocked");
         await state.record({ at: now(), type: "dependency_gate_blocked", packetId: packet.id,
           detail: { requirementIds: packet.requirementIds,
@@ -733,7 +737,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           if (needsImplementationRetry(result)) await preserveInterruptedWork(retryPacket);
         }
         if (needsImplementationRetry(result)) {
-          if (await splitForRecovery(packet, packetIndex, result.terminationReason ?? "Implementation retry reached its deadline")) continue;
+          if (await splitPacket(packet, packetIndex, result.terminationReason ?? "Implementation retry reached its deadline", "recovery")) continue;
           state.markRequirements(packet.requirementIds, "blocked");
           await state.record({ at: now(), type: "module_failed", packetId: packet.id,
             detail: { requirementIds: packet.requirementIds, reason: "Builder did not complete within the bounded implementation attempts; partial work is not a completed implementation" } });
@@ -791,7 +795,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (reason !== undefined) {
         if (needsImplementationRetry(result)) {
           await preserveInterruptedWork(packet);
-          if (await splitForRecovery(packet, packetIndex, reason)) continue;
+          if (await splitPacket(packet, packetIndex, reason, "recovery")) continue;
         }
         if (result.outcome !== "failed") await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
         await deps.git.restoreAccepted(state.snapshot.acceptedSha);

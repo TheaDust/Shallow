@@ -100,3 +100,32 @@ test("A mixed dependency group still implements its independent member after a f
     assert.equal((await f.events()).filter(event => event.type === "implementation_split").length, 2);
   });
 });
+
+test("A member split out for dependency readiness keeps first-attempt limits and its continuation", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    // SECOND becomes a mixed packet: C waits on the blocked B, D is independent.
+    tree.children[1].children.push({ id: "D", name: "Independent", type: "ATOMIC", dependencies: [], description: "Display an independent workspace." });
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    let dTimedOut = false;
+    const original = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await original(request, options);
+      if (request.mode !== "implement") return result;
+      if (request.packet.requirementIds.includes("A")) return { ...result, outcome: "timed_out" };
+      if (request.packet.requirementIds.join() === "D" && !dTimedOut) { dTimedOut = true; return { ...result, outcome: "timed_out" }; }
+      return result;
+    };
+    const summary = await f.run();
+    const split = (await f.events()).find(event => event.type === "implementation_split" && event.detail?.kind === "dependency");
+    assert.ok(split?.type === "implementation_split");
+    assert.ok(split.detail?.packets.every(packet => packet.packetId.includes("-split-")));
+    const dIndex = f.builder.requests.findIndex(request => "packet" in request && request.packet.requirementIds.join() === "D");
+    const dRequest = f.builder.requests[dIndex];
+    assert.ok(dRequest && "packet" in dRequest && dRequest.packet.attempt === 1);
+    assert.equal(f.builder.runOptions[dIndex]?.timeoutMs, 5_400_000);
+    assert.equal(f.builder.runOptions[dIndex + 1]?.resumeInterrupted, true, "first timeout gets a fresh continuation");
+    assert.deepEqual(summary.implementedRequirementIds, ["D"]);
+  });
+});

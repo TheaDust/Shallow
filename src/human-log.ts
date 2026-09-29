@@ -108,7 +108,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "builder_work_preserved":
       return `中断任务的代码${detail?.preserved ? "已保存为可运行检查点" : "未通过保留检查，已恢复上一检查点"}（${packetId}）；当前需求仍待完成${reason ? `；${reason}` : ""}`;
     case "implementation_split":
-      return `未完成需求包拆分后继续实现（${packetId}）；原子需求 ${strings(detail?.requirementIds).join("、")}；${reason ?? ""}`;
+      return `${detail?.kind === "dependency" ? "混合依赖包拆出依赖已就绪的成员" : "未完成需求包拆分后继续实现"}（${packetId}）；原子需求 ${strings(detail?.requirementIds).join("、")}；${reason ?? ""}`;
     case "implementation_retry":
       return `实现${detail?.reason && detail.reason !== "timeout" ? "终态不完整" : "超时"}后以新会话续做原需求包（${packetId}）；仅重试一次，上限 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}`;
     case "implementation_continued":
