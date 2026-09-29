@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { ProbeFailure, WorkPacket } from "../types.js";
 import { sanitizeDiagnosticText } from "../run-state.js";
 import { loadPrompt } from "../prompt-assets.js";
@@ -64,10 +62,6 @@ export interface ProbePlannerConfig {
   timeoutMs: number;
 }
 
-// OpenAI-compatible gateways in front of the model proxy (for example OpenCode
-// Go) reject anonymous traffic with HTTP 400 unless the client identifies
-// itself; the session id is stable per planner so the proxy can route and cache
-// consistently. Unknown gateways ignore both headers.
 const PLANNER_USER_AGENT = "ShallowCode/1.0";
 
 export type ProbePlannerErrorCategory =
@@ -121,8 +115,6 @@ export class ProbePlannerError extends Error {
 }
 
 export class LlmProbePlanner implements ProbePlanner {
-  private readonly sessionId = randomUUID();
-
   constructor(
     private readonly config: ProbePlannerConfig,
     private readonly fetchFn: typeof fetch = globalThis.fetch,
@@ -137,17 +129,16 @@ export class LlmProbePlanner implements ProbePlanner {
       {
         role: "user",
         content: JSON.stringify({
-          packetId: packet.id,
           product: packet.requirements[0] && {
             name: packet.requirements[0].product.rootName,
             description: packet.requirements[0].product.description,
           },
-          prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
-            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
-            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
             ? { seedData: packet.requirements[0].product.seedData }
             : {}),
+          prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
+            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           requirements: packet.requirements.map((requirement) => ({
             id: requirement.id,
             name: requirement.name,
@@ -158,6 +149,7 @@ export class LlmProbePlanner implements ProbePlanner {
             exactUiStrings: requirement.exactUiStrings,
             seedDeclarations: requirement.seedDeclarations,
           })),
+          packetId: packet.id,
         }),
       },
     ];
@@ -231,17 +223,16 @@ export class LlmProbePlanner implements ProbePlanner {
       {
         role: "user",
         content: JSON.stringify({
-          packetId: packet.id,
           product: packet.requirements[0] && {
             name: packet.requirements[0].product.rootName,
             description: packet.requirements[0].product.description,
           },
-          prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
-            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
-            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           ...(packet.requirements[0]?.product.seedData.length
             ? { seedData: packet.requirements[0].product.seedData }
             : {}),
+          prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
+            text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
+            seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
           requirements: packet.requirements.map((requirement) => ({
             id: requirement.id,
             name: requirement.name,
@@ -252,6 +243,7 @@ export class LlmProbePlanner implements ProbePlanner {
             exactUiStrings: requirement.exactUiStrings,
             seedDeclarations: requirement.seedDeclarations,
           })),
+          packetId: packet.id,
           originalPlan: toWireProbePlan(original),
           ...(groundedLocatorAnchors(original, packet).length
             ? { anchoredRequirementNames: groundedLocatorAnchors(original, packet) }
@@ -319,7 +311,6 @@ export class LlmProbePlanner implements ProbePlanner {
           authorization: `Bearer ${this.config.apiKey}`,
           "content-type": "application/json",
           "user-agent": PLANNER_USER_AGENT,
-          "x-opencode-session": this.sessionId,
         },
         body: JSON.stringify({
           model: this.config.model,

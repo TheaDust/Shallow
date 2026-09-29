@@ -14,8 +14,6 @@
 实际观察：
 {{FAILURE_ACTUAL}}
 
-{{PLATFORM_CONTRACT}}
-
 修复要求：
 
 1. 检查 package.json、锁文件、frontend/backend 目录、构建产物、环境变量和启动脚本。

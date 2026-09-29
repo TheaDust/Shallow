@@ -2,6 +2,7 @@ import type {
   AtomicRequirement,
   PlatformContract,
   ProcessCommand,
+  ProductContext,
   WorkPacket,
 } from "../types.js";
 import type {
@@ -46,13 +47,15 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
           PACKET_ATTEMPT: String(request.packet.attempt),
           OUTPUT_DIR: request.outputDir,
           ACTION: implementAction(),
+          PRODUCT_CONTEXT: productContextSection(request.projectContext.product),
           PROJECT_CONTEXT: projectContextSection(request.projectContext),
           WORK_PACKET: workPacketSection(request.packet),
           PLATFORM_CONTRACT: platformContractSection(request.platformContract),
           FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+          RECEIPT: receipt,
         },
       );
-      return `${task}\n\n${receipt}`.trim();
+      return task.trim();
     }
     case "repair":
     case "root_cause_repair": {
@@ -66,26 +69,27 @@ export function buildBuilderTaskPrompt(request: BuilderPromptInput): string {
           request.mode === "repair"
             ? repairAction(request.shadowObservation)
             : rootCauseRepairAction(request.shadowObservation),
+        PRODUCT_CONTEXT: productContextSection(request.projectContext.product),
         PROJECT_CONTEXT: projectContextSection(request.projectContext),
         WORK_PACKET: workPacketSection(request.packet),
         PLATFORM_CONTRACT: platformContractSection(request.platformContract),
         FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+        RECEIPT: receipt,
       });
-      return `${task}\n\n${receipt}`.trim();
+      return task.trim();
     }
     case "delivery_repair": {
       const task = fillTemplate(
         loadPrompt("system", "task-delivery-repair"),
         {
           OUTPUT_DIR: request.outputDir,
-          ACTION: deliveryRepairAction(
-            request.deliveryFailure,
-            request.platformContract,
-          ),
+          ACTION: deliveryRepairAction(request.deliveryFailure),
+          PLATFORM_CONTRACT: platformContractSection(request.platformContract),
           FRAGMENTS: fragmentSection(selectPromptFragments(request)),
+          RECEIPT: receipt,
         },
       );
-      return `${task}\n\n${receipt}`.trim();
+      return task.trim();
     }
   }
 }
@@ -110,32 +114,34 @@ function rootCauseRepairAction(observation: BuilderShadowObservation): string {
 
 function deliveryRepairAction(
   failure: DeliveryFailureObservation,
-  contract: PlatformContract,
 ): string {
   return fillTemplate(loadPrompt("system", "action-delivery-repair"), {
     FAILURE_STAGE: failure.stage,
     FAILURE_COMMAND: failure.command ?? "未提供",
     FAILURE_EXPECTED: failure.expected,
     FAILURE_ACTUAL: failure.actual,
-    PLATFORM_CONTRACT: platformContractSection(contract),
   });
 }
 
-function projectContextSection(context: BuilderProjectContext): string {
+function productContextSection(product: ProductContext): string {
   return [
     "## 项目上下文",
     "",
     "产品目标：",
-    context.product.description,
-    ...(context.product.seedData.length > 0 ? [
+    product.description,
+    ...(product.seedData.length > 0 ? [
       "",
       fillTemplate(loadPrompt("system", "seed-data"), {
-        SEED_DATA: context.product.seedData.map(({ category, items }) =>
+        SEED_DATA: product.seedData.map(({ category, items }) =>
           [`### ${category}`, ...items.map((item) => `- ${item}`)].join("\n"),
         ).join("\n\n"),
       }),
     ] : []),
-    "",
+  ].join("\n");
+}
+
+function projectContextSection(context: BuilderProjectContext): string {
+  return [
     "当前功能路径：",
     context.ancestors.length > 0
       ? context.ancestors

@@ -153,7 +153,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.ok(repair.includes("{{FAILURES}}"));
   assert.match(repair, /一次修复/);
   const delivery = loadPrompt("system", "action-delivery-repair");
-  for (const key of ["FAILURE_STAGE", "FAILURE_COMMAND", "FAILURE_EXPECTED", "FAILURE_ACTUAL", "PLATFORM_CONTRACT"]) {
+  for (const key of ["FAILURE_STAGE", "FAILURE_COMMAND", "FAILURE_EXPECTED", "FAILURE_ACTUAL"]) {
     assert.ok(delivery.includes(`{{${key}}}`));
   }
 });
@@ -164,10 +164,12 @@ test("task templates carry their placeholders", () => {
     "{{PACKET_ATTEMPT}}",
     "{{OUTPUT_DIR}}",
     "{{ACTION}}",
+    "{{PRODUCT_CONTEXT}}",
     "{{PROJECT_CONTEXT}}",
     "{{WORK_PACKET}}",
     "{{PLATFORM_CONTRACT}}",
     "{{FRAGMENTS}}",
+    "{{RECEIPT}}",
   ];
   for (const name of [
     "task-implement",
@@ -180,7 +182,7 @@ test("task templates carry their placeholders", () => {
     }
   }
   const delivery = loadPrompt("system", "task-delivery-repair");
-  for (const placeholder of ["{{OUTPUT_DIR}}", "{{ACTION}}", "{{FRAGMENTS}}"]) {
+  for (const placeholder of ["{{OUTPUT_DIR}}", "{{ACTION}}", "{{FRAGMENTS}}", "{{PLATFORM_CONTRACT}}", "{{RECEIPT}}"]) {
     assert.ok(delivery.includes(placeholder), `missing ${placeholder}`);
   }
   assert.ok(!delivery.includes("{{PACKET_ID}}"));

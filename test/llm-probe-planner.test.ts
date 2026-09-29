@@ -337,7 +337,7 @@ test("Probe Planner sends one source-blind OpenAI-compatible request", async () 
   const headers = new Headers(calls[0].init?.headers);
   assert.equal(headers.get("authorization"), "Bearer secret-key");
   assert.equal(headers.get("user-agent"), "ShallowCode/1.0");
-  assert.ok(headers.get("x-opencode-session"));
+  assert.equal(headers.get("x-opencode-session"), null);
   const parsedBody = JSON.parse(String(calls[0].init?.body)) as { stream?: unknown; stream_options?: unknown };
   const body = JSON.stringify(parsedBody);
   assert.equal(parsedBody.stream, true);
@@ -472,7 +472,7 @@ test("An unbounded Planner call keeps its request pending without a local abort 
   assert.equal((await plan).cases.length, 2);
 });
 
-test("Probe Planner uses broadly supported JSON mode and a stable per-instance session", async () => {
+test("Probe Planner uses broadly supported JSON mode", async () => {
   const calls: Array<{ init?: RequestInit }> = [];
   const fetchFn: typeof fetch = async (_input, init) => {
     calls.push({ init });
@@ -483,14 +483,49 @@ test("Probe Planner uses broadly supported JSON mode and a stable per-instance s
   await planner.plan(packet());
   await planner.plan(packet());
 
-  const sessions = calls.map((call) => new Headers(call.init?.headers).get("x-opencode-session"));
-  assert.ok(sessions[0]);
-  assert.equal(sessions[0], sessions[1]);
   for (const call of calls) {
     const payload = JSON.parse(String(call.init?.body)) as { response_format?: unknown };
     assert.deepEqual(payload.response_format, { type: "json_object" });
     assert.doesNotMatch(String(call.init?.body), /json_schema/);
     assert.equal(new Headers(call.init?.headers).get("user-agent"), "ShallowCode/1.0");
+    assert.equal(new Headers(call.init?.headers).get("x-opencode-session"), null);
+  }
+});
+
+test("Planner plan and review requests share product and seed prefixes across packets", async () => {
+  for (const operation of ["plan", "review"] as const) {
+    const bodies: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    const planner = new LlmProbePlanner(config(), async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      const input = JSON.parse(body.messages[1].content);
+      const response = operation === "review" ? { verdict: "sound", rationale: "Matches the requirement." }
+        : { ...validPlan(), packetId: input.packetId };
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify(response) } }] });
+    });
+    const packets = [packet([{ category: "accounts", items: ["shared account alice"] }]),
+      packet([{ category: "accounts", items: ["shared account alice"] }])];
+    for (const [index, input] of packets.entries()) {
+      input.id = `packet-${index}`;
+      input.requirements[0].text += ` Packet evidence ${index}.`;
+      input.prerequisites = [{ ...input.requirements[0], id: `DEP-${index}`, text: `Dependency evidence ${index}.` }];
+      if (operation === "plan") await planner.plan(input);
+      else await planner.reviewPlan(input, parseProbePlan({ ...validPlan(), packetId: input.id }, input), []);
+    }
+    const prefix = bodies[0].messages[1].content.slice(0, bodies[0].messages[1].content.indexOf(',"prerequisites":'));
+    assert.ok(prefix.includes("Root description."));
+    assert.ok(prefix.includes("shared account alice"));
+    assert.equal(bodies[0].messages[0].content, bodies[1].messages[0].content);
+    for (const [index, body] of bodies.entries()) {
+      const text = body.messages[1].content;
+      assert.ok(text.startsWith(prefix));
+      assert.ok(text.indexOf('"packetId":') > text.indexOf('"requirements":'));
+      const payload = JSON.parse(text);
+      assert.equal(payload.packetId, packets[index].id);
+      assert.deepEqual(payload.seedData, packets[index].requirements[0].product.seedData);
+      assert.equal(payload.requirements[0].text, packets[index].requirements[0].text);
+      assert.equal(payload.prerequisites[0].text, packets[index].prerequisites![0].text);
+    }
   }
 });
 

@@ -99,6 +99,38 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
+test("Builder shares its product and platform prefix across packets and repair modes", () => {
+  const requests = [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")];
+  const prompts = requests.map((request, index) => {
+    if (request.mode === "delivery_repair") throw new Error("unexpected mode");
+    request.projectContext.product.seedData = [{ category: "accounts", items: ["shared account alice"] }];
+    request.projectContext.ancestors = [{ id: `AREA-${index}`, name: `Area ${index}`, description: `Path ${index}` }];
+    request.projectContext.satisfiedDependencies = [{ id: `DEP-${index}`, name: "Dependency", contract: `Contract ${index}` }];
+    request.packet.id = `packet-${index}`;
+    request.packet.attempt = (index + 1) as 1 | 2 | 3;
+    request.packet.requirements[0].text += ` Packet evidence ${index}.`;
+    const compiled = compileBuilderPrompt(request);
+    assert.ok(compiled.taskPrompt.includes(`Path ${index}`));
+    assert.ok(compiled.taskPrompt.includes(`Contract ${index}`));
+    assert.ok(compiled.taskPrompt.includes(`Packet evidence ${index}.`));
+    assert.ok(compiled.taskPrompt.includes(`工作包编号：packet-${index}`));
+    assert.ok(compiled.taskPrompt.includes(`当前尝试：${index + 1}`));
+    return compiled;
+  });
+  const boundary = prompts[0].taskPrompt.indexOf("当前功能路径：");
+  assert.ok(boundary > 0);
+  const prefix = prompts[0].taskPrompt.slice(0, boundary);
+  assert.ok(prefix.includes("Root description."));
+  assert.ok(prefix.includes("shared account alice"));
+  assert.ok(prefix.includes("npm --prefix frontend run build"));
+  assert.ok(prefix.includes("结果：完成 | 阻塞"));
+  for (const prompt of prompts) {
+    assert.equal(prompt.systemPrompt, prompts[0].systemPrompt);
+    assert.ok(prompt.taskPrompt.startsWith(prefix));
+    assert.equal(prompt.taskPrompt.split("npm --prefix frontend run build").length, 2);
+  }
+});
+
 test("Module and consolidated repair prompts bound self-test and keep implementation notes optional", () => {
   for (const request of [implementRequest(), repairRequest("repair")]) {
     const compiled = compileBuilderPrompt(request);
@@ -210,6 +242,8 @@ test("Delivery repair renders the failure without any work packet context", () =
   );
   assert.deepEqual(compiled.fragmentIds, ["delivery_contract"]);
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
+  assert.ok(compiled.taskPrompt.indexOf("npm --prefix frontend run build") < compiled.taskPrompt.indexOf("实际观察："));
+  assert.equal(compiled.taskPrompt.split("npm --prefix frontend run build").length, 2);
 });
 
 test("Startup failures append the delivery contract on top of the product base", () => {

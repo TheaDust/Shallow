@@ -19,6 +19,7 @@ test("Pi SDK executes tools and resumes persisted history in a new worker", { ti
       const request = JSON.parse(body); requests.push(request);
       assert.equal(req.url, "/v1/chat/completions");
       assert.equal(req.headers.authorization, "Bearer test-secret");
+      assert.equal(req.headers["x-opencode-session"], undefined);
       res.writeHead(200, { "content-type": "text/event-stream" });
       const tool = requests.length === 1;
       const delta = tool ? { role: "assistant", tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "write", arguments: JSON.stringify({ path: "hello.txt", content: "persisted" }) } }] } : { role: "assistant", content: "done" };

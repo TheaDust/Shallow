@@ -55,7 +55,7 @@ flowchart LR
 | `action-implement.md` | 填入 `{{ACTION}}` | 规划→实施→检查→交接四步 |
 | `action-repair.md` | 填入 `{{ACTION}}` | 归并根因后再修；含 `{{PASSED_CASE_IDS}}`、`{{FAILURES}}`；locator 观测须先按需求复现 |
 | `action-root-cause-repair.md` | 填入 `{{ACTION}}` | 因果链定位（操作→状态→请求→权限→持久化→重读→渲染）；含失败观测占位符 |
-| `action-delivery-repair.md` | 填入 `{{ACTION}}` | 只修交付根因；含 `{{FAILURE_STAGE}}`、`{{FAILURE_COMMAND}}`、`{{FAILURE_EXPECTED}}`、`{{FAILURE_ACTUAL}}`，并在内部嵌一整段 `{{PLATFORM_CONTRACT}}` |
+| `action-delivery-repair.md` | 填入 `{{ACTION}}` | 只修交付根因；含 `{{FAILURE_STAGE}}`、`{{FAILURE_COMMAND}}`、`{{FAILURE_EXPECTED}}`、`{{FAILURE_ACTUAL}}` |
 | `receipt.md` | 追加在任务正文末尾 | 结果收据格式；四种模式都会拼上 |
 | `platform-contract.md` | 填入 `{{PLATFORM_CONTRACT}}` | 前后端目录、PORT、探针/评测端口、`/health`、未知路径 404、安装/构建/启动命令 |
 | `platform-extra-ports.md` | 条件段，嵌在平台合同内 | 仅当 `contract.extraPorts` 非空；要求多实例监听指定额外端口 |
@@ -116,13 +116,15 @@ const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("syste
 
 ### 2.3 任务正文：模式 × 模板 × 段落
 
-四种模式都走同一套拼装函数（`buildBuilderTaskPrompt`，`prompt.ts:38-91`）：选 `task-<mode>.md`，填占位符，最后统一追加 `receipt.md`。
+四种模式都走同一套拼装函数（`buildBuilderTaskPrompt`）：选 `task-<mode>.md` 并填占位符。产品目标与共享种子、平台合同、回执格式、适用规则形成任务正文的公共前缀；本包路径、依赖、需求与任务模式/编号/尝试次数及行动放在后面，便于上游复用前缀缓存。
 
 | 占位符 | 内容 | 生成处 |
 | --- | --- | --- |
 | `{{PACKET_ID}}` / `{{PACKET_ATTEMPT}}` / `{{OUTPUT_DIR}}` | 直填 | `prompt.ts:42-53` |
-| `{{ACTION}}` | 对应 `action-*.md`；repair/root-cause 填入通过用例与失败观测；delivery 填入失败阶段/期望/实际并把平台合同嵌进行动文本 | `prompt.ts:93-122` |
-| `{{PROJECT_CONTEXT}}` | `## 项目上下文`：产品目标、条件种子段（`seed-data.md`）、祖先 `当前功能路径`、`已有实现（待独立验收）的直接依赖`（用依赖需求原文当合同） | `prompt.ts:124-161` |
+| `{{ACTION}}` | 对应 `action-*.md`；repair/root-cause 填入通过用例与失败观测；delivery 填入失败阶段/期望/实际 | `prompt.ts` 的 action 渲染函数 |
+| `{{PRODUCT_CONTEXT}}` | `## 项目上下文`：产品目标、条件种子段（`seed-data.md`），跨工作包保持相同 | `productContextSection` |
+| `{{PROJECT_CONTEXT}}` | 祖先 `当前功能路径`、`已有可运行实现的直接依赖`（用依赖需求原文当合同） | `projectContextSection` |
+| `{{RECEIPT}}` | `receipt.md` 完成回执格式，置于公共前缀 | `receiptSection` |
 | `{{WORK_PACKET}}` | `## 当前工作包`：逐需求渲染 ID/名称、父级路径、需求原文、验收场景、引用资料、去重后的引号原词；末尾按需求 ID 聚合 `### 本包初始数据原文摘录`（`seedDeclarations`，空则省略） | `prompt.ts:163-199` |
 | `{{PLATFORM_CONTRACT}}` | `platform-contract.md`：探针/评测端口、条件额外端口段、安装/构建/启动命令（`--prefix` 形式）、健康检查、基础地址 | `prompt.ts:217-233` |
 | `{{FRAGMENTS}}` | `## 本次适用的实现规则` + 选中的片段全文，顺序固定 | `prompt.ts:235-241`、`prompt-fragments.ts` |
@@ -149,7 +151,7 @@ const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("syste
 
 `repair` 的失败观测经过白名单脱敏（`shadow-observation.ts`）：只有 `passedCaseIds` 与每条失败的类别、消息、可访问性节选（默认 1500 字符截断），**不带隐藏探针计划和具体断言**。
 
-`delivery_repair` 是最小包：没有工作包、没有项目上下文；平台合同嵌在行动段里；片段固定只有 `delivery_contract`。
+`delivery_repair` 是最小包：平台合同、回执格式和 `delivery_contract` 片段组成公共前缀，随后是任务模式、目录与交付失败行动段。
 
 ### 2.5 片段如何被选中
 
@@ -184,10 +186,10 @@ const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("syste
 
 | 调用 | 系统提示词 | 任务正文组成 | 图片 |
 | --- | --- | --- | --- |
-| 首次实现 / attempt 2 | builder-system + self-test | task-implement + action-implement + 项目上下文（含种子）+ 工作包 + 平台合同 + fragments + receipt | 包内需求引用图 |
+| 首次实现 / attempt 2 | builder-system + self-test | 产品上下文（含种子）+ 平台合同 + receipt + fragments + 本包上下文 + 工作包 + 任务元数据 + action-implement | 包内需求引用图 |
 | 同会话续接 | 同上 | 同上 + implementation-continuation（错误摘要） | 同上（同会话） |
-| 模块边界修复 | 同上 | task-repair + action-repair（仅白名单观测）+ 上下文/包/合同/fragments + receipt | 修复包需求引用图 |
-| 交付修复 | 同上 | task-delivery-repair + action-delivery-repair（阶段/命令/期望/实际，内嵌合同）+ delivery_contract + receipt | 无 |
+| 模块边界修复 | 同上 | 产品上下文 + 平台合同 + receipt + fragments + 本包上下文 + 工作包 + 任务元数据 + action-repair（仅白名单观测） | 修复包需求引用图 |
+| 交付修复 | 同上 | 平台合同 + receipt + delivery_contract + 任务元数据 + action-delivery-repair（阶段/命令/期望/实际） | 无 |
 
 ## 3. Judge 提示词注入链路
 
@@ -210,7 +212,7 @@ const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("syste
 
 | 调用 | system | user 证据（JSON） | 触发时机 | 次数/额度 |
 | --- | --- | --- | --- | --- |
-| `plan` | `probe-planner.md` + 计划 schema | `packetId`、产品名/描述、`prerequisites`（含种子声明的祖先上下文）、条件 `seedData`、每个需求的原文/祖先/场景/引用/`exactUiStrings`/`seedDeclarations` | ① 实现阶段与 Builder 并行预生成（见 §3.3）② 审计时无可用缓存计划 | 非致命失败会重试一次；json/schema 类失败附加一条 user 反馈消息（instruction + `validationError` + 上次响应预览 + schema） |
+| `plan` | `probe-planner.md` + 计划 schema | 产品名/描述、条件 `seedData`、`prerequisites`（含种子声明的祖先上下文）、每个需求的原文/祖先/场景/引用/`exactUiStrings`/`seedDeclarations`、`packetId` | ① 实现阶段与 Builder 并行预生成（见 §3.3）② 审计时无可用缓存计划 | 非致命失败会重试一次；json/schema 类失败附加一条 user 反馈消息（instruction + `validationError` + 上次响应预览 + schema） |
 | `refineLocators` | `probe-refinement.md` + 计划 schema | 原计划 wire 格式、`anchoredRequirementNames`（需求明示名称）、仅 locator 类失败（caseId、stepIndex、原 step、错误消息、尝试过的 locator、可访问性快照 4000 字符截断） | 仅**会触发修复**的模块边界审计；失败带可访问性快照且 verdict 非 pass | 每原子验收至多 2 轮精化（`MAX_LOCATOR_REFINEMENTS`，`audit.ts:286`）；精化结果必须过 `assertLocatorOnlyRefinement` |
 | `reviewPlan` | `probe-review.md` + 复核 schema | 需求证据 + 原计划 wire + `anchoredRequirementNames` + 行为失败（含类别、消息、快照） | 纯行为失败（所有失败都不是 locator/runner）且来源为 probe、非检测型审计（`audit.ts:46-59`） | 至多 2 次尝试；每个 case 每运行至多一次语义修正（旧判词作废） |
 
