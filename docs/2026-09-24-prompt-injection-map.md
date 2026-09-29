@@ -2,7 +2,7 @@
 
 日期：2026-09-24
 状态：讲解文档，描述当前实现；不改变任何行为。
-核对基线：`92e9f1a`。
+核对基线：`92e9f1a`；2026-09-29 补记：补齐 `completion-receipt.md` / `implementation-resume.md` 与 `prompts/planning/` 目录，修正 `spreadsheet-grid.md` 文件名。
 
 本文回答三个问题：提示词文件放在哪；谁在什么时机把它们拼成模型输入；哪些内容永远不会进入哪一侧。面向需要修改 Builder/Judge 行为的维护者，也用于排查"模型为什么看到（或没看到）某段内容"。
 
@@ -40,7 +40,7 @@ flowchart LR
 
 ## 1. 资产清单总览
 
-`prompts/` 分三类目录，加载入口统一是 `loadPrompt(category, name)`：读 `prompts/<category>/<name>.md`，把 CRLF 归一成 LF 并在进程内缓存（`prompt-assets.ts:10-31`）。
+`prompts/` 分四类目录（`system/`、`fragments/`、`judge/`、`planning/`），加载入口统一是 `loadPrompt(category, name)`：读 `prompts/<category>/<name>.md`，把 CRLF 归一成 LF 并在进程内缓存（`prompt-assets.ts:10-31`）。
 
 ### 1.1 `prompts/system/`：Builder 文案
 
@@ -63,6 +63,8 @@ flowchart LR
 | `reference-images.md` | Worker 内追加到任务正文 | 图片说明：已附加引用 + 未附加原因 |
 | `reference-images-text-fallback.md` | Worker 内追加到任务正文 | 拒图后的纯文本回退说明 |
 | `implementation-continuation.md` | 条件追加到任务正文 | 安装/构建/启动检查失败后的同会话续接；`{{FAILURE}}` 填脱敏错误 |
+| `implementation-resume.md` | 条件追加到任务正文 | 实现被中断后以新会话续做原工作包的提示（无占位符） |
+| `completion-receipt.md` | Worker 内追加提示 | 终态为空 stop 回执时，在同窗口补问一次完成回执 |
 
 ### 1.2 `prompts/fragments/`：按产品/观测选择的实现规则
 
@@ -72,7 +74,7 @@ flowchart LR
 | `server-persistence.md` | repository_collaboration、spreadsheet 基础集；generic_web 命中关键词 | 状态不要只放组件内；刷新/重进/新上下文后的读取一致性 |
 | `auth-and-permission.md` | repository_collaboration 基础集；generic_web 命中关键词 | 权限在可信边界判断；不能只隐藏按钮 |
 | `repository-collaboration.md` | repository_collaboration 基础集；generic_web 命中关键词 | 仓库/分支/提交/议题/合并请求的共同状态与编号作用域 |
-| `spreadsheet_grid.md` | spreadsheet 基础集；generic_web 命中关键词 | 工作簿/工作表/单元格/公式的作用域模型与联动更新 |
+| `spreadsheet-grid.md` | spreadsheet 基础集；generic_web 命中关键词 | 工作簿/工作表/单元格/公式的作用域模型与联动更新 |
 | `delivery-contract.md` | `delivery_repair` 固定；repair 遇应用启动失败追加 | 干净进程可重复安装/构建/启动，不依赖开发态代理或固定端口 |
 
 ### 1.3 `prompts/judge/`：Judge 系统提示词
@@ -82,6 +84,12 @@ flowchart LR
 | `probe-planner.md` | `plan()` | 黑盒探针作者；只依据需求证据；输出结构、`requirementIds` 边界、`expectationBasis` 逐字引用、locator 策略、断言模式、case 选择优先级 |
 | `probe-refinement.md` | `refineLocators()` | 只允许改 locator 对象；冻结字段清单、锚定名保留、不得降低定位强度、无效精化示例 |
 | `probe-review.md` | `reviewPlan()` | 对行为失败做语义归因：种子误读、准备步骤、断言是否越界；输出 `sound` / `corrected` + 逐字依据 |
+
+### 1.4 `prompts/planning/`：实现前的功能分组
+
+| 文件 | 对应调用 | 内容要点 |
+| --- | --- | --- |
+| `feature-grouping.md` | `llm-feature-grouper.ts`（与 Probe Planner 共用 `planner-json-client.ts` 网关通道） | 把本次原子需求分成有序功能组：共享状态/操作链内聚、依赖序、单模块与 4 条/12 场景/20k 字符容量上限；`purpose` 仅作分组解释，不作行为合同 |
 
 ## 2. Builder 提示词注入链路
 

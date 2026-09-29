@@ -40,7 +40,10 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
                                 零依赖原生 http 后端、Vitest + @testing-library/react 角色查询测试）
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
-  system/receipt.md             每次任务附带的完成回执格式
+  system/receipt.md             每次任务附带的完成回执格式（结果/需求核对/根因/变更/检查/风险；根因仅修复与交付任务填写）
+  system/completion-receipt.md  空 stop 回执时在同窗口补问一次的提示
+  system/implementation-*.md    条件追加段：continuation 为安装/构建/启动检查失败后的同会话续接（{{FAILURE}} 填脱敏错误）；
+                                resume 为中断后新会话续做
   system/self-test.md           Builder 开发检查流程（传统测试、昂贵 browser 工具约定）、清理责任与结果报告
   system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口、额外端口段由发现结果决定）
   system/platform-extra-ports.md 额外端口合同段：由验收 spec 发现的端口（{{EXTRA_PORTS}}）双重监听要求

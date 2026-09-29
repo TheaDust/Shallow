@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { fillTemplate, loadPrompt } from "../src/prompt-assets.js";
 import { PROMPT_FRAGMENTS } from "../src/builder/prompt-fragments.js";
-import { readdir, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 test("fillTemplate replaces every provided placeholder", () => {
@@ -223,15 +223,19 @@ test("judge probe prompt assets keep their contracts", () => {
 });
 
 test("prompt assets contain no CR characters", async () => {
-  const categories = ["system", "fragments", "judge"] as const;
+  const categories = ["system", "fragments", "judge", "planning"] as const;
   for (const category of categories) {
     const directory = fileURLToPath(
       new URL(`../prompts/${category}`, import.meta.url),
     );
     for (const file of await readdir(directory)) {
       if (!file.endsWith(".md") || file === "__crlf-probe__.md") continue;
-      const text = loadPrompt(category, file.slice(0, -3));
-      assert.ok(!text.includes("\r"), `CR found in ${category}/${file}`);
+      // Read the raw bytes: loadPrompt normalizes CRLF and would never fail.
+      const raw = await readFile(
+        new URL(`../prompts/${category}/${file}`, import.meta.url),
+        "utf8",
+      );
+      assert.ok(!raw.includes("\r"), `CR found in ${category}/${file}`);
     }
   }
 });
