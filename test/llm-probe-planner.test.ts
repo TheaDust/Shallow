@@ -9,6 +9,7 @@ import {
   assertLocatorOnlyRefinement,
   NoLocatorProgressError,
   parseProbePlan,
+  toWireProbePlan,
   PROBE_PLAN_JSON_SCHEMA,
   PROBE_REFINEMENT_JSON_SCHEMA,
 } from "../src/judge/probe-schema.js";
@@ -1067,6 +1068,120 @@ test("Review contract violations are review-category errors with diagnostics", a
       assert.match(error.diagnostics.validationError ?? "", pattern);
       return true;
     });
+  }
+});
+
+function preparedProfilePlan() {
+  const original = parseProbePlan(validPlan(), packet());
+  original.cases[0].steps.splice(1, 0,
+    { op: "expectValue", locator: { by: "label", text: "Profile name", exact: true }, value: "Initial" });
+  original.cases[0].setupStepCount = 2;
+  return original;
+}
+
+function profilePreparationCorrection() {
+  return { caseId: "save-profile", conflict: "The initial profile value was not established",
+    basis: ["Keep the profile after refresh."], setupSteps: [
+      { op: "goto", path: "/" },
+      { op: "fill", locator: { by: "label", text: "Profile name", exact: true }, value: "Initial" },
+      { op: "expectValue", locator: { by: "label", text: "Profile name", exact: true }, value: "Initial" },
+    ] };
+}
+
+test("Planner preparation recovery returns only prefixes with complete context and the existing usage callback", async () => {
+  const bodies: Array<{ messages: Array<{ content: string }> }> = [];
+  const usage: unknown[] = [];
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ verdict: "corrected", rationale: "Prepare the initial value",
+      corrections: [profilePreparationCorrection()] }) } }], usage: { prompt_tokens: 20, completion_tokens: 10 } });
+  });
+  const original = preparedProfilePlan();
+  const review = await planner.reviewPlan(packet(), original, [{ caseId: "save-profile", stepIndex: 1,
+    category: "precondition", message: "expected Initial" }], undefined,
+    { timeoutMs: 1_000, preparationOnlyCaseIds: ["save-profile"], onUsage: item => { usage.push(item); } });
+  if (review.status !== "corrected") assert.fail("missing corrected plan");
+  assert.equal(bodies.length, 1);
+  assert.equal(review.plan.cases[0].setupStepCount, 3);
+  assert.deepEqual(review.plan.cases[0].steps.slice(3), original.cases[0].steps.slice(2));
+  assert.deepEqual(review.plan.cases[1], original.cases[1]);
+  assert.deepEqual(usage, [{ input: 20, output: 10, cacheRead: 0, cacheWrite: 0, total: 30 }]);
+  const payload = JSON.parse(bodies[0].messages[1].content);
+  assert.deepEqual(payload.preparationOnlyCaseIds, ["save-profile"]);
+  assert.deepEqual(payload.caseCorrectionIds, []);
+  assert.deepEqual(payload.originalPlan, toWireProbePlan(original));
+  const schemaText = bodies[0].messages[0].content.split("仅返回符合此 schema 的 JSON：\n").at(-1)!;
+  assert.match(schemaText, /"setupSteps"/);
+  assert.doesNotMatch(schemaText, /"plan"|"case"|"expectationBasis"/);
+});
+
+test("Planner mixed recovery accepts prefix and business-case corrections in one response", async () => {
+  const original = preparedProfilePlan();
+  const wire = toWireProbePlan(original) as { cases: Array<Record<string, unknown>> };
+  const correctedCase = { ...wire.cases[1], assertion: { op: "expectValue", locator: { by: "label", text: "Profile name" }, value: "Grace" } };
+  let calls = 0;
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    calls++;
+    const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+    assert.deepEqual(payload.caseCorrectionIds, ["refresh-profile"]);
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ verdict: "corrected", rationale: "Two independent probe issues",
+      corrections: [profilePreparationCorrection(), { caseId: "refresh-profile", conflict: "The expected value was incorrect",
+        basis: ["Keep the profile after refresh."], case: correctedCase }] }) } }] });
+  });
+  const review = await planner.reviewPlan(packet(), original, [
+    { caseId: "save-profile", stepIndex: 1, category: "precondition", message: "initial value absent" },
+    { caseId: "refresh-profile", stepIndex: 2, category: "assertion", message: "wrong expected value" },
+  ], undefined, { timeoutMs: 1_000, preparationOnlyCaseIds: ["save-profile"] });
+  if (review.status !== "corrected") assert.fail("missing corrected plan");
+  assert.equal(calls, 1);
+  assert.equal(review.corrections.length, 2);
+  assert.deepEqual(review.plan.cases[0].steps.slice(3), original.cases[0].steps.slice(2));
+  assert.deepEqual(review.plan.cases[1].steps.at(-1), correctedCase.assertion);
+});
+
+test("Planner rejects a full-case rewrite for a preparation target with feedback diagnostics", async () => {
+  const planner = new LlmProbePlanner(config(), async () => jsonResponse({ choices: [{ message: {
+    content: JSON.stringify({ verdict: "corrected", rationale: "rewrite the case", corrections: [{
+      ...profilePreparationCorrection(), case: {}, setupStepCount: 99,
+    }] }),
+  } }] }));
+  await assert.rejects(planner.reviewPlan(packet(), preparedProfilePlan(), [{ caseId: "save-profile", stepIndex: 1,
+    category: "precondition", message: "initial state missing" }], undefined,
+    { timeoutMs: 1_000, preparationOnlyCaseIds: ["save-profile"] }), (error: unknown) => {
+    assert.ok(error instanceof ProbePlannerError);
+    assert.equal(error.category, "review");
+    assert.match(error.diagnostics.validationError ?? "", /unsupported field: case/);
+    assert.match(error.diagnostics.contentPreview ?? "", /setupStepCount/);
+    return true;
+  });
+});
+
+test("Preparation review schemas retain their shared system prefix across different target IDs", async () => {
+  for (const mixed of [false, true]) {
+    const bodies: Array<{ messages: Array<{ content: string }> }> = [];
+    const planner = new LlmProbePlanner(config(), async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify({ verdict: "sound", rationale: "Matches the requirements" }) } }] });
+    });
+    for (let index = 0; index < 2; index++) {
+      const input = packet();
+      input.id = `packet-${index}`;
+      const plan = preparedProfilePlan();
+      plan.packetId = input.id;
+      plan.cases[0].id = `prepare-${index}`;
+      plan.cases[1].id = `business-${index}`;
+      await planner.reviewPlan(input, plan, [
+        { caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "Initial state absent" },
+        ...(mixed ? [{ caseId: plan.cases[1].id, stepIndex: 2, category: "assertion" as const, message: "Incorrect result" }] : []),
+      ], undefined, { timeoutMs: 1_000, preparationOnlyCaseIds: [plan.cases[0].id] });
+    }
+    assert.equal(bodies[0].messages[0].content, bodies[1].messages[0].content);
+    for (const [index, body] of bodies.entries()) {
+      const payload = JSON.parse(body.messages[1].content);
+      assert.deepEqual(payload.preparationOnlyCaseIds, [`prepare-${index}`]);
+      assert.deepEqual(payload.caseCorrectionIds, mixed ? [`business-${index}`] : []);
+      assert.doesNotMatch(body.messages[0].content, /prepare-\d|business-\d/);
+    }
   }
 });
 

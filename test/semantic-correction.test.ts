@@ -8,6 +8,7 @@ import { loadRequirementCatalog } from "../src/catalog.js";
 import { auditPackets } from "../src/scheduler.js";
 import { RunStateStore } from "../src/run-state.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
+import { LlmProbePlanner } from "../src/judge/llm-probe-planner.js";
 import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { PlanCorrection, PlanReview } from "../src/judge/semantic-review.js";
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
@@ -61,6 +62,98 @@ async function auditWith(f: PipelineFixture, state: RunStateStore, plan: ProbePl
   const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
   return auditPacket(packet, plan, f.options, f.deps, state, () => 60_000);
 }
+
+test("Prefix response validation and retry use the existing preparation quota without semantic corrections", async () => {
+  await withModulePipeline(async f => {
+    const original = groundedPlan([
+      { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+      { op: "click", locator: { by: "role", role: "button", name: "Save", exact: true } },
+      { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+    ]);
+    original.cases[0].setupStepCount = 2;
+    let calls = 0;
+    f.deps.planner = new LlmProbePlanner({ baseUrl: "https://gateway.example/v1", apiKey: "test-key", model: "test", timeoutMs: 1_000 },
+      async (_input, init) => {
+        const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+        const response = ++calls === 1 ? { verdict: "corrected", rationale: "invalid full-plan response", plan: original,
+          corrections: [{ caseId: "case-A", conflict: "Navigation", basis: ["Display the main workspace."] }] }
+          : { verdict: "corrected", rationale: "Prepare through visible navigation", corrections: [{
+            caseId: "case-A", conflict: "Navigation omitted the workspace", basis: ["Display the main workspace."],
+            setupSteps: [original.cases[0].steps[0],
+              { op: "click", locator: { by: "role", role: "link", name: "Workspace" } }, original.cases[0].steps[1]],
+          }] };
+        if (calls === 2) assert.match(payload.validationError, /unsupported field: plan/);
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }),
+          { headers: { "content-type": "application/json" } });
+      });
+    let runs = 0;
+    f.deps.runner.run = async plan => {
+      runs++;
+      return plan.cases[0].setupStepCount === 3 ? pass(plan) : { packetId: plan.packetId,
+        verdict: "inconclusive", passedCases: [], failures: [{ caseId: "case-A", stepIndex: 1,
+          category: "precondition", message: "Workspace not reached" }] };
+    };
+    const state = makeState(f);
+    const result = await auditWith(f, state, original);
+    assert.equal(result.status, "verified");
+    assert.equal(calls, 2);
+    assert.equal(runs, 2);
+    assert.equal(state.semanticCorrectionCount(original.packetId, "case-A"), 0);
+    assert.deepEqual(result.plan?.cases[0].steps.slice(3), original.cases[0].steps.slice(2));
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
+test("Mixed prefix recovery keeps prepared failures separate from reproduced business failures", async () => {
+  await withModulePipeline(async f => {
+    const original = groundedPlan([
+      { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+      { op: "click", locator: { by: "role", role: "button", name: "Save", exact: true } },
+      { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+    ]);
+    original.cases[0].setupStepCount = 2;
+    original.cases.push({ id: "business", requirementIds: ["A"], purpose: "persistence", expectationBasis: ["Display the main workspace."],
+      steps: [{ op: "goto", path: "/" }, { op: "expectText", locator: { by: "role", role: "status" }, text: "Unsupported feedback" }] },
+      { id: "already-passed", requirementIds: ["A"], purpose: "happy_path", expectationBasis: ["Display the main workspace."],
+        steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] });
+    let calls = 0;
+    f.deps.planner = new LlmProbePlanner({ baseUrl: "https://gateway.example/v1", apiKey: "test-key", model: "test", timeoutMs: 1_000 },
+      async (_input, init) => {
+        calls++;
+        const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+        assert.deepEqual(payload.caseCorrectionIds, ["business"]);
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+          verdict: "corrected", rationale: "Independent preparation and expectation problems", corrections: [
+            { caseId: "case-A", conflict: "Navigation missing", basis: ["Display the main workspace."],
+              setupSteps: [original.cases[0].steps[0], { op: "click", locator: { by: "role", role: "link", name: "Workspace" } },
+                original.cases[0].steps[1]] },
+            { caseId: "business", conflict: "Unsupported expectation", basis: ["Display the main workspace."],
+              case: { ...original.cases[1], setupStepCount: null, steps: [original.cases[1].steps[0]],
+                assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } } },
+          ],
+        }) } }] }), { headers: { "content-type": "application/json" } });
+      });
+    let runs = 0;
+    f.deps.runner.run = async plan => {
+      runs++;
+      return { packetId: plan.packetId, verdict: "fail", passedCases: ["already-passed"], failures: [
+        ...(plan.cases[0].setupStepCount === 2 ? [{ caseId: "case-A", stepIndex: 1, category: "precondition" as const,
+          message: "Workspace not reached" }] : []),
+        { caseId: "business", stepIndex: 1, category: "assertion", message: "The tested result remains absent" },
+      ] };
+    };
+    const state = makeState(f);
+    const result = await auditWith(f, state, original);
+    assert.equal(result.status, "failed");
+    assert.equal(calls, 1);
+    assert.equal(runs, 3);
+    assert.deepEqual(result.report?.failures.map(item => item.caseId), ["business"]);
+    assert.equal(state.semanticCorrectionCount(original.packetId, "case-A"), 0);
+    assert.equal(state.semanticCorrectionCount(original.packetId, "business"), 1);
+    assert.deepEqual(result.plan?.cases[2], original.cases[2]);
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
 
 test("A seed misread is corrected from requirement evidence, re-run, and only then verified", async () => {
   await withModulePipeline(async f => {

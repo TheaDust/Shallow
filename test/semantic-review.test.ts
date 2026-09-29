@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parsePlanReview } from "../src/judge/semantic-review.js";
-import { parseProbePlan, type ProbePlan } from "../src/judge/probe-schema.js";
+import { parsePlanReview, preparationReviewJsonSchema, type PreparationReviewTargets } from "../src/judge/semantic-review.js";
+import { parseProbePlan, toWireProbePlan, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 
 test("A sound review carries no plan and requires a rationale", () => {
@@ -54,6 +54,116 @@ test("Plan reconstruction preserves independent cases, their purposes and requir
   after.cases[1] = structuredClone(before.cases[1]);
   after.cases[0].purpose = "negative";
   assert.throws(() => parsePlanReview({ ...base, plan: after }, packet(), before), /purpose and requirementIds/);
+});
+
+function preparedPlan(): ProbePlan {
+  const before = original();
+  before.cases[0].setupStepCount = 2;
+  before.cases[0].steps = [
+    { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+    { op: "fill", locator: { by: "label", text: "Title", exact: true }, value: "original input" },
+    { op: "click", locator: { by: "role", role: "button", name: "Save", exact: true } },
+    { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved", exact: true },
+  ];
+  before.cases.push({ ...structuredClone(before.cases[0]), id: "case-B", purpose: "persistence" });
+  return before;
+}
+
+const preparationTargets: PreparationReviewTargets = { preparationOnlyCaseIds: ["case-A"], caseCorrectionIds: [] };
+function prefixReview() {
+  return { verdict: "corrected", rationale: "Establish the initial state", corrections: [{
+    caseId: "case-A", conflict: "Navigation omitted the workspace", basis: ["Display the main workspace."],
+    setupSteps: [
+      { op: "goto", path: "/" },
+      { op: "click", locator: { by: "role", role: "link", name: "Workspace" } },
+      { op: "expectVisible", locator: { by: "role", role: "main" } },
+    ],
+  }] };
+}
+
+test("Prefix recovery reconstructs the plan with the exact tested suffix and untouched independent cases", () => {
+  const before = preparedPlan();
+  const snapshot = structuredClone(before);
+  const response = prefixReview();
+  const review = parsePlanReview(response, packet(), before, preparationTargets);
+  assert.equal(review.status, "corrected");
+  if (review.status !== "corrected") assert.fail("missing corrected plan");
+  assert.deepEqual(before, snapshot);
+  assert.deepEqual(review.plan.cases.map(item => item.id), ["case-A", "case-B"]);
+  assert.equal(review.plan.cases[0].setupStepCount, 3);
+  assert.deepEqual(review.plan.cases[0].steps.slice(3), before.cases[0].steps.slice(2));
+  assert.deepEqual(review.plan.cases[0].expectationBasis, before.cases[0].expectationBasis);
+  assert.deepEqual(review.plan.cases[1], before.cases[1]);
+  assert.deepEqual(review.corrections, [{ caseId: "case-A", conflict: response.corrections[0].conflict,
+    basis: ["Display the main workspace."] }]);
+  assert.ok(JSON.stringify(response).length < JSON.stringify(toWireProbePlan(review.plan)).length);
+});
+
+test("Prefix review supports sound and excludes full-case output when all failures are preparation", () => {
+  assert.deepEqual(parsePlanReview({ verdict: "sound", rationale: "The original preparation is grounded" },
+    packet(), preparedPlan(), preparationTargets), { status: "sound", rationale: "The original preparation is grounded" });
+  const schema = JSON.stringify(preparationReviewJsonSchema());
+  assert.match(schema, /"setupSteps"/);
+  assert.doesNotMatch(schema, /"plan"|"purpose"|"expectationBasis"|"setupStepCount"/);
+  const response = prefixReview();
+  assert.throws(() => parsePlanReview({ ...response, plan: toWireProbePlan(preparedPlan()) },
+    packet(), preparedPlan(), preparationTargets), /unsupported field: plan/);
+  assert.throws(() => parsePlanReview({ ...response, corrections: [{ ...response.corrections[0], case: {} }] },
+    packet(), preparedPlan(), preparationTargets), /unsupported field: case/);
+  assert.throws(() => parsePlanReview({ verdict: "sound", rationale: "x", corrections: response.corrections },
+    packet(), preparedPlan(), preparationTargets), /must not carry/);
+});
+
+test("Prefix recovery rejects empty, ungrounded, duplicate, unknown and unchanged proposals", () => {
+  const response = prefixReview();
+  const before = preparedPlan();
+  const correction = response.corrections[0];
+  const parse = (corrections: unknown[]) => parsePlanReview({ ...response, corrections }, packet(), before, preparationTargets);
+  assert.throws(() => parse([]), /must differ/);
+  assert.throws(() => parse([{ ...correction, setupSteps: [] }]), /initial-state assertion/);
+  assert.throws(() => parse([{ ...correction, basis: ["invented evidence"] }]), /verbatim/);
+  assert.throws(() => parse([correction, correction]), /duplicated/);
+  assert.throws(() => parse([{ ...correction, caseId: "unknown" }]), /reviewed plan/);
+  assert.throws(() => parse([{ ...correction, caseId: "case-B" }]), /not a failed case/);
+  assert.throws(() => parse([{ ...correction, setupSteps: before.cases[0].steps.slice(0, 2) }]), /must differ/);
+  before.cases[0].setupStepCount = undefined;
+  assert.throws(() => parse([correction]), /existing preparation boundary/);
+});
+
+test("Reconstructed prefixes still obey initial-state assertions, the combined step limit and the Probe DSL", () => {
+  const response = prefixReview();
+  const parse = (setupSteps: unknown[]) => parsePlanReview({ ...response,
+    corrections: [{ ...response.corrections[0], setupSteps }] }, packet(), preparedPlan(), preparationTargets);
+  assert.throws(() => parse([{ op: "goto", path: "/" }]), /end preparation with an initial-state assertion/);
+  assert.throws(() => parse([...Array.from({ length: 27 }, () => ({ op: "reload" })),
+    { op: "expectVisible", locator: { by: "role", role: "main" } }]), /at most 30 steps/);
+  assert.throws(() => parse([{ op: "execute", code: "arbitrary code" }]), /operation is not allowed/);
+  assert.throws(() => parse([{ op: "goto", path: "/private" },
+    { op: "expectVisible", locator: { by: "role", role: "main" } }]), /undeclared goto path/);
+});
+
+test("Mixed reviews correct failed business cases while protecting preparation suffixes and case identity", () => {
+  const before = preparedPlan();
+  before.cases.push({ ...structuredClone(before.cases[1]), id: "passed-case" });
+  const businessCase = { ...before.cases[1], steps: before.cases[1].steps.slice(0, -1),
+    assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } };
+  const response = prefixReview();
+  const businessCorrection = { caseId: "case-B", conflict: "Unexpected result text", basis: ["Display the main workspace."], case: businessCase };
+  const targets = { ...preparationTargets, caseCorrectionIds: ["case-B"] };
+  const parse = (correction = businessCorrection) => parsePlanReview({ ...response,
+    corrections: [response.corrections[0], correction] }, packet(), before, targets);
+  const review = parse();
+  if (review.status !== "corrected") assert.fail("missing corrected plan");
+  assert.deepEqual(review.plan.cases[0].steps.slice(3), before.cases[0].steps.slice(2));
+  assert.equal(review.plan.cases[1].steps.at(-1)?.op, "expectVisible");
+  assert.deepEqual(review.plan.cases[2], before.cases[2]);
+  assert.equal(review.corrections.length, 2);
+  assert.throws(() => parse({ ...businessCorrection, caseId: "case-A" }), /duplicated/);
+  assert.throws(() => parse({ ...businessCorrection, caseId: "passed-case" }), /not a failed case/);
+  assert.throws(() => parse({ ...businessCorrection, case: { ...businessCase, id: "case-A" } }), /must match caseId/);
+  assert.throws(() => parse({ ...businessCorrection, case: { ...businessCase, purpose: "negative" } }), /purpose and requirementIds/);
+  assert.throws(() => parse({ ...businessCorrection, case: { ...businessCase, assertion: null } } as unknown as typeof businessCorrection), /terminal assertion/);
+  assert.match(JSON.stringify(preparationReviewJsonSchema(true)), /"case"/);
 });
 
 function packet(): WorkPacket {

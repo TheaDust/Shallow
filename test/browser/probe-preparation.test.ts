@@ -8,6 +8,7 @@ import { loadRequirementCatalog } from "../../src/catalog.js";
 import { auditPackets } from "../../src/scheduler.js";
 import { RunStateStore } from "../../src/run-state.js";
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
+import { LlmProbePlanner } from "../../src/judge/llm-probe-planner.js";
 import type { ProbePlan } from "../../src/judge/probe-schema.js";
 import { toBuilderShadowObservation } from "../../src/builder/shadow-observation.js";
 import { withModulePipeline } from "../helpers/module-pipeline.js";
@@ -43,19 +44,37 @@ for (const weaken of [false, true]) {
           ],
         }] };
         let reviews = 0;
-        f.deps.planner.reviewPlan = async (_packet, plan, _failures, _feedback, options) => {
-          reviews++;
-          assert.deepEqual(options?.preparationOnlyCaseIds, ["prepared-save"]);
-          const corrected = structuredClone(plan);
-          corrected.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Prepare", exact: true } };
-          if (weaken) corrected.cases[0].steps[4] = { op: "expectVisible", locator: { by: "role", role: "main" } };
-          return { status: "corrected", rationale: "Establish the current scenario through its allowed controls",
-            plan: corrected, corrections: [{ caseId: "prepared-save", conflict: "Different default scenario", basis: [packet.requirements[0].text] }] };
-        };
+        if (weaken) {
+          f.deps.planner.reviewPlan = async () => {
+            reviews++;
+            const corrected = structuredClone(original);
+            corrected.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Prepare", exact: true } };
+            corrected.cases[0].steps[4] = { op: "expectVisible", locator: { by: "role", role: "main" } };
+            return { status: "corrected", rationale: "Establish the current scenario through its allowed controls",
+              plan: corrected, corrections: [{ caseId: "prepared-save", conflict: "Different default scenario", basis: [packet.requirements[0].text] }] };
+          };
+        } else {
+          f.deps.planner = new LlmProbePlanner({ baseUrl: "https://gateway.example/v1", apiKey: "test-key", model: "test", timeoutMs: 1_000 },
+            async (_input, init) => {
+              reviews++;
+              const payload = JSON.parse(JSON.parse(String(init?.body)).messages[1].content);
+              assert.deepEqual(payload.preparationOnlyCaseIds, ["prepared-save"]);
+              assert.deepEqual(payload.caseCorrectionIds, []);
+              return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+                verdict: "corrected", rationale: "Establish the current scenario through its allowed controls", corrections: [{
+                  caseId: "prepared-save", conflict: "Different default scenario", basis: [packet.requirements[0].text],
+                  setupSteps: [original.cases[0].steps[0],
+                    { op: "click", locator: { by: "role", role: "button", name: "Prepare", exact: true } },
+                    original.cases[0].steps[2]],
+                }],
+              }) } }] }), { headers: { "content-type": "application/json" } });
+            });
+        }
         const state = new RunStateStore({ statusByRequirementId: { A: "todo" }, acceptedSha: "initial", startedAtMs: 0, totalBudgetMs: 60_000 }, f.options.ledgerFile);
         for (let repeat = 0; repeat < 2; repeat++) {
           const result = await auditPacket(packet, original, f.options, f.deps, state, () => 60_000);
           assert.equal(result.status, weaken ? "inconclusive" : "verified");
+          assert.deepEqual(result.plan?.cases[0].steps.slice(result.plan.cases[0].setupStepCount), original.cases[0].steps.slice(3));
           assert.equal(state.semanticCorrectionCount(packet.id, "prepared-save"), 0);
         }
         assert.equal(reviews, weaken ? 4 : 2);

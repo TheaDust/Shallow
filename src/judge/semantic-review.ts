@@ -20,6 +20,11 @@ export type PlanReview =
   | { status: "sound"; rationale: string }
   | { status: "corrected"; rationale: string; plan: ProbePlan; corrections: PlanCorrection[] };
 
+export interface PreparationReviewTargets {
+  preparationOnlyCaseIds: readonly string[];
+  caseCorrectionIds: readonly string[];
+}
+
 /** Preparation may evolve while the tested behavior, input and outcome stay fixed. */
 export function sameCaseBehavior(before: ProbeCase, after: ProbeCase): boolean {
   return before.id === after.id && before.purpose === after.purpose &&
@@ -64,12 +69,46 @@ export const PROBE_REVIEW_JSON_SCHEMA = {
   },
 } as const;
 
+/** Preparation recovery returns prefixes; other failed cases may carry case corrections. */
+export function preparationReviewJsonSchema(includeCaseCorrections = false): unknown {
+  // Target IDs stay in the user payload to preserve the shared system prefix.
+  const metadata = PROBE_REVIEW_JSON_SCHEMA.properties.corrections.items.properties;
+  const variants: unknown[] = [{
+    type: "object", additionalProperties: false,
+    required: ["caseId", "conflict", "basis", "setupSteps"],
+    properties: {
+      ...metadata,
+      setupSteps: { ...PROBE_PLAN_BODY.properties.cases.items.properties.steps, minItems: 1 },
+    },
+  }];
+  if (includeCaseCorrections) variants.push({
+    type: "object", additionalProperties: false,
+    required: ["caseId", "conflict", "basis", "case"],
+    properties: {
+      ...metadata,
+      case: PROBE_PLAN_BODY.properties.cases.items,
+    },
+  });
+  return {
+    $defs: PROBE_PLAN_JSON_SCHEMA.$defs,
+    type: "object", additionalProperties: false,
+    required: ["verdict", "rationale"],
+    properties: {
+      verdict: PROBE_REVIEW_JSON_SCHEMA.properties.verdict,
+      rationale: PROBE_REVIEW_JSON_SCHEMA.properties.rationale,
+      corrections: { type: ["array", "null"], maxItems: MAX_CORRECTIONS, items: { anyOf: variants } },
+    },
+  };
+}
+
 export function parsePlanReview(
   value: unknown,
   packet: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements" | "prerequisites">>,
   original: ProbePlan,
+  preparationTargets?: PreparationReviewTargets,
 ): PlanReview {
-  const review = record(value, "PlanReview");
+  const response = record(value, "PlanReview");
+  const review = preparationTargets ? mergePreparationReview(response, original, preparationTargets) : response;
   keys(review, ["verdict", "rationale", "corrections", "plan"], "PlanReview");
   const rationale = boundedText(review.rationale, "PlanReview.rationale", MAX_RATIONALE);
   if (review.verdict === "sound") {
@@ -128,6 +167,42 @@ export function parsePlanReview(
     }
   }
   return { status: "corrected", rationale, plan, corrections };
+}
+
+/** Rebuild the plan locally so a preparation proposal never owns the tested suffix. */
+function mergePreparationReview(review: Record<string, unknown>, original: ProbePlan,
+  targets: PreparationReviewTargets): Record<string, unknown> {
+  keys(review, ["verdict", "rationale", "corrections"], "PlanReview");
+  if (review.verdict !== "corrected") return review;
+  const cases = new Map<string, unknown>(original.cases.map(item => [item.id, item]));
+  const seen = new Set<string>();
+  const corrections = array(review.corrections, "PlanReview.corrections").map((value, index) => {
+    const location = `PlanReview.corrections[${index}]`;
+    const correction = record(value, location);
+    const caseId = boundedText(correction.caseId, `${location}.caseId`, MAX_QUOTE);
+    const before = original.cases.find(item => item.id === caseId);
+    if (!before) throw new Error(`${location}.caseId must name a case of the reviewed plan`);
+    if (seen.has(caseId)) throw new Error(`${location}.caseId is duplicated: ${caseId}`);
+    seen.add(caseId);
+    if (targets.preparationOnlyCaseIds.includes(caseId)) {
+      keys(correction, ["caseId", "conflict", "basis", "setupSteps"], location);
+      const setupSteps = array(correction.setupSteps, `${location}.setupSteps`);
+      if (!setupSteps.length) throw new Error(`${location}.setupSteps must include an initial-state assertion`);
+      if (!before.setupStepCount) throw new Error(`${location} requires an existing preparation boundary`);
+      cases.set(caseId, { ...before, setupStepCount: setupSteps.length,
+        steps: [...setupSteps, ...before.steps.slice(before.setupStepCount)] });
+    } else {
+      if (!targets.caseCorrectionIds.includes(caseId)) throw new Error(`${location}.caseId is not a failed case eligible for correction`);
+      keys(correction, ["caseId", "conflict", "basis", "case"], location);
+      const correctedCase = record(correction.case, `${location}.case`);
+      if (correctedCase.id !== caseId) throw new Error(`${location}.case.id must match caseId`);
+      if (correctedCase.assertion == null) throw new Error(`${location}.case requires a terminal assertion`);
+      cases.set(caseId, correctedCase);
+    }
+    return { caseId, conflict: correction.conflict, basis: correction.basis };
+  });
+  return { ...review, corrections, plan: { packetId: original.packetId,
+    cases: original.cases.map(item => cases.get(item.id)) } };
 }
 
 function record(value: unknown, location: string): Record<string, unknown> {

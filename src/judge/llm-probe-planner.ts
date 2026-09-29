@@ -17,13 +17,13 @@ import {
   parseProbePlan,
   type ProbePlan,
 } from "./probe-schema.js";
-import { parsePlanReview, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
+import { parsePlanReview, preparationReviewJsonSchema, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
 export interface ProbePlanOptions {
   timeoutMs: number;
   onUsage?: ProbePlannerUsageListener;
   signal?: AbortSignal;
-  /** Failed preparation prefixes may be rebuilt, but their tested suffixes stay fixed. */
+  /** Failed preparation cases return only setup steps; the controller retains their tested suffixes. */
   preparationOnlyCaseIds?: readonly string[];
 }
 export interface ProbeRefinementOptions {
@@ -157,6 +157,12 @@ export class LlmProbePlanner implements ProbePlanner {
   }
 
   async reviewPlan(packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<PlanReview> {
+    const preparationOnlyCaseIds = options?.preparationOnlyCaseIds;
+    const preparationTargets = preparationOnlyCaseIds?.length ? {
+      preparationOnlyCaseIds,
+      caseCorrectionIds: [...new Set(failures.map(item => item.caseId))]
+        .filter(id => !preparationOnlyCaseIds.includes(id)),
+    } : undefined;
     const content = await this.complete([
       {
         role: "system",
@@ -187,7 +193,7 @@ export class LlmProbePlanner implements ProbePlanner {
           })),
           packetId: packet.id,
           originalPlan: toWireProbePlan(original),
-          ...(options?.preparationOnlyCaseIds?.length ? { preparationOnlyCaseIds: options.preparationOnlyCaseIds } : {}),
+          ...(preparationTargets ?? {}),
           ...(groundedLocatorAnchors(original, packet).length
             ? { anchoredRequirementNames: groundedLocatorAnchors(original, packet) }
             : {}),
@@ -211,7 +217,8 @@ export class LlmProbePlanner implements ProbePlanner {
           } : {}),
         }),
       },
-    ], options?.timeoutMs, PROBE_REVIEW_JSON_SCHEMA, options?.onUsage, options?.signal);
+    ], options?.timeoutMs, preparationTargets ? preparationReviewJsonSchema(preparationTargets.caseCorrectionIds.length > 0) : PROBE_REVIEW_JSON_SCHEMA,
+      options?.onUsage, options?.signal);
     let value: unknown;
     try {
       value = JSON.parse(extractJsonPayload(content));
@@ -221,7 +228,7 @@ export class LlmProbePlanner implements ProbePlanner {
       });
     }
     try {
-      return parsePlanReview(value, packet, original);
+      return parsePlanReview(value, packet, original, preparationTargets);
     } catch (error) {
       throw new ProbePlannerError("review", "Probe planner review violates the review contract", {
         cause: error, content, apiKey: this.config.apiKey,

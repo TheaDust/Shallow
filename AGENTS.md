@@ -111,7 +111,7 @@ src/
     probe-schema.ts             ProbePlan/ProbeCase schema（expectationBasis 逐字引用落地校验）、显式终末 assertion、单层 scope、
                                 parseProbePlan（白名单校验）、assertLocatorOnlyRefinement（refinement 只许改 locator、
                                 保留需求锚定名与 exact 匹配、交互控件不得降级为纯 text）
-    semantic-review.ts          语义复核合同：PlanReview（sound/corrected）、引用落地校验、纠正计划重建约束
+    semantic-review.ts          语义复核合同：PlanReview（sound/corrected）、准备前缀拼接、引用落地校验、纠正计划重建约束
     navigation-recovery.ts      首页种子仓库链接缺失时，按需求允许的搜索入口和页面快照构造只读导航复查
     llm-probe-planner.ts        LlmProbePlanner：网关流式 Chat Completions（JSON mode）、SSE 内容汇集与完整性检查、extractJsonPayload（剥围栏/杂文提取 JSON）、
                                 plan/refineLocators/reviewPlan（失败步骤诊断 + locator 校验；系统提示词见 prompts/judge/；恢复额度由 pipeline 管理）
@@ -217,7 +217,7 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 
 - 控件禁用/恢复使用 `expectDisabled` / `expectEnabled`，按 Playwright 的原生及 ARIA 语义检查；目标与所有 fallback 限交互 role 或 label，需求规定可见时另加可见断言。操作及 expectVisible 的候选等待可见后再使用，隐藏文件输入的 uploadFile 仍只要求挂载。保持原有定位额度、strict 唯一性及 case 隔离；修改时验证 `test/probe-contract.test.ts`、`test/browser/probe-state.test.ts`。
 - Judge 每个独立 case 使用全新应用实例与数据目录；同一 case 内的 reload、重开和 newContext 保持该 case 的服务端数据。复用候选依赖和构建，每份计划只启动一次 Chromium。重跑或浏览器重试同样从新数据开始；每次重启保留候选一致性检查与应用启停事件。
-- ProbeCase 的 `setupStepCount` 标记准备前缀，必须以初始状态 assertion 结束，待测业务和结果 assertion 位于其后。wire schema 要求该字段，null/0 表示无需准备；内部及历史计划兼容省略。前缀失败记 `precondition`，先复核计划，合理且可复现的缺口允许 Builder 诊断，目标业务仍为 inconclusive；其他 case 的有效业务失败独立处理。Planner 通过需求允许的可见控件准备互斥初始状态，核对数值、公式、选区、权限和对象身份，保持每 case 30 步上限。newContext 的 actor 不自动登录，必须通过公开登录表单建立新会话。
+- ProbeCase 的 `setupStepCount` 标记准备前缀，必须以初始状态 assertion 结束，待测业务和结果 assertion 位于其后。wire schema 要求该字段，null/0 表示无需准备；内部及历史计划兼容省略。前缀失败记 `precondition`，先复核计划，合理且可复现的缺口允许 Builder 诊断，目标业务仍为 inconclusive；其他 case 的有效业务失败独立处理。准备恢复的 correction 只携带新前缀 `setupSteps` 和冲突/原文依据，程序计算边界并拼回原待测后缀；混合失败仅对 `caseCorrectionIds` 中的其他失败 case 接收完整用例修正。未修改 case 由程序保留，拼接后仍校验完整计划并在新应用实例执行，沿用现有调用额度。Planner 通过需求允许的可见控件准备互斥初始状态，核对数值、公式、选区、权限和对象身份，保持每 case 30 步上限。newContext 的 actor 不自动登录，必须通过公开登录表单建立新会话。
 - 带种子的业务 sound 必须有已执行的状态检查点；声明的种子和单纯页面/网格可见不能替代状态证据。Judge 接收 preparationCheckpointPassed 与先前成功断言，缺证据时在既有复核额度内纠正准备。模型 rationale 只作语义判断，不能授予运行事实。
 - 种子导航恢复可处理登录后的入口及混合失败中的可恢复 case；至多两轮本地复查。搜索须有需求依据，同名结果仅依据已声明的 owner 与快照中的对象归属加单层 scope，保留目标名称、操作和预期。恢复通过后仍在新数据实例复验。
 - Worker 等待 SDK 事件队列、压缩、自动重试及压缩后续跑收敛再判终态；空 stop 回执在同窗口补问一次。缺 assistant、空终态、输出长度截断分别记录结构化 terminationReason；超时保留最新已收到的 usage/工具统计和恢复诊断。恢复核对已有实现、完成剩余项，沿用源码未变的检查。修改时验证 `test/pi-recovery.test.ts`、`test/pipeline-recovery.test.ts` 及 baseline 共享执行层。
