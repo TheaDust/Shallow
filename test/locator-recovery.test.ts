@@ -410,6 +410,15 @@ test("A failed preparation checkpoint can be corrected before the target behavio
 
 test("A reviewed preparation gap stays inconclusive and becomes a diagnostic repair target after fresh confirmation", async () => {
   await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description += ' The "Home" tab is the required entry.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    f.deps.planner.plan = async () => {
+      const plan = homePlan();
+      plan.cases[0].setupStepCount = 2;
+      plan.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      return plan;
+    };
     let runs = 0;
     f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
       failures: [{ caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "required seed missing" }] }; };
@@ -434,6 +443,96 @@ test("An independent preparation failure does not suppress a reviewed and reprod
     assert.equal(result.status, "failed");
     assert.deepEqual(result.report?.failures.map(item => item.caseId), ["prepared-business"]);
     assert.equal(runs, 2);
+  });
+});
+
+for (const assumption of ["target", "scope", "unnamed-container"] as const) {
+  test(`A sound model verdict cannot authorize a guessed preparation ${assumption}`, async () => {
+    await withModulePipeline(async f => {
+      const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      catalog.children[0].children[0].description += ' The "Home" tab is the required entry.';
+      await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+      const plan = homePlan();
+      const step = plan.cases[0].steps[1];
+      assert.ok("locator" in step);
+      if (assumption === "target") step.locator = { by: "role", role: "button", name: "Invented entry", exact: true };
+      else if (assumption === "scope") step.locator.scope = { by: "role", role: "region", name: "Invented region", exact: true };
+      else step.locator = { by: "role", role: "main" };
+      plan.cases[0].setupStepCount = 2;
+      plan.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      const planner = new FakeProbePlanner([plan]);
+      f.deps.planner = planner;
+      let runs = 0, reviews = 0;
+      f.deps.planner.reviewPlan = async (_packet, _original, _failures, feedback) => {
+        if (++reviews === 2) assert.match(feedback?.validationError ?? "", /requirement-grounded targets/);
+        return { status: "sound", rationale: "The model incorrectly approves its assumption" };
+      };
+      f.deps.runner.run = async current => { runs++; return { packetId: current.packetId, verdict: "inconclusive", passedCases: [],
+        failures: [{ caseId: current.cases[0].id, stepIndex: 1, category: "precondition", message: "The guessed entry is missing" }] }; };
+      const result = await audit(f);
+      assert.equal(result.status, "inconclusive");
+      assert.equal(result.repairableProbeFailure, undefined);
+      assert.equal(reviews, 2);
+      assert.equal(runs, 1);
+      assert.equal(f.builder.requests.length, 0);
+    });
+  });
+}
+
+test("A guessed preparation failure cannot hide an independent grounded preparation gap", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description += ' The "Home" tab is the required entry.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const plan = homePlan();
+    plan.cases[0].setupStepCount = 2;
+    plan.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+    const guessed = structuredClone(plan.cases[0]);
+    guessed.id = "guessed";
+    guessed.steps[1] = { op: "expectVisible", locator: { by: "role", role: "button", name: "Invented menu" } };
+    plan.cases.push(guessed);
+    f.deps.planner = new FakeProbePlanner([plan]);
+    f.deps.runner.run = async current => ({ packetId: current.packetId, verdict: "inconclusive", passedCases: [],
+      failures: current.cases.map(item => ({ caseId: item.id, stepIndex: 1, category: "precondition", message: "Required entry missing" })) });
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.repairableProbeFailure, true);
+    assert.deepEqual(result.report?.failures.map(item => item.caseId), ["case-A"]);
+  });
+});
+
+test("A guessed preparation prefix can recover within the existing two calls", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description += ' Open "Home" before using "Save".';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const original = homePlan("button");
+    original.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "button", name: "Guessed account menu" } };
+    original.cases[0].setupStepCount = 2;
+    original.cases[0].steps.push({ op: "click", locator: { by: "role", role: "button", name: "Save" } },
+      { op: "expectVisible", locator: { by: "role", role: "main" } });
+    const planner = new FakeProbePlanner([original]);
+    f.deps.planner = planner;
+    let reviews = 0;
+    f.deps.planner.reviewPlan = async (_packet, plan, _failures, feedback) => {
+      if (++reviews === 1) return { status: "sound", rationale: "Mistakenly assumed the menu name" };
+      assert.match(feedback?.validationError ?? "", /requirement-grounded targets/);
+      const corrected = structuredClone(plan);
+      corrected.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "tab", name: "Home" } };
+      return { status: "corrected", rationale: "Use the declared entry", plan: corrected,
+        corrections: [{ caseId: "case-A", conflict: "The menu name is not declared", basis: ['Open "Home" before using "Save".'] }] };
+    };
+    f.deps.runner.run = async plan => {
+      const target = plan.cases[0].steps[1];
+      return "locator" in target && target.locator.by === "role" && target.locator.name === "Home" ? pass(plan)
+        : { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+          caseId: "case-A", stepIndex: 1, category: "precondition", message: "Guessed menu is missing" }] };
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "verified");
+    assert.equal(reviews, 2);
+    assert.deepEqual(result.plan?.cases[0].steps.slice(2), original.cases[0].steps.slice(2));
+    assert.equal(f.builder.requests.length, 0);
   });
 });
 
@@ -504,7 +603,7 @@ test("Locator-only failures do not gain extra reviews after exhausting their rec
   });
 });
 
-for (const ambiguitySource of ["message", "candidate"] as const) {
+for (const ambiguitySource of ["message", "candidate", "count"] as const) {
   test(`An unresolved preparation ambiguity in the ${ambiguitySource} cannot authorize diagnostic repair`, async () => {
     await withModulePipeline(async f => {
       const original = homePlan();
@@ -520,8 +619,10 @@ for (const ambiguitySource of ["message", "candidate"] as const) {
           caseId: original.cases[0].id, stepIndex: 1, category: "precondition",
           message: ambiguitySource === "message" ? "strict mode violation" : "last candidate missing",
           locatorSnapshot: '- tab "Home"\n- tab "Home"',
-          ...(ambiguitySource === "candidate" ? { locatorAttempts: [{
-            locator: { by: "role" as const, role: "tab", name: "Home" }, message: "strict mode violation",
+          ...(ambiguitySource !== "message" ? { locatorAttempts: [{
+            locator: { by: "role" as const, role: "tab", name: "Home" },
+            message: ambiguitySource === "candidate" ? "strict mode violation" : "candidate wait timed out",
+            ...(ambiguitySource === "count" ? { matchCount: 2 } : {}),
           }] } : {}),
         }] };
       };
@@ -538,6 +639,15 @@ for (const ambiguitySource of ["message", "candidate"] as const) {
 
 test("An identical reviewed preparation gap is freshly confirmed without repeating the Planner call", async () => {
   await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description += ' The "Home" tab is the required entry.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    f.deps.planner.plan = async () => {
+      const plan = homePlan();
+      plan.cases[0].setupStepCount = 2;
+      plan.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      return plan;
+    };
     let reviews = 0, runs = 0;
     f.deps.planner.reviewPlan = async () => { reviews++; return { status: "sound", rationale: "Required initial seed is missing" }; };
     f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],

@@ -11,6 +11,7 @@ import { locatorCandidates, type ProbeCase, type ProbeLocator, type ProbePlan, t
 import type { ProbeFailure, ShadowReport } from "../types.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sharedMemoryGate, type MemoryGate } from "../memory-gate.js";
+import { sanitizeDiagnosticText } from "../diagnostics.js";
 
 /** Headroom reserved before launching a probe browser (browser + renderer + page). */
 const PROBE_BROWSER_HEADROOM_BYTES = 400 * 1_048_576;
@@ -120,6 +121,7 @@ export class PlaywrightProbeRunner {
             stepIndex,
             category: stepIndex < (probeCase.setupStepCount ?? 0) ? "precondition" : "timeout",
             message: `Case exceeded ${options.caseTimeoutMs}ms`,
+            pageUrl: sanitizeDiagnosticText(session.page.url(), [], 1_000),
           };
         }
         const timeoutMs = Math.min(options.stepTimeoutMs, remainingMs);
@@ -145,6 +147,7 @@ export class PlaywrightProbeRunner {
             category: stepIndex < (probeCase.setupStepCount ?? 0) && executionError.category !== "runner"
               ? "precondition" : executionError.category,
             message: compactError(executionError),
+            pageUrl: sanitizeDiagnosticText(session.page.url(), [], 1_000),
             ...fileInputSummary(probeCase.steps.slice(0, stepIndex)),
             ...(executionError.locatorAttempts ? { locatorAttempts: executionError.locatorAttempts } : {}),
             ...(executionError.locatorSnapshot
@@ -327,6 +330,7 @@ async function resolveLocator(
   const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "setChecked", "expectVisible"].includes(step.op);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
+  let observedTarget: Locator | undefined;
   for (let index = 0; index < candidates.length; index += 1) {
     const isFinal = index === candidates.length - 1;
     const candidate = locate(session.page, candidates[index]);
@@ -338,14 +342,17 @@ async function resolveLocator(
       return candidate;
     } catch (error) {
       lastMiss = error;
-      attempts.push({ locator: candidates[index], message: compactError(error) });
+      const matchCount = await candidate.count().catch(() => undefined);
+      if (matchCount) observedTarget ??= candidate;
+      attempts.push({ locator: candidates[index], message: compactError(error),
+        ...(matchCount === undefined ? {} : { matchCount }) });
     }
   }
   throw new ProbeExecutionError(
     step.op.startsWith("expect") && !attempts.some(attempt => attempt.message.includes("strict mode violation"))
       ? "assertion" : "locator",
     compactError(lastMiss),
-    await ariaSnapshot(session.page, timeoutMs, undefined, step.locator.scope),
+    await ariaSnapshot(session.page, timeoutMs, observedTarget, step.locator.scope),
     attempts,
   );
 }
@@ -422,7 +429,21 @@ async function ariaSnapshot(page: Page, timeoutMs: number, target?: Locator, sco
         excerpts.push(snapshot.slice(0, limit));
       }
     };
-    if (target) await add(target, 700);
+    if (target) {
+      const count = await target.count();
+      if (count === 1) await add(target, 700);
+      else for (let index = 0; index < Math.min(3, count); index++) {
+        const match = target.nth(index);
+        await add(match, 500);
+        const container = await match.evaluate(element => {
+          const parent = element.closest('dialog, [role="dialog"], [role="region"], [role="row"], [role="article"], [role="listitem"], nav, header, main, form, article, li, tr');
+          return parent ? { tag: parent.tagName.toLowerCase(), role: parent.getAttribute("role"),
+            name: parent.getAttribute("aria-label") ?? "",
+            text: ((parent as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 400) } : undefined;
+        }).catch(() => undefined);
+        if (container) excerpts.push(`匹配目标 ${index + 1} 的容器：${JSON.stringify(container)}`);
+      }
+    }
     if (scope) {
       let container = locate(page, scope as ProbeLocator);
       if (scope.hasText !== undefined) container = container.filter({ hasText: scope.hasText });

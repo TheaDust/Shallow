@@ -216,12 +216,13 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 ## 验收准备、数据隔离与中断恢复
 
 - 控件禁用/恢复使用 `expectDisabled` / `expectEnabled`，按 Playwright 的原生及 ARIA 语义检查；目标与所有 fallback 限交互 role 或 label，需求规定可见时另加可见断言。操作及 expectVisible 的候选等待可见后再使用，隐藏文件输入的 uploadFile 仍只要求挂载。保持原有定位额度、strict 唯一性及 case 隔离；修改时验证 `test/probe-contract.test.ts`、`test/browser/probe-state.test.ts`。
-- Judge 每个独立 case 使用全新应用实例与数据目录；同一 case 内的 reload、重开和 newContext 保持该 case 的服务端数据。复用候选依赖和构建，每份计划只启动一次 Chromium。重跑或浏览器重试同样从新数据开始；每次重启保留候选一致性检查与应用启停事件。
+- Judge 每个独立 case 使用全新应用实例与数据目录；同一 case 内的 reload、重开和 newContext 保持该 case 的服务端数据。原文描述连续操作或联动时，Planner 在现有成功/持久化 case 内选择至多一条短操作链，核对新结果及应保留的先前状态，替代重复成功路径；仍限 6 个 case、每 case 30 步，不另开规划调用。复用候选依赖和构建，每份计划只启动一次 Chromium。重跑或浏览器重试同样从新数据开始；每次重启保留候选一致性检查与应用启停事件。
 - ProbeCase 的 `setupStepCount` 标记准备前缀，必须以初始状态 assertion 结束，待测业务和结果 assertion 位于其后。wire schema 要求该字段，null/0 表示无需准备；内部及历史计划兼容省略。前缀失败记 `precondition`，先复核计划，合理且可复现的缺口允许 Builder 诊断，目标业务仍为 inconclusive；其他 case 的有效业务失败独立处理。准备恢复的 correction 只携带新前缀 `setupSteps` 和冲突/原文依据，程序计算边界并拼回原待测后缀；混合失败仅对 `caseCorrectionIds` 中的其他失败 case 接收完整用例修正。未修改 case 由程序保留，拼接后仍校验完整计划并在新应用实例执行，沿用现有调用额度。Planner 通过需求允许的可见控件准备互斥初始状态，核对数值、公式、选区、权限和对象身份，保持每 case 30 步上限。newContext 的 actor 不自动登录，必须通过公开登录表单建立新会话。
-- 带种子的业务 sound 必须有已执行的状态检查点；声明的种子和单纯页面/网格可见不能替代状态证据。Judge 接收 preparationCheckpointPassed 与先前成功断言，缺证据时在既有复核额度内纠正准备。模型 rationale 只作语义判断，不能授予运行事实。
+- 带种子的业务 sound 必须有已执行的状态检查点；声明的种子和单纯页面/网格可见不能替代状态证据。Judge 接收 preparationCheckpointPassed 与先前成功断言，缺证据时在既有复核额度内纠正准备。准备失败的控件及具名 scope 须有需求锚定才可进入 Builder 诊断；纯猜测准备的 sound 判定在原额度内带反馈纠正，混合失败的有效证据独立处理。strict 错误或候选匹配数大于 1 均按歧义处理。模型 rationale 只作语义判断，不能授予运行事实。
 - 种子导航恢复可处理登录后的入口及混合失败中的可恢复 case；至多两轮本地复查。搜索须有需求依据，同名结果仅依据已声明的 owner 与快照中的对象归属加单层 scope，保留目标名称、操作和预期。恢复通过后仍在新数据实例复验。
 - Worker 等待 SDK 事件队列、压缩、自动重试及压缩后续跑收敛再判终态；空 stop 回执在同窗口补问一次。缺 assistant、空终态、输出长度截断分别记录结构化 terminationReason；超时保留最新已收到的 usage/工具统计和恢复诊断。恢复核对已有实现、完成剩余项，沿用源码未变的检查。修改时验证 `test/pi-recovery.test.ts`、`test/pipeline-recovery.test.ts` 及 baseline 共享执行层。
 - 文件失败的 `inputSummary` 仅含已成功上传输入的字节数、换行数、末尾是否有换行；经统一脱敏截断进入私有证据和 Builder 白名单反馈。文件正文、隐藏计划和步骤序列保持在 Judge。
+- 失败观测的 `pageUrl`（最多 1000 字符）与 `locatorAttempts.matchCount` 仅用于 Judge 恢复和私有证据，不扩展 Builder 白名单。歧义快照优先保留至多三个候选的可访问结构和容器可见文字，总长度仍限 4000，并清除密码输入值；修改时验证 `test/observability.test.ts`、`test/browser/scoped-locators.test.ts`、`test/browser/probe-continuity.test.ts`。
 
 ## Builder 需求输入
 

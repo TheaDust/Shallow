@@ -129,9 +129,11 @@ export class LlmProbePlanner implements ProbePlanner {
             stepIndex: failure.stepIndex,
             step: original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex],
             message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
+            ...(failure.pageUrl ? { pageUrl: sanitizeDiagnosticText(failure.pageUrl, [this.config.apiKey], 1_000) } : {}),
             locatorAttempts: failure.locatorAttempts?.map((attempt) => ({
               locator: attempt.locator,
               message: sanitizePlannerDiagnostic(attempt.message, this.config.apiKey),
+              ...(attempt.matchCount === undefined ? {} : { matchCount: attempt.matchCount }),
             })),
             accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined
               : sanitizeDiagnosticText(failure.locatorSnapshot, [this.config.apiKey], 4_000),
@@ -207,6 +209,10 @@ export class LlmProbePlanner implements ProbePlanner {
               .slice(0, failure.stepIndex).filter(step => step.op.startsWith("expect")),
             category: failure.category,
             message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
+            ...(failure.pageUrl ? { pageUrl: sanitizeDiagnosticText(failure.pageUrl, [this.config.apiKey], 1_000) } : {}),
+            locatorAttempts: failure.locatorAttempts?.map(attempt => ({ locator: attempt.locator,
+              message: sanitizePlannerDiagnostic(attempt.message, this.config.apiKey),
+              ...(attempt.matchCount === undefined ? {} : { matchCount: attempt.matchCount }) })),
             accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined
               : sanitizeDiagnosticText(failure.locatorSnapshot, [this.config.apiKey], 4_000),
           })),

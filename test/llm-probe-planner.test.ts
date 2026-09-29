@@ -560,6 +560,9 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /空值、超长输入、非法格式/);
   assert.match(body, /绝不断言证据未声明的反馈/);
   assert.match(body, /fallback/);
+  assert.match(body, /短操作链/);
+  assert.match(body, /最多选择一条最有价值的连续链/);
+  assert.match(body, /替代重复的单步成功路径/);
   assert.match(body, /anyOf/);
   assert.match(body, /绝不臆造替代措辞/);
 });
@@ -724,7 +727,9 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
 
   const updated = await planner.refineLocators(
     original,
-    [...locatorFailures(`- textbox "Profile name"\npassword: super-secret\ntoken=abc123\n${"x".repeat(10_000)}`),
+    [...locatorFailures(`- textbox "Profile name"\npassword: super-secret\ntoken=abc123\n${"x".repeat(10_000)}`).map(failure => ({ ...failure,
+      pageUrl: "https://example.invalid/#/profile?token=page-secret",
+      locatorAttempts: failure.locatorAttempts?.map(attempt => ({ ...attempt, matchCount: 2 })) })),
       { caseId: "refresh-profile", stepIndex: 2, category: "locator", message: "secret-key missing", locatorSnapshot: "- main" }],
     { validationError: "unchanged failed step secret-key", contentPreview: "password=hidden" },
   );
@@ -735,7 +740,7 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
   });
 
   assert.equal(bodies.length, 1);
-  assert.doesNotMatch(JSON.parse(bodies[0]).messages[1].content, /super-secret|abc123|secret-key|hidden/);
+  assert.doesNotMatch(JSON.parse(bodies[0]).messages[1].content, /super-secret|abc123|secret-key|hidden|page-secret/);
   const request = JSON.parse(bodies[0]) as { messages: Array<{ content: string }> };
   assert.match(request.messages[0].content, /"patches"/);
   assert.doesNotMatch(request.messages[0].content, /"expectationBasis"/);
@@ -746,6 +751,8 @@ test("Probe Planner sends per-case failed steps, all locator attempts, sanitized
   assert.deepEqual(refinement.failures[0].step, original.cases[0].steps[1]);
   assert.ok(refinement.failures[0].accessibilitySnapshot.length <= 4_000);
   assert.match(refinement.failures[0].locatorAttempts[0].message, /strict mode violation/);
+  assert.equal(refinement.failures[0].locatorAttempts[0].matchCount, 2);
+  assert.match(refinement.failures[0].pageUrl, /#\/profile/);
   assert.equal(refinement.failures[1].accessibilitySnapshot, "- main");
   assert.match(refinement.validationError, /unchanged failed step/);
   assert.equal("anchoredRequirementNames" in refinement, false);
@@ -1027,7 +1034,10 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   const sound = await planner.reviewPlan(reviewedPacket, original, behaviorFailures(), undefined,
     { timeoutMs: 1_000, preparationOnlyCaseIds: ["save-profile"] });
   assert.deepEqual(sound, { status: "sound", rationale: "期望与需求原文一致" });
-  const corrected = await planner.reviewPlan(reviewedPacket, original, behaviorFailures());
+  const corrected = await planner.reviewPlan(reviewedPacket, original, behaviorFailures().map(failure => ({ ...failure,
+    pageUrl: "https://example.invalid/#/profile?token=review-secret",
+    locatorAttempts: [{ locator: { by: "role", role: "button", name: "Save" }, message: "missing", matchCount: 0 }],
+  })));
   assert.equal(corrected.status, "corrected");
   if (corrected.status === "corrected") assert.equal(corrected.plan.cases[0].steps.at(-1)?.op, "expectText");
 
@@ -1049,6 +1059,10 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   assert.deepEqual(payload.prerequisites?.[0].seedDeclarations, ['Seed values: account "alice-dev"']);
   assert.equal((payload.failures as unknown[]).length, 1);
   assert.doesNotMatch(JSON.stringify(payload), /source code|git diff|acceptedSha/);
+  const secondPayload = JSON.parse(JSON.parse(bodies[1]).messages[1].content);
+  assert.match(secondPayload.failures[0].pageUrl, /#\/profile/);
+  assert.doesNotMatch(secondPayload.failures[0].pageUrl, /review-secret/);
+  assert.equal(secondPayload.failures[0].locatorAttempts[0].matchCount, 0);
 });
 
 test("Review contract violations are review-category errors with diagnostics", async () => {

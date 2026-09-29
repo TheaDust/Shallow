@@ -103,6 +103,7 @@ export class RunStateStore {
         return {
           caseId: sanitizeDiagnosticText(failure.caseId, this.secrets), stepIndex: failure.stepIndex,
           category: failure.category, message: sanitizeDiagnosticText(failure.message, this.secrets),
+          ...(failure.pageUrl ? { pageUrl: sanitizeDiagnosticText(failure.pageUrl, this.secrets, 1_000) } : {}),
           ...(failure.inputSummary ? { inputSummary: sanitizeDiagnosticText(failure.inputSummary, this.secrets) } : {}),
           ...(failure.locatorSnapshot ? { accessibilityExcerpt: sanitizeDiagnosticText(failure.locatorSnapshot, this.secrets) } : {}),
           ...(step && "locator" in step ? {
@@ -112,6 +113,7 @@ export class RunStateStore {
             locatorAttempts: failure.locatorAttempts.slice(0, 4).map((attempt) => ({
               locator: sanitizeEvidenceLocator(attempt.locator, this.secrets),
               message: sanitizeDiagnosticText(attempt.message, this.secrets),
+              ...(attempt.matchCount === undefined ? {} : { matchCount: attempt.matchCount }),
             })),
           } : {}),
         };

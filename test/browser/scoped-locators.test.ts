@@ -4,6 +4,40 @@ import { test } from "node:test";
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
 import { parseProbePlan } from "../../src/judge/probe-schema.js";
 
+test("Ambiguous targets retain their URL, match count and object containers after a large unrelated view", async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(`<main><div role="grid">${Array.from({ length: 250 }, (_, i) => `<div role="row"><span role="gridcell">Cell ${i}</span></div>`).join("")}</div></main>
+      <section role="region" aria-label="Repository"><p>alice/docs</p><button>Search</button></section>
+      <section role="region" aria-label="Organization"><p>Acme Demo</p><button>Search</button>
+        <label>Password<input type="password" value="private-fixture-value"></label><p>private-fixture-value</p>
+        <span hidden>INTERNAL_INVISIBLE</span><script>const internalOnly="SOURCE_NOT_OBSERVABLE";</script></section>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const plan = parseProbePlan({ packetId: "ambiguous", cases: [{ id: "search", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["fixture"], steps: [{ op: "goto", path: "/nested#/files?token=private-url-value" },
+        { op: "click", locator: { by: "role", role: "button", name: "Search", exact: true } }],
+      assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } }] });
+    const report = await new PlaywrightProbeRunner().run(plan, { baseUrl: `http://127.0.0.1:${address.port}`,
+      stepTimeoutMs: 1_000, caseTimeoutMs: 5_000 });
+    const failure = report.failures[0];
+    assert.equal(failure.category, "locator");
+    assert.equal(failure.locatorAttempts?.[0].matchCount, 2);
+    assert.match(failure.pageUrl ?? "", /nested#\/files/);
+    assert.doesNotMatch(failure.pageUrl ?? "", /private-url-value/);
+    assert.match(failure.locatorSnapshot ?? "", /alice\/docs/);
+    assert.match(failure.locatorSnapshot ?? "", /Acme Demo/);
+    assert.match(failure.locatorSnapshot ?? "", /Repository/);
+    assert.match(failure.locatorSnapshot ?? "", /Organization/);
+    assert.doesNotMatch(failure.locatorSnapshot ?? "", /private-fixture-value/);
+    assert.doesNotMatch(failure.locatorSnapshot ?? "", /SOURCE_NOT_OBSERVABLE|INTERNAL_INVISIBLE/);
+    assert.ok((failure.locatorSnapshot?.length ?? 0) <= 4_000);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
 test("Scoped accessible locators select the correct repeated card and count multiple matches", async () => {
   const server = createServer((_request, response) => {
     response.setHeader("content-type", "text/html");

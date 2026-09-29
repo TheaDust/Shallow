@@ -205,8 +205,10 @@ export interface ProbeFailure {
   category: "assertion" | "locator" | "navigation" | "timeout" | "runner" | "precondition";
   message: string;
   inputSummary?: string;
+  /** Observed location for Judge recovery and private evidence. */
+  pageUrl?: string;
   locatorSnapshot?: string;
-  locatorAttempts?: Array<{ locator: ProbeLocator; message: string }>;
+  locatorAttempts?: Array<{ locator: ProbeLocator; message: string; matchCount?: number }>;
 }
 
 export interface ShadowReport {

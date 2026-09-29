@@ -181,6 +181,11 @@ async function reviewBehaviorFailures(
           throw new Error(`Sound review requires an executed initial-state checkpoint for seeded cases: ${unprepared.map(item => item.caseId).join(", ")}. ` +
             "Seed declarations and a visible page/grid do not prove the required values, identity or permissions. Reconstruct preparation with grounded state assertions and setupStepCount.");
         }
+        if (report.failures.length && report.failures.every(failure => failure.category === "precondition" &&
+          !isLocatorAmbiguity(failure) && !groundedPreparationTarget(packet, plan, failure))) {
+          throw new Error("Sound preparation review requires requirement-grounded targets. " +
+            "The missing preparation controls or containers are planner assumptions; correct the prefix using the visible page and requirement evidence.");
+        }
         await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
           detail: { verdict: "sound", rationale: review.rationale, beforePlanSha256 } });
         return { status: "sound" };
@@ -244,13 +249,23 @@ function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: Pr
 
 function isLocatorAmbiguity(failure: ShadowReport["failures"][number]): boolean {
   return failure.message.includes("strict mode violation") ||
-    failure.locatorAttempts?.some(attempt => attempt.message.includes("strict mode violation")) === true;
+    failure.locatorAttempts?.some(attempt => attempt.message.includes("strict mode violation") ||
+      (attempt.matchCount ?? 0) > 1) === true;
+}
+
+function groundedPreparationTarget(packet: WorkPacket, plan: ProbePlan, failure: ShadowReport["failures"][number]): boolean {
+  const step = plan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex];
+  if (!step) return false;
+  const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
+  return locators.length > 0 && locators.every(locator => groundedLocatorNames(locator, packet).length > 0 &&
+    (!locator.scope || (locator.scope.by === "role" && !locator.scope.name) ||
+      groundedLocatorNames(locator.scope, packet).length > 0));
 }
 
 function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ShadowReport["failures"] {
   return report.failures.filter(failure => {
     if (isLocatorAmbiguity(failure)) return false;
-    if (failure.category === "precondition") return true;
+    if (failure.category === "precondition") return groundedPreparationTarget(packet, plan, failure);
     if (failure.category !== "locator" || !failure.locatorSnapshot) return false;
     const steps = plan.cases.find(item => item.id === failure.caseId)?.steps;
     const step = steps?.[failure.stepIndex];

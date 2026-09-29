@@ -71,7 +71,8 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
       caseId: "c", stepIndex: 2, category: "locator" as const,
       message: "opaque-credential", locatorSnapshot: "Cookie: sid=private\n" + "x".repeat(5000),
       inputSummary: "opaque-credential\n" + "x".repeat(5000),
-      locatorAttempts: [{ locator: { by: "text" as const, text: "opaque-credential" }, message: "password=attempt-secret" }],
+      pageUrl: "https://alice:password-url@example.invalid/#/items?token=url-secret",
+      locatorAttempts: [{ locator: { by: "text" as const, text: "opaque-credential" }, message: "password=attempt-secret", matchCount: 2 }],
     })), probePlan: "HIDDEN-PLAN" };
     const plan: ProbePlan = { packetId: "p", cases: [{ id: "c", requirementIds: ["r"], purpose: "happy_path",
       expectationBasis: ["fixture"], steps: [
@@ -89,9 +90,14 @@ test("Evidence stores only bounded sanitized observations and shares sanitizatio
     assert.match(evidence.planSha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(evidence.failures[0].locators, [{ by: "text", text: "[redacted]" }]);
     assert.equal(evidence.failures[0].locatorAttempts[0].locator.text, "[redacted]");
+    assert.equal(evidence.failures[0].locatorAttempts[0].matchCount, 2);
+    assert.match(evidence.failures[0].pageUrl, /#\/items/);
+    assert.doesNotMatch(JSON.stringify(evidence), /password-url|url-secret/);
     assert.ok(evidence.failures[0].accessibilityExcerpt.length <= 1500);
     const feedback = toBuilderShadowObservation(report, ["opaque-credential"]);
     assert.equal(feedback.failures[0].inputSummary, evidence.failures[0].inputSummary);
+    assert.equal("pageUrl" in feedback.failures[0], false);
+    assert.equal("locatorAttempts" in feedback.failures[0], false);
     assert.doesNotMatch(JSON.stringify(feedback), /opaque-credential|sid=private|HIDDEN-PLAN/);
     for (let index = 1; index < 128; index++) await store.saveEvidence(report);
     assert.equal(await store.saveEvidence(report), undefined);
