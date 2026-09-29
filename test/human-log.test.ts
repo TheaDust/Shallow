@@ -16,6 +16,12 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
 test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {
   const formatter = new HumanRunFormatter();
   const at = "2026-09-29T00:00:00Z";
+  assert.match(formatLine(formatter, eventLine(at, "feature_grouping_retry", {
+    detail: { attempt: 2, reason: "model output cutoff", cutOffByModel: true },
+  })), /分组失败后重试.*第 2 次.*model output cutoff.*扩大输出额度/);
+  assert.match(formatLine(formatter, eventLine(at, "implementation_split", {
+    packetId: "feature-a", detail: { requirementIds: ["A", "B"], reason: "deadline" },
+  })), /拆分后继续实现.*A、B.*deadline/);
   assert.match(formatLine(formatter, eventLine(at, "feature_grouping_started", {
     detail: { requirements: 47 },
   })), /运行时语义分组.*47/);
@@ -388,7 +394,7 @@ test("Human logs explain the bounded implementation retry", () => {
   })), /新会话续做原需求包.*仅重试一次.*45m/);
   assert.match(formatLine(new HumanRunFormatter(), eventLine("2026-09-21T00:00:00Z", "implementation_retry", {
     packetId: "packet-a", detail: { requirementIds: ["A"], timeoutMs: 600_000, reason: "missing_terminal_response" },
-  })), /未收到终态回执.*仅重试一次.*10m/);
+  })), /终态不完整.*仅重试一次.*10m/);
 });
 
 test("Human logs explain a same-session continuation with its actual failure", () => {

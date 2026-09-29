@@ -129,15 +129,18 @@ export class PlannerJsonClient {
 
     let content: string | undefined;
     let usage: PlannerUsage | undefined;
+    let cutOff = false;
     try {
       if (/^text\/event-stream\b/i.test(response.headers.get("content-type") ?? "")) {
         const parsed = extractSseContent(await response.text(), this.label);
         content = parsed.content;
         usage = parsed.usage;
+        cutOff = parsed.cutOff === true;
       } else {
         const parsed = extractContent(await response.json());
         content = parsed.content;
         usage = parsed.usage;
+        cutOff = parsed.cutOff === true;
       }
     } catch (error) {
       throw new PlannerRequestError(error instanceof SyntaxError ? "response" : "transport", `${this.label} response body failed`, {
@@ -149,6 +152,9 @@ export class PlannerJsonClient {
     if (usage !== undefined && onUsage) {
       try { await onUsage(usage); } catch { /* Diagnostics must never change the decision path. */ }
     }
+    if (cutOff) throw new PlannerRequestError("response", `${this.label} response body failed`, {
+      cause: new SyntaxError(`${this.label} stream was cut off by the model`), apiKey: this.config.apiKey,
+    });
     if (content === undefined) {
       throw new PlannerRequestError("response", `${this.label} response has no message content`);
     }
@@ -221,11 +227,12 @@ function balancedBlocks(content: string): string[] {
   return blocks;
 }
 
-function extractSseContent(body: string, label: string): { content?: string; usage?: PlannerUsage } {
+function extractSseContent(body: string, label: string): { content?: string; usage?: PlannerUsage; cutOff?: boolean } {
   let content = "";
   let usage: PlannerUsage | undefined;
   let finished = false;
   let done = false;
+  let cutOff = false;
   for (const block of body.split(/\r\n\r\n|\n\n|\r\r/)) {
     const data = block.split(/\r\n|\n|\r/).filter(line => line.startsWith("data:"))
       .map(line => line.slice(5).replace(/^ /, "")).join("\n");
@@ -248,24 +255,25 @@ function extractSseContent(body: string, label: string): { content?: string; usa
     if (!choice) continue;
     if (typeof choice.delta?.content === "string") content += choice.delta.content;
     if (typeof choice.finish_reason === "string") {
-      if (choice.finish_reason === "length") throw new SyntaxError(`${label} stream was cut off by the model`);
+      if (choice.finish_reason === "length") cutOff = true;
       finished = true;
     }
   }
   if (!done && !finished) throw new Error(`${label} stream ended before completion`);
-  return { ...(content ? { content } : {}), ...(usage ? { usage } : {}) };
+  return { ...(content ? { content } : {}), ...(usage ? { usage } : {}), ...(cutOff ? { cutOff } : {}) };
 }
 
-function extractContent(value: unknown): { content?: string; usage?: PlannerUsage } {
+function extractContent(value: unknown): { content?: string; usage?: PlannerUsage; cutOff?: boolean } {
   if (typeof value !== "object" || value === null) return {};
   const record = value as { choices?: unknown; usage?: unknown };
-  const result: { content?: string; usage?: PlannerUsage } = {};
+  const result: { content?: string; usage?: PlannerUsage; cutOff?: boolean } = {};
   const usage = parseUsage(record.usage);
   if (usage) result.usage = usage;
   const choices = record.choices;
   if (!Array.isArray(choices) || choices.length === 0) return result;
   const first = choices[0];
   if (typeof first !== "object" || first === null) return result;
+  if ((first as { finish_reason?: string }).finish_reason === "length") result.cutOff = true;
   const message = (first as { message?: unknown }).message;
   if (typeof message !== "object" || message === null) return result;
   const content = (message as { content?: unknown }).content;

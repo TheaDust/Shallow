@@ -49,7 +49,6 @@ import type {
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_RETRY_CEILING_MS = 2_700_000;
-const INCOMPLETE_IMPLEMENTATION_RETRY_CEILING_MS = 600_000;
 /** A single Judge operation may recover from transient faults, but cannot own an unlimited run. */
 const PLANNER_RECOVERY_WINDOW_MS = 720_000;
 /** Delivery repairs get longer calls and more rounds than other fixes: the
@@ -59,7 +58,7 @@ const MAX_DELIVERY_REPAIR_ROUNDS = 3;
 
 function needsImplementationRetry(result: BuilderResult): boolean {
   return !result.gatewayFailure && (result.outcome === "timed_out" ||
-    (result.outcome === "failed" && result.terminationReason === "missing_terminal_response"));
+    (result.outcome === "failed" && Boolean(result.terminationReason)));
 }
 
 export interface AppLifecycle {
@@ -333,11 +332,29 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await deps.git.captureAccepted(`shallow: interrupted attempt ${packet.id}`);
     let candidate: CandidateEvidence | undefined;
     let preserved = false;
-    try { candidate = await runnable(); preserved = true; }
-    catch { await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
+    let reason: string | undefined;
+    try {
+      candidate = await runnable();
+      // Interrupted checkpoints must preserve independently established passes.
+      for (const packetToCheck of packets) {
+        const previous = results.get(packetToCheck.id);
+        if (!previous) continue;
+        const passed = previous.report?.passedCases ?? [];
+        const plan = previous.plan ?? await planCache.read(packetToCheck);
+        if (!plan || (previous.status !== "verified" && !passed.length)) continue;
+        const guard = previous.status === "verified" ? plan : {
+          ...plan, cases: plan.cases.filter(item => passed.includes(item.id)),
+        };
+        const checked = await auditPacket(packetToCheck, guard, options, deps, state,
+          () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false });
+        if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
+      }
+      preserved = true;
+    }
+    catch (error) { reason = errorMessage(error); await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
     if (preserved) await checkpoint([], `interrupted ${packet.id}`, candidate);
     await state.record({ at: now(), type: "builder_work_preserved", packetId: packet.id,
-      detail: { preserved, requirementIds: packet.requirementIds } });
+      detail: { preserved, requirementIds: packet.requirementIds, ...(reason ? { reason } : {}) } });
   };
   const audit = async (name: PipelinePhase, previous = results): Promise<Map<string, AuditResult>> => {
     const audited = new Map<string, AuditResult>();
@@ -567,31 +584,55 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const groupingStarted = deps.clock.nowMs();
       await state.record({ at: now(), type: "feature_grouping_started", detail: {
         requirements: catalog.requirements.length, limits: DEFAULT_FEATURE_GROUP_THRESHOLDS } });
-      let source: "llm" | "deterministic" = "llm";
+      let source: "llm" | "deterministic" = "deterministic";
       let reason: string | undefined;
-      try {
+      let feedback: { validationError: string; cutOffByModel: boolean } | undefined;
+      let attempts = 0;
+      for (const attempt of [1, 2]) {
         const remaining = () => budget.remaining("implementation");
-        if (remaining() <= 0) throw new Error("Feature grouping implementation budget exhausted");
-        // No independent wall-clock cutoff: pending responses wait within the run budget.
-        const proposal = await gateway.run("planner", "feature-grouping", remaining,
-          () => deps.grouper!.group(catalog, { timeoutMs: Math.max(1, remaining()), signal: preplanAbort.signal,
-            onUsage: usage => state.record({ at: now(), type: "feature_grouping_usage", detail: usage }) }),
-          preplanAbort.signal);
-        featureGrouping = parseFeatureGrouping(proposal, catalog);
-      } catch (error) {
-        source = "deterministic";
-        reason = sanitizeDiagnosticText(errorMessage(error), deps.diagnosticSecrets, 500);
+        if (remaining() <= 0 || gateway.exhausted) break;
+        attempts = attempt;
+        try {
+          // Pending responses wait within the run budget; transport recovery is shared.
+          const proposal = await gateway.run("planner", "feature-grouping", remaining,
+            () => deps.grouper!.group(catalog, { timeoutMs: Math.max(1, remaining()), signal: preplanAbort.signal,
+              feedback, onUsage: usage => state.record({ at: now(), type: "feature_grouping_usage", detail: { ...usage, attempt } }) }),
+            preplanAbort.signal);
+          featureGrouping = parseFeatureGrouping(proposal, catalog);
+          source = "llm"; reason = undefined;
+          break;
+        } catch (error) {
+          const diagnostic = error instanceof ProbePlannerError ? error.diagnostics : undefined;
+          reason = sanitizeDiagnosticText([errorMessage(error), diagnostic?.validationError].filter(Boolean).join(": "), deps.diagnosticSecrets, 500);
+          const nonRetryableRequest = diagnostic?.category === "transport" && !diagnostic.retryable;
+          if (attempt === 2 || nonRetryableRequest || preplanAbort.signal.aborted || remaining() <= 0) break;
+          feedback = { validationError: reason, cutOffByModel: diagnostic?.validationError?.includes("cut off by the model") ?? false };
+          await state.record({ at: now(), type: "feature_grouping_retry", detail: { attempt: 2, reason,
+            ...(diagnostic ? { category: diagnostic.category, httpStatus: diagnostic.httpStatus } : {}),
+            cutOffByModel: feedback.cutOffByModel } });
+        }
       }
       await state.record({ at: now(), type: "feature_grouping_finished", detail: {
-        source, reason, grouping: featureGrouping.stats, durationMs: Math.max(0, deps.clock.nowMs() - groupingStarted),
+        source, reason, attempts, grouping: featureGrouping.stats, durationMs: Math.max(0, deps.clock.nowMs() - groupingStarted),
         groups: featureGrouping.packets.map((packet, index) => ({ packetId: packet.id,
           requirementIds: packet.requirementIds, purpose: featureGrouping.purposes?.[index] })),
       } });
     }
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
-    for (let packetIndex = 0; packetIndex < featureGrouping.packets.length; packetIndex++) {
-      const packet = featureGrouping.packets[packetIndex];
+    const implementationQueue = [...featureGrouping.packets];
+    const splitForRecovery = async (packet: WorkPacket, index: number, reason: string): Promise<boolean> => {
+      if (packet.requirements.length < 2 || budget.remaining("implementation") <= 0 || gateway.exhausted) return false;
+      const recovery = packet.requirements.map((requirement, i) =>
+        makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 3));
+      implementationQueue.splice(index + 1, 0, ...recovery);
+      await state.record({ at: now(), type: "implementation_split", packetId: packet.id,
+        detail: { requirementIds: packet.requirementIds, reason,
+          packets: recovery.map(item => ({ packetId: item.id, requirementIds: item.requirementIds })) } });
+      return true;
+    };
+    for (let packetIndex = 0; packetIndex < implementationQueue.length; packetIndex++) {
+      const packet = implementationQueue[packetIndex];
       if (budget.remaining("implementation") <= 0 || gateway.exhausted) break;
       const currentModuleId = packet.requirements[0]?.folderPath[1] ?? packet.requirements[0]?.id;
       // Module boundary: run full audit on the previous module before starting the next one.
@@ -611,6 +652,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       const { unmet: unmetDependencies, provisional: provisionalDependencies } = dependencyGate(packet, currentModuleId);
       if (unmetDependencies.length > 0) {
+        const hasEligibleMember = packet.requirements.some(requirement =>
+          dependencyGate(makePacket(packet.id, [requirement]), currentModuleId).unmet.length === 0);
+        if (hasEligibleMember && await splitForRecovery(packet, packetIndex, "Separate requirements with ready dependencies from blocked members")) continue;
         state.markRequirements(packet.requirementIds, "blocked");
         await state.record({ at: now(), type: "dependency_gate_blocked", packetId: packet.id,
           detail: { requirementIds: packet.requirementIds,
@@ -651,11 +695,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       // goes through the project itself (code, tests, ARCHITECTURE.md).
       let result: BuilderResult;
       const implementationBaselineSha = state.snapshot.acceptedSha;
-      const implementationDeadline = deps.clock.nowMs() + budget.callTimeout("implementation", IMPLEMENTATION_CALL_CEILING_MS);
+      const implementationTimeoutMs = budget.callTimeout("implementation", packet.attempt === 3 ? IMPLEMENTATION_RETRY_CEILING_MS : IMPLEMENTATION_CALL_CEILING_MS);
+      const implementationDeadline = deps.clock.nowMs() + implementationTimeoutMs;
       const sessionKey = randomUUID();
       let mayContinue = true;
       result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey });
+        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey, timeoutMs: implementationTimeoutMs });
       // A gateway outage must not end the run: keep retrying the same packet
       // with a fresh call window while the failure is retryable; a
       // non-retryable rejection stops dispatch at the check below.
@@ -664,12 +709,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           detail: { requirementIds: packet.requirementIds, failure } }),
         () => build({ mode: "implement", packet, outputDir: options.outputDir,
           platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
-        "implementation", { sessionKey }));
+        "implementation", { sessionKey, timeoutMs: implementationTimeoutMs }));
       if (needsImplementationRetry(result)) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
-        const retryTimeoutMs = budget.callTimeout("implementation", result.terminationReason === "missing_terminal_response"
-          ? INCOMPLETE_IMPLEMENTATION_RETRY_CEILING_MS : IMPLEMENTATION_RETRY_CEILING_MS);
+        const retryTimeoutMs = packet.attempt === 3 ? 0 : budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
         if (retryTimeoutMs > 0 && !gateway.exhausted) {
           const retryPacket: WorkPacket = { ...packet, attempt: 2 };
           state.setPacketAttempt(packet.id, retryPacket.attempt);
@@ -686,9 +730,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             () => build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
               platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
               "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true }));
-          if (result.outcome === "timed_out" && !result.gatewayFailure) await preserveInterruptedWork(retryPacket);
+          if (needsImplementationRetry(result)) await preserveInterruptedWork(retryPacket);
         }
-        if (result.outcome === "timed_out" && !result.gatewayFailure) {
+        if (needsImplementationRetry(result)) {
+          if (await splitForRecovery(packet, packetIndex, result.terminationReason ?? "Implementation retry reached its deadline")) continue;
           state.markRequirements(packet.requirementIds, "blocked");
           await state.record({ at: now(), type: "module_failed", packetId: packet.id,
             detail: { requirementIds: packet.requirementIds, reason: "Builder did not complete within the bounded implementation attempts; partial work is not a completed implementation" } });
@@ -744,6 +789,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         }
       }
       if (reason !== undefined) {
+        if (needsImplementationRetry(result)) {
+          await preserveInterruptedWork(packet);
+          if (await splitForRecovery(packet, packetIndex, reason)) continue;
+        }
         if (result.outcome !== "failed") await deps.git.captureAccepted(`shallow: attempt ${packet.id}`);
         await deps.git.restoreAccepted(state.snapshot.acceptedSha);
         state.markRequirements(packet.requirementIds, "blocked");

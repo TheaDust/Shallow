@@ -5,12 +5,33 @@ import { loadRequirementCatalog } from "../src/catalog.js";
 import { FEATURE_GROUPING_SCHEMA, parseFeatureGrouping } from "../src/feature-grouper.js";
 import { LlmFeatureGrouper } from "../src/llm-feature-grouper.js";
 import { DEFAULT_FEATURE_GROUP_THRESHOLDS, featureGroupPackets } from "../src/scheduler.js";
-import type { PlannerUsage } from "../src/planner-json-client.js";
+import { PlannerRequestError, type PlannerUsage } from "../src/planner-json-client.js";
 
 const config = { baseUrl: "https://gateway.example/v1", apiKey: "fixture-key", model: "provider/model", timeoutMs: 1000 };
 const groups = (ids: string[][]) => ({ groups: ids.map(requirementIds => ({ requirementIds, purpose: "共同状态操作" })) });
 const github = () => loadRequirementCatalog("data/official-competition/hackathon--github/requirements.yaml");
 const sheet = () => loadRequirementCatalog("data/official-competition/hackathon--sheet/requirements.yaml");
+
+test("Cutoff grouping keeps usage and expands the retry output allowance with explicit feedback", async () => {
+  const catalog = await sheet();
+  const response = groups(featureGroupPackets(catalog).packets.map(packet => packet.requirementIds));
+  let calls = 0;
+  const usages: PlannerUsage[] = [];
+  const grouper = new LlmFeatureGrouper(config, async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (++calls === 1) return new Response(`data: ${JSON.stringify({ choices: [{ index: 0,
+      delta: { content: '{"groups":[' }, finish_reason: "length" }], usage: { prompt_tokens: 100, completion_tokens: 16384 } })}\n\ndata: [DONE]\n\n`,
+      { headers: { "content-type": "text/event-stream" } });
+    assert.equal(body.max_tokens, 32768);
+    assert.match(body.messages[1].content, /cut off/);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }));
+  });
+  await assert.rejects(grouper.group(catalog, { timeoutMs: 1000, onUsage: usage => { usages.push(usage); } }),
+    error => error instanceof PlannerRequestError && error.diagnostics.validationError === "Feature grouper stream was cut off by the model");
+  assert.equal(usages[0].total, 16484);
+  assert.deepEqual(await grouper.group(catalog, { timeoutMs: 1000,
+    feedback: { validationError: "cut off", cutOffByModel: true } }), response);
+});
 
 test("Observed runtime proposals preserve Catalog objects, scenarios and independent atomic coverage", async () => {
   for (const [app, count] of [["github", 17], ["sheet", 12]] as const) {

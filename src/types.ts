@@ -118,8 +118,9 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
 
 interface RunEventDetails {
   gateway_wait: { source: "builder" | "planner"; retry: number; delayMs: number; failure: import("./gateway-failure.js").GatewayFailure; reason?: string };
-  builder_work_preserved: { preserved: boolean; requirementIds: string[] };
-  implementation_retry: { requirementIds: string[]; timeoutMs: number; reason?: "timeout" | "missing_terminal_response" };
+  builder_work_preserved: { preserved: boolean; requirementIds: string[]; reason?: string };
+  implementation_retry: { requirementIds: string[]; timeoutMs: number; reason?: "timeout" | import("./builder/port.js").BuilderResult["terminationReason"] };
+  implementation_split: { requirementIds: string[]; reason: string; packets: Array<{ packetId: string; requirementIds: string[] }> };
   implementation_continued: { reason: string; timeoutMs: number };
   implementation_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
   implementation_stopped: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
@@ -138,8 +139,9 @@ interface RunEventDetails {
     starterScaffold?: { status: import("./starter-scaffold.js").StarterScaffoldStatus; reason: string; files: string[] };
     grouping?: GroupingStats; groupingSource?: "pending_llm" };
   feature_grouping_started: { requirements: number; limits: import("./scheduler.js").FeatureGroupThresholds };
-  feature_grouping_usage: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
-  feature_grouping_finished: { source: "llm" | "deterministic"; reason?: string; grouping: GroupingStats; durationMs: number;
+  feature_grouping_usage: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number; attempt?: number };
+  feature_grouping_retry: { attempt: number; reason: string; category?: string; httpStatus?: number; cutOffByModel: boolean };
+  feature_grouping_finished: { source: "llm" | "deterministic"; reason?: string; attempts?: number; grouping: GroupingStats; durationMs: number;
     groups: Array<{ packetId: string; requirementIds: string[]; purpose?: string }> };
   dependency_gate_blocked: { requirementIds: string[]; unmetDependencyIds: string[];
     dependencyStatuses: Record<string, RequirementStatus> };
@@ -147,7 +149,7 @@ interface RunEventDetails {
   packet_selected: { requirementIds?: string[]; names?: string[] };
   builder_started: { attempt?: number; mode?: string };
   builder_finished: { outcome?: "completed" | "failed" | "timed_out"; sessionId?: string; summary?: string;
-    terminationReason?: "missing_terminal_response";
+    terminationReason?: import("./builder/port.js").BuilderResult["terminationReason"];
     attempt?: number; durationMs?: number; execution?: Record<string, unknown>; gatewayFailure?: import("./gateway-failure.js").GatewayFailure };
   builder_reference_images: { mode: string; attachedCount: number; skipped: Array<{ reference: string; reason: string }> };
   candidate_prepared: Omit<CandidateEvidence, "runtimeId"> & { reused: boolean; installed: boolean;

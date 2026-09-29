@@ -7,6 +7,7 @@ export interface FeatureGroupingOptions {
   timeoutMs: number;
   onUsage?: PlannerUsageListener;
   signal?: AbortSignal;
+  feedback?: { validationError: string; cutOffByModel: boolean };
 }
 
 export interface FeatureGrouper {

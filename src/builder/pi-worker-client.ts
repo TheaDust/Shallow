@@ -10,6 +10,7 @@ import { ownProcessTree, toolEnvironment } from "../process-lifecycle.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sanitizeDiagnosticText } from "../diagnostics.js";
 import { BuilderApp, type AppAction } from "./builder-app.js";
+import type { BuilderTermination } from "./port.js";
 
 export interface PiWorkerRequest extends CodingAgentRequest {
   gateway: GatewayConfig;
@@ -26,6 +27,16 @@ export interface PiWorkerResult extends CodingAgentResult {
   peakRssBytes?: number;
   usage?: ExecutionUsage;
   timing?: ExecutionTiming;
+  termination?: BuilderTermination;
+}
+export interface PiWorkerProgress {
+  type: "builder_progress";
+  sessionId: string;
+  toolCalls: number;
+  compactions: number;
+  usage: ExecutionUsage;
+  timing: ExecutionTiming;
+  termination: BuilderTermination;
 }
 
 /** One child per prompt. Never imports the SDK in the long-lived controller. */
@@ -66,6 +77,7 @@ export class PiWorkerClient implements CodingAgentPort {
     let timer: NodeJS.Timeout | undefined;
     let tree: Awaited<ReturnType<typeof ownProcessTree>> | undefined;
     let stderr = "";
+    let progress: PiWorkerProgress | undefined;
     child.stderr?.on("data", chunk => { stderr = (stderr + String(chunk)).slice(-4_000); });
     let result: PiWorkerResult;
     let cleanupMs = 0;
@@ -78,11 +90,12 @@ export class PiWorkerClient implements CodingAgentPort {
     try {
       const completed = new Promise<PiWorkerResult>((res, rej) => {
         child.once("error", rej);
-        child.once("exit", () => res({ ...fallback, summary: stderr || fallback.summary }));
+        child.once("exit", () => res({ ...fallback, ...progress, summary: stderr || fallback.summary }));
         child.on("message", message => {
+          if (message && typeof message === "object" && "type" in message && message.type === "builder_progress") progress = message as PiWorkerProgress;
           if (message && typeof message === "object" && "outcome" in message) res(message as PiWorkerResult);
         });
-        timer = setTimeout(() => res({ ...fallback, outcome: "timed_out", summary: "Pi call deadline reached" }), Math.max(1, input.timeoutMs));
+        timer = setTimeout(() => res({ ...fallback, ...progress, outcome: "timed_out", summary: "Pi call deadline reached" }), Math.max(1, input.timeoutMs));
       });
       tree = await ownProcessTree(child);
       child.send({ ...input, gateway: this.gateway, sessionDir: this.sessionDir, sessionFile: prior?.file,
@@ -106,10 +119,14 @@ export class PiWorkerClient implements CodingAgentPort {
       } finally { cleanupMs = Date.now() - cleanupStarted; this.active = undefined; finish(); }
     }
     result.summary = sanitizeDiagnosticText(result.summary, [this.gateway.apiKey]);
+    if (result.termination?.recoveryError) {
+      result.termination.recoveryError = sanitizeDiagnosticText(result.termination.recoveryError, [this.gateway.apiKey], 1000);
+    }
     result.execution = { engine: "pi", version: "0.73.1", nodeVersion: process.version, workerPid: child.pid!,
       resumed: Boolean(prior), durationMs: Date.now() - started, cleanupMs, toolCalls: result.toolCalls,
       compactions: result.compactions, peakRssBytes: result.peakRssBytes,
-      usage: result.usage ?? { status: "unavailable" }, ...(result.timing ? { timing: result.timing } : {}) };
+      usage: result.usage ?? { status: "unavailable" }, ...(result.timing ? { timing: result.timing } : {}),
+      ...(result.termination ? { termination: result.termination } : {}) };
     if (input.sessionKey) {
       if (result.outcome === "completed" && result.sessionFile) this.sessions.set(input.sessionKey, { file: result.sessionFile, cwd: resolve(input.outputDir) });
       else this.sessions.delete(input.sessionKey);

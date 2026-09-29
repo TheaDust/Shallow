@@ -95,6 +95,8 @@ function describe(type: string, event: RunEvent): string | null {
       const grouping = asRecord(detail?.grouping);
       return `${detail?.source === "llm" ? "语义分组已通过校验" : "语义分组未采用，使用确定性分组"}；功能组 ${pickNumber(grouping, "packets") ?? 0}${reason ? `；原因：${reason}` : ""}`;
     }
+    case "feature_grouping_retry":
+      return `语义分组失败后重试；第 ${detail?.attempt} 次；原因：${reason ?? "未知"}${detail?.cutOffByModel ? "；扩大输出额度" : ""}`;
     case "dependency_gate_blocked":
       return `基础依赖尚无已完成的可运行实现，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未完成依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
     case "dependency_gate_provisional":
@@ -104,9 +106,11 @@ function describe(type: string, event: RunEvent): string | null {
     case "gateway_wait":
       return `模型网关恢复等待（${packetId}）；调用方 ${pickString(detail, "source")}；剩余等待 ${renderDuration(pickNumber(detail, "delayMs") ?? 0)}；原调用重试 ${pickNumber(detail, "retry") ?? 0}${reason ? `；底层原因：${reason}` : ""}`;
     case "builder_work_preserved":
-      return `中断任务的代码${detail?.preserved ? "已保存为可运行检查点" : "无法运行，已恢复上一检查点"}（${packetId}）；当前需求仍待完成`;
+      return `中断任务的代码${detail?.preserved ? "已保存为可运行检查点" : "未通过保留检查，已恢复上一检查点"}（${packetId}）；当前需求仍待完成${reason ? `；${reason}` : ""}`;
+    case "implementation_split":
+      return `未完成需求包拆分后继续实现（${packetId}）；原子需求 ${strings(detail?.requirementIds).join("、")}；${reason ?? ""}`;
     case "implementation_retry":
-      return `实现${detail?.reason === "missing_terminal_response" ? "未收到终态回执" : "超时"}后以新会话续做原需求包（${packetId}）；仅重试一次，上限 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}`;
+      return `实现${detail?.reason && detail.reason !== "timeout" ? "终态不完整" : "超时"}后以新会话续做原需求包（${packetId}）；仅重试一次，上限 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}`;
     case "implementation_continued":
       return `实现检查失败，同会话续做一次（${packetId}）；剩余额度 ${renderDuration(pickNumber(detail, "timeoutMs") ?? 0)}；${pickString(detail, "reason")}`;
     case "implementation_paused":
@@ -275,6 +279,12 @@ function describeBuilderExecution(value: unknown): string {
   if (byTool.length) parts.push(`各工具 ${byTool.join("、")}`);
   const compactions = asNumber(execution.compactions);
   if (compactions !== null) parts.push(`压缩 ${compactions}`);
+  const termination = asRecord(execution.termination);
+  if (termination?.compactionReason) parts.push(`压缩原因 ${termination.compactionReason}`);
+  if (termination?.recoveryError) parts.push(`恢复失败 ${sanitizeDiagnosticText(String(termination.recoveryError))}`);
+  if (termination?.compactionPending || termination?.retryPending) {
+    parts.push(`终态 ${termination.lastMessageRole ?? "未知"}；压缩等待 ${Boolean(termination.compactionPending)}；重试等待 ${Boolean(termination.retryPending)}`);
+  }
   return parts.length ? `；${parts.join("；")}` : "";
 }
 

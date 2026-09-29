@@ -23,11 +23,12 @@ for (const scenario of ["runnable", "unchanged", "broken", "timed_out"] as const
       };
       const summary = await f.run();
       const rescued = (await f.events()).filter(e => e.type === "module_rescued");
-      if (scenario === "runnable") {
-        assert.equal(f.builder.requests.length, 3, "one continuation plus the verified dependent packet");
+      if (scenario === "runnable" || scenario === "timed_out") {
+        assert.equal(f.builder.requests.length, scenario === "runnable" ? 3 : 5,
+          "a timed-out continuation recovers the foundation atom by atom before its dependent packet");
         assert.equal(summary.status, "delivered");
         assert.deepEqual(summary.implementedRequirementIds, ["A", "B", "C"]);
-        assert.equal(rescued.length, 1);
+        assert.equal(rescued.length, scenario === "runnable" ? 1 : 0);
         assert.deepEqual(f.git.restoredShas, []);
       } else {
         assert.equal(f.builder.requests.length, 2, "no dependent Builder call after the foundation failed");

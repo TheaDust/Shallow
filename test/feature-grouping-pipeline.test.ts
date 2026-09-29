@@ -37,13 +37,13 @@ test("The main pipeline uses the runtime proposal once while auditing every orig
   });
 });
 
-test("Invalid model coverage falls back without a second semantic request or losing requirements", async () => {
+test("Invalid model coverage gets feedback retry before fallback without losing requirements", async () => {
   await withModulePipeline(async f => {
     let calls = 0;
     f.deps.diagnosticSecrets = ["fixture-key"];
     f.deps.grouper = { group: async () => { calls++; return { groups: [{ requirementIds: ["fixture-key"], purpose: "unknown" }] }; } };
     const result = await f.run();
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     assert.equal(result.status, "delivered");
     assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []), [["A", "B"], ["C"]]);
     const event = (await f.events()).find(event => event.type === "feature_grouping_finished");
@@ -51,6 +51,42 @@ test("Invalid model coverage falls back without a second semantic request or los
     assert.equal(event.detail?.source, "deterministic");
     assert.match(event.detail?.reason ?? "", /Unknown/);
     assert.doesNotMatch(event.detail?.reason ?? "", /fixture-key/);
+    const retry = (await f.events()).find(event => event.type === "feature_grouping_retry");
+    assert.ok(retry?.type === "feature_grouping_retry");
+    assert.doesNotMatch(retry.detail?.reason ?? "", /fixture-key/);
+  });
+});
+
+test("Grouping response failure retries with the underlying diagnosis and then uses the valid proposal", async () => {
+  await withModulePipeline(async f => {
+    const { PlannerRequestError } = await import("../src/planner-json-client.js");
+    let calls = 0;
+    f.deps.grouper = { group: async (_catalog, options) => {
+      assert.equal(f.builder.requests.length, 0);
+      if (++calls === 1) throw new PlannerRequestError("response", "Feature grouper response body failed", {
+        cause: new SyntaxError("Feature grouper stream was cut off by the model"),
+      });
+      assert.match(options.feedback?.validationError ?? "", /cut off by the model/);
+      assert.equal(options.feedback?.cutOffByModel, true);
+      return proposal;
+    } };
+    assert.equal((await f.run()).status, "delivered");
+    assert.equal(calls, 2);
+    const event = (await f.events()).find(item => item.type === "feature_grouping_finished");
+    assert.equal(event?.detail?.source, "llm");
+    assert.equal(event?.detail?.attempts, 2);
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []), [["A"], ["B"], ["C"]]);
+  });
+});
+
+test("Grouping authentication rejection remains local and does not retry invalid credentials", async () => {
+  await withModulePipeline(async f => {
+    const { PlannerRequestError } = await import("../src/planner-json-client.js");
+    let calls = 0;
+    f.deps.grouper = { group: async () => { calls++; throw new PlannerRequestError("transport", "unauthorized", { httpStatus: 401 }); } };
+    assert.equal((await f.run()).status, "delivered");
+    assert.equal(calls, 1);
+    assert.equal(f.builder.requests.length, 2);
   });
 });
 

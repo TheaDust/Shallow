@@ -9,7 +9,7 @@ import { PiExecutionCollector } from "./pi-execution-stats.js";
 import { piProviderModel } from "./pi-model-config.js";
 import { loadReferenceImages } from "./reference-images.js";
 import { isImageUnsupportedMessage } from "./vision-probe.js";
-import type { PiWorkerRequest, PiWorkerResult } from "./pi-worker-client.js";
+import type { PiWorkerRequest, PiWorkerResult, PiWorkerProgress } from "./pi-worker-client.js";
 import { fillTemplate, loadPrompt } from "../prompt-assets.js";
 import { classifyGatewayFailure, observeGatewayFailures } from "../gateway-failure.js";
 
@@ -51,6 +51,10 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   if (modelFallbackMessage) throw new Error(modelFallbackMessage);
   let toolCalls = 0;
   let compactions = 0;
+  let pendingRestart = false;
+  let compactionReason: string | undefined;
+  let recoveryError: string | undefined;
+  let wake: (() => void) | undefined;
   const collector = new PiExecutionCollector();
   const unsubscribe = session.subscribe(event => {
     const atMs = Date.now();
@@ -64,8 +68,26 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
       collector.outputProduced(event.message.content.filter(part => part.type === "text")
         .reduce((total, part) => total + Buffer.byteLength(part.text, "utf8"), 0));
     }
-    if (event.type === "compaction_end") compactions++;
+    if (event.type === "agent_start") pendingRestart = false;
+    if (event.type === "compaction_start") compactionReason = event.reason;
+    if (event.type === "compaction_end") {
+      if (event.result) compactions++;
+      pendingRestart = event.willRetry;
+      recoveryError = event.errorMessage;
+    }
+    if (event.type === "turn_end" || event.type === "compaction_end") reportProgress();
+    wake?.(); wake = undefined;
   });
+  const termination = () => ({ lastMessageRole: session.messages.at(-1)?.role,
+    lastAssistantStopReason: [...session.messages].reverse().find(message => message.role === "assistant")?.stopReason,
+    compactionPending: session.isCompacting, retryPending: session.isRetrying || pendingRestart,
+    ...(compactionReason ? { compactionReason } : {}), ...(recoveryError ? { recoveryError } : {}) });
+  const reportProgress = () => {
+    process.send?.({ type: "builder_progress", sessionId: manager.getSessionId(), toolCalls, compactions,
+      ...collector.summarize(session.getSessionStats().tokens), termination: termination() } satisfies PiWorkerProgress);
+  };
+  const progressTimer = setInterval(reportProgress, 15_000);
+  progressTimer.unref();
   // attachReferences=false is the run's switch: references stay declared for the
   // log, but no image is read off disk and none reaches the model.
   const attach = input.attachReferences !== false;
@@ -74,6 +96,17 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
     : !input.textOnly && input.requirementsDir && input.references?.length
       ? await loadReferenceImages(input.requirementsDir, input.references) : { images: [], skipped: input.textOnly ? [] : (input.references ?? []).map(reference => ({ reference, reason: "requirements_unavailable" })) };
   const images = attach && !input.textOnly ? loaded.images.map(image => ({ type: "image" as const, mimeType: image.mime, data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1) })) : [];
+  const promptUntilIdle = async (text: string, promptImages = images) => {
+    await session.prompt(text, { images: promptImages, expandPromptTemplates: false });
+    for (;;) {
+      // AgentSession processes its event queue after Agent.prompt resolves.
+      // Drain that queue before checking compaction or its scheduled continuation.
+      await new Promise<void>(resolve => setImmediate(resolve));
+      await session.agent.waitForIdle();
+      if (!session.isCompacting && !session.isRetrying && !session.isStreaming && !pendingRestart) return;
+      await new Promise<void>(resolve => { wake = resolve; });
+    }
+  };
   // Install capture first so it tees the raw body, then resilience outermost so
   // the client reads a repaired stream while diagnostics keep the original bytes.
   const capture = input.sseCaptureDir ? installSseCapture(input.sseCaptureDir, input.sessionKey ?? "builder") : undefined;
@@ -88,18 +121,29 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
         UNAVAILABLE_REFERENCES: loaded.skipped.map(item => `- ${item.reference}: ${item.reason}`).join("\n") || "无",
       });
     let promptError: unknown;
-    try { await session.prompt(`${input.taskPrompt}\n\n${imageNote}`, { images, expandPromptTemplates: false }); }
+    try {
+      await promptUntilIdle(`${input.taskPrompt}\n\n${imageNote}`);
+      const stopped = session.messages.at(-1);
+      if (stopped?.role === "assistant" && stopped.stopReason === "stop" &&
+        !stopped.content.some(part => part.type === "text" && part.text.trim())) {
+        await promptUntilIdle(loadPrompt("system", "completion-receipt"), []);
+      }
+    }
     catch (error) { promptError = error; }
     const last = session.messages.at(-1);
-    const success = !promptError && last?.role === "assistant" && last.stopReason === "stop";
+    const text = last?.role === "assistant" ? last.content.filter(part => part.type === "text").map(part => part.text).join("\n").trim() : "";
+    const success = !promptError && last?.role === "assistant" && last.stopReason === "stop" && Boolean(text);
     // Only SDK/provider errors may clarify a gateway status; model content cannot.
     const providerError = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage : undefined;
-    const summary = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage || last.content.filter(part => part.type === "text").map(part => part.text).join("\n") : "Pi did not reach a terminal assistant response";
+    const summary = promptError ? String(promptError) : last?.role === "assistant" ? last.errorMessage || text || "Pi returned an empty terminal response" : "Pi did not reach a terminal assistant response";
     const stats = collector.summarize(session.getSessionStats().tokens);
     const observedFailure = gateway.failure();
     return { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
       outcome: success ? "completed" : "failed", summary: summary.slice(-8_000), toolCalls, compactions, peakRssBytes: process.resourceUsage().maxRSS * 1024,
-      ...(!promptError && last?.role !== "assistant" ? { terminationReason: "missing_terminal_response" as const } : {}),
+      ...(!promptError && last?.role !== "assistant" ? { terminationReason: "missing_terminal_response" as const } :
+        !promptError && last?.role === "assistant" && last.stopReason === "length" ? { terminationReason: "model_length_limit" as const } :
+        !promptError && last?.role === "assistant" && last.stopReason === "stop" && !text ? { terminationReason: "empty_terminal_response" as const } : {}),
+      termination: termination(),
       ...(!success && observedFailure ? { gatewayFailure: classifyGatewayFailure(observedFailure, providerError) } : {}),
       usage: stats.usage, timing: stats.timing,
       imageUnsupported: !success && images.length > 0 && toolCalls === 0 && isImageUnsupportedMessage(summary),
@@ -107,5 +151,5 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
         mode: !attach ? "disabled" : input.visionUnsupported ? "unsupported" : input.textOnly ? "text_fallback" : images.length ? "attached" : "unavailable",
         attachedCount: images.length, skipped: loaded.skipped } as const } : {}),
     };
-  } finally { unsubscribe(); session.dispose(); gateway.uninstall(); resilience.uninstall(); await capture?.uninstall(); await closeSharedBrowser(); }
+  } finally { clearInterval(progressTimer); unsubscribe(); session.dispose(); gateway.uninstall(); resilience.uninstall(); await capture?.uninstall(); await closeSharedBrowser(); }
 }
