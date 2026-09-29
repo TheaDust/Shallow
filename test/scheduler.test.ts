@@ -39,8 +39,8 @@ test("The requirement-count threshold closes a group and overflow forms the next
     requirement(`G${i + 1}`, i, { folder: ["ROOT", "M", "P"] })));
   const { packets, stats } = featureGroupPackets(catalog);
   assert.deepEqual(packets.map(item => item.requirementIds),
-    [["G1", "G2", "G3", "G4", "G5"], ["G6", "G7"]]);
-  assert.equal(stats.maxPacketSize, 5);
+    [["G1", "G2", "G3", "G4"], ["G5", "G6", "G7"]]);
+  assert.equal(stats.maxPacketSize, 4);
   assert.equal(stats.thresholdLimitedPackets, 1);
 });
 
@@ -116,9 +116,9 @@ test("Atomic audit covers every requirement and carries transitive textual prere
 });
 
 test("Real requirement trees group deterministically with unique coverage", async () => {
-  const expectedPackets: Record<string, number> = { "12306": 26, bookstack: 12, ctrip: 31,
-    keep: 10, prestashop: 20, stackoverflow: 18, ticketbooking: 1,
-    "official-competition/hackathon--github": 13, "official-competition/hackathon--sheet": 9 };
+  const expectedPackets: Record<string, number> = { "12306": 33, bookstack: 13, ctrip: 36,
+    keep: 11, prestashop: 25, stackoverflow: 21, ticketbooking: 1,
+    "official-competition/hackathon--github": 16, "official-competition/hackathon--sheet": 13 };
   for (const [name, count] of Object.entries(expectedPackets)) {
     const catalog = await loadRequirementCatalog(resolve(`data/${name}/requirements.yaml`));
     const { packets, stats } = featureGroupPackets(catalog);
@@ -135,15 +135,19 @@ test("Sheet groups deterministically under the default thresholds", async () => 
   const catalog = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
   const { packets } = featureGroupPackets(catalog);
   assert.deepEqual(packets.map(item => item.requirementIds), [
-    ["REQ-1-1-1", "REQ-1-2-2", "REQ-1-2-1", "REQ-1-3-1", "REQ-1-3-2"],
-    ["REQ-2-1-3", "REQ-2-1-1", "REQ-2-2-1", "REQ-2-2-2"],
-    ["REQ-3-1-1", "REQ-3-1-2", "REQ-3-1-3", "REQ-3-2-1"],
-    ["REQ-3-2-2"],
-    ["REQ-4-1-1", "REQ-4-2-1", "REQ-4-2-2", "REQ-4-1-2"],
-    ["REQ-5-1-2", "REQ-5-3-1"],
-    ["REQ-2-1-4"],
-    ["REQ-5-2-1", "REQ-5-1-1"],
+    ["REQ-1-1-1", "REQ-1-2-2", "REQ-1-2-1", "REQ-1-3-1"],
+    ["REQ-1-3-2"],
+    ["REQ-2-1-3", "REQ-2-1-1", "REQ-2-2-1"],
+    ["REQ-2-2-2"],
+    ["REQ-3-1-1", "REQ-3-1-2", "REQ-3-1-3"],
+    ["REQ-3-2-1", "REQ-3-2-2"],
+    ["REQ-4-1-1", "REQ-4-2-1"],
+    ["REQ-4-2-2", "REQ-4-1-2"],
+    ["REQ-5-1-2", "REQ-5-2-1"],
     ["REQ-2-1-2"],
+    ["REQ-5-1-1"],
+    ["REQ-5-3-1"],
+    ["REQ-2-1-4"],
   ]);
 });
 

@@ -7,6 +7,7 @@ import {
   PROBE_PLAN_BODY,
   PROBE_PLAN_JSON_SCHEMA,
   type ProbePlan,
+  type ProbeCase,
 } from "./probe-schema.js";
 
 export interface PlanCorrection {
@@ -18,6 +19,18 @@ export interface PlanCorrection {
 export type PlanReview =
   | { status: "sound"; rationale: string }
   | { status: "corrected"; rationale: string; plan: ProbePlan; corrections: PlanCorrection[] };
+
+/** Preparation may evolve while the tested behavior, input and outcome stay fixed. */
+export function sameCaseBehavior(before: ProbeCase, after: ProbeCase): boolean {
+  return before.id === after.id && before.purpose === after.purpose &&
+    JSON.stringify(before.requirementIds) === JSON.stringify(after.requirementIds) &&
+    JSON.stringify(before.steps.slice(before.setupStepCount ?? 0)) ===
+      JSON.stringify(after.steps.slice(after.setupStepCount ?? 0));
+}
+
+export function isPreparationOnlyCorrection(before: ProbeCase, after: ProbeCase): boolean {
+  return (before.setupStepCount ?? 0) > 0 && (after.setupStepCount ?? 0) > 0 && sameCaseBehavior(before, after);
+}
 
 const MAX_RATIONALE = 2_000;
 const MAX_CONFLICT = 1_000;

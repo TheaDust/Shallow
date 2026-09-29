@@ -13,6 +13,58 @@ import { toBuilderShadowObservation } from "../../src/builder/shadow-observation
 import { withModulePipeline } from "../helpers/module-pipeline.js";
 import { FakeProbePlanner } from "../fakes/fake-probe-planner.js";
 
+for (const weaken of [false, true]) {
+  test(`Seed preparation recovery preserves the tested behavior in Chromium: weakened=${weaken}`, async () => {
+    await withModulePipeline(async f => {
+      const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      catalog.children[0].children[0].description = 'Use "Prepare" to set "Value" to "ready", then "Save" displays "Saved". Seed values: Value is ready in this scenario.';
+      await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+      const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+      const server = createServer((_request, response) => {
+        response.setHeader("content-type", "text/html");
+        response.end(`<main><label>Value<input id="value" value="other scenario"></label>
+          <button onclick="document.getElementById('value').value='ready'">Prepare</button>
+          <button onclick="document.getElementById('result').textContent=document.getElementById('value').value==='ready'?'Saved':'Wrong state'">Save</button>
+          <p id="result" role="status"></p></main>`);
+      });
+      await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const address = server.address();
+        if (!address || typeof address === "string") assert.fail("missing address");
+        f.deps.appLifecycle.start = async () => ({ baseUrl: `http://127.0.0.1:${address.port}`, stop: async () => {} });
+        f.deps.runner = new PlaywrightProbeRunner();
+        const original: ProbePlan = { packetId: packet.id, cases: [{
+          id: "prepared-save", requirementIds: packet.requirementIds, purpose: "happy_path", expectationBasis: [packet.requirements[0].text],
+          setupStepCount: 3, steps: [
+            { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+            { op: "expectValue", locator: { by: "label", text: "Value", exact: true }, value: "ready" },
+            { op: "click", locator: { by: "role", role: "button", name: "Save", exact: true } },
+            { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+          ],
+        }] };
+        let reviews = 0;
+        f.deps.planner.reviewPlan = async (_packet, plan, _failures, _feedback, options) => {
+          reviews++;
+          assert.deepEqual(options?.preparationOnlyCaseIds, ["prepared-save"]);
+          const corrected = structuredClone(plan);
+          corrected.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Prepare", exact: true } };
+          if (weaken) corrected.cases[0].steps[4] = { op: "expectVisible", locator: { by: "role", role: "main" } };
+          return { status: "corrected", rationale: "Establish the current scenario through its allowed controls",
+            plan: corrected, corrections: [{ caseId: "prepared-save", conflict: "Different default scenario", basis: [packet.requirements[0].text] }] };
+        };
+        const state = new RunStateStore({ statusByRequirementId: { A: "todo" }, acceptedSha: "initial", startedAtMs: 0, totalBudgetMs: 60_000 }, f.options.ledgerFile);
+        for (let repeat = 0; repeat < 2; repeat++) {
+          const result = await auditPacket(packet, original, f.options, f.deps, state, () => 60_000);
+          assert.equal(result.status, weaken ? "inconclusive" : "verified");
+          assert.equal(state.semanticCorrectionCount(packet.id, "prepared-save"), 0);
+        }
+        assert.equal(reviews, weaken ? 4 : 2);
+        assert.equal(f.builder.requests.length, 0);
+      } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+    });
+  });
+}
+
 test("Independent cases reset server data while reload keeps the current case data and one browser", async () => {
   await withModulePipeline(async f => {
     const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

@@ -129,7 +129,7 @@ interface RunEventDetails {
   module_rescued: { requirementIds: string[]; reason: string };
   audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
   repair_batch_started: { round: number; requirementIds: string[] };
-  repair_batch_finished: { round: number; retained: boolean; reason: string };
+  repair_batch_finished: { round: number; retained: boolean; reason: string; improvedCases?: number; resolvedGaps?: number };
   repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;

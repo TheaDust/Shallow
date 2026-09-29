@@ -253,6 +253,9 @@ async function executeStep(
       case "select":
         await locator.selectOption(step.value, { timeout: timeoutMs });
         break;
+      case "setChecked":
+        await locator.setChecked(step.checked, { timeout: timeoutMs });
+        break;
       case "expectVisible":
         await expect(locator).toBeVisible({ timeout: timeoutMs });
         break;
@@ -270,7 +273,21 @@ async function executeStep(
         }
         break;
       case "expectAttribute":
-        await expect(locator).toHaveAttribute(step.attribute, step.value, { timeout: timeoutMs });
+        if (step.attribute === "aria-checked" &&
+          await locator.evaluate(element => element instanceof HTMLInputElement &&
+            ["checkbox", "radio"].includes(element.type), undefined, { timeout: timeoutMs })) {
+          if (step.value === "mixed") {
+            await expect(locator).toHaveJSProperty("indeterminate", true, { timeout: timeoutMs });
+          } else {
+            await expect(locator).toHaveJSProperty("checked", step.value === "true", { timeout: timeoutMs });
+            await expect(locator).toHaveJSProperty("indeterminate", false, { timeout: timeoutMs });
+          }
+        } else if (step.attribute === "aria-selected" && step.value !== "mixed" &&
+          await locator.evaluate(element => element.tagName === "OPTION", undefined, { timeout: timeoutMs })) {
+          await expect(locator).toHaveJSProperty("selected", step.value === "true", { timeout: timeoutMs });
+        } else {
+          await expect(locator).toHaveAttribute(step.attribute, step.value, { timeout: timeoutMs });
+        }
         break;
       case "expectText":
         await expectAnyText(locator, step, timeoutMs);
@@ -286,7 +303,7 @@ async function executeStep(
     const assertion = step.op.startsWith("expect");
     const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(compactError(error));
     throw new ProbeExecutionError(invalidProbeOperation ? "runner" : assertion ? "assertion" : "timeout",
-      compactError(error), await ariaSnapshot(session.page, timeoutMs, locator));
+      compactError(error), await ariaSnapshot(session.page, timeoutMs, locator, step.locator.scope));
   }
   return session;
 }
@@ -307,7 +324,7 @@ async function resolveLocator(
   const candidates = locatorCandidates(step.locator);
   // Actions must reach a visible candidate. Uploads can target a hidden native
   // file input, and state/value assertions need only an attached target.
-  const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "expectVisible"].includes(step.op);
+  const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "setChecked", "expectVisible"].includes(step.op);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
   for (let index = 0; index < candidates.length; index += 1) {
@@ -328,7 +345,7 @@ async function resolveLocator(
     step.op.startsWith("expect") && !attempts.some(attempt => attempt.message.includes("strict mode violation"))
       ? "assertion" : "locator",
     compactError(lastMiss),
-    await ariaSnapshot(session.page, timeoutMs),
+    await ariaSnapshot(session.page, timeoutMs, undefined, step.locator.scope),
     attempts,
   );
 }
@@ -392,15 +409,38 @@ function locate(page: Page | Locator, locator: ProbeLocator): Locator {
   });
 }
 
-async function ariaSnapshot(page: Page, timeoutMs: number, target?: Locator): Promise<string | undefined> {
+async function ariaSnapshot(page: Page, timeoutMs: number, target?: Locator, scope?: ProbeLocator["scope"]): Promise<string | undefined> {
   try {
     const options = { timeout: Math.min(timeoutMs, 500) };
-    const targetSnapshot = target && await target.count() === 1
-      ? await target.ariaSnapshot(options).catch(() => undefined) : undefined;
+    const excerpts: string[] = [];
+    const seen = new Set<string>();
+    const add = async (locator: Locator, limit: number): Promise<void> => {
+      if (await locator.count() !== 1) return;
+      const snapshot = await locator.ariaSnapshot(options).catch(() => undefined);
+      if (snapshot && !seen.has(snapshot)) {
+        seen.add(snapshot);
+        excerpts.push(snapshot.slice(0, limit));
+      }
+    };
+    if (target) await add(target, 700);
+    if (scope) {
+      let container = locate(page, scope as ProbeLocator);
+      if (scope.hasText !== undefined) container = container.filter({ hasText: scope.hasText });
+      await add(container, 1_600);
+    }
+    for (const role of ["dialog", "alertdialog", "menu"] as const) {
+      const overlays = page.getByRole(role);
+      for (let index = 0; index < Math.min(2, await overlays.count()); index++) {
+        await add(overlays.nth(index), 1_600);
+      }
+    }
     const pageSnapshot = await page.locator("body").ariaSnapshot(options);
-    return [targetSnapshot, pageSnapshot].filter(Boolean).join("\n")
-      .replace(/\b(password|token|api[_-]?key|cookie)\s*[:=]\s*\S+/gi, "$1=[redacted]")
-      .slice(0, 4_000);
+    let snapshot = [...excerpts, pageSnapshot].join("\n")
+      .replace(/\b(password|token|api[_-]?key|cookie)\s*[:=]\s*\S+/gi, "$1=[redacted]");
+    const passwords = await page.locator('input[type="password"]').evaluateAll(inputs =>
+      inputs.map(input => (input as HTMLInputElement).value).filter(Boolean));
+    for (const password of passwords) snapshot = snapshot.split(password).join("[redacted]");
+    return snapshot.slice(0, 4_000);
   } catch {
     return undefined;
   }

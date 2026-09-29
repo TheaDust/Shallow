@@ -13,6 +13,40 @@ import type { PlanCorrection, PlanReview } from "../src/judge/semantic-review.js
 import { FakeProbePlanner } from "./fakes/fake-probe-planner.js";
 import { withModulePipeline, type PipelineFixture, fail, pass } from "./helpers/module-pipeline.js";
 
+test("Clipboard content alone cannot establish a seeded state; preparation recovery must apply it", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = 'Paste into "Editor" to prepare "ready", then "Save" displays "Saved". Seed values: ready.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: [packet.requirements[0].text], setupStepCount: 3, steps: [
+        { op: "goto", path: "/" }, { op: "setClipboardText", text: "ready" },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "ready" },
+        { op: "click", locator: { by: "role", role: "button", name: "Save" } },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "Saved" },
+      ] }] };
+    let reviews = 0;
+    f.deps.planner.reviewPlan = async (_packet, original, _failures, feedback) => {
+      if (++reviews === 1) return { status: "sound", rationale: "Seed declaration says ready" };
+      assert.match(feedback?.validationError ?? "", /initial-state checkpoint/);
+      const corrected = structuredClone(original);
+      corrected.cases[0].steps.splice(2, 0, { op: "press", locator: { by: "label", text: "Editor" }, key: "ControlOrMeta+V" });
+      corrected.cases[0].setupStepCount = 4;
+      return correctedReview(corrected, [{ caseId: "case-A", conflict: "Clipboard was not applied", basis: [packet.requirements[0].text] }]);
+    };
+    f.deps.runner.run = async current => current.cases[0].steps.some(step => step.op === "press") ? pass(current) : {
+      packetId: current.packetId, verdict: "inconclusive", passedCases: [], failures: [
+        { caseId: "case-A", stepIndex: 2, category: "precondition", message: "Actual value is a different initial state" },
+      ],
+    };
+    const state = makeState(f);
+    assert.equal((await auditPacket(packet, plan, f.options, f.deps, state, () => 60_000)).status, "verified");
+    assert.equal(reviews, 2);
+    assert.equal(state.semanticCorrectionCount(packet.id, "case-A"), 0);
+  });
+});
+
 function groundedPlan(steps: ProbePlan["cases"][number]["steps"], basis = ["Display the main workspace."]): ProbePlan {
   return { packetId: "packet-a", cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path", expectationBasis: basis, steps }] };
 }

@@ -29,6 +29,7 @@ import { featureGroupPackets, auditPackets, folderDescendants, makePacket } from
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
 import { probePlanSha256 } from "./judge/probe-schema.js";
+import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
 import { memorySnapshot } from "./memory-snapshot.js";
@@ -219,6 +220,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
         () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
+          preparationOnlyCaseIds: callOptions?.preparationOnlyCaseIds,
           onUsage: plannerUsage(packet.id, "review"), signal: callOptions?.signal }), callOptions?.signal);
     },
   } };
@@ -381,7 +383,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     await state.record({ at: now(), type: "phase_started", detail: { phase: "audit" as const,
       round: undefined, memory: await memorySnapshot(),
       ...(Number.isFinite(budget.remaining("audit")) ? { remainingMs: budget.remaining("audit") } : {}) } });
-    const targetPackets = packets.filter(p => packetIds.includes(p.id));
+    const modulePackets = packets.filter(p => packetIds.includes(p.id));
+    const prerequisiteIds = new Set(modulePackets.flatMap(packet => packet.prerequisites?.map(item => item.id) ?? []));
+    // Reuse cached probes for verified prerequisites while there is still a repair window.
+    const targetPackets = packets.filter(packet => packetIds.includes(packet.id) ||
+      (results.get(packet.id)?.status === "verified" && packet.requirementIds.some(id => prerequisiteIds.has(id))));
     const ordered = [...targetPackets]
       .filter(packet => packet.requirementIds.every(id => implemented.has(id)))
       .sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
@@ -414,7 +420,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       results.set(id, result);
     }
     await state.record({ at: now(), type: "module_boundary_audit_finished",
-      detail: { moduleId, moduleName, packetIds, results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
+      detail: { moduleId, moduleName, packetIds: targetPackets.map(packet => packet.id),
+        results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
     // Inline repair for module boundary failures, using per-module repair budget.
     while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
       const failures = targetPackets.filter(p => {
@@ -428,7 +435,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const repairPacket = makePacket(`repair-round-${round}`, failures.flatMap(item => item.requirements), round === 1 ? 2 : 3);
       const reports = failures.map(item => results.get(item.id)!.report!);
       const observation = toBuilderShadowObservation({ packetId: repairPacket.id,
-        verdict: failures.some(item => results.get(item.id)?.status === "failed") ? "fail" : "inconclusive", passedCases: [],
+        verdict: failures.some(item => results.get(item.id)?.status === "failed") ? "fail" : "inconclusive",
+        passedCases: [...new Set(reports.flatMap(report => report.passedCases))],
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
       const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
@@ -449,19 +457,29 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         try { candidate = await runnable(); } catch (error) { reason = errorMessage(error); }
       }
       let nextResults = results;
+      let improvedCases = 0;
+      let resolvedGaps = 0;
       if (!reason) {
         // A boundary repair may break a module path that already passed. Recheck
         // this module's verified packets first and discard the repair on the first
         // loss; only then look for improvement across the failed packets.
         let regressed = false;
+        let progressUnconfirmed = false;
         const rechecked = new Map<string, AuditResult>();
         for (const packet of targetPackets) {
-          if (results.get(packet.id)?.status !== "verified") continue;
+          const previous = results.get(packet.id);
+          if (!previous) continue;
+          const passed = previous.report?.passedCases ?? [];
+          if (previous.status !== "verified" && (!previous.plan || !passed.length)) continue;
           if (budget.remaining("repair") <= 0) { regressed = true; break; }
-          const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
-          const recheck = await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"), recoveryAuditPolicy);
+          const cachedPlan = previous.plan ?? await planCache.read(packet);
+          const guardPlan = previous.status === "verified" ? cachedPlan : {
+            ...cachedPlan!, cases: cachedPlan!.cases.filter(item => passed.includes(item.id)),
+          };
+          const recheck = await auditPacket(packet, guardPlan, options, deps, state, () => budget.remaining("repair"),
+            previous.status === "verified" ? recoveryAuditPolicy : { refineLocators: false });
           if (recheck.status !== "verified") { regressed = true; break; }
-          rechecked.set(packet.id, recheck);
+          if (previous.status === "verified") rechecked.set(packet.id, recheck);
         }
         const reAudit = new Map<string, AuditResult>();
         if (!regressed) {
@@ -472,10 +490,20 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
               ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
               : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"), recoveryAuditPolicy);
             reAudit.set(packet.id, r);
+            const progress = repairCaseProgress(results.get(packet.id)!, r);
+            if (progress.passed.length && r.status !== "verified") {
+              const confirmation = await auditPacket(packet, { ...r.plan!,
+                cases: r.plan!.cases.filter(item => progress.passed.includes(item.id)) },
+              options, deps, state, () => budget.remaining("repair"), { refineLocators: false });
+              if (confirmation.status !== "verified") { progressUnconfirmed = true; break; }
+            }
+            improvedCases += progress.passed.length;
+            resolvedGaps += progress.resolvedGaps.length;
           }
         }
-        const improved = failures.some(item => reAudit.get(item.id)?.status === "verified");
+        const improved = failures.some(item => reAudit.get(item.id)?.status === "verified") || improvedCases > 0 || resolvedGaps > 0;
         if (regressed) reason = "previously verified behavior was lost or could not be reverified";
+        else if (progressUnconfirmed) reason = "newly passed repair cases could not be reverified";
         else if (!improved) reason = "repair produced no independently verified improvement";
         else {
           // The repair is kept, so locator refinements the rechecks needed survive
@@ -502,7 +530,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       await checkpoint(repairPacket.requirementIds, repairPacket.id, candidate);
       results = nextResults;
-      await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true, reason: "verified improvement with regression coverage" } });
+      await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true,
+        improvedCases, resolvedGaps, reason: "verified improvement with regression coverage" } });
     }
   };
 

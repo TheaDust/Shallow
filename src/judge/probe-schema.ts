@@ -45,6 +45,7 @@ export type ProbeStep =
   | { op: "uploadFile"; locator: ProbeLocator; fileName: string; content: string }
   | { op: "setClipboardText"; text: string }
   | { op: "select"; locator: ProbeLocator; value: string }
+  | { op: "setChecked"; locator: ProbeLocator; checked: boolean }
   | { op: "expectVisible"; locator: ProbeLocator }
   | { op: "expectHidden"; locator: ProbeLocator }
   | { op: "expectDisabled" | "expectEnabled"; locator: ProbeLocator }
@@ -160,6 +161,7 @@ const STEP_SCHEMA = {
     objectSchema({ op: literalSchema("uploadFile"), locator: LOCATOR_REF,
       fileName: NONEMPTY_STRING_SCHEMA, content: STRING_SCHEMA }),
     objectSchema({ op: literalSchema("setClipboardText"), text: STRING_SCHEMA }),
+    objectSchema({ op: literalSchema("setChecked"), locator: LOCATOR_REF, checked: { type: "boolean" } }),
     objectSchema({ op: literalSchema("expectAttribute"), locator: LOCATOR_REF,
       attribute: { type: "string", enum: [...STATE_ATTRIBUTES] },
       value: { type: "string", enum: ["true", "false", "mixed"] } }),
@@ -224,7 +226,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectValue, expectCount, reload, newContext. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectValue, expectCount, reload, newContext. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -727,6 +729,16 @@ function parseStep(value: unknown, location: string): ProbeStep {
       }
       return { op, locator: parseLocator(step.locator, `${location}.locator`),
         attribute: attribute as (typeof STATE_ATTRIBUTES)[number], value };
+    }
+    case "setChecked": {
+      keys(step, ["op", "locator", "checked"], location);
+      if (typeof step.checked !== "boolean") throw new Error(`${location}.checked must be boolean`);
+      const locator = parseLocator(step.locator, `${location}.locator`);
+      if (locatorCandidates(locator).some(candidate => candidate.by !== "label" &&
+        (candidate.by !== "role" || !["checkbox", "radio"].includes(candidate.role)))) {
+        throw new Error(`${location}: setChecked requires checkbox/radio roles or labels, including fallbacks`);
+      }
+      return { op, locator, checked: step.checked };
     }
     case "press": {
       keys(step, ["op", "locator", "key"], location);

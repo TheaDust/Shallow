@@ -6,6 +6,7 @@ import { ExecutionFault } from "../execution-fault.js";
 import { GatewayRequestError } from "../gateway-failure.js";
 import { isModelLengthCutoff, planValidationFeedback, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { rootSearchNavigationPlan } from "./navigation-recovery.js";
+import { isPreparationOnlyCorrection } from "./semantic-review.js";
 import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, locatorCandidates, parseProbePlan, probePlanSha256, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
@@ -146,6 +147,8 @@ async function reviewBehaviorFailures(
   await state.record({ at: now(), type: "probe_review_started", packetId: packet.id,
     detail: { cases: plan.cases.length, failed: report.failures.length } });
   const beforePlanSha256 = probePlanSha256(plan);
+  const preparationOnlyCaseIds = report.failures.filter(failure => failure.category === "precondition" &&
+    (plan.cases.find(item => item.id === failure.caseId)?.setupStepCount ?? 0) > 0).map(item => item.caseId);
   let feedback: ProbePlannerFeedback | undefined;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (remaining() <= 0) break;
@@ -153,12 +156,21 @@ async function reviewBehaviorFailures(
       if (recovery) recovery.locatorRefinements++;
       const review = await deps.planner.reviewPlan(packet, plan, report.failures, feedback, {
         timeoutMs: Math.max(1, remaining()),
+        preparationOnlyCaseIds,
       });
       if (review.status === "sound") {
-        const unprepared = report.failures.filter(isBehaviorFailure).filter(failure => {
+        const unprepared = report.failures.filter(failure => {
           const probeCase = plan.cases.find(item => item.id === failure.caseId);
           const seeded = packet.requirements.some(item => probeCase?.requirementIds.includes(item.id) && item.seedDeclarations.length > 0);
           if (!seeded) return false;
+          if (failure.category === "precondition") {
+            const step = probeCase?.steps[failure.stepIndex];
+            return (step?.op === "expectValue" || step?.op === "expectText") &&
+              !probeCase?.steps.slice(0, failure.stepIndex).some(step =>
+              ["fill", "select", "setChecked", "drag", "uploadFile"].includes(step.op) ||
+              (step.op === "press" && step.key === "ControlOrMeta+V"));
+          }
+          if (!isBehaviorFailure(failure)) return false;
           const count = probeCase?.setupStepCount ?? 0;
           const stateAssertion = probeCase?.steps.slice(0, count).some(step => step.op.startsWith("expect") &&
             !(step.op === "expectVisible" && step.locator.by === "role" &&
@@ -173,7 +185,16 @@ async function reviewBehaviorFailures(
           detail: { verdict: "sound", rationale: review.rationale, beforePlanSha256 } });
         return { status: "sound" };
       }
-      const exhausted = review.corrections.filter(correction =>
+      const preparationCorrections = new Set(review.corrections.filter(correction => {
+        const before = plan.cases.find(item => item.id === correction.caseId)!;
+        const after = review.plan.cases.find(item => item.id === correction.caseId)!;
+        const preparationOnly = isPreparationOnlyCorrection(before, after);
+        if (preparationOnlyCaseIds.includes(correction.caseId) && !preparationOnly) {
+          throw new Error(`Preparation recovery must preserve the tested steps, inputs and assertions for ${correction.caseId}`);
+        }
+        return preparationOnly;
+      }).map(item => item.caseId));
+      const exhausted = review.corrections.filter(correction => !preparationCorrections.has(correction.caseId) &&
         state.semanticCorrectionCount(packet.id, correction.caseId) >= 1);
       if (exhausted.length > 0) {
         const reason = `semantic correction quota exhausted for: ${exhausted.map(item => item.caseId).join(", ")}`;
@@ -181,7 +202,9 @@ async function reviewBehaviorFailures(
           detail: { message: reason, planSha256: beforePlanSha256 } });
         return { status: "unavailable", reason };
       }
-      for (const correction of review.corrections) state.noteSemanticCorrection(packet.id, correction.caseId);
+      for (const correction of review.corrections) {
+        if (!preparationCorrections.has(correction.caseId)) state.noteSemanticCorrection(packet.id, correction.caseId);
+      }
       await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
         detail: { verdict: "corrected", rationale: review.rationale, beforePlanSha256,
           planSha256: probePlanSha256(review.plan), corrections: review.corrections } });

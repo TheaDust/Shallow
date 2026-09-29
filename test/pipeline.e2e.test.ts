@@ -2,6 +2,79 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
+
+test("Partial case improvements are confirmed and retained across the existing two repair rounds", async () => {
+  await withModulePipeline(async f => {
+    f.deps.planner.plan = async packet => {
+      const plan = testPlan(packet);
+      if (packet.id === "packet-a") plan.cases.push(
+        { ...structuredClone(plan.cases[0]), id: "second-A" }, { ...structuredClone(plan.cases[0]), id: "existing-A" });
+      return plan;
+    };
+    f.deps.runner.run = async plan => {
+      const rounds = f.builder.requests.filter(request => request.mode === "repair").length;
+      const ready = (id: string) => plan.packetId !== "packet-a" || id === "existing-A" ||
+        (id === "case-A" && rounds >= 1) || (id === "second-A" && rounds >= 2);
+      const failures = plan.cases.filter(item => !ready(item.id)).map(item => ({
+        caseId: item.id, stepIndex: 1, category: "assertion" as const, message: "required result missing",
+      }));
+      return { packetId: plan.packetId, verdict: failures.length ? "fail" : "pass",
+        passedCases: plan.cases.filter(item => ready(item.id)).map(item => item.id), failures };
+    };
+    const summary = await f.run();
+    const repairs = f.builder.requests.filter(request => request.mode === "repair");
+    assert.equal(repairs.length, 2);
+    assert.ok(repairs[1].mode === "repair");
+    assert.deepEqual(repairs[1].shadowObservation.passedCaseIds.sort(), ["case-A", "existing-A"]);
+    const retained = (await f.events()).filter(event => event.type === "repair_batch_finished");
+    assert.ok(retained.every(event => event.detail?.retained));
+    assert.equal(retained[0].detail?.improvedCases, 1);
+    assert.equal(summary.status, "delivered");
+    assert.equal(f.git.restoredShas.length, 0);
+  });
+});
+
+test("A partial repair cannot lose a passed case inside an otherwise failing requirement", async () => {
+  await withModulePipeline(async f => {
+    f.deps.planner.plan = async packet => {
+      const plan = testPlan(packet);
+      if (packet.id === "packet-a") plan.cases.push({ ...structuredClone(plan.cases[0]), id: "existing-A" });
+      return plan;
+    };
+    f.deps.runner.run = async plan => {
+      if (plan.packetId !== "packet-a") return pass(plan);
+      const repaired = f.builder.requests.some(request => request.mode === "repair");
+      const failures = plan.cases.filter(item => repaired ? item.id === "existing-A" : item.id === "case-A")
+        .map(item => ({ caseId: item.id, stepIndex: 1, category: "assertion" as const, message: "required result missing" }));
+      return { packetId: plan.packetId, verdict: failures.length ? "fail" : "pass",
+        passedCases: plan.cases.filter(item => !failures.some(failure => failure.caseId === item.id)).map(item => item.id), failures };
+    };
+    await f.run();
+    const result = (await f.events()).find(event => event.type === "repair_batch_finished");
+    assert.equal(result?.detail?.retained, false);
+    assert.match(String(result?.detail?.reason), /previously verified behavior was lost/);
+    assert.equal(f.git.restoredShas.length, 1);
+    assert.equal(f.builder.requests.filter(request => request.mode === "repair").length, 1);
+  });
+});
+
+test("A later module rechecks cached verified prerequisites and repairs their regression before final audit", async () => {
+  await withModulePipeline(async f => {
+    f.deps.runner.run = async plan => {
+      const laterBuilt = f.builder.requests.some(request => request.mode === "implement" && request.packet.requirementIds.includes("C"));
+      const repaired = f.builder.requests.some(request => request.mode === "repair");
+      return plan.packetId === "packet-a" && laterBuilt && !repaired ? fail(plan) : pass(plan);
+    };
+    const summary = await f.run();
+    const repair = f.builder.requests.find(request => request.mode === "repair");
+    assert.ok(repair?.mode === "repair");
+    assert.deepEqual(repair.packet.requirementIds, ["A"]);
+    const boundary = (await f.events()).find(event => event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "SECOND");
+    assert.ok(boundary?.type === "module_boundary_audit_finished");
+    assert.deepEqual(boundary?.detail?.packetIds, ["packet-a", "packet-b", "packet-c"]);
+    assert.equal(summary.status, "delivered");
+  });
+});
 import { ExecutionFault } from "../src/execution-fault.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
@@ -79,9 +152,9 @@ test("Audit replays a business failure in a fresh application before requesting 
     assert.deepEqual(repair.packet.requirementIds, ["A", "B"]);
     assert.equal(repair.shadowObservation.failures.length, 2);
     assert.equal(f.builder.runOptions[f.builder.requests.findIndex(item => item.mode === "repair")]?.sessionKey, undefined);
-    // Module boundary audit adds an extra probe round before consolidated.
-    assert.equal(calls.get("packet-a"), 4);
-    assert.equal(calls.get("packet-b"), 4);
+    // The next module reuses the cached prerequisite probes before the final audit.
+    assert.equal(calls.get("packet-a"), 5);
+    assert.equal(calls.get("packet-b"), 5);
     assert.equal(calls.get("packet-c"), 2);
     assert.equal(summary.status, "delivered");
   });
@@ -475,7 +548,7 @@ for (const result of ["improved", "unchanged", "regressed"] as const) {
         return plan;
       };
       f.deps.runner.run = async plan => {
-        const repaired = f.builder.requests.some(request => request.mode === "repair");
+        const repaired = f.builder.requests.some(request => request.mode === "repair") && f.git.restoredShas.length === 0;
         if (plan.packetId === "packet-b" && repaired && result === "regressed") return fail(plan);
         if (plan.packetId !== "packet-a" || (repaired && result !== "unchanged")) return pass(plan);
         const report = fail(plan, "locator");

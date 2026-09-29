@@ -71,7 +71,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":
-      return `第 ${detail?.round} 轮修复${detail?.retained ? "已保存" : "已恢复原检查点"}${reason ? `；${reason}` : ""}`;
+      return `第 ${detail?.round} 轮修复${detail?.retained ? "已保存" : "已恢复原检查点"}${detail?.retained && (detail.improvedCases || detail.resolvedGaps) ? `；新增通过用例 ${detail.improvedCases ?? 0}，已解决准备/控件缺口 ${detail.resolvedGaps ?? 0}` : ""}${reason ? `；${reason}` : ""}`;
     case "repair_paused":
       return `模型网关故障，暂停本轮修复并等待恢复后重试（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "pipeline_started": {

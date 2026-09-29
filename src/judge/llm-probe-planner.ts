@@ -14,7 +14,13 @@ import {
 } from "./probe-schema.js";
 import { parsePlanReview, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
-export interface ProbePlanOptions { timeoutMs: number; onUsage?: ProbePlannerUsageListener; signal?: AbortSignal }
+export interface ProbePlanOptions {
+  timeoutMs: number;
+  onUsage?: ProbePlannerUsageListener;
+  signal?: AbortSignal;
+  /** Failed preparation prefixes may be rebuilt, but their tested suffixes stay fixed. */
+  preparationOnlyCaseIds?: readonly string[];
+}
 export interface ProbeRefinementOptions {
   timeoutMs: number;
   /** Requirement-declared names the original plan already relies on; refinement must reuse them verbatim. */
@@ -245,6 +251,7 @@ export class LlmProbePlanner implements ProbePlanner {
           })),
           packetId: packet.id,
           originalPlan: toWireProbePlan(original),
+          ...(options?.preparationOnlyCaseIds?.length ? { preparationOnlyCaseIds: options.preparationOnlyCaseIds } : {}),
           ...(groundedLocatorAnchors(original, packet).length
             ? { anchoredRequirementNames: groundedLocatorAnchors(original, packet) }
             : {}),

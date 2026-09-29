@@ -1023,7 +1023,8 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
     seedDeclarations: ['Seed values: account "alice-dev"'] }];
   const original = parseProbePlan(validPlan(), reviewedPacket);
 
-  const sound = await planner.reviewPlan(reviewedPacket, original, behaviorFailures());
+  const sound = await planner.reviewPlan(reviewedPacket, original, behaviorFailures(), undefined,
+    { timeoutMs: 1_000, preparationOnlyCaseIds: ["save-profile"] });
   assert.deepEqual(sound, { status: "sound", rationale: "期望与需求原文一致" });
   const corrected = await planner.reviewPlan(reviewedPacket, original, behaviorFailures());
   assert.equal(corrected.status, "corrected");
@@ -1034,12 +1035,14 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   assert.match(request.messages[0].content, /expectationBasis/);
   const payload = JSON.parse(request.messages[1].content) as {
     originalPlan?: unknown;
+    preparationOnlyCaseIds?: string[];
     failures?: unknown[];
     product?: { description: string };
     requirements?: Array<{ seedDeclarations?: unknown }>;
     prerequisites?: Array<{ seedDeclarations?: unknown }>;
   };
   assert.ok(payload.originalPlan);
+  assert.deepEqual(payload.preparationOnlyCaseIds, ["save-profile"]);
   assert.equal(payload.product?.description, "Root description.");
   assert.deepEqual(payload.requirements?.[0].seedDeclarations, ['Seed data: shelf "Shelf 4.3.1"']);
   assert.deepEqual(payload.prerequisites?.[0].seedDeclarations, ['Seed values: account "alice-dev"']);

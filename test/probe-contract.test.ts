@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+
+test("setChecked accepts explicit state only on checkable controls", () => {
+  const wire = (step: unknown) => ({ packetId: "checked", cases: [{ id: "case", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["fixture"], steps: [step], assertion: { op: "expectVisible", locator: { by: "role", role: "main" } } }] });
+  assert.doesNotThrow(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "role", role: "checkbox", name: "Header row" }, checked: true })));
+  assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "role", role: "button", name: "Save" }, checked: true })), /checkbox\/radio/);
+  assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "label", text: "Header row" }, checked: "true" })), /boolean/);
+});
 import { assertLocatorOnlyRefinement, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 

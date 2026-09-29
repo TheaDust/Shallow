@@ -13,6 +13,13 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Repair logs distinguish case improvement from a fully verified requirement", () => {
+  const line = formatLine(new HumanRunFormatter(), eventLine("2026-09-29T00:00:00Z", "repair_batch_finished", {
+    detail: { round: 1, retained: true, improvedCases: 1, resolvedGaps: 2, reason: "verified improvement with regression coverage" },
+  }));
+  assert.match(line, /新增通过用例 1，已解决准备\/控件缺口 2/);
+});
+
 test("Gateway recovery logs distinguish saved code from completed requirements", () => {
   const formatter = new HumanRunFormatter();
   const at = "2026-09-20T00:00:00Z";
