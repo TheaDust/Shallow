@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { withModulePipeline, pass, fail } from "./helpers/module-pipeline.js";
+import type { ProbePlan } from "../src/judge/probe-schema.js";
 
 test("Missing or empty terminal response gets a 45 minute fresh continuation before dependencies run", async () => {
   for (const reason of ["missing_terminal_response", "empty_terminal_response", "model_length_limit"] as const) {
@@ -46,6 +47,32 @@ test("An unfinished compound package is completed atom by atom before its downst
   });
 });
 
+test("A compound package that times out after context overflow splits before a whole-package continuation", async () => {
+  await withModulePipeline(async f => {
+    const original = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await original(request, options);
+      if (request.mode === "implement" && request.packet.requirementIds.length > 1) {
+        return { ...result, outcome: "timed_out", execution: {
+          engine: "fake", version: "1", nodeVersion: process.version, workerPid: 1, resumed: false,
+          durationMs: 5_400_000, cleanupMs: 0, usage: { status: "unavailable" },
+          termination: { compactionPending: false, retryPending: true, compactionReason: "overflow" },
+        } };
+      }
+      return result;
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []),
+      [["A", "B"], ["A"], ["B"], ["C"]]);
+    assert.equal(f.builder.runOptions.some(options => options?.resumeInterrupted), false);
+    const split = (await f.events()).find(event => event.type === "implementation_split" && event.detail?.kind === "recovery");
+    assert.ok(split?.type === "implementation_split");
+    assert.ok(split.detail);
+    assert.match(split.detail.reason, /exhausted the context window/);
+  });
+});
+
 test("Atomic recovery stays bounded when a foundation cannot complete", async () => {
   await withModulePipeline(async f => {
     const original = f.builder.run.bind(f.builder);
@@ -80,6 +107,61 @@ test("Interrupted changes that regress an earlier passed path are restored befor
     assert.equal(f.builder.runOptions.at(-1)?.resumeInterrupted, true);
   });
 });
+
+for (const partial of [false, true]) {
+test(`Interrupted work caches confirmed seed identity guards without losing unchecked cases: partial=${partial}`, async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    tree.children[0].children[0].description = "Seed data: repository `docs`, owner `alice`. Opening the repository displays the main workspace.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const originalPlan = f.deps.planner.plan.bind(f.deps.planner);
+    f.deps.planner.plan = async (packet, feedback, options) => {
+      if (packet.requirementIds[0] !== "A") return originalPlan(packet, feedback, options);
+      const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
+        expectationBasis: ["Opening the repository displays the main workspace."], steps: [
+          { op: "goto", path: "/" },
+          { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+          { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+          { op: "expectVisible", locator: { by: "role", role: "main" } },
+        ] }] };
+      if (partial) plan.cases.push({ ...structuredClone(plan.cases[0]), id: "unchecked-case", purpose: "negative",
+        steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] });
+      return plan;
+    };
+    let duplicate = false;
+    const originalBuild = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await originalBuild(request, options);
+      if (request.mode === "implement" && request.packet.requirementIds.includes("C") && !options?.resumeInterrupted) {
+        duplicate = true;
+        return { ...result, outcome: "failed", terminationReason: "missing_terminal_response" };
+      }
+      return result;
+    };
+    f.deps.runner.run = async plan => {
+      const entry = plan.cases[0].steps[1];
+      if (plan.packetId === "packet-a" && duplicate && entry.op === "expectVisible" && !entry.locator.scope) {
+        const report = fail(plan, "locator");
+        report.failures[0].message = "strict mode violation";
+        report.failures[0].locatorSnapshot = '- list:\n  - listitem:\n    - link "docs"\n    - paragraph: alice/docs\n  - listitem:\n    - link "docs"\n    - paragraph: org/docs';
+        return report;
+      }
+      if (plan.cases.some(item => item.id === "unchecked-case")) return { packetId: plan.packetId, verdict: "inconclusive",
+        passedCases: ["case-A"], failures: [{ caseId: "unchecked-case", stepIndex: 1, category: "locator",
+          message: "strict mode violation", locatorSnapshot: '- main\n- main' }] };
+      return pass(plan);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, partial ? "partial" : "delivered");
+    assert.equal(summary.verifiedRequirementIds.includes("A"), !partial);
+    assert.equal(f.git.restoredShas.length, 0);
+    const events = await f.events();
+    assert.equal(events.find(event => event.type === "builder_work_preserved")?.detail?.preserved, true);
+    assert.equal(events.filter(event => event.type === "probe_navigation_attempted").length, 1,
+      "later audits reuse the confirmed scoped guard");
+  });
+});
+}
 
 test("A mixed dependency group still implements its independent member after a foundation exhausts recovery", async () => {
   await withModulePipeline(async f => {

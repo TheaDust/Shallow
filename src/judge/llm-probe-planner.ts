@@ -160,11 +160,12 @@ export class LlmProbePlanner implements ProbePlanner {
 
   async reviewPlan(packet: WorkPacket, original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbePlanOptions): Promise<PlanReview> {
     const preparationOnlyCaseIds = options?.preparationOnlyCaseIds;
-    const preparationTargets = preparationOnlyCaseIds?.length ? {
-      preparationOnlyCaseIds,
+    const reviewTargets = {
+      preparationOnlyCaseIds: preparationOnlyCaseIds ?? [],
       caseCorrectionIds: [...new Set(failures.map(item => item.caseId))]
-        .filter(id => !preparationOnlyCaseIds.includes(id)),
-    } : undefined;
+        .filter(id => !preparationOnlyCaseIds?.includes(id)),
+    };
+    const preparationTargets = reviewTargets.preparationOnlyCaseIds.length ? reviewTargets : undefined;
     const content = await this.complete([
       {
         role: "system",
@@ -234,7 +235,7 @@ export class LlmProbePlanner implements ProbePlanner {
       });
     }
     try {
-      return parsePlanReview(value, packet, original, preparationTargets);
+      return parsePlanReview(value, packet, original, reviewTargets);
     } catch (error) {
       throw new ProbePlannerError("review", "Probe planner review violates the review contract", {
         cause: error, content, apiKey: this.config.apiKey,

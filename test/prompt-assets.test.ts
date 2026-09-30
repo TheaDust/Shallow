@@ -136,6 +136,8 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadPrompt("system", "self-test");
+  assert.match(selfTest, /默认实际执行/);
+  assert.match(selfTest, /独立于运行数据和构建产物的确定性测试设置 reuse=true/);
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
@@ -206,6 +208,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /逐字纳入 locator 或终末 assertion/);
   assert.match(planner, /把它们视为动作前的初始数据/);
   assert.match(planner, /终末 assertion 应检查目标操作的结果/);
+  assert.match(planner, /不超过 4 个 case、每 case 不超过 20 步/);
+  assert.match(planner, /硬上限仍为 6 个 case、每 case 30 步/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
   assert.match(planner, /顶层 `seedData` 条目/);

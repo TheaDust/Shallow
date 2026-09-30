@@ -6,14 +6,15 @@ import { test } from "node:test";
 import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
-function reply(res: ServerResponse, content: string, finish = "stop", tool = false) {
+function reply(res: ServerResponse, content: string, finish = "stop", tool = false,
+  promptTokens = tool ? 230_000 : 100, completionTokens = 100) {
   res.writeHead(200, { "content-type": "text/event-stream" });
   const delta = tool ? { role: "assistant", tool_calls: [{ index: 0, id: "write-1", type: "function",
     function: { name: "write", arguments: JSON.stringify({ path: "progress.txt", content: "unfinished work" }) } }] }
     : { role: "assistant", content, reasoning_content: "reasoning alone is not a receipt" };
   res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
   res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: tool ? "tool_calls" : finish }],
-    usage: { prompt_tokens: tool ? 230_000 : 100, completion_tokens: 100 } })}\n\n`);
+    usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens } })}\n\n`);
   res.end("data: [DONE]\n\n");
 }
 
@@ -57,6 +58,47 @@ test("Worker waits for SDK overflow compaction and its delayed continuation befo
     assert.equal(requests.length, 4, "tool turn, overflow, compaction, continued completion");
     assert.equal(requests[2], 0, "SDK compaction request has no business tools");
     assert.equal(await readFile(join(app, "progress.txt"), "utf8"), "unfinished work");
+  });
+});
+
+for (const reason of ["overflow", "threshold"] as const) {
+  for (const empty of [false, true]) {
+    test(`A successful ${reason} response keeps its receipt after compaction: empty=${empty}`, { timeout: 35_000 }, async () => {
+      const requests: Record<string, unknown>[] = [];
+      await fixture((body, res, n) => {
+        requests.push(body);
+        if (n === 4) assert.match(JSON.stringify(body.messages), /完成回执/);
+        const content = n === 3 ? "Compaction summary, not a completion receipt."
+          : n === 2 && empty ? "" : "Implementation finished with the original receipt.";
+        reply(res, content, "stop", n === 1, n === 2 ? reason === "overflow" ? 257_000 : 250_000 : n === 1 ? 230_000 : 100);
+      }, async (client, app) => {
+        const result = await client.run({ ...prompt, outputDir: app });
+        assert.equal(result.outcome, "completed", result.summary);
+        assert.equal(result.summary, "Implementation finished with the original receipt.");
+        assert.equal(result.execution?.termination?.compactionReason, reason);
+        assert.equal(result.execution?.termination?.compactionPending, false);
+        assert.equal(result.execution?.termination?.retryPending, false);
+        assert.equal(requests.length, empty ? 4 : 3);
+        assert.equal((requests[2].tools as unknown[] | undefined)?.length ?? 0, 0);
+        assert.equal(await readFile(join(app, "progress.txt"), "utf8"), "unfinished work");
+      });
+    });
+  }
+}
+
+test("A zero-output length overflow reports a recoverable terminal failure after compaction", { timeout: 35_000 }, async () => {
+  let requests = 0;
+  await fixture((_body, res, n) => {
+    requests = n;
+    reply(res, n === 2 ? "" : "Compaction summary", n === 2 ? "length" : "stop", n === 1,
+      n === 2 ? 257_000 : n === 1 ? 230_000 : 100, n === 2 ? 0 : 100);
+  }, async (client, app) => {
+    const result = await client.run({ ...prompt, outputDir: app });
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.terminationReason, "model_length_limit");
+    assert.equal(result.execution?.termination?.compactionPending, false);
+    assert.equal(result.execution?.termination?.retryPending, false);
+    assert.equal(requests, 3);
   });
 });
 

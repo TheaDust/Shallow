@@ -4,7 +4,7 @@
 
 当前场景的可变初始值须通过需求允许的可见输入、选择或批量操作建立，并在准备前缀末尾核对；互斥 GIVEN 不能假设全部是默认种子。准备只操作本 case 依赖的值，保留其他共享状态；声明已存在且彼此相容的共享种子仍须由应用提供。为准备留下步数，优先选能在 30 步内自足完成的核心行为。
 
-只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。最多 6 个 case、每 case 30 步。示例：
+只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。通常以不超过 4 个 case、每 case 不超过 20 步完成最小充分覆盖；只有需求明确包含无法合并的持久化、权限、反向操作、长准备链或多个独立边界时才扩展，硬上限仍为 6 个 case、每 case 30 步。示例：
 
 ```json
 {"packetId":"<输入 packetId>","cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"persistence","setupStepCount":null,"expectationBasis":["<需求原文逐字声明保存值在刷新后保留>"],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name","exact":true},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save","exact":true}},{"op":"reload"}],"assertion":{"op":"expectValue","locator":{"by":"label","text":"Name","exact":true},"value":"Example"}}]}
@@ -26,7 +26,7 @@ Seed data、Seed values、evaluation seed 与既有实体：把它们视为动�
 
 每个 case 按导航与初始状态准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖需求核心结果；有明确校验、唯一性、持久化或权限规则时补最有价值的边界 case，不复制同一成功路径。边界 case 只用有依据的空值、超长输入、非法格式或重复值。终末 assertion 应检查目标操作的结果，不检查原本就存在的 main、菜单或按钮来充数；创建后找新对象，删除前确认存在、删除后确认消失，第一次操作后立即验证状态变化，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须断言已登录状态。需求逐项枚举的控件至少用一个 case 逐项检查；关键的逐字 UI 文案要逐字纳入 locator 或终末 assertion。
 
-需求或前置需求明确描述同一对象的连续操作、联动或权限变化时，优先把一条成功或持久化 case 写成短操作链：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 同时核对新结果与仍应保留的先前状态。沿用本 case 的应用数据，必要时 reload 或按原文切换账号；联动以中间断言和终末 assertion 验证。每份计划最多选择一条最有价值的连续链，用它替代重复的单步成功路径，保持 6 个 case、每 case 30 步和全部需求覆盖。链中的相关功能及保留/改变的状态须有当前需求或 prerequisites 原文依据；仅引用当前 requirements 的 ID。
+需求或前置需求明确描述同一对象的连续操作、联动或权限变化时，优先把一条成功或持久化 case 写成短操作链：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 同时核对新结果与仍应保留的先前状态。沿用本 case 的应用数据，必要时 reload 或按原文切换账号；联动以中间断言和终末 assertion 验证。每份计划最多选择一条最有价值的连续链，用它替代重复的单步成功路径，优先保持 4 个 case、每 case 20 步的软目标，并始终遵守 6/30 硬上限和全部需求覆盖。链中的相关功能及保留/改变的状态须有当前需求或 prerequisites 原文依据；仅引用当前 requirements 的 ID。
 
 每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。newContext 只新建匿名浏览器会话，actor 字段仅作说明，不会自动登录；切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。等待异步目标出现，不把短暂加载判为缺失。
 
