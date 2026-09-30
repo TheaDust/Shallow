@@ -136,6 +136,8 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadPrompt("system", "self-test");
+  assert.match(selfTest, /默认实际执行/);
+  assert.match(selfTest, /独立于运行数据和构建产物的确定性测试设置 reuse=true/);
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }

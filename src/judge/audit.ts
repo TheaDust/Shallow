@@ -394,10 +394,11 @@ async function runShadowProbes(
         searched.failures.some(failure => {
           const previous = previousReport.failures.find(item => item.caseId === failure.caseId);
           const step = beforePlan.cases.find(item => item.id === failure.caseId)?.steps[previous?.stepIndex ?? -1];
-          if (step?.op !== "click" || step.locator.by !== "role" || step.locator.role !== "link") return false;
+          if (!step || (step.op !== "click" && step.op !== "expectVisible") ||
+            step.locator.by !== "role" || step.locator.role !== "link") return false;
           const targetName = step.locator.name;
           const targetIndex = currentPlan.cases.find(item => item.id === failure.caseId)?.steps.findIndex(item =>
-            item.op === "click" && item.locator.by === "role" && item.locator.name === targetName) ?? -1;
+            item.op === step.op && item.locator.by === "role" && item.locator.name === targetName) ?? -1;
           return targetIndex >= 0 && failure.stepIndex > targetIndex;
         });
       await state.record({ at: now(), type: "probe_navigation_attempted", packetId: packet.id,

@@ -29,7 +29,7 @@ import { featureGroupPackets, auditPackets, folderDescendants, makePacket, DEFAU
 import { parseFeatureGrouping, type FeatureGrouper } from "./feature-grouper.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult } from "./judge/audit.js";
-import { probePlanSha256 } from "./judge/probe-schema.js";
+import { parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
@@ -333,6 +333,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     let candidate: CandidateEvidence | undefined;
     let preserved = false;
     let reason: string | undefined;
+    const recoveredPlans = new Map<string, ProbePlan>();
     try {
       candidate = await runnable();
       // Interrupted checkpoints must preserve independently established passes.
@@ -348,11 +349,23 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         const checked = await auditPacket(packetToCheck, guard, options, deps, state,
           () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false });
         if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
+        if (checked.plan) {
+          const checkedCases = new Map(checked.plan.cases.map(item => [item.id, item]));
+          const recovered = parseProbePlan({ ...plan,
+            cases: plan.cases.map(item => checkedCases.get(item.id) ?? item) }, packetToCheck);
+          if (probePlanSha256(recovered) !== probePlanSha256(plan)) recoveredPlans.set(packetToCheck.id, recovered);
+        }
       }
       preserved = true;
     }
     catch (error) { reason = errorMessage(error); await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
-    if (preserved) await checkpoint([], `interrupted ${packet.id}`, candidate);
+    if (preserved) {
+      await checkpoint([], `interrupted ${packet.id}`, candidate);
+      for (const [id, plan] of recoveredPlans) {
+        results.set(id, { ...results.get(id)!, plan });
+        await planCache.write(id, plan).catch(() => {});
+      }
+    }
     await state.record({ at: now(), type: "builder_work_preserved", packetId: packet.id,
       detail: { preserved, requirementIds: packet.requirementIds, ...(reason ? { reason } : {}) } });
   };

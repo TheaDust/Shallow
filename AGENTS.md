@@ -98,7 +98,7 @@ src/
     pi-tools.ts                 read/edit/write 路径限制与 shell 命令白名单后端（复用 SDK schema/截断，替换执行后端）；
                                 shell 确定性拒绝临时测试命令并引导到 run_tests；装配 run_tests 与会话内 browser 工具
     pi-test-tool.ts             run_tests 工具：限内存的传统测试执行（frontend Vitest 固定 --maxWorkers=1、backend
-                                node:test 固定 --test-concurrency=1、直起 node 不经 npm shim；同一 Worker 内按 target/filter 与源码配置内容摘要复用成功结果；
+                                node:test 固定 --test-concurrency=1、直起 node 不经 npm shim；默认实际执行，确定性测试显式 reuse=true 时按 target/filter 与整个项目源码配置摘要复用成功结果；
                                 成功输出保留末尾 2k 字符/失败保留 30k、超时/中止杀进程）
     pi-browser-tool.ts          Builder browser：脚本/expect、页面文字与可访问结构、可选截图；失败带诊断报错
     builder-app.ts              父进程持有的开发应用生命周期：串行 start/status/stop，Worker 结束后清理
@@ -224,8 +224,8 @@ Catalog 继续展开并验证原子依赖，保留完整原文与树。修改功
 - Judge 每个独立 case 使用全新应用实例与数据目录；同一 case 内的 reload、重开和 newContext 保持该 case 的服务端数据。原文描述连续操作或联动时，Planner 在现有成功/持久化 case 内选择至多一条短操作链，核对新结果及应保留的先前状态，替代重复成功路径；初始计划优先 4 case/20 步，仍保留 6 case/30 步硬上限，不另开规划调用。复用候选依赖和构建，每份计划只启动一次 Chromium。重跑或浏览器重试同样从新数据开始；每次重启保留候选一致性检查与应用启停事件。
 - ProbeCase 的 `setupStepCount` 标记准备前缀，必须以初始状态 assertion 结束，待测业务和结果 assertion 位于其后。wire schema 要求该字段，null/0 表示无需准备；内部及历史计划兼容省略。前缀失败记 `precondition`，先复核计划，合理且可复现的缺口允许 Builder 诊断，目标业务仍为 inconclusive；其他 case 的有效业务失败独立处理。准备恢复的 correction 只携带新前缀 `setupSteps` 和冲突/原文依据，程序计算边界并拼回原待测后缀；普通业务纠正及混合失败中的 `caseCorrectionIds` 只返回受影响的完整 wire case。未修改 case 由程序保留，拼接后仍校验完整计划并在新应用实例执行，沿用现有调用额度。Planner 通过需求允许的可见控件准备互斥初始状态，核对数值、公式、选区、权限和对象身份，保持每 case 30 步上限。newContext 的 actor 不自动登录，必须通过公开登录表单建立新会话。
 - 带种子的业务 sound 必须有已执行的状态检查点；声明的种子和单纯页面/网格可见不能替代状态证据。Judge 接收 preparationCheckpointPassed 与先前成功断言，缺证据时在既有复核额度内纠正准备。准备失败的控件及具名 scope 须有需求锚定才可进入 Builder 诊断；纯猜测准备的 sound 判定在原额度内带反馈纠正，混合失败的有效证据独立处理。strict 错误或候选匹配数大于 1 均按歧义处理。模型 rationale 只作语义判断，不能授予运行事实。
-- 种子导航恢复可处理登录后的入口及混合失败中的可恢复 case；至多两轮本地复查。搜索须有需求依据，同名结果仅依据已声明的 owner 与快照中的对象归属加单层 scope，保留目标名称、操作和预期。恢复通过后仍在新数据实例复验。
-- Worker 等待 SDK 事件队列、压缩、自动重试及压缩后续跑收敛再判终态；空 stop 回执在同窗口补问一次。缺 assistant、空终态、输出长度截断分别记录结构化 terminationReason；超时保留最新已收到的 usage/工具统计和恢复诊断。恢复核对已有实现、完成剩余项，沿用源码未变的检查。修改时验证 `test/pi-recovery.test.ts`、`test/pipeline-recovery.test.ts` 及 baseline 共享执行层。
+- 种子导航恢复可处理登录后的入口及混合失败中的可恢复 case；至多两轮本地复查。搜索须有需求依据，同名结果仅依据已声明的 owner 与快照中的对象归属加单层 scope，同时限定相邻的 expectVisible 与 click；嵌套容器取最内层，独立同名同归属结果仍保持歧义。保留目标名称、操作和预期，恢复通过后仍在新数据实例复验。中断保留检查缓存已复验的定位计划，部分通过计划保留未检查的 case。
+- Worker 等待 SDK 事件队列、压缩、自动重试及压缩后续跑收敛再判终态；保留已收到的无工具调用 stop 回执，压缩后以 assistant 结尾而无法继续时按完成回执或截断失败结束等待。空 stop 回执在同窗口补问一次。缺 assistant、空终态、输出长度截断分别记录结构化 terminationReason；超时保留最新已收到的 usage/工具统计和恢复诊断。恢复核对已有实现、完成剩余项，沿用源码未变的检查。修改时验证 `test/pi-recovery.test.ts`、`test/pipeline-recovery.test.ts` 及 baseline 共享执行层。
 - 文件失败的 `inputSummary` 仅含已成功上传输入的字节数、换行数、末尾是否有换行；经统一脱敏截断进入私有证据和 Builder 白名单反馈。文件正文、隐藏计划和步骤序列保持在 Judge。
 - 失败观测的 `pageUrl`（最多 1000 字符）与 `locatorAttempts.matchCount` 仅用于 Judge 恢复和私有证据，不扩展 Builder 白名单。歧义快照优先保留至多三个候选的可访问结构和容器可见文字，总长度仍限 4000，并清除密码输入值；修改时验证 `test/observability.test.ts`、`test/browser/scoped-locators.test.ts`、`test/browser/probe-continuity.test.ts`。
 

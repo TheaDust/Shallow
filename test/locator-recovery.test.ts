@@ -393,6 +393,82 @@ test("Seed navigation after sign-in scopes same-name results to the declared own
   });
 });
 
+test("Seed identity scopes both a visibility assertion and its click inside nested result containers", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    packet.requirements[0].text = "Opening the repository shows Issues.";
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`, owner `alice`."];
+    const original: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true,
+          fallbacks: [{ by: "role", role: "link", name: "docs", exact: true }] } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const result = (identity: string) => `  - listitem:\n    - article:\n      - link "docs"\n      - paragraph: ${identity}`;
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "strict mode violation",
+      locatorSnapshot: `- list:\n${result("alice/docs")}\n${result("org/docs")}`,
+    }] };
+    const recovered = rootSearchNavigationPlan(packet, original, report)!;
+    assert.ok(recovered);
+    const scope = { by: "role", role: "article", hasText: "alice/docs" };
+    for (const step of recovered.cases[0].steps.slice(1, 3)) {
+      assert.ok(step.op === "expectVisible" || step.op === "click");
+      assert.deepEqual(step.locator.scope, scope);
+      assert.equal(step.locator.by === "role" && step.locator.name, "docs");
+      assert.equal(step.locator.exact, true);
+    }
+    const click = recovered.cases[0].steps[2];
+    assert.ok(click.op === "click");
+    assert.deepEqual(click.locator.fallbacks?.[0].scope, scope);
+    assert.deepEqual(recovered.cases[0].steps.at(-1), original.cases[0].steps.at(-1));
+    report.failures[0].locatorSnapshot = `- list:\n${result("alice/docs")}\n${result("alice/docs")}`;
+    assert.equal(rootSearchNavigationPlan(packet, original, report), undefined, "distinct same-identity results remain ambiguous");
+  });
+});
+
+test("Detection-only auditing resolves declared seed identity in Chromium and confirms it on a fresh application", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = "Seed data: repository `docs`, owner `alice`. Opening the repository shows Issues.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const server = createServer((req, res) => {
+      res.setHeader("content-type", "text/html");
+      res.end(req.url === "/alice/docs" ? '<main><a href="/issues">Issues</a></main>' :
+        '<main><ul><li><article><a href="/alice/docs">docs</a><p>alice/docs</p></article></li>' +
+        '<li><article><a href="/org/docs">docs</a><p>org/docs</p></article></li></ul></main>');
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const runner = new PlaywrightProbeRunner();
+    let starts = 0;
+    f.deps.appLifecycle.start = async () => { starts++; return {
+      baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`, stop: async () => {},
+    }; };
+    f.deps.runner = runner;
+    try {
+      const state = new RunStateStore({ statusByRequirementId: { A: "todo" }, acceptedSha: "checkpoint",
+        startedAtMs: 0, totalBudgetMs: 30_000 }, f.options.ledgerFile);
+      const result = await auditPacket(packet, plan, f.options, f.deps, state, () => 30_000, { refineLocators: false });
+      assert.equal(result.status, "verified");
+      assert.equal(starts, 3, "initial run, recovered run, and fresh confirmation");
+      assert.equal((await f.events()).filter(event => event.type === "probe_navigation_attempted").length, 1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+});
+
 test("A failed preparation checkpoint can be corrected before the target behavior is graded", async () => {
   await withModulePipeline(async f => {
     let runs = 0;

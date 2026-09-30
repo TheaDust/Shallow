@@ -47,7 +47,7 @@ async function makeApp(root: string, { frontend = true, backend = true } = {}): 
   if (backend) await mkdir(join(root, "backend"), { recursive: true });
 }
 
-function execute(tool: ReturnType<typeof createTestTool>, params: { target: string; filter?: string }, signal?: AbortSignal) {
+function execute(tool: ReturnType<typeof createTestTool>, params: { target: string; filter?: string; reuse?: boolean }, signal?: AbortSignal) {
   return tool.execute("call-1", params as never, signal as never, {} as never, {} as never);
 }
 
@@ -103,16 +103,74 @@ test("run_tests reuses only successful results with an unchanged exact source di
     await writeFile(source, "export const value = 1;", "utf8");
     const { calls, spawnFn } = fakeSpawn();
     const tool = createTestTool(root, { spawnFn });
-    await execute(tool, { target: "frontend", filter: "App" });
-    const cached = await execute(tool, { target: "frontend", filter: "App" });
+    await execute(tool, { target: "frontend", filter: "App", reuse: true });
+    const cached = await execute(tool, { target: "frontend", filter: "App", reuse: true });
     assert.equal(calls.length, 1);
     assert.match((cached.content[0] as { text: string }).text, /reused successful result: source digest unchanged/);
     assert.equal((cached.details as { results: Array<{ cached: boolean }> }).results[0].cached, true);
 
     await writeFile(source, "export const value = 2;", "utf8");
-    const changed = await execute(tool, { target: "frontend", filter: "App" });
+    const changed = await execute(tool, { target: "frontend", filter: "App", reuse: true });
     assert.equal(calls.length, 2);
     assert.doesNotMatch((changed.content[0] as { text: string }).text, /reused successful result/);
+  });
+});
+
+test("Explicit test reuse invalidates when shared, cross-suite or root configuration inputs change", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    await mkdir(join(root, "backend", "test"));
+    await mkdir(join(root, "shared"));
+    const inputs = ["shared/contract.txt", "frontend/contract.txt", "test-config.json"];
+    for (const path of inputs) await writeFile(join(root, path), "valid");
+    await writeFile(join(root, "backend", "test", "contract.test.mjs"), `
+      import { test } from 'node:test';
+      import assert from 'node:assert/strict';
+      import { readFile } from 'node:fs/promises';
+      test('project contracts', async () => {
+        for (const path of ${JSON.stringify(inputs)}) {
+          assert.equal(await readFile(new URL('../../' + path, import.meta.url), 'utf8'), 'valid');
+        }
+      });
+    `);
+    const tool = createTestTool(root);
+    const first = await execute(tool, { target: "backend", reuse: true });
+    assert.equal((first.details as { results: Array<{ exitCode: number }> }).results[0].exitCode, 0);
+    for (const path of inputs) {
+      await writeFile(join(root, path), "invalid");
+      const result = await execute(tool, { target: "backend", reuse: true });
+      const suite = (result.details as { results: Array<{ exitCode: number; cached: boolean }> }).results[0];
+      assert.equal(suite.cached, false, path);
+      assert.equal(suite.exitCode, 1, path);
+      await writeFile(join(root, path), "valid");
+    }
+  });
+});
+
+test("Tests execute by default even when only generated or runtime inputs change", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    await mkdir(join(root, "backend", ".data"));
+    const { calls, spawnFn } = fakeSpawn();
+    const tool = createTestTool(root, { spawnFn });
+    await execute(tool, { target: "backend" });
+    await writeFile(join(root, "backend", ".data", "state.json"), '{"changed":true}');
+    const result = await execute(tool, { target: "backend" });
+    assert.equal(calls.length, 2);
+    assert.equal((result.details as { results: Array<{ cached: boolean }> }).results[0].cached, false);
+  });
+});
+
+test("Explicit test reuse excludes private controller plans and evidence", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    for (const directory of [".arc", "shallow-progress"]) await mkdir(join(root, directory));
+    const { calls, spawnFn } = fakeSpawn();
+    const tool = createTestTool(root, { spawnFn });
+    await execute(tool, { target: "backend", reuse: true });
+    for (const directory of [".arc", "shallow-progress"]) await writeFile(join(root, directory, "plan.json"), "private plan");
+    await execute(tool, { target: "backend", reuse: true });
+    assert.equal(calls.length, 1);
   });
 });
 
@@ -124,8 +182,8 @@ test("run_tests never caches a failed result", async () => {
       child.emit("exit", 1);
     });
     const tool = createTestTool(root, { spawnFn });
-    await execute(tool, { target: "backend" });
-    await execute(tool, { target: "backend" });
+    await execute(tool, { target: "backend", reuse: true });
+    await execute(tool, { target: "backend", reuse: true });
     assert.equal(calls.length, 2);
   });
 });
