@@ -1,0 +1,425 @@
+.home__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.home__list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.workbook-record {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.5rem;
+}
+
+.workbook-record__link {
+  color: var(--ui-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.workbook-record__link:hover,
+.workbook-record__link:focus-visible {
+  text-decoration: underline;
+}
+
+.workbook-record__updated,
+.editor__updated,
+.home__empty {
+  margin: 0;
+  color: var(--ui-muted);
+}
+
+.create__form {
+  display: grid;
+  gap: 1rem;
+  max-width: 28rem;
+}
+
+.create__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editor__header {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.editor__title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.editor__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.rename-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.rename-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.editor__notice {
+  margin: 0.5rem 0 0;
+  color: var(--ui-danger);
+}
+
+.worksheet-tabs__bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--ui-border, #d8dee9);
+}
+
+.worksheet-tabs__list {
+  flex-wrap: wrap;
+  border-bottom: 0;
+}
+
+.worksheet-tabs__tab {
+  display: flex;
+  align-items: center;
+}
+
+.worksheet-tabs__tab [role="menu"] {
+  margin-left: 0.1rem;
+}
+
+.worksheet-tabs__bar .ui-button {
+  margin-bottom: 0.35rem;
+}
+
+.worksheet-tabs__tab-button[aria-selected="true"] {
+  font-weight: 600;
+}
+
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.formula-bar__address {
+  min-width: 4rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.375rem;
+  background: var(--ui-surface-subtle);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.formula-bar__label {
+  color: var(--ui-muted);
+  font-style: italic;
+}
+
+.formula-bar__input {
+  flex: 1;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.375rem;
+  font: inherit;
+}
+
+.sheet-grid {
+  display: grid;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.5rem;
+  user-select: none;
+}
+
+.sheet-grid__row {
+  display: grid;
+  grid-template-columns: 3rem repeat(var(--sheet-columns, 26), minmax(6rem, 1fr));
+}
+
+/* A filtered out row stays in the document but is not rendered, so coordinates and values stay. */
+.sheet-grid__row[hidden] {
+  display: none;
+}
+
+.sheet-grid__corner,
+.sheet-grid__header-cell,
+.sheet-grid__row-header {
+  padding: 0.3rem 0.4rem;
+  border-right: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.sheet-grid__cell {
+  position: relative;
+  min-height: 1.9rem;
+  padding: 0.3rem 1.5rem 0.3rem 0.4rem;
+  border-right: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sheet-grid__cell-action,
+.cell-dropdown {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.15rem;
+}
+
+.sheet-grid__cell-action,
+.cell-dropdown__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  min-height: 1.25rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--ui-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The glyph is decorative and stays out of the cell text. */
+.sheet-grid__cell-action::after,
+.cell-dropdown__button::after {
+  content: "▾";
+  font-size: 0.7rem;
+}
+
+.sheet-grid__cell-action:hover,
+.cell-dropdown__button:hover {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-subtle);
+}
+
+.sheet-grid__cell-action[data-filtered="true"] {
+  color: var(--ui-accent);
+}
+
+.cell-dropdown__list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 8rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.2rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.375rem;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+}
+
+.cell-dropdown__option {
+  display: block;
+  width: 100%;
+  padding: 0.3rem 0.4rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cell-dropdown__option:hover,
+.cell-dropdown__option:focus-visible {
+  background: var(--ui-surface-subtle);
+}
+
+.filter-dialog__region,
+.validation-dialog__range,
+.sort-dialog__range {
+  margin: 0 0 0.75rem;
+  color: var(--ui-muted);
+}
+
+.sort-dialog {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sort-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-dialog__section {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filter-dialog__values-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.filter-dialog__heading {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.filter-dialog__values {
+  display: grid;
+  gap: 0.25rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.filter-dialog__value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-dialog__error,
+.validation-dialog__error,
+.sort-dialog__error {
+  margin: 0;
+  color: var(--ui-danger);
+}
+
+.pivot-dialog__source,
+.pivot-editor__source {
+  margin: 0 0 0.75rem;
+  color: var(--ui-muted);
+}
+
+.pivot-dialog__destination {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pivot-dialog__radio {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pivot-dialog__error,
+.pivot-editor__error {
+  margin: 0.75rem 0 0;
+  color: var(--ui-danger);
+}
+
+.pivot-editor {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+}
+
+.pivot-editor__heading {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.pivot-editor__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.pivot-editor__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.validation-dialog {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.sheet-grid__wrapper {
+  position: relative;
+}
+
+.sheet-menu {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  min-width: 9rem;
+  padding: 0.25rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.5rem;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+}
+
+.sheet-grid__editor {
+  width: 100%;
+  min-height: 1.9rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  outline: none;
+}
+
+.sheet-grid__cell[data-selected="true"] {
+  background: #e8f0fe;
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+}
+
+.sheet-grid__cell[data-active="true"] {
+  outline: 3px solid var(--ui-accent);
+  outline-offset: -3px;
+}
+
+.sheet-grid:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
