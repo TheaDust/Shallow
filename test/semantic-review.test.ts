@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parsePlanReview, preparationReviewJsonSchema, type PreparationReviewTargets } from "../src/judge/semantic-review.js";
+import { parsePlanReview, preparationReviewJsonSchema, PROBE_REVIEW_JSON_SCHEMA,
+  type PreparationReviewTargets } from "../src/judge/semantic-review.js";
 import { parseProbePlan, toWireProbePlan, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 
@@ -23,6 +24,24 @@ test("A corrected review must change the plan, cite conflicts, and ground its ba
   if (review.status !== "corrected") return;
   assert.equal(review.corrections.length, 1);
   assert.equal(review.plan.cases[0].steps.length, 2);
+});
+
+test("A business review returns only corrected cases and reconstructs untouched cases locally", () => {
+  const before = original();
+  before.cases.push({ ...structuredClone(before.cases[0]), id: "case-B", purpose: "persistence" });
+  const correctedCase = (toWire(parseProbePlan(corrected(), packet())) as { cases: Array<Record<string, unknown>> }).cases[0];
+  const response = { verdict: "corrected", rationale: "计划误读结果", corrections: [{
+    caseId: "case-A", conflict: "结果目标不符合需求", basis: ["Display the main workspace."], case: correctedCase,
+  }] };
+  const review = parsePlanReview(response, packet(), before,
+    { preparationOnlyCaseIds: [], caseCorrectionIds: ["case-A"] });
+  if (review.status !== "corrected") assert.fail("missing corrected plan");
+  assert.deepEqual(review.plan.cases[0].steps, parseProbePlan(corrected(), packet()).cases[0].steps);
+  assert.deepEqual(review.plan.cases[1], before.cases[1]);
+  assert.doesNotMatch(JSON.stringify(PROBE_REVIEW_JSON_SCHEMA.properties), /"plan"/);
+  assert.match(JSON.stringify(PROBE_REVIEW_JSON_SCHEMA.properties), /"case"/);
+  assert.throws(() => parsePlanReview({ ...response, corrections: [{ ...response.corrections[0], caseId: "case-B" }] },
+    packet(), before, { preparationOnlyCaseIds: [], caseCorrectionIds: ["case-A"] }), /not a failed case/);
 });
 
 test("Corrected reviews reject unchanged plans, phantom cases, weak citations, and uncovered requirements", () => {

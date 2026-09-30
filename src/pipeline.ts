@@ -717,6 +717,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (needsImplementationRetry(result)) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
+        const firstAttemptOverflow = packet.attempt !== 3 && result.outcome === "timed_out" &&
+          result.execution?.termination?.compactionReason === "overflow";
+        if (firstAttemptOverflow && await splitPacket(packet, packetIndex,
+          "First implementation attempt exhausted the context window", "recovery")) continue;
         const retryTimeoutMs = packet.attempt === 3 ? 0 : budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
         if (retryTimeoutMs > 0 && !gateway.exhausted) {
           const retryPacket: WorkPacket = { ...packet, attempt: 2 };

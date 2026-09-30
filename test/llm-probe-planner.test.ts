@@ -1016,8 +1016,8 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   const reviews = [
     { verdict: "sound", rationale: "期望与需求原文一致" },
     { verdict: "corrected", rationale: "计划误读种子",
-      corrections: [{ caseId: "save-profile", conflict: "需求写 active", basis: ["Keep the profile after refresh."] }],
-      plan: correctedPlan() },
+      corrections: [{ caseId: "save-profile", conflict: "需求写 active", basis: ["Keep the profile after refresh."],
+        case: (correctedPlan() as { cases: unknown[] }).cases[0] }] },
   ];
   let call = 0;
   const fetchFn: typeof fetch = async (_input, init) => {
@@ -1063,15 +1063,21 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   assert.match(secondPayload.failures[0].pageUrl, /#\/profile/);
   assert.doesNotMatch(secondPayload.failures[0].pageUrl, /review-secret/);
   assert.equal(secondPayload.failures[0].locatorAttempts[0].matchCount, 0);
+  const secondRequest = JSON.parse(bodies[1]) as { messages: Array<{ content: string }> };
+  const reviewSchema = secondRequest.messages[0].content.split("仅返回符合此 schema 的 JSON：\n").at(-1)!;
+  assert.match(reviewSchema, /"case"/);
+  assert.doesNotMatch(reviewSchema, /"plan"/);
 });
 
 test("Review contract violations are review-category errors with diagnostics", async () => {
   for (const [payload, pattern] of [
-    [{ verdict: "sound", rationale: "x", plan: correctedPlan() }, /must not carry/],
+    [{ verdict: "sound", rationale: "x", plan: correctedPlan() }, /unsupported field: plan|must not carry/],
     [{ verdict: "corrected", rationale: "x",
-      corrections: [{ caseId: "ghost", conflict: "c", basis: ["Keep the profile after refresh."] }], plan: correctedPlan() }, /reviewed and corrected plans/],
+      corrections: [{ caseId: "ghost", conflict: "c", basis: ["Keep the profile after refresh."],
+        case: (correctedPlan() as { cases: unknown[] }).cases[0] }] }, /reviewed plan/],
     [{ verdict: "corrected", rationale: "x",
-      corrections: [{ caseId: "save-profile", conflict: "c", basis: ["invented"] }], plan: correctedPlan() }, /verbatim/],
+      corrections: [{ caseId: "save-profile", conflict: "c", basis: ["invented"],
+        case: (correctedPlan() as { cases: unknown[] }).cases[0] }] }, /verbatim/],
   ] as const) {
     const planner = new LlmProbePlanner(config(), async () =>
       jsonResponse({ choices: [{ message: { content: JSON.stringify(payload) } }] }));

@@ -43,8 +43,14 @@ const MAX_QUOTE = 2_000;
 const MAX_CORRECTIONS = 6;
 const MAX_BASIS_QUOTES = 3;
 
+const REVIEW_CORRECTION_METADATA = {
+  caseId: { type: "string", minLength: 1 },
+  conflict: { type: "string", minLength: 1, maxLength: MAX_CONFLICT },
+  basis: { type: "array", minItems: 1, maxItems: MAX_BASIS_QUOTES, items: { type: "string", minLength: 1 } },
+} as const;
+
 export const PROBE_REVIEW_JSON_SCHEMA = {
-  $defs: { ...PROBE_PLAN_JSON_SCHEMA.$defs, plan: PROBE_PLAN_BODY },
+  $defs: PROBE_PLAN_JSON_SCHEMA.$defs,
   type: "object",
   additionalProperties: false,
   required: ["verdict", "rationale"],
@@ -57,27 +63,24 @@ export const PROBE_REVIEW_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["caseId", "conflict", "basis"],
+        required: ["caseId", "conflict", "basis", "case"],
         properties: {
-          caseId: { type: "string", minLength: 1 },
-          conflict: { type: "string", minLength: 1, maxLength: MAX_CONFLICT },
-          basis: { type: "array", minItems: 1, maxItems: MAX_BASIS_QUOTES, items: { type: "string", minLength: 1 } },
+          ...REVIEW_CORRECTION_METADATA,
+          case: PROBE_PLAN_BODY.properties.cases.items,
         },
       },
     },
-    plan: { anyOf: [{ $ref: "#/$defs/plan" }, { type: "null" }] },
   },
 } as const;
 
 /** Preparation recovery returns prefixes; other failed cases may carry case corrections. */
 export function preparationReviewJsonSchema(includeCaseCorrections = false): unknown {
   // Target IDs stay in the user payload to preserve the shared system prefix.
-  const metadata = PROBE_REVIEW_JSON_SCHEMA.properties.corrections.items.properties;
   const variants: unknown[] = [{
     type: "object", additionalProperties: false,
     required: ["caseId", "conflict", "basis", "setupSteps"],
     properties: {
-      ...metadata,
+      ...REVIEW_CORRECTION_METADATA,
       setupSteps: { ...PROBE_PLAN_BODY.properties.cases.items.properties.steps, minItems: 1 },
     },
   }];
@@ -85,7 +88,7 @@ export function preparationReviewJsonSchema(includeCaseCorrections = false): unk
     type: "object", additionalProperties: false,
     required: ["caseId", "conflict", "basis", "case"],
     properties: {
-      ...metadata,
+      ...REVIEW_CORRECTION_METADATA,
       case: PROBE_PLAN_BODY.properties.cases.items,
     },
   });
@@ -108,7 +111,13 @@ export function parsePlanReview(
   preparationTargets?: PreparationReviewTargets,
 ): PlanReview {
   const response = record(value, "PlanReview");
-  const review = preparationTargets ? mergePreparationReview(response, original, preparationTargets) : response;
+  // Current protocol returns only affected cases. Accept the previous full-plan
+  // shape when reading a legacy response so an in-flight gateway request cannot
+  // fail solely because the controller was upgraded while it was pending.
+  const localTargets = preparationTargets ?? (!Object.hasOwn(response, "plan") ? {
+    preparationOnlyCaseIds: [], caseCorrectionIds: original.cases.map(item => item.id),
+  } : undefined);
+  const review = localTargets ? mergeLocalReview(response, original, localTargets) : response;
   keys(review, ["verdict", "rationale", "corrections", "plan"], "PlanReview");
   const rationale = boundedText(review.rationale, "PlanReview.rationale", MAX_RATIONALE);
   if (review.verdict === "sound") {
@@ -169,8 +178,8 @@ export function parsePlanReview(
   return { status: "corrected", rationale, plan, corrections };
 }
 
-/** Rebuild the plan locally so a preparation proposal never owns the tested suffix. */
-function mergePreparationReview(review: Record<string, unknown>, original: ProbePlan,
+/** Rebuild the plan locally so the model returns only affected cases. */
+function mergeLocalReview(review: Record<string, unknown>, original: ProbePlan,
   targets: PreparationReviewTargets): Record<string, unknown> {
   keys(review, ["verdict", "rationale", "corrections"], "PlanReview");
   if (review.verdict !== "corrected") return review;

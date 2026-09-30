@@ -46,6 +46,32 @@ test("An unfinished compound package is completed atom by atom before its downst
   });
 });
 
+test("A compound package that times out after context overflow splits before a whole-package continuation", async () => {
+  await withModulePipeline(async f => {
+    const original = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await original(request, options);
+      if (request.mode === "implement" && request.packet.requirementIds.length > 1) {
+        return { ...result, outcome: "timed_out", execution: {
+          engine: "fake", version: "1", nodeVersion: process.version, workerPid: 1, resumed: false,
+          durationMs: 5_400_000, cleanupMs: 0, usage: { status: "unavailable" },
+          termination: { compactionPending: false, retryPending: true, compactionReason: "overflow" },
+        } };
+      }
+      return result;
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []),
+      [["A", "B"], ["A"], ["B"], ["C"]]);
+    assert.equal(f.builder.runOptions.some(options => options?.resumeInterrupted), false);
+    const split = (await f.events()).find(event => event.type === "implementation_split" && event.detail?.kind === "recovery");
+    assert.ok(split?.type === "implementation_split");
+    assert.ok(split.detail);
+    assert.match(split.detail.reason, /exhausted the context window/);
+  });
+});
+
 test("Atomic recovery stays bounded when a foundation cannot complete", async () => {
   await withModulePipeline(async f => {
     const original = f.builder.run.bind(f.builder);

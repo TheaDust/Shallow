@@ -22,7 +22,7 @@ test("Cutoff grouping keeps usage and expands the retry output allowance with ex
     if (++calls === 1) return new Response(`data: ${JSON.stringify({ choices: [{ index: 0,
       delta: { content: '{"groups":[' }, finish_reason: "length" }], usage: { prompt_tokens: 100, completion_tokens: 16384 } })}\n\ndata: [DONE]\n\n`,
       { headers: { "content-type": "text/event-stream" } });
-    assert.equal(body.max_tokens, 32768);
+    assert.equal(body.max_tokens, 131072);
     assert.match(body.messages[1].content, /cut off/);
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }));
   });
@@ -112,7 +112,7 @@ test("LLM grouping sends descriptions and original metrics once, with independen
   assert.equal(calls[0].init?.signal, undefined);
   const body = JSON.parse(String(calls[0].init?.body));
   assert.equal(body.model, config.model);
-  assert.equal(body.max_tokens, 16384);
+  assert.equal(body.max_tokens, 65536);
   assert.deepEqual(body.response_format, { type: "json_object" });
   assert.deepEqual(body.stream_options, { include_usage: true });
   assert.match(body.messages[0].content, /moduleId/);

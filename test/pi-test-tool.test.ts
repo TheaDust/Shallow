@@ -95,6 +95,41 @@ test("run_tests target=all runs frontend then backend in sequence", async () => 
   });
 });
 
+test("run_tests reuses only successful results with an unchanged exact source digest", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    await mkdir(join(root, "frontend", "src"), { recursive: true });
+    const source = join(root, "frontend", "src", "App.tsx");
+    await writeFile(source, "export const value = 1;", "utf8");
+    const { calls, spawnFn } = fakeSpawn();
+    const tool = createTestTool(root, { spawnFn });
+    await execute(tool, { target: "frontend", filter: "App" });
+    const cached = await execute(tool, { target: "frontend", filter: "App" });
+    assert.equal(calls.length, 1);
+    assert.match((cached.content[0] as { text: string }).text, /reused successful result: source digest unchanged/);
+    assert.equal((cached.details as { results: Array<{ cached: boolean }> }).results[0].cached, true);
+
+    await writeFile(source, "export const value = 2;", "utf8");
+    const changed = await execute(tool, { target: "frontend", filter: "App" });
+    assert.equal(calls.length, 2);
+    assert.doesNotMatch((changed.content[0] as { text: string }).text, /reused successful result/);
+  });
+});
+
+test("run_tests never caches a failed result", async () => {
+  await withTempDir("shallow-test-tool-", async root => {
+    await makeApp(root);
+    const { calls, spawnFn } = fakeSpawn(child => {
+      child.stderr.emit("data", "failure\n");
+      child.emit("exit", 1);
+    });
+    const tool = createTestTool(root, { spawnFn });
+    await execute(tool, { target: "backend" });
+    await execute(tool, { target: "backend" });
+    assert.equal(calls.length, 2);
+  });
+});
+
 test("run_tests reports failures with the output tail and a non-zero exit code", async () => {
   await withTempDir("shallow-test-tool-", async root => {
     await makeApp(root);
