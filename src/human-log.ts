@@ -96,7 +96,7 @@ function describe(type: string, event: RunEvent): string | null {
       return `${detail?.source === "llm" ? "语义分组已通过校验" : "语义分组未采用，使用确定性分组"}；功能组 ${pickNumber(grouping, "packets") ?? 0}${reason ? `；原因：${reason}` : ""}`;
     }
     case "feature_grouping_retry":
-      return `语义分组失败后重试；第 ${detail?.attempt} 次；原因：${reason ?? "未知"}${detail?.cutOffByModel ? "；扩大输出额度" : ""}`;
+      return `语义分组失败后重试；第 ${detail?.attempt} 次；原因：${reason ?? "未知"}${detail?.cutOffByModel ? "；扩大输出额度至 128k" : ""}`;
     case "dependency_gate_blocked":
       return `基础依赖尚无已完成的可运行实现，跳过下游实现（${packetId}）；当前需求 ${strings(detail?.requirementIds).join("、")}；未完成依赖 ${strings(detail?.unmetDependencyIds).join("、")}`;
     case "dependency_gate_provisional":

@@ -62,7 +62,8 @@ src/
                                 （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
-  llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：完整描述/依赖/容量数据，省略场景正文；解释不作为行为合同
+  llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：完整描述/依赖/容量数据，省略场景正文；首次 64k 输出、
+                                截断重试 128k；解释不作为行为合同
   planner-json-client.ts        分组与 Probe Planner 共用 JSON/SSE 请求、usage 与网关错误解析
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
   run-budget.ts                 RunBudget：显式正预算的阶段预留和调用剩余额度；缺省/0 不限总时长

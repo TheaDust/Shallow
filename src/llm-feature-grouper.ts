@@ -30,7 +30,7 @@ export class LlmFeatureGrouper implements FeatureGrouper {
         ...(options.feedback ? { previousAttempt: options.feedback,
           instruction: "根据上次错误重新返回完整分组。保留全部需求且只输出 ID 与简短目的，省略额外解释。" } : {}),
       }) },
-    ], FEATURE_GROUPING_SCHEMA, { ...options, maxTokens: options.feedback?.cutOffByModel ? 32_768 : 16_384 });
+    ], FEATURE_GROUPING_SCHEMA, { ...options, maxTokens: options.feedback?.cutOffByModel ? 131_072 : 65_536 });
     try { return JSON.parse(extractJsonPayload(content)) as unknown; }
     catch (error) {
       throw new PlannerRequestError("json", "Feature grouper content is not JSON", { cause: error, apiKey: this.config.apiKey });
