@@ -214,7 +214,7 @@ GitOps（`src/git-ops.ts`）细节：
 
 ### 模型请求的公共前缀
 
-运行时分组使用 `prompts/planning/feature-grouping.md`，只依据本次 Catalog 需求生成 ID 分组，不固定题目、成员组合或组数。`feature_grouping_started`、`feature_grouping_usage`、`feature_grouping_retry`、`feature_grouping_finished` 记录启动、实际 token、重试原因、校验后的组映射与来源。JSON、响应或分组错误携带具体反馈重试一次，输出截断时将额度从 16k 提到 32k；两次失败或鉴权/请求拒绝后才回退。分组使用 Planner 共享网关恢复和并发池：真正的临时网关错误持续重试；无总预算时等待在途响应，不设独立截止，正预算时计入实现阶段剩余额度。分组结果在当前运行内复用；未完成复合包和含未就绪成员的混合依赖包按原子继续调度，记录 `implementation_split`。baseline 保持原有 ROOT 子树调度。
+运行时分组使用 `prompts/planning/feature-grouping.md`，只依据本次 Catalog 需求生成 ID 分组，不固定题目、成员组合或组数。输入提供模块→原子 ID 归属表；提示词优先约束单模块与容量，再按状态/操作链划分并平衡包边界，在依赖合法且复杂度适当时连续安排同一模块，减少边界验收往返。`feature_grouping_started`、`feature_grouping_usage`、`feature_grouping_retry`、`feature_grouping_finished` 记录启动、实际 token、重试原因、校验后的组映射与来源。JSON、响应或分组错误携带具体反馈重试一次，跨模块错误列出包内 ID 与各自 moduleId；首次输出额度 64k，截断重试 128k，两次失败或鉴权/请求拒绝后才回退。分组使用 Planner 共享网关恢复和并发池：真正的临时网关错误持续重试；无总预算时等待在途响应，不设独立截止，正预算时计入实现阶段剩余额度。分组结果在当前运行内复用；未完成复合包和含未就绪成员的混合依赖包按原子继续调度，记录 `implementation_split`。baseline 保持原有 ROOT 子树调度。
 
 Builder 任务正文先放产品目标与共享种子、平台合同、回执格式及适用规则，再放本包路径、依赖、需求、任务编号、尝试次数和行动；交付修复先放公共合同与规则，再放失败观测。Planner 的计划生成与语义复核请求先放产品与共享种子，再放前置需求、本条需求和 packetId；重试反馈追加在后面。相同内容保持确定顺序，为上游前缀缓存提供复用条件。实际命中率仍以网关返回的 usage 为准。
 

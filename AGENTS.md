@@ -53,7 +53,7 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   judge/probe-planner.md        Judge Planner 计划生成系统提示词（中文）
   judge/probe-refinement.md     Judge Planner locator 精化系统提示词（中文）
   judge/probe-review.md         Judge 语义复核系统提示词（中文）
-  planning/feature-grouping.md  运行时功能分组提示词：共享状态/操作链内聚、依赖与容量；输出仅作调度
+  planning/feature-grouping.md  运行时功能分组提示词：模块硬边界、状态/操作链内聚、完整分区与模块连续调度；输出仅作调度
 
 src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
@@ -62,7 +62,7 @@ src/
                                 （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
   feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
-  llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：完整描述/依赖/容量数据，省略场景正文；首次 64k 输出、
+  llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：模块→原子 ID 归属表、完整描述/依赖/容量数据，省略场景正文；首次 64k 输出、
                                 截断重试 128k；解释不作为行为合同
   planner-json-client.ts        分组与 Probe Planner 共用 JSON/SSE 请求、usage 与网关错误解析
   pipeline.ts                   编排核心：模块实现、可运行检查点、模块边界验收与就地修复、最终全量验收（只检测）与最终交付
