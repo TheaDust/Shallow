@@ -1,0 +1,1024 @@
+{
+  "accounts": [
+    {
+      "id": "account-alice-dev",
+      "username": "alice-dev",
+      "email": "alice.dev@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "e9c786ec882cabd4d367ca2269df37ac",
+        "hash": "6173c260106db0e9e55b6851a628d1603c4353087b231b2e5c47812d79fd3191"
+      },
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-bob-reviewer",
+      "username": "bob-reviewer",
+      "email": "bob.reviewer@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "c795909feecc1050eb79eb3ead2c86a1",
+        "hash": "4cb5d1e2f5874beae7e0114334ce2cc3091774164b21be8b9105edf9c042e41f"
+      },
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "account-carol-dev",
+      "username": "carol-dev",
+      "email": "carol.dev@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "a75f36cac91027f19e69d60fa419bfd1",
+        "hash": "b07da00e3e3422b18ec201c2b4012a922443adb14549b8fa258b89812d767057"
+      },
+      "createdAt": "2024-01-03T00:00:00.000Z"
+    },
+    {
+      "id": "54f54778-8548-41d8-955b-b9762b776e2a",
+      "username": "nora-demo",
+      "email": "nora.demo@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "51b34fd1b8626f29415384fb0b27060f",
+        "hash": "98f0b77c2d08f8c02aef573a47984d262d9b32aa4f371bb12b56e9a93e8c1e04"
+      },
+      "createdAt": "2026-09-30T10:36:32.685Z"
+    },
+    {
+      "id": "528a05df-ed35-4c41-a9ac-444ef0f58594",
+      "username": "duplicate-demo",
+      "email": "duplicate.demo@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "ef4e654f20b595026d75a3d7c844e2af",
+        "hash": "915469c78f411d56adf6462c673f203eb5bc0f719b46ea8ba8e6563d47e316dc"
+      },
+      "createdAt": "2026-09-30T10:36:33.524Z"
+    },
+    {
+      "id": "acfeddc9-3c3f-4e98-8d6e-9701d6e46a7b",
+      "username": "recovery-demo",
+      "email": "recovery.demo@example.test",
+      "emailVerified": true,
+      "status": "active",
+      "credential": {
+        "algorithm": "scrypt",
+        "salt": "8b7f6ccff11ddc2ce16beb86bf6ab1b9",
+        "hash": "2147060e0b0c6507893c5b6003d46b90b02e89b7f2a2a6b9df7b0ec006e0d282"
+      },
+      "createdAt": "2026-09-30T10:36:37.091Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "9bd8e65e-4a77-4c1c-9fd0-e963fd5443fc",
+      "accountId": "54f54778-8548-41d8-955b-b9762b776e2a",
+      "active": true,
+      "createdAt": "2026-09-30T10:36:32.832Z"
+    },
+    {
+      "id": "e556a53b-ce6d-4ea6-b2bf-58babc750c7e",
+      "accountId": "account-alice-dev",
+      "active": false,
+      "createdAt": "2026-09-30T10:36:34.797Z"
+    },
+    {
+      "id": "75bd2954-061d-4a40-bfcd-3f6a7090bf14",
+      "accountId": "account-alice-dev",
+      "active": false,
+      "createdAt": "2026-09-30T10:36:35.798Z"
+    },
+    {
+      "id": "845292f5-3057-4939-852b-ac25df047105",
+      "accountId": "acfeddc9-3c3f-4e98-8d6e-9701d6e46a7b",
+      "active": false,
+      "createdAt": "2026-09-30T10:36:38.988Z"
+    },
+    {
+      "id": "fa36ce77-cb29-4e13-be0c-d5191708169b",
+      "accountId": "acfeddc9-3c3f-4e98-8d6e-9701d6e46a7b",
+      "active": true,
+      "createdAt": "2026-09-30T10:36:40.272Z"
+    },
+    {
+      "id": "31690913-bee7-4770-bcad-20dd79e9f1f8",
+      "accountId": "account-alice-dev",
+      "active": false,
+      "createdAt": "2026-09-30T10:36:40.756Z"
+    },
+    {
+      "id": "fd214a9e-bf57-4cbe-b410-21bbccf1d3f8",
+      "accountId": "account-alice-dev",
+      "active": false,
+      "createdAt": "2026-09-30T10:36:41.494Z"
+    },
+    {
+      "id": "161a64de-4dcd-4194-a949-850602c6f1c9",
+      "accountId": "account-alice-dev",
+      "active": true,
+      "createdAt": "2026-09-30T10:36:42.306Z"
+    }
+  ],
+  "organizations": [
+    {
+      "id": "org-acme-demo",
+      "login": "acme-demo",
+      "name": "Acme Demo",
+      "createdAt": "2024-01-03T00:00:00.000Z",
+      "createdBy": {
+        "accountId": "account-alice-dev",
+        "login": "alice-dev"
+      },
+      "members": [
+        {
+          "accountId": "account-alice-dev",
+          "role": "owner",
+          "createdAt": "2024-01-03T00:00:00.000Z"
+        },
+        {
+          "accountId": "account-bob-reviewer",
+          "role": "member",
+          "createdAt": "2024-01-04T00:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "id": "team-acme-demo-frontend-team",
+      "organizationId": "org-acme-demo",
+      "name": "frontend-team",
+      "description": "Frontend engineers of the Acme platform.",
+      "parentTeamId": null,
+      "createdBy": {
+        "accountId": "account-alice-dev",
+        "login": "alice-dev"
+      },
+      "createdAt": "2024-01-06T00:00:00.000Z"
+    }
+  ],
+  "teamMemberships": [],
+  "repositoryGrants": [
+    {
+      "repositoryId": "repo-alice-dev-secret-research",
+      "subjectType": "account",
+      "subjectId": "account-bob-reviewer",
+      "role": "write",
+      "grantorId": "account-alice-dev",
+      "createdAt": "2024-02-21T09:00:00.000Z"
+    },
+    {
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "subjectType": "account",
+      "subjectId": "account-bob-reviewer",
+      "role": "write",
+      "grantorId": "account-alice-dev",
+      "createdAt": "2024-02-21T09:30:00.000Z"
+    },
+    {
+      "repositoryId": "repo-acme-demo-acme-internal",
+      "subjectType": "account",
+      "subjectId": "account-bob-reviewer",
+      "role": "read",
+      "grantorId": "account-alice-dev",
+      "createdAt": "2024-02-19T09:00:00.000Z"
+    },
+    {
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "subjectType": "account",
+      "subjectId": "account-carol-dev",
+      "role": "write",
+      "grantorId": "account-alice-dev",
+      "createdAt": "2024-02-20T09:00:00.000Z"
+    },
+    {
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "subjectType": "account",
+      "subjectId": "account-carol-dev",
+      "role": "write",
+      "grantorId": "account-alice-dev",
+      "createdAt": "2024-02-20T09:05:00.000Z"
+    }
+  ],
+  "repositories": [
+    {
+      "id": "repo-alice-dev-acme-docs",
+      "owner": {
+        "type": "user",
+        "id": "account-alice-dev",
+        "login": "alice-dev"
+      },
+      "name": "acme-docs",
+      "visibility": "public",
+      "description": "Documentation and guides for the Acme platform.",
+      "defaultBranch": "main",
+      "createdAt": "2024-01-05T09:00:00.000Z",
+      "updatedAt": "2024-02-20T15:45:00.000Z",
+      "sourceRepository": null,
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09"
+        },
+        {
+          "name": "feature-search",
+          "headCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162"
+        },
+        {
+          "name": "release",
+          "headCommitId": "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c"
+        },
+        {
+          "name": "draft-feature",
+          "headCommitId": "b7a6c5d4e3f2a1908b7c6d5e4f3a2b190807161"
+        }
+      ],
+      "commits": [
+        {
+          "id": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+          "branch": "main",
+          "message": "Initial commit",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-01-05T09:00:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# acme-docs\n\nDocumentation and guides for the Acme platform.\n"
+            }
+          ]
+        },
+        {
+          "id": "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c",
+          "branch": "main",
+          "message": "Document search flow",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-02-12T09:30:00.000Z",
+          "parentId": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "modified",
+              "content": "# acme-docs\n\nDocumentation and guides for the Acme platform.\n\n## Search flow\n\nThe repository code search follows the search flow described below.\nOpen the Code page and use the search box to run a search flow query.\n"
+            },
+            {
+              "path": "docs/README.md",
+              "changeType": "added",
+              "content": "# Getting started\n\nInstall the Acme CLI, then run the setup command to create your first workspace.\n"
+            },
+            {
+              "path": "src/search.ts",
+              "changeType": "added",
+              "content": "// Search flow helpers used by the repository code search page.\nexport function searchFlow(query: string, lines: string[]): string[] {\n  return lines.filter((line) => line.includes(query));\n}\n"
+            }
+          ]
+        },
+        {
+          "id": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+          "branch": "main",
+          "message": "Add search loader",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-02-20T15:45:00.000Z",
+          "parentId": "9f8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c",
+          "changes": [
+            {
+              "path": "src/loader.ts",
+              "changeType": "added",
+              "content": "// Loads the helpers used by the repository code search page.\nimport { searchFlow } from \"./search\";\n\nexport function loadSearch(query: string, lines: string[]): string[] {\n  return searchFlow(query, lines);\n}\n"
+            },
+            {
+              "path": "src/search.ts",
+              "changeType": "modified",
+              "content": "// Search flow helpers used by the repository code search page.\nexport function searchFlow(query: string, lines: string[]): string[] {\n  return lines.filter((line) => line.includes(query));\n}\n\nexport function countSearchFlow(lines: string[]): number {\n  return lines.filter((line) => line.includes(\"search flow\")).length;\n}\n"
+            }
+          ]
+        },
+        {
+          "id": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+          "branch": "feature-search",
+          "message": "Add main-only notes",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-02-21T10:15:00.000Z",
+          "parentId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+          "changes": [
+            {
+              "path": "main-only.md",
+              "changeType": "added",
+              "content": "# Main-only notes\n\nThis note file exists only on the feature-search branch.\n"
+            },
+            {
+              "path": "src/search.ts",
+              "changeType": "modified",
+              "content": "// Search flow helpers used by the repository code search page.\nexport function searchFlow(query: string, lines: string[]): string[] {\n  return lines.filter((line) => line.includes(query));\n}\nexport function countSearchFlow(lines: string[]): number {\n  return lines.filter((line) => line.includes(\"search flow\")).length;\n}\n"
+            }
+          ]
+        },
+        {
+          "id": "b7a6c5d4e3f2a1908b7c6d5e4f3a2b190807161",
+          "branch": "draft-feature",
+          "message": "Draft the onboarding update",
+          "authorLogin": "carol-dev",
+          "createdAt": "2024-03-01T10:20:00.000Z",
+          "parentId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "modified",
+              "content": "# acme-docs\n\nOnboarding notes for new contributors, shortened for the first draft.\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repo-alice-dev-secret-research",
+      "owner": {
+        "type": "user",
+        "id": "account-alice-dev",
+        "login": "alice-dev"
+      },
+      "name": "secret-research",
+      "visibility": "private",
+      "description": "Confidential research notes for the Acme platform.",
+      "defaultBranch": "main",
+      "createdAt": "2024-01-08T11:15:00.000Z",
+      "updatedAt": "2024-02-20T16:45:00.000Z",
+      "sourceRepository": null,
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d"
+        }
+      ],
+      "commits": [
+        {
+          "id": "f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d",
+          "branch": "main",
+          "message": "Draft the search flow findings",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-01-08T11:15:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# secret-research\n\nConfidential research notes for the Acme platform.\n"
+            },
+            {
+              "path": "notes/search-flow.md",
+              "changeType": "added",
+              "content": "# Search flow findings\n\nThe search flow experiment stays private until it is reviewed.\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repo-alice-dev-acme-docs-fork",
+      "owner": {
+        "type": "user",
+        "id": "account-alice-dev",
+        "login": "alice-dev"
+      },
+      "name": "acme-docs-fork",
+      "visibility": "private",
+      "description": "Documentation and guides for the Acme platform.",
+      "defaultBranch": "main",
+      "createdAt": "2024-02-14T10:05:00.000Z",
+      "updatedAt": "2024-02-14T10:05:00.000Z",
+      "sourceRepository": {
+        "id": "repo-alice-dev-acme-docs",
+        "owner": "alice-dev",
+        "name": "acme-docs"
+      },
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "7b6a5c4d3e2f10a9b8c7d6e5f4a3b2c1d0e9f8a7"
+        }
+      ],
+      "commits": [
+        {
+          "id": "7b6a5c4d3e2f10a9b8c7d6e5f4a3b2c1d0e9f8a7",
+          "branch": "main",
+          "message": "Initial commit",
+          "authorLogin": "alice-dev",
+          "createdAt": "2024-02-14T10:05:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# acme-docs\n\nDocumentation and guides for the Acme platform.\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repo-acme-demo-acme-docs",
+      "owner": {
+        "type": "organization",
+        "id": "org-acme-demo",
+        "login": "acme-demo"
+      },
+      "name": "acme-docs",
+      "visibility": "public",
+      "description": "Documentation and guides for the Acme platform.",
+      "defaultBranch": "main",
+      "createdAt": "2024-01-10T09:00:00.000Z",
+      "updatedAt": "2024-02-15T10:20:00.000Z",
+      "sourceRepository": null,
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "4e3d2c1b0a9f8e7d6c5b4a39281706152e3d4c5b"
+        }
+      ],
+      "commits": [
+        {
+          "id": "4e3d2c1b0a9f8e7d6c5b4a39281706152e3d4c5b",
+          "branch": "main",
+          "message": "Initial commit",
+          "authorLogin": "acme-demo",
+          "createdAt": "2024-01-10T09:00:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# acme-docs\n\nDocumentation and guides for the Acme platform.\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repo-acme-demo-acme-internal",
+      "owner": {
+        "type": "organization",
+        "id": "org-acme-demo",
+        "login": "acme-demo"
+      },
+      "name": "acme-internal",
+      "visibility": "private",
+      "description": "Internal planning notes of the Acme Demo organization.",
+      "defaultBranch": "main",
+      "createdAt": "2024-01-12T08:30:00.000Z",
+      "updatedAt": "2024-02-18T14:05:00.000Z",
+      "sourceRepository": null,
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3"
+        }
+      ],
+      "commits": [
+        {
+          "id": "a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3",
+          "branch": "main",
+          "message": "Initial commit",
+          "authorLogin": "acme-demo",
+          "createdAt": "2024-01-12T08:30:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# acme-internal\n\nInternal planning notes of the Acme Demo organization.\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repo-bob-reviewer-bob-notes",
+      "owner": {
+        "type": "user",
+        "id": "account-bob-reviewer",
+        "login": "bob-reviewer"
+      },
+      "name": "bob-notes",
+      "visibility": "public",
+      "description": "Review notes of bob-reviewer.",
+      "defaultBranch": "main",
+      "createdAt": "2024-01-15T13:45:00.000Z",
+      "updatedAt": "2024-02-11T11:10:00.000Z",
+      "sourceRepository": null,
+      "branches": [
+        {
+          "name": "main",
+          "headCommitId": "6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2"
+        }
+      ],
+      "commits": [
+        {
+          "id": "6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2",
+          "branch": "main",
+          "message": "Initial commit",
+          "authorLogin": "bob-reviewer",
+          "createdAt": "2024-01-15T13:45:00.000Z",
+          "parentId": null,
+          "changes": [
+            {
+              "path": "README.md",
+              "changeType": "added",
+              "content": "# bob-notes\n\nReview notes of bob-reviewer.\n"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "labels": [
+    {
+      "id": "label-repo-alice-dev-acme-docs-bug",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "Something is not working",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "label-repo-alice-dev-acme-docs-documentation",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "name": "documentation",
+      "color": "0075ca",
+      "description": "Improvements or additions to documentation",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "label-repo-acme-demo-acme-docs-bug",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "Something is not working",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "label-repo-acme-demo-acme-docs-documentation",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "name": "documentation",
+      "color": "0075ca",
+      "description": "Improvements or additions to documentation",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "label-repo-acme-demo-acme-internal-internal",
+      "repositoryId": "repo-acme-demo-acme-internal",
+      "name": "internal",
+      "color": "0e8a16",
+      "description": "Internal planning item",
+      "createdAt": "2024-01-12T08:30:00.000Z"
+    },
+    {
+      "id": "label-repo-alice-dev-secret-research-bug",
+      "repositoryId": "repo-alice-dev-secret-research",
+      "name": "bug",
+      "color": "b60205",
+      "description": "Something is not working",
+      "createdAt": "2024-01-08T11:15:00.000Z"
+    }
+  ],
+  "milestones": [
+    {
+      "id": "milestone-repo-alice-dev-acme-docs-q3-launch",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "title": "Q3 launch",
+      "description": "Documentation release of the third quarter.",
+      "state": "open",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "milestone-repo-alice-dev-acme-docs-v1-0",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "title": "v1.0",
+      "description": "First public release.",
+      "state": "open",
+      "createdAt": "2024-01-06T09:00:00.000Z"
+    },
+    {
+      "id": "milestone-repo-acme-demo-acme-docs-q3-launch",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "title": "Q3 launch",
+      "description": "Documentation release of the third quarter.",
+      "state": "open",
+      "createdAt": "2024-01-05T09:00:00.000Z"
+    },
+    {
+      "id": "milestone-repo-acme-demo-acme-docs-v1-0",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "title": "v1.0",
+      "description": "First public release.",
+      "state": "open",
+      "createdAt": "2024-01-06T09:00:00.000Z"
+    },
+    {
+      "id": "milestone-repo-acme-demo-acme-internal-internal-beta",
+      "repositoryId": "repo-acme-demo-acme-internal",
+      "title": "Internal beta",
+      "description": "Internal preview of the next release.",
+      "state": "open",
+      "createdAt": "2024-01-12T08:30:00.000Z"
+    }
+  ],
+  "issues": [
+    {
+      "id": "issue-repo-alice-dev-acme-docs-1",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "number": 1,
+      "title": "Improve onboarding",
+      "description": "Describe the onboarding improvement.",
+      "status": "open",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-21T09:00:00.000Z",
+      "updatedAt": "2024-02-22T10:15:00.000Z",
+      "labelIds": [
+        "label-repo-alice-dev-acme-docs-bug"
+      ],
+      "assigneeIds": [
+        "account-alice-dev"
+      ],
+      "milestoneId": "milestone-repo-alice-dev-acme-docs-q3-launch",
+      "comments": [
+        {
+          "id": "issue-repo-alice-dev-acme-docs-1-comment-1",
+          "authorId": "account-alice-dev",
+          "body": "The first-run wizard should mention the CLI install step.",
+          "createdAt": "2024-02-22T10:15:00.000Z"
+        }
+      ],
+      "activities": [
+        {
+          "id": "issue-repo-alice-dev-acme-docs-1-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-21T09:00:00.000Z"
+        },
+        {
+          "id": "issue-repo-alice-dev-acme-docs-1-activity-2",
+          "type": "commented",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-22T10:15:00.000Z",
+          "commentId": "issue-repo-alice-dev-acme-docs-1-comment-1"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-alice-dev-acme-docs-2",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "number": 2,
+      "title": "Legacy welcome text",
+      "description": "The legacy welcome text still describes the Improve onboarding flow, so it needs an update for the new release.",
+      "status": "closed",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-10T08:20:00.000Z",
+      "updatedAt": "2024-02-19T16:40:00.000Z",
+      "labelIds": [
+        "label-repo-alice-dev-acme-docs-bug"
+      ],
+      "assigneeIds": [],
+      "milestoneId": null,
+      "comments": [],
+      "activities": [
+        {
+          "id": "issue-repo-alice-dev-acme-docs-2-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-10T08:20:00.000Z"
+        },
+        {
+          "id": "issue-repo-alice-dev-acme-docs-2-activity-2",
+          "type": "closed",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-19T16:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-alice-dev-acme-docs-3",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "number": 3,
+      "title": "Original issue title",
+      "description": "This description is here for the editing workflow.",
+      "status": "open",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-23T13:05:00.000Z",
+      "updatedAt": "2024-02-23T13:05:00.000Z",
+      "labelIds": [],
+      "assigneeIds": [],
+      "milestoneId": null,
+      "comments": [],
+      "activities": [
+        {
+          "id": "issue-repo-alice-dev-acme-docs-3-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-23T13:05:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-acme-demo-acme-docs-1",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "number": 1,
+      "title": "Improve onboarding",
+      "description": "Describe the onboarding improvement.",
+      "status": "open",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-21T09:00:00.000Z",
+      "updatedAt": "2024-02-22T10:15:00.000Z",
+      "labelIds": [
+        "label-repo-acme-demo-acme-docs-bug"
+      ],
+      "assigneeIds": [
+        "account-alice-dev"
+      ],
+      "milestoneId": "milestone-repo-acme-demo-acme-docs-q3-launch",
+      "comments": [
+        {
+          "id": "issue-repo-acme-demo-acme-docs-1-comment-1",
+          "authorId": "account-alice-dev",
+          "body": "The first-run wizard should mention the CLI install step.",
+          "createdAt": "2024-02-22T10:15:00.000Z"
+        }
+      ],
+      "activities": [
+        {
+          "id": "issue-repo-acme-demo-acme-docs-1-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-21T09:00:00.000Z"
+        },
+        {
+          "id": "issue-repo-acme-demo-acme-docs-1-activity-2",
+          "type": "commented",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-22T10:15:00.000Z",
+          "commentId": "issue-repo-acme-demo-acme-docs-1-comment-1"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-acme-demo-acme-docs-2",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "number": 2,
+      "title": "Legacy welcome text",
+      "description": "The legacy welcome text still describes the Improve onboarding flow, so it needs an update for the new release.",
+      "status": "closed",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-10T08:20:00.000Z",
+      "updatedAt": "2024-02-19T16:40:00.000Z",
+      "labelIds": [
+        "label-repo-acme-demo-acme-docs-bug"
+      ],
+      "assigneeIds": [],
+      "milestoneId": null,
+      "comments": [],
+      "activities": [
+        {
+          "id": "issue-repo-acme-demo-acme-docs-2-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-10T08:20:00.000Z"
+        },
+        {
+          "id": "issue-repo-acme-demo-acme-docs-2-activity-2",
+          "type": "closed",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-19T16:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-acme-demo-acme-docs-3",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "number": 3,
+      "title": "Original issue title",
+      "description": "This description is here for the editing workflow.",
+      "status": "open",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-23T13:05:00.000Z",
+      "updatedAt": "2024-02-23T13:05:00.000Z",
+      "labelIds": [],
+      "assigneeIds": [],
+      "milestoneId": null,
+      "comments": [],
+      "activities": [
+        {
+          "id": "issue-repo-acme-demo-acme-docs-3-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-23T13:05:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "issue-repo-acme-demo-acme-internal-1",
+      "repositoryId": "repo-acme-demo-acme-internal",
+      "number": 1,
+      "title": "Internal review checklist",
+      "description": "Collect the checks the internal release needs.",
+      "status": "open",
+      "authorId": "account-alice-dev",
+      "createdAt": "2024-02-18T14:05:00.000Z",
+      "updatedAt": "2024-02-18T14:05:00.000Z",
+      "labelIds": [],
+      "assigneeIds": [],
+      "milestoneId": null,
+      "comments": [],
+      "activities": [
+        {
+          "id": "issue-repo-acme-demo-acme-internal-1-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-18T14:05:00.000Z"
+        }
+      ]
+    }
+  ],
+  "pullRequests": [
+    {
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "authorId": "account-alice-dev",
+      "baseBranch": "main",
+      "compareBranch": "feature-search",
+      "baseCommitId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+      "compareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "creationCompareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "reviews": [],
+      "id": "pull-repo-alice-dev-acme-docs-1",
+      "number": 1,
+      "title": "Improve onboarding",
+      "description": "Rework the onboarding notes so a new contributor can start from the README.",
+      "status": "closed",
+      "createdAt": "2024-02-21T09:10:00.000Z",
+      "updatedAt": "2024-02-25T11:05:00.000Z",
+      "comments": [],
+      "reviewerIds": [],
+      "activities": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-1-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-21T09:10:00.000Z"
+        },
+        {
+          "id": "pull-repo-alice-dev-acme-docs-1-activity-2",
+          "type": "closed",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-25T11:05:00.000Z",
+          "value": "closed"
+        }
+      ]
+    },
+    {
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "authorId": "account-alice-dev",
+      "baseBranch": "main",
+      "compareBranch": "feature-search",
+      "baseCommitId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+      "compareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "creationCompareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "reviews": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-2-review-1",
+          "reviewerId": "account-carol-dev",
+          "decision": "approve",
+          "body": "The search helper reads the browsed branch now.",
+          "commitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+          "createdAt": "2024-02-28T09:05:00.000Z"
+        }
+      ],
+      "id": "pull-repo-alice-dev-acme-docs-2",
+      "number": 2,
+      "title": "Fix search",
+      "description": "Search must read the branch that is currently browsed.",
+      "status": "open",
+      "createdAt": "2024-02-27T16:20:00.000Z",
+      "updatedAt": "2024-02-27T16:20:00.000Z",
+      "comments": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-2-comment-1",
+          "authorId": "account-bob-reviewer",
+          "body": "The helper looks right; please add a check for the loader.",
+          "createdAt": "2024-02-27T16:40:00.000Z"
+        }
+      ],
+      "reviewerIds": [],
+      "activities": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-2-activity-1",
+          "type": "created",
+          "actorId": "account-alice-dev",
+          "createdAt": "2024-02-27T16:20:00.000Z"
+        },
+        {
+          "id": "pull-repo-alice-dev-acme-docs-2-activity-2",
+          "type": "commented",
+          "actorId": "account-bob-reviewer",
+          "createdAt": "2024-02-27T16:40:00.000Z",
+          "detail": "The helper looks right; please add a check for the loader."
+        },
+        {
+          "id": "pull-repo-alice-dev-acme-docs-2-activity-3",
+          "type": "reviewed",
+          "actorId": "account-carol-dev",
+          "createdAt": "2024-02-28T09:05:00.000Z",
+          "value": "approve"
+        }
+      ]
+    },
+    {
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "authorId": "account-carol-dev",
+      "baseBranch": "main",
+      "compareBranch": "feature-search",
+      "baseCommitId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+      "compareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "creationCompareCommitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "reviews": [],
+      "id": "pull-repo-alice-dev-acme-docs-4",
+      "number": 4,
+      "title": "Add search flow notes",
+      "description": "Describe the search flow helpers and the branch-only note file.",
+      "status": "open",
+      "createdAt": "2024-03-02T09:15:00.000Z",
+      "updatedAt": "2024-03-02T09:15:00.000Z",
+      "comments": [],
+      "reviewerIds": [],
+      "activities": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-4-activity-1",
+          "type": "created",
+          "actorId": "account-carol-dev",
+          "createdAt": "2024-03-02T09:15:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "pull-repo-alice-dev-acme-docs-3",
+      "number": 3,
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "title": "Draft onboarding update",
+      "description": "Shorten the onboarding notes before asking for a review.",
+      "status": "draft",
+      "authorId": "account-carol-dev",
+      "baseBranch": "main",
+      "compareBranch": "draft-feature",
+      "baseCommitId": "3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09",
+      "compareCommitId": "b7a6c5d4e3f2a1908b7c6d5e4f3a2b190807161",
+      "creationCompareCommitId": "b7a6c5d4e3f2a1908b7c6d5e4f3a2b190807161",
+      "createdAt": "2024-03-01T10:25:00.000Z",
+      "updatedAt": "2024-03-01T10:25:00.000Z",
+      "comments": [],
+      "reviews": [],
+      "reviewerIds": [],
+      "activities": [
+        {
+          "id": "pull-repo-alice-dev-acme-docs-3-activity-1",
+          "type": "created",
+          "actorId": "account-carol-dev",
+          "createdAt": "2024-03-01T10:25:00.000Z"
+        }
+      ]
+    }
+  ],
+  "pullRequestChecks": [
+    {
+      "id": "check-acme-docs-2-test",
+      "pullRequestId": "pull-repo-alice-dev-acme-docs-2",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "commitId": "8a7b6c5d4e3f2a1908b7c6d5e4f3a2b190807162",
+      "name": "test",
+      "status": "success",
+      "setById": "account-alice-dev",
+      "setAt": "2024-02-28T09:30:00.000Z"
+    }
+  ],
+  "pullRequestInlineComments": [],
+  "branchProtectionRules": [
+    {
+      "id": "rule-acme-docs-main",
+      "repositoryId": "repo-alice-dev-acme-docs",
+      "branchName": "main",
+      "requireApproval": true,
+      "requireStatusCheck": true,
+      "createdBy": "alice-dev",
+      "createdAt": "2024-02-20T16:00:00.000Z",
+      "updatedBy": "alice-dev",
+      "updatedAt": "2024-02-20T16:00:00.000Z"
+    }
+  ]
+}
