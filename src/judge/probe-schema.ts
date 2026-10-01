@@ -482,7 +482,8 @@ function normalizeName(value: string): string {
 }
 
 function containsTargetName(value: string, anchor: string): boolean {
-  const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Normalize the anchor here too: callers may pass requirement text in original casing.
+  const escaped = normalizeName(anchor).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // "Publish item" still names the action; "Unpublish" does not.
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(normalizeName(value));
 }
