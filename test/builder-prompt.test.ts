@@ -61,6 +61,8 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /先规划，再实施/);
   assert.match(compiled.taskPrompt, /严格符合需求文档/);
   assert.match(compiled.taskPrompt, /覆盖本包每条需求和场景新增的具体约束/);
+  assert.match(compiled.taskPrompt, /按需求 ID 和场景名或序号/);
+  assert.match(compiled.taskPrompt, /尚未实现或尚未验证的场景约束/);
   assert.match(compiled.taskPrompt, /完整业务链路/);
   assert.match(compiled.taskPrompt, /不要为某个示例数据/);
   assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
@@ -111,6 +113,8 @@ test("Builder shares its product and platform prefix across packets and repair m
     request.packet.attempt = (index + 1) as 1 | 2 | 3;
     request.packet.requirements[0].text += ` Packet evidence ${index}.`;
     const compiled = compileBuilderPrompt(request);
+    assert.match(compiled.systemPrompt, /逐场景还原 GIVEN/);
+    assert.match(compiled.systemPrompt, /逐场景核对 GIVEN、准备、WHEN 操作和全部 THEN 结果/);
     assert.ok(compiled.taskPrompt.includes(`Path ${index}`));
     assert.ok(compiled.taskPrompt.includes(`Contract ${index}`));
     assert.ok(compiled.taskPrompt.includes(`Packet evidence ${index}.`));

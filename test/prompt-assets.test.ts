@@ -211,6 +211,15 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /case 数量由覆盖决定/);
   assert.doesNotMatch(planner, /4 个 case|20 步/);
   assert.match(planner, /硬上限仍为 6 个 case、每 case 30 步/);
+  assert.match(planner, /仅覆盖需求 ID 不等于覆盖其场景/);
+  for (const prompt of [loadPrompt("system", "builder-system"), planner]) {
+    assert.match(prompt, /对象身份、初始条件、待测操作与预期实质等价/);
+    assert.match(prompt, /全部 THEN 明示的结果、持久化和失败后应保留的状态/);
+    assert.match(prompt, /用需求描述与祖先合同消解场景中的抽象指代/);
+  }
+  const review = loadPrompt("judge", "probe-review");
+  assert.match(review, /原计划覆盖的场景独立约束/);
+  assert.match(review, /准备纠正仍只修改前缀/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
   assert.match(planner, /顶层 `seedData` 条目/);

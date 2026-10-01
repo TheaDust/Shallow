@@ -406,15 +406,24 @@ test("Probe Planner assembles split SSE deltas and tolerates a damaged usage tra
   assert.equal((await planner.plan(packet())).cases.length, 2);
 });
 
-test("A model-length retry requests a shorter complete plan", async () => {
-  let requestBody = "";
-  const planner = new LlmProbePlanner(config(), async (_input, init) => {
-    requestBody = String(init?.body);
-    return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
-  });
-  await planner.plan(packet(), { validationError: "Probe planner stream was cut off by the model" });
-  assert.match(requestBody, /最多两个 case/);
-  assert.match(requestBody, /保持每个需求 ID 的覆盖/);
+test("Planner retries preserve scenario coverage and shorten model-length responses within the schema limits", async () => {
+  for (const validationError of ["Probe planner stream was cut off by the model", "Invalid plan schema"]) {
+    let instruction = "";
+    const planner = new LlmProbePlanner(config(), async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      instruction = JSON.parse(body.messages.at(-1).content).instruction;
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
+    });
+    await planner.plan(packet(), { validationError });
+    assert.match(instruction, /保持每个需求 ID 和各场景独立约束的覆盖/);
+    assert.match(instruction, /每个 case 的终末 assertion/);
+    assert.doesNotMatch(instruction, /最多两个 case/);
+    if (validationError === "Probe planner stream was cut off by the model") {
+      assert.match(instruction, /等价条件合并重复路径/);
+      assert.match(instruction, /6 个 case、每 case 30 步/);
+      assert.match(instruction, /不得删减独立场景约束/);
+    }
+  }
 });
 
 test("Probe Planner rejects an SSE stream that ends before completion", async () => {
