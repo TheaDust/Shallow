@@ -18,6 +18,7 @@ import type {
   WorkPacket,
 } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
+import { loadPrompt } from "../src/prompt-assets.js";
 
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
@@ -81,7 +82,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /使用 status 或 alert/);
   assert.match(compiled.taskPrompt, /禁用的原生控件用 disabled/);
   assert.match(compiled.taskPrompt, /对话框有可访问名称/);
-  assert.match(compiled.taskPrompt, /次要操作是否悬停后出现，依据需求和参考图决定/);
+  assert.match(compiled.taskPrompt, /需求或场景要求悬停显示的次要操作应在悬停后出现/);
   assert.match(compiled.taskPrompt, /可访问的 option、radio、checkbox/);
   assert.match(compiled.taskPrompt, /背景不可操作/);
   assert.match(compiled.taskPrompt, /npm --prefix frontend run build/);
@@ -131,7 +132,16 @@ test("Builder shares its product and platform prefix across packets and repair m
   }
 });
 
-test("Module and consolidated repair prompts bound self-test and keep implementation notes optional", () => {
+test("Every Builder mode includes the shared architecture handoff contract once", () => {
+  const architectureNotes = loadPrompt("system", "architecture-notes");
+  for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {
+    const compiled = compileBuilderPrompt(request);
+    assert.equal(compiled.systemPrompt.split(architectureNotes).length, 2);
+    assert.match(compiled.taskPrompt, /按 ARCHITECTURE\.md 交接约定/);
+  }
+});
+
+test("Module and consolidated repair prompts bound self-test and maintain architecture handoff notes", () => {
   for (const request of [implementRequest(), repairRequest("repair")]) {
     const compiled = compileBuilderPrompt(request);
     assert.match(compiled.systemPrompt, /传统测试/);
