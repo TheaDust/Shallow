@@ -38,6 +38,10 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/builder-system.md      Builder 固定系统合同（含真空项目通用脚手架交接与 React+Vite+TypeScript 缺省栈：既有栈一律延续，
                                 缺省手写 hash 路由、规模需要时允许 react-router-dom 且必须 HashRouter、
                                 零依赖原生 http 后端、Vitest + @testing-library/react 角色查询测试）
+  system/architecture-notes.md  ARCHITECTURE.md 交接约定（跨会话唯一交接面的写作合同；四种 Builder 模式的系统提示词均包含）：
+                                五段骨架（代码导航/状态归属与数据流/共享接口与修改约束/种子关系与场景准备/复查入口与当前限制），
+                                索引式取舍（字段全集、逐条 API、控件文案走源码，只留跨模块必须一致的部分），
+                                最多 200 行且不超过 16 KiB，含超长时的裁切优先级与交接前核对项
   system/task-*.md              四种模式的任务模板：implement / repair / root-cause-repair / delivery-repair
   system/action-*.md            模板里的动作段（含 {{占位符}}）
   system/receipt.md             每次任务附带的完成回执格式（结果/需求核对/根因/变更/检查/风险；根因仅修复与交付任务填写）
