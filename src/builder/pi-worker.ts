@@ -54,6 +54,11 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   let pendingRestart = false;
   let terminalResponse: Extract<(typeof session.messages)[number], { role: "assistant" }> | undefined;
   let compactionReason: string | undefined;
+  // A compaction reason is a historical marker, not a cause: a package can
+  // compact once and then work for an hour before the deadline. Record whether
+  // the session advanced after the last overflow compaction so the controller
+  // can tell a context-bound stop from a clock-bound one.
+  let toolCallsAtOverflowCompaction: number | undefined;
   let recoveryError: string | undefined;
   let wake: (() => void) | undefined;
   const collector = new PiExecutionCollector();
@@ -72,7 +77,10 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
         .reduce((total, part) => total + Buffer.byteLength(part.text, "utf8"), 0));
     }
     if (event.type === "agent_start") { pendingRestart = false; terminalResponse = undefined; }
-    if (event.type === "compaction_start") compactionReason = event.reason;
+    if (event.type === "compaction_start") {
+      compactionReason = event.reason;
+      if (event.reason === "overflow") toolCallsAtOverflowCompaction = toolCalls;
+    }
     if (event.type === "compaction_end") {
       if (event.result) compactions++;
       // SDK silent-overflow recovery may retain an assistant, which continue()
@@ -90,7 +98,12 @@ async function run(input: PiWorkerRequest): Promise<PiWorkerResult> {
   const termination = () => ({ lastMessageRole: (terminalResponse ?? session.messages.at(-1))?.role,
     lastAssistantStopReason: terminalResponse?.stopReason ?? [...session.messages].reverse().find(message => message.role === "assistant")?.stopReason,
     compactionPending: session.isCompacting, retryPending: session.isRetrying || pendingRestart,
-    ...(compactionReason ? { compactionReason } : {}), ...(recoveryError ? { recoveryError } : {}) });
+    ...(compactionReason ? { compactionReason } : {}),
+    // Only an overflow compaction that produced no further tool call is
+    // evidence that the context window ended the call rather than the clock.
+    ...(toolCallsAtOverflowCompaction === undefined ? {} :
+      { progressedAfterOverflowCompaction: toolCalls > toolCallsAtOverflowCompaction }),
+    ...(recoveryError ? { recoveryError } : {}) });
   const reportProgress = () => {
     process.send?.({ type: "builder_progress", sessionId: manager.getSessionId(), toolCalls, compactions,
       ...collector.summarize(session.getSessionStats().tokens), termination: termination() } satisfies PiWorkerProgress);

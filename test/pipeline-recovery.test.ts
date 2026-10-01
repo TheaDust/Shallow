@@ -43,7 +43,7 @@ test("An unfinished compound package is completed atom by atom before its downst
     assert.ok(split?.type === "implementation_split");
     assert.deepEqual(split.detail?.packets.map(packet => packet.requirementIds), [["A"], ["B"]]);
     assert.equal((await f.events()).filter(event => event.type === "dependency_gate_blocked").length, 0);
-    assert.ok(f.builder.requests.slice(2, 4).every(request => "packet" in request && request.packet.attempt === 3));
+    assert.ok(f.builder.requests.slice(2, 4).every(request => "packet" in request && request.packet.attempt === 2));
   });
 });
 
@@ -56,7 +56,8 @@ test("A compound package that times out after context overflow splits before a w
         return { ...result, outcome: "timed_out", execution: {
           engine: "fake", version: "1", nodeVersion: process.version, workerPid: 1, resumed: false,
           durationMs: 5_400_000, cleanupMs: 0, usage: { status: "unavailable" },
-          termination: { compactionPending: false, retryPending: true, compactionReason: "overflow" },
+          termination: { compactionPending: false, retryPending: true, compactionReason: "overflow",
+            progressedAfterOverflowCompaction: false },
         } };
       }
       return result;
@@ -73,12 +74,43 @@ test("A compound package that times out after context overflow splits before a w
   });
 });
 
+test("A compound package that keeps working after an overflow compaction still gets its whole-package continuation", async () => {
+  await withModulePipeline(async f => {
+    const original = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await original(request, options);
+      if (request.mode === "implement" && request.packet.requirementIds.length > 1) {
+        return { ...result, outcome: "timed_out", execution: {
+          engine: "fake", version: "1", nodeVersion: process.version, workerPid: 1, resumed: false,
+          durationMs: 5_400_000, cleanupMs: 0, usage: { status: "unavailable" },
+          termination: { compactionPending: false, retryPending: true, compactionReason: "overflow",
+            progressedAfterOverflowCompaction: true },
+        } };
+      }
+      return result;
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []),
+      [["A", "B"], ["A", "B"], ["A"], ["B"], ["C"]],
+      "a clock-bound stop keeps the 45 minute continuation before splitting");
+    assert.equal(f.builder.runOptions[1]?.resumeInterrupted, true);
+    assert.equal((await f.events()).filter(event => event.type === "implementation_split").length, 1);
+  });
+});
+
 test("Atomic recovery stays bounded when a foundation cannot complete", async () => {
   await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
     const original = f.builder.run.bind(f.builder);
     f.builder.run = async (request, options) => ({ ...await original(request, options), outcome: "timed_out" });
     const summary = await f.run();
-    assert.equal(f.builder.requests.length, 3, "initial package, continuation, foundation atomic recovery; dependent atom cannot run");
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []),
+      [["A", "B"], ["A", "B"], ["A"], ["A"]],
+      "initial package, whole-package continuation, then the foundation atom and its own continuation");
+    assert.ok(f.builder.requests.slice(2).every(request => "packet" in request && request.packet.attempt === 2));
+    assert.equal(f.builder.runOptions[3]?.resumeInterrupted, true, "a split-out atom keeps one bounded continuation");
+    assert.equal(f.builder.runOptions[3]?.timeoutMs, 2_700_000);
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
     assert.deepEqual(summary.implementedRequirementIds, []);
   });

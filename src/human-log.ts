@@ -282,6 +282,10 @@ function describeBuilderExecution(value: unknown): string {
   if (compactions !== null) parts.push(`压缩 ${compactions}`);
   const termination = asRecord(execution.termination);
   if (termination?.compactionReason) parts.push(`压缩原因 ${termination.compactionReason}`);
+  if (typeof termination?.progressedAfterOverflowCompaction === "boolean" &&
+    termination.compactionReason === "overflow") {
+    parts.push(`压缩后推进 ${termination.progressedAfterOverflowCompaction}`);
+  }
   if (termination?.recoveryError) parts.push(`恢复失败 ${sanitizeDiagnosticText(String(termination.recoveryError))}`);
   if (termination?.compactionPending || termination?.retryPending) {
     parts.push(`终态 ${termination.lastMessageRole ?? "未知"}；压缩等待 ${Boolean(termination.compactionPending)}；重试等待 ${Boolean(termination.retryPending)}`);

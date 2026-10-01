@@ -55,6 +55,8 @@ test("Worker waits for SDK overflow compaction and its delayed continuation befo
     assert.equal(result.execution?.termination?.compactionReason, "overflow");
     assert.equal(result.execution?.termination?.compactionPending, false);
     assert.equal(result.execution?.termination?.retryPending, false);
+    assert.equal(result.execution?.termination?.progressedAfterOverflowCompaction, false,
+      "no tool call followed the overflow compaction, so it was not a context-bound continuation");
     assert.equal(requests.length, 4, "tool turn, overflow, compaction, continued completion");
     assert.equal(requests[2], 0, "SDK compaction request has no business tools");
     assert.equal(await readFile(join(app, "progress.txt"), "utf8"), "unfinished work");
@@ -78,6 +80,9 @@ for (const reason of ["overflow", "threshold"] as const) {
         assert.equal(result.execution?.termination?.compactionReason, reason);
         assert.equal(result.execution?.termination?.compactionPending, false);
         assert.equal(result.execution?.termination?.retryPending, false);
+        // Only an overflow compaction is tracked; a threshold compaction has no signal.
+        assert.equal(result.execution?.termination?.progressedAfterOverflowCompaction,
+          reason === "overflow" ? false : undefined);
         assert.equal(requests.length, empty ? 4 : 3);
         assert.equal((requests[2].tools as unknown[] | undefined)?.length ?? 0, 0);
         assert.equal(await readFile(join(app, "progress.txt"), "utf8"), "unfinished work");

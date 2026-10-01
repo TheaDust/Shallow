@@ -672,13 +672,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
     const implementationQueue = [...featureGrouping.packets];
-    // "recovery" atoms follow an unfinished attempt and get one bounded call;
-    // "dependency" atoms have not run yet and keep the first-attempt window and continuation.
+    // A split-out atom is a first implementation of its own requirement: the
+    // unfinished package it came from never delivered it, so the atom keeps the
+    // first-attempt window plus one bounded continuation. Only "dependency"
+    // atoms additionally follow their declared order, which the queue already
+    // preserves, so both kinds share the same attempt budget.
     const splitPacket = async (packet: WorkPacket, index: number, reason: string,
       kind: "recovery" | "dependency"): Promise<boolean> => {
       if (packet.requirements.length < 2 || budget.remaining("implementation") <= 0 || gateway.exhausted) return false;
       const recovery = packet.requirements.map((requirement, i) => kind === "recovery"
-        ? makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 3)
+        ? makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 2)
         : makePacket(`${packet.id}-split-${i + 1}`, [requirement]));
       implementationQueue.splice(index + 1, 0, ...recovery);
       await state.record({ at: now(), type: "implementation_split", packetId: packet.id,
@@ -768,8 +771,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (needsImplementationRetry(result)) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
+        // A compaction reason is a historical marker, not a cause. Only an
+        // overflow compaction followed by no further tool call shows the
+        // context window ended the call; anything else is clock-bound and
+        // still deserves the whole-package continuation.
         const firstAttemptOverflow = packet.attempt !== 3 && result.outcome === "timed_out" &&
-          result.execution?.termination?.compactionReason === "overflow";
+          result.execution?.termination?.compactionReason === "overflow" &&
+          result.execution.termination.progressedAfterOverflowCompaction === false;
         if (firstAttemptOverflow && await splitPacket(packet, packetIndex,
           "First implementation attempt exhausted the context window", "recovery")) continue;
         const retryTimeoutMs = packet.attempt === 3 ? 0 : budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);

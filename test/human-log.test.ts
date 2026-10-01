@@ -313,6 +313,20 @@ test("HumanRunFormatter breaks Builder time into model and tool and reports toke
   assert.match(detailed, /各工具 shell 20、read 9/);
   assert.match(detailed, /压缩 2/);
   assert.match(detailed, /本阶段耗时 24m31s/);
+  // The overflow signal only matters while the reason is overflow; a threshold
+  // compaction must not print a context-bound verdict.
+  for (const [progressed, expected] of [[true, /压缩后推进 true/], [false, /压缩后推进 false/]] as const) {
+    assert.match(formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+      packetId: "p", detail: { outcome: "timed_out", execution: { usage: { status: "unavailable" },
+        termination: { compactionPending: false, retryPending: false, compactionReason: "overflow",
+          progressedAfterOverflowCompaction: progressed } } },
+    })), expected);
+  }
+  assert.doesNotMatch(formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+    packetId: "p", detail: { outcome: "timed_out", execution: { usage: { status: "unavailable" },
+      termination: { compactionPending: false, retryPending: false, compactionReason: "threshold",
+        progressedAfterOverflowCompaction: false } } },
+  })), /压缩后推进/);
   const partial = formatLine(formatter, eventLine("2026-09-17T00:00:01.000Z", "builder_finished", {
     packetId: "p", detail: { outcome: "failed", execution: { usage: { status: "unavailable" } } },
   }));

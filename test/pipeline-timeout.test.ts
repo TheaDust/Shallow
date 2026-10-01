@@ -62,13 +62,13 @@ test("Repeated timeout preserves runnable code without falsely completing its re
       return { sessionId: "interrupted", outcome: "timed_out", summary: "implementation interrupted" };
     };
     const summary = await f.run();
-    assert.equal(calls, 3); // compound attempt, continuation, foundation atomic recovery; dependent atoms remain blocked
+    assert.equal(calls, 4); // compound attempt, continuation, then the foundation atom and its own continuation
     assert.equal(summary.status, "partial");
     assert.deepEqual(summary.implementedRequirementIds, []);
     assert.deepEqual(summary.blockedRequirementIds, ["A", "B", "C"]);
-    assert.equal(await readFile(join(f.options.outputDir, "partial.txt"), "utf8"), "work 3");
+    assert.equal(await readFile(join(f.options.outputDir, "partial.txt"), "utf8"), "work 4");
     const checkpoints = (await f.events()).filter(e => e.type === "checkpoint_saved");
-    assert.equal(checkpoints.length, 3);
+    assert.equal(checkpoints.length, 4);
     assert.ok(checkpoints.every(e => e.detail?.requirementIds.length === 0));
   });
 });
