@@ -32,6 +32,6 @@ Seed/GIVEN 声明描述应有状态，不是该状态已在本次运行中成立
   - `corrections`：只列受影响的 case；每项包含 `caseId`、`conflict`（与哪句原文冲突）与 `basis`（1-3 条逐字引用）。完整计划始终由程序用原计划和这些局部结果恢复，不要返回 `plan`。
   - 输入有 `preparationOnlyCaseIds` 时，使用局部修正协议：该名单内的每个 correction 再附 `setupSteps`；混合失败中，名单外且在 `caseCorrectionIds` 内的 correction 再附 `case`（该用例完整的 wire 内容，含终末 `assertion`）。只输出受影响的 correction，完整计划由程序恢复；此协议不带 `plan`。例如：`{"verdict":"corrected","rationale":"...","corrections":[{"caseId":"...","conflict":"...","basis":["原文"],"setupSteps":[...]}]}`。
   - 输入无该名单时，每个 correction 再附 `case`（该受影响用例完整的 wire 内容，含终末 `assertion`）；导航或准备错误允许在该 case 内增删步骤。未受影响的 case 不输出。
-- 修正规则：保持全部需求覆盖；保持 case 的 `id` 与 `requirementIds`；不得删除困难 case、降低预期、缩减覆盖或臆造需求未声明的反馈；未受影响的 case 原样保留（含 expectationBasis）。
+- 修正规则：保持全部需求覆盖；保持 case 的 `id` 与 `requirementIds`；不得删除困难 case、降低预期、缩减覆盖或臆造需求未声明的反馈；未受影响的 case 原样保留（含 expectationBasis）。rationale 不超过 2000 字符，conflict 不超过 1000 字符，corrections 至多 6 条，超出会被程序拒绝。
 - `expectationBasis` 与 `basis` 引用必须能在需求证据中逐字找到（程序会校验）。改写、概括或翻译都会导致复核被拒绝。
 - 不要提出代码修复建议，不要引用任何源码、构建产物或会话内容。
