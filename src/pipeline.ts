@@ -350,9 +350,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false });
         if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
         if (checked.plan) {
-          const checkedCases = new Map(checked.plan.cases.map(item => [item.id, item]));
-          const recovered = parseProbePlan({ ...plan,
-            cases: plan.cases.map(item => checkedCases.get(item.id) ?? item) }, packetToCheck);
+          const recovered = mergeCheckedPlan(plan, checked.plan, packetToCheck);
           if (probePlanSha256(recovered) !== probePlanSha256(plan)) recoveredPlans.set(packetToCheck.id, recovered);
         }
       }
@@ -420,6 +418,35 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     // Reuse cached probes for verified prerequisites while there is still a repair window.
     const targetPackets = packets.filter(packet => packetIds.includes(packet.id) ||
       (results.get(packet.id)?.status === "verified" && packet.requirementIds.some(id => prerequisiteIds.has(id))));
+    // Shared seeded entries can regress without an explicit dependency edge.
+    // Sample one cached successful path per other module, escalating a miss to
+    // its full audit and the current boundary's existing repair quota.
+    const moduleOf = (packet: WorkPacket) => packet.requirements[0].folderPath[1] ?? packet.requirements[0].id;
+    const coveredModules = new Set(targetPackets.map(moduleOf));
+    const regressionChecks: Array<{ packet: WorkPacket; plan: ProbePlan }> = [];
+    for (const packet of packets) {
+      const previous = results.get(packet.id);
+      const ownerModule = moduleOf(packet);
+      if (coveredModules.has(ownerModule) || previous?.status !== "verified" || !previous.plan ||
+        !packet.requirements.some(item => item.seedDeclarations.length > 0 || item.product.seedData.length > 0)) continue;
+      const entry = previous.plan.cases.find(item => item.purpose === "happy_path") ??
+        previous.plan.cases.find(item => item.purpose === "persistence");
+      if (!entry || budget.remaining("audit") <= 0) continue;
+      coveredModules.add(ownerModule);
+      const check = { packet, plan: { ...previous.plan, cases: [entry] } };
+      regressionChecks.push(check);
+      const checked = await auditPacket(packet, check.plan, options, deps, state,
+        () => budget.remaining("audit"), { refineLocators: false, retryPlan: false });
+      if (checked.status !== "verified") targetPackets.push(packet);
+      else if (checked.plan) {
+        check.plan = checked.plan;
+        const recovered = mergeCheckedPlan(previous.plan, checked.plan, packet);
+        if (probePlanSha256(recovered) !== probePlanSha256(previous.plan)) {
+          results.set(packet.id, { ...previous, plan: recovered });
+          await planCache.write(packet.id, recovered).catch(() => {});
+        }
+      }
+    }
     const ordered = [...targetPackets]
       .filter(packet => packet.requirementIds.every(id => implemented.has(id)))
       .sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
@@ -453,7 +480,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
     await state.record({ at: now(), type: "module_boundary_audit_finished",
       detail: { moduleId, moduleName, packetIds: targetPackets.map(packet => packet.id),
-        results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
+        results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])),
+        regressionPacketIds: regressionChecks.map(item => item.packet.id) } });
     // Inline repair for module boundary failures, using per-module repair budget.
     while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
       const failures = targetPackets.filter(p => {
@@ -512,6 +540,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             previous.status === "verified" ? recoveryAuditPolicy : { refineLocators: false });
           if (recheck.status !== "verified") { regressed = true; break; }
           if (previous.status === "verified") rechecked.set(packet.id, recheck);
+        }
+        if (!regressed) for (const check of regressionChecks) {
+          if (targetPackets.includes(check.packet)) continue;
+          if (budget.remaining("repair") <= 0) { regressed = true; break; }
+          const recheck = await auditPacket(check.packet, check.plan, options, deps, state,
+            () => budget.remaining("repair"), { refineLocators: false, retryPlan: false });
+          if (recheck.status !== "verified") { regressed = true; break; }
+          const previous = results.get(check.packet.id)!;
+          if (recheck.plan) rechecked.set(check.packet.id, { ...previous,
+            plan: mergeCheckedPlan(previous.plan!, recheck.plan, check.packet) });
         }
         const reAudit = new Map<string, AuditResult>();
         if (!regressed) {
@@ -988,5 +1026,11 @@ async function runFinalVerifier(
   }
 }
 
+
+/** A successful sampled check may recover locators, but cannot replace untested cases. */
+function mergeCheckedPlan(original: ProbePlan, checked: ProbePlan, packet: WorkPacket): ProbePlan {
+  const cases = new Map(checked.cases.map(item => [item.id, item]));
+  return parseProbePlan({ ...original, cases: original.cases.map(item => cases.get(item.id) ?? item) }, packet);
+}
 
 function now(): string { return new Date().toISOString(); }

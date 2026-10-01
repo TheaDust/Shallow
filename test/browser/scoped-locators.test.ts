@@ -2,6 +2,32 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
+
+test("Label-based selection excludes a same-named region and still rejects two matching selects", async () => {
+  const server = createServer((request, response) => {
+    response.setHeader("content-type", "text/html");
+    const select = '<label for="branch">Default branch</label><select id="branch"><option>main</option><option>release</option></select>';
+    response.end(`<main><section aria-label="Default branch">${select}</section>${
+      request.url === "/ambiguous" ? select.replaceAll('"branch"', '"second-branch"') : ""}</main>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") assert.fail("missing address");
+    const run = (path: string) => new PlaywrightProbeRunner().run({ packetId: "select", cases: [{
+      id: "choose", requirementIds: ["A"], purpose: "happy_path", expectationBasis: ["fixture"], steps: [
+        { op: "goto", path },
+        { op: "select", locator: { by: "label", text: "Default branch", exact: true }, value: "release" },
+        { op: "expectValue", locator: { by: "label", text: "Default branch", exact: true }, value: "release" },
+      ],
+    }] }, { baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 500, caseTimeoutMs: 5_000 });
+    assert.equal((await run("/")).verdict, "pass");
+    const ambiguous = await run("/ambiguous");
+    assert.equal(ambiguous.verdict, "inconclusive");
+    assert.equal(ambiguous.failures[0].locatorAttempts?.[0].matchCount, 2);
+    assert.match(ambiguous.failures[0].message, /strict mode violation/);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 import { parseProbePlan } from "../../src/judge/probe-schema.js";
 
 test("Ambiguous targets retain their URL, match count and object containers after a large unrelated view", async () => {

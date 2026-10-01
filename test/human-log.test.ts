@@ -13,6 +13,13 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Module boundary logs distinguish sampled seed entries from full atomic verification", () => {
+  const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-01T00:00:00Z", "module_boundary_audit_finished", {
+    detail: { moduleId: "SECOND", packetIds: ["packet-c"], regressionPacketIds: ["packet-a"], results: { "packet-c": "verified" } },
+  }));
+  assert.match(line, /通过 1，失败 0，无法判断 0；跨模块种子入口抽查 1 条/);
+});
+
 test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {
   const formatter = new HumanRunFormatter();
   const at = "2026-09-29T00:00:00Z";

@@ -15,13 +15,13 @@ export function Combobox({ id, label, options, className = "", ...props }: Combo
   const generatedId = useId();
   const selectId = id ?? `combobox-${generatedId}`;
   return (
-    <label className="ui-combobox" htmlFor={selectId}>
-      <span>{label}</span>
+    <div className="ui-combobox">
+      <label htmlFor={selectId}>{label}</label>
       <select {...props} id={selectId} className={["ui-combobox__control", className].filter(Boolean).join(" ")}>
         {options.map((option) => (
           <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }

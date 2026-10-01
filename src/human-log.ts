@@ -226,7 +226,8 @@ function describe(type: string, event: RunEvent): string | null {
       for (const status of Object.values(results)) {
         if (status === "verified" || status === "failed" || status === "inconclusive") counts[status]++;
       }
-      return `模块边界验收完成（${pickString(detail, "moduleId") ?? ""}）；通过 ${counts.verified}，失败 ${counts.failed}，无法判断 ${counts.inconclusive}`;
+      const checks = strings(detail?.regressionPacketIds).length;
+      return `模块边界验收完成（${pickString(detail, "moduleId") ?? ""}）；通过 ${counts.verified}，失败 ${counts.failed}，无法判断 ${counts.inconclusive}${checks ? `；跨模块种子入口抽查 ${checks} 条` : ""}`;
     }
     case "pipeline_finished":
       return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;

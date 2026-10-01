@@ -63,6 +63,39 @@ async function auditWith(f: PipelineFixture, state: RunStateStore, plan: ProbePl
   return auditPacket(packet, plan, f.options, f.deps, state, () => 60_000);
 }
 
+test("Requirement-backed confirmation completes the original operation without lowering its result assertion", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    const basis = 'Click “Proceed”; if confirmation is used, click “Confirm” before “Done” is visible.';
+    tree.children[0].children[0].description = basis;
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const original = groundedPlan([
+      { op: "goto", path: "/" },
+      { op: "click", locator: { by: "role", role: "button", name: "Proceed", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "heading", name: "Done", exact: true } },
+    ], [basis]);
+    let reviews = 0;
+    f.deps.runner.run = async plan => plan.cases[0].steps.some(step => step.op === "click" && step.locator.by === "role" && step.locator.name === "Confirm")
+      ? pass(plan) : { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: [{
+        caseId: "case-A", stepIndex: 2, category: "assertion", message: "Done is absent while confirmation is open",
+        locatorSnapshot: '- dialog "Confirm action":\n  - button "Confirm"',
+      }] };
+    f.deps.planner.reviewPlan = async (_packet, plan) => {
+      reviews++;
+      const corrected = structuredClone(plan);
+      corrected.cases[0].steps.splice(2, 0, { op: "click", locator: { by: "role", role: "button", name: "Confirm", exact: true } });
+      return correctedReview(corrected, [{ caseId: "case-A", conflict: "The allowed confirmation is not submitted", basis: [basis] }]);
+    };
+    const state = makeState(f);
+    const result = await auditWith(f, state, original);
+    assert.equal(result.status, "verified");
+    assert.equal(reviews, 1);
+    assert.deepEqual(result.plan?.cases[0].steps.at(-1), original.cases[0].steps.at(-1));
+    assert.equal(state.semanticCorrectionCount("packet-a", "case-A"), 1);
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
 test("Prefix response validation and retry use the existing preparation quota without semantic corrections", async () => {
   await withModulePipeline(async f => {
     const original = groundedPlan([

@@ -200,23 +200,29 @@ export class LlmProbePlanner implements ProbePlanner {
           ...(groundedLocatorAnchors(original, packet).length
             ? { anchoredRequirementNames: groundedLocatorAnchors(original, packet) }
             : {}),
-          failures: failures.map((failure) => ({
-            caseId: failure.caseId,
-            stepIndex: failure.stepIndex,
-            step: original.cases.find((item) => item.id === failure.caseId)?.steps[failure.stepIndex],
-            preparationCheckpointPassed: original.cases.some(item => item.id === failure.caseId &&
-              (item.setupStepCount ?? 0) > 0 && failure.stepIndex >= item.setupStepCount!),
-            passedAssertionsBeforeFailure: original.cases.find(item => item.id === failure.caseId)?.steps
-              .slice(0, failure.stepIndex).filter(step => step.op.startsWith("expect")),
-            category: failure.category,
-            message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
-            ...(failure.pageUrl ? { pageUrl: sanitizeDiagnosticText(failure.pageUrl, [this.config.apiKey], 1_000) } : {}),
-            locatorAttempts: failure.locatorAttempts?.map(attempt => ({ locator: attempt.locator,
-              message: sanitizePlannerDiagnostic(attempt.message, this.config.apiKey),
-              ...(attempt.matchCount === undefined ? {} : { matchCount: attempt.matchCount }) })),
-            accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined
-              : sanitizeDiagnosticText(failure.locatorSnapshot, [this.config.apiKey], 4_000),
-          })),
+          failures: failures.map((failure) => {
+            const probeCase = original.cases.find(item => item.id === failure.caseId);
+            const count = probeCase?.setupStepCount ?? 0;
+            return {
+              caseId: failure.caseId,
+              stepIndex: failure.stepIndex,
+              step: probeCase?.steps[failure.stepIndex],
+              preparationCheckpointPassed: count > 0 && failure.stepIndex >= count,
+              ...(probeCase && count > 0 ? { initialStateCheckpoint: {
+                stepIndex: count - 1, assertion: probeCase.steps[count - 1], passed: failure.stepIndex >= count,
+              } } : {}),
+              passedAssertionsBeforeFailure: probeCase?.steps
+                .slice(0, failure.stepIndex).filter(step => step.op.startsWith("expect")),
+              category: failure.category,
+              message: sanitizePlannerDiagnostic(failure.message, this.config.apiKey),
+              ...(failure.pageUrl ? { pageUrl: sanitizeDiagnosticText(failure.pageUrl, [this.config.apiKey], 1_000) } : {}),
+              locatorAttempts: failure.locatorAttempts?.map(attempt => ({ locator: attempt.locator,
+                message: sanitizePlannerDiagnostic(attempt.message, this.config.apiKey),
+                ...(attempt.matchCount === undefined ? {} : { matchCount: attempt.matchCount }) })),
+              accessibilitySnapshot: failure.locatorSnapshot === undefined ? undefined
+                : sanitizeDiagnosticText(failure.locatorSnapshot, [this.config.apiKey], 4_000),
+            };
+          }),
           ...(feedback ? {
             validationError: sanitizePlannerDiagnostic(feedback.validationError, this.config.apiKey),
             previousResponsePreview: feedback.contentPreview === undefined ? undefined

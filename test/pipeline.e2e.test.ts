@@ -83,6 +83,77 @@ import { FakeBuilder } from "./fakes/fake-builder.js";
 import { startFixtureServer } from "./helpers/fixture-server.js";
 import { withModulePipeline, fail, pass, testPlan } from "./helpers/module-pipeline.js";
 
+for (const losesSeed of [false, true]) {
+  test(`Cached seeded entries without dependency edges are protected at the next boundary: loss=${losesSeed}`, async () => {
+    await withModulePipeline(async f => {
+      const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      tree.children[0].children[0].description = "Display the main workspace. Seed data: workspace `Shared workspace`.";
+      tree.children[1].children[0].dependencies = [];
+      await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+      const planned: string[] = [];
+      const checks: Array<{ packetId: string; cases: number; later: boolean }> = [];
+      f.deps.planner.plan = async packet => {
+        planned.push(packet.id);
+        const plan = testPlan(packet);
+        if (packet.id === "packet-a") {
+          plan.cases[0].setupStepCount = 2;
+          plan.cases[0].steps.splice(1, 0, { op: "expectVisible", locator: { by: "role", role: "heading", name: "Shared workspace", exact: true } });
+          plan.cases.push({ ...structuredClone(plan.cases[0]), id: "persisted-A", purpose: "persistence" });
+        }
+        return plan;
+      };
+      f.deps.runner.run = async plan => {
+        const later = f.builder.requests.some(request => request.mode === "implement" && request.packet.requirementIds.includes("C"));
+        const repaired = f.builder.requests.some(request => request.mode === "repair");
+        checks.push({ packetId: plan.packetId, cases: plan.cases.length, later });
+        if (losesSeed && plan.packetId === "packet-a" && later && !repaired) {
+          return { packetId: plan.packetId, verdict: "fail", passedCases: [], failures: plan.cases.map(item => ({
+            caseId: item.id, stepIndex: 2, category: "assertion", message: "Shared workspace no longer exists",
+          })) };
+        }
+        return pass(plan);
+      };
+      const summary = await f.run();
+      const boundary = (await f.events()).find(event => event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "SECOND");
+      assert.ok(boundary?.type === "module_boundary_audit_finished");
+      assert.deepEqual(boundary.detail?.regressionPacketIds, ["packet-a"]);
+      assert.equal(checks.filter(item => item.packetId === "packet-a" && item.later && item.cases === 1).length,
+        losesSeed ? 2 : 1, "a sampled failure is confirmed on fresh data before escalation");
+      assert.equal(checks.filter(item => item.packetId === "packet-a").at(-1)?.cases, 2, "final audit keeps both original A cases");
+      assert.deepEqual(planned.sort(), ["packet-a", "packet-b", "packet-c"]);
+      const repairs = f.builder.requests.filter(request => request.mode === "repair");
+      assert.equal(repairs.length, losesSeed ? 1 : 0);
+      if (losesSeed) {
+        assert.ok(repairs[0].mode === "repair");
+        assert.deepEqual(repairs[0].packet.requirementIds, ["A"]);
+      }
+      assert.equal(summary.status, "delivered");
+    });
+  });
+}
+
+test("Boundary repairs also protect sampled seeded entries outside their dependency scope", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    tree.children[0].children[0].description = "Display the main workspace. Seed data: workspace `Shared workspace`.";
+    tree.children[1].children[0].dependencies = [];
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    f.deps.runner.run = async plan => {
+      const repairing = f.builder.requests.some(request => request.mode === "repair");
+      const notRestored = f.git.restoredShas.length === 0;
+      return (plan.packetId === "packet-c" && (!repairing || !notRestored)) ||
+        (plan.packetId === "packet-a" && repairing && notRestored) ? fail(plan) : pass(plan);
+    };
+    const summary = await f.run();
+    const repair = (await f.events()).find(event => event.type === "repair_batch_finished");
+    assert.equal(repair?.detail?.retained, false);
+    assert.match(String(repair?.detail?.reason), /previously verified behavior/);
+    assert.equal(f.git.restoredShas.length, 1);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
+    assert.deepEqual(summary.failedRequirementIds, ["C"]);
+  });
+});
+
 test("Pipeline checks module paths before the full atomic audit and keeps verification separate", async () => {
   await withModulePipeline(async f => {
     const calls: string[] = [];
