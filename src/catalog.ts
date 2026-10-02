@@ -37,7 +37,8 @@ export async function loadRequirementCatalog(
   const root = parseNode(record, "root");
   const nodes = new Map<string, ParsedNode>();
   collectNodes(root, nodes);
-  validateDependencies(nodes);
+  const stage = parseProgressiveStage(root.name);
+  validateDependencies(nodes, (stage?.index ?? 0) > 1);
 
   const requirements: AtomicRequirement[] = [];
   const product: ProductContext = {
@@ -46,6 +47,7 @@ export async function loadRequirementCatalog(
     rootName: root.name,
     description: root.description,
     seedData: parseSeedData(record.data),
+    ...(stage ? { stage } : {}),
   };
   collectAtomics(root, [], [], product, requirements);
   // Folder dependencies are completion barriers over their atomic descendants.
@@ -56,13 +58,15 @@ export async function loadRequirementCatalog(
   // waiting on it is vacuous and expanding it would fabricate sibling cycles.
   for (const requirement of requirements) {
     const vacuous = new Set([...requirement.folderPath, root.id, requirement.id]);
-    requirement.dependencyIds = [...new Set(
-      [...requirement.folderPath, requirement.id].flatMap((scopeId) =>
-        nodes.get(scopeId)!.dependencies.flatMap((dependency) =>
-          vacuous.has(dependency) ? [] : atomicIds(nodes.get(dependency)!),
-        ),
-      ),
-    )].filter((dependency) => !vacuous.has(dependency));
+    const scopedDependencies = [...requirement.folderPath, requirement.id]
+      .flatMap((scopeId) => nodes.get(scopeId)!.dependencies)
+      .filter((dependency) => !vacuous.has(dependency));
+    requirement.dependencyIds = [...new Set(scopedDependencies.flatMap((dependency) => {
+      const target = nodes.get(dependency);
+      return target ? atomicIds(target) : [];
+    }))].filter((dependency) => !vacuous.has(dependency));
+    const externalDependencyIds = [...new Set(scopedDependencies.filter((dependency) => !nodes.has(dependency)))];
+    if (externalDependencyIds.length > 0) requirement.externalDependencyIds = externalDependencyIds;
   }
   validateDependencies(new Map(requirements.map((requirement) => [
     requirement.id,
@@ -78,14 +82,41 @@ export async function loadRequirementCatalog(
   };
 }
 
-function classifyProduct(rootName: string): ProductKind {
-  if (rootName === "GitHub Collaboration Platform Core Requirements") {
+function classifyProduct(
+  rootName: string,
+): ProductKind {
+  const productName = stripProgressiveStageSuffix(rootName);
+  if (productName === "GitHub" || productName === "GitHub Collaboration Platform Core Requirements") {
     return "repository_collaboration";
   }
-  if (rootName === "Core Requirements for an Online Spreadsheet Data Workspace") {
+  if (productName === "Core Requirements for an Online Spreadsheet Data Workspace") {
     return "spreadsheet";
   }
   return "generic_web";
+}
+
+function parseProgressiveStage(rootName: string): ProductContext["stage"] | undefined {
+  const match = progressiveStageMatch(rootName);
+  if (!match) return undefined;
+  const index = Number(match[1]);
+  if (!Number.isSafeInteger(index) || index < 1) {
+    throw new Error(`Invalid progressive stage name: ${rootName}`);
+  }
+  return {
+    index,
+    currentStageTestsOnly: true,
+  };
+}
+
+function stripProgressiveStageSuffix(rootName: string): string {
+  const match = progressiveStageMatch(rootName);
+  return match ? rootName.slice(0, match.index).trim() : rootName.trim();
+}
+
+function progressiveStageMatch(rootName: string): RegExpExecArray | null {
+  const name = rootName.trim();
+  return /(?:^|[\s\-–—:：]+)(?:stage|phase)\s*(\d+)\s*$/i.exec(name)
+    ?? /(?:^|[\s\-–—:：]+)第?\s*(\d+)\s*阶段\s*$/u.exec(name);
 }
 
 function parseSeedData(value: unknown): SeedDataCategory[] {
@@ -155,10 +186,13 @@ function atomicIds(node: ParsedNode): string[] {
   return node.type === "ATOMIC" ? [node.id] : node.children.flatMap(atomicIds);
 }
 
-function validateDependencies(nodes: Map<string, Pick<ParsedNode, "id" | "dependencies">>): void {
+function validateDependencies(
+  nodes: Map<string, Pick<ParsedNode, "id" | "dependencies">>,
+  allowExternal = false,
+): void {
   for (const node of nodes.values()) {
     for (const dependency of node.dependencies) {
-      if (!nodes.has(dependency)) {
+      if (!nodes.has(dependency) && !allowExternal) {
         throw new Error(`Unknown dependency ${dependency} referenced by ${node.id}`);
       }
     }
@@ -176,7 +210,7 @@ function validateDependencies(nodes: Map<string, Pick<ParsedNode, "id" | "depend
     const node = nodes.get(id);
     if (!node) throw new Error(`Unknown requirement: ${id}`);
     for (const dependency of node.dependencies) {
-      visit(dependency, [...path, id]);
+      if (nodes.has(dependency)) visit(dependency, [...path, id]);
     }
     colors.set(id, "visited");
   };

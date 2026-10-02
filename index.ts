@@ -159,6 +159,11 @@ async function executeProduction(
       pipelineOptions.outputDir,
       pipelineOptions.platformContract,
     );
+    const stageStartingPoint = starterScaffold.status === "skipped_existing_application"
+      ? "inherited_application" as const
+      : starterScaffold.status === "installed"
+        ? "blank_template" as const
+        : "unknown" as const;
     process.stderr.write(`[ShallowCode] 通用脚手架：${starterScaffold.status}（${starterScaffold.reason}）\n`);
     const finalVerifier = new FinalVerifier(runner, lifecycle, candidate);
     const logSink = createRunLogSink(runLogFile, new ProgressJournal(pipelineOptions.outputDir));
@@ -177,7 +182,7 @@ async function executeProduction(
       promptHash.update(path).update("\0").update((await readFile(new URL(path, promptDir), "utf8")).replace(/\r\n/g, "\n"));
     }
     try {
-      return await runPipeline(pipelineOptions, {
+      return await runPipeline({ ...pipelineOptions, stageStartingPoint }, {
         grouper: new LlmFeatureGrouper({ ...gateway, timeoutMs: Infinity }),
         builder,
         planner,

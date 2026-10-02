@@ -89,6 +89,16 @@ test("HumanRunFormatter records whether the generic starter scaffold was install
   assert.match(line, /通用脚手架 installed/);
 });
 
+test("HumanRunFormatter identifies progressive stage starting points", () => {
+  const formatter = new HumanRunFormatter();
+  const line = formatLine(formatter, eventLine("2026-10-02T00:00:00Z", "pipeline_started", {
+    detail: { requirements: 14, totalBudgetMs: 0, port: 43210,
+      progressiveStage: { index: 2, currentStageTestsOnly: true,
+        startingPoint: "inherited_application", externalDependencyIds: ["REQ-1-1-2"] } },
+  }));
+  assert.match(line, /分阶段任务 Stage 2（继承前序应用）/);
+});
+
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
   const formatter = new HumanRunFormatter();
   const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {

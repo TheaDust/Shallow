@@ -95,6 +95,11 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.ok(images.includes("{{UNAVAILABLE_REFERENCES}}"));
   assert.match(images, /以需求原文和验收场景为准/);
   assert.match(loadPrompt("system", "reference-images-text-fallback"), /本次未附加参考图片/);
+  const progressiveStage = loadPrompt("system", "progressive-stage-context");
+  for (const key of ["STAGE_INDEX", "STARTING_POINT", "EXTERNAL_PREREQUISITES", "STARTING_POINT_ACTION"]) {
+    assert.ok(progressiveStage.includes(`{{${key}}}`));
+  }
+  assert.match(progressiveStage, /不是本轮单独验收的需求/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /<main>/);

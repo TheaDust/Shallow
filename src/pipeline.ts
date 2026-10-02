@@ -115,6 +115,8 @@ export interface PipelineOptions {
   plannerRetryDelayMs?: number;
   /** Product-visible journal directory (`shallow-progress`); plans mirror here. */
   progressDir?: string;
+  /** Whether this stage starts from a selected prior-stage application or the blank scaffold. */
+  stageStartingPoint?: "inherited_application" | "blank_template" | "unknown";
 }
 
 export interface RunSummary {
@@ -459,7 +461,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
       const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
-      let repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
+      let repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented, options.stageStartingPoint),
         outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs });
       // Same recovery rule as implementation: an outage postpones the repair
@@ -467,7 +469,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       repairResult = await resumeGatewayWork(repairResult,
         failure => state.record({ at: now(), type: "repair_paused", packetId: repairPacket.id,
           detail: { requirementIds: repairPacket.requirementIds, failure } }),
-        () => build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented),
+        () => build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented, options.stageStartingPoint),
           outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs }));
       let reason = repairResult.outcome === "completed" ? "" : repairResult.summary || repairResult.outcome;
@@ -556,6 +558,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
 
   await state.record({ at: now(), type: "pipeline_started", detail: {
     requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port,
+    ...(catalog.requirements[0]?.product.stage ? { progressiveStage: {
+      ...catalog.requirements[0].product.stage,
+      startingPoint: options.stageStartingPoint ?? "unknown",
+      externalDependencyIds: [...new Set(catalog.requirements.flatMap(item => item.externalDependencyIds ?? []))],
+    } } : {}),
     ...(deps.grouper && catalog.requirements.length > 0 ? { groupingSource: "pending_llm" as const }
       : { grouping: featureGrouping.stats }), ...deps.runMetadata } });
   await emitArc(deps, state, arc => arc.runnerState("running", "feature-group pipeline started"));
@@ -704,7 +711,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const sessionKey = randomUUID();
       let mayContinue = true;
       result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) }, "implementation", { sessionKey, timeoutMs: implementationTimeoutMs });
+        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) }, "implementation", { sessionKey, timeoutMs: implementationTimeoutMs });
       // A gateway outage must not end the run: keep retrying the same packet
       // with a fresh call window while the failure is retryable; a
       // non-retryable rejection stops dispatch at the check below.
@@ -712,7 +719,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
           detail: { requirementIds: packet.requirementIds, failure } }),
         () => build({ mode: "implement", packet, outputDir: options.outputDir,
-          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
         "implementation", { sessionKey, timeoutMs: implementationTimeoutMs }));
       if (needsImplementationRetry(result)) {
         mayContinue = false;
@@ -730,13 +737,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             detail: { requirementIds: packet.requirementIds, timeoutMs: retryTimeoutMs,
               reason: result.terminationReason ?? "timeout" } });
           result = await build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
-            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
             "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true });
           result = await resumeGatewayWork(result,
             failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
               detail: { requirementIds: packet.requirementIds, failure } }),
             () => build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
-              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
               "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true }));
           if (needsImplementationRetry(result)) await preserveInterruptedWork(retryPacket);
         }
@@ -764,13 +771,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           await state.record({ at: now(), type: "implementation_continued", packetId: packet.id,
             detail: { reason: failure, timeoutMs: remainingMs } });
           result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
           "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure });
           result = await resumeGatewayWork(result,
             pause => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
               detail: { requirementIds: packet.requirementIds, failure: pause } }),
             () => build({ mode: "implement", packet, outputDir: options.outputDir,
-              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented) },
+              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
             "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure }));
           if (result.gatewayFailure && result.outcome !== "completed") {
             await stopImplementation(packet, result.gatewayFailure);
@@ -893,12 +900,14 @@ function buildBuilderProjectContext(
   packet: WorkPacket,
   catalog: RequirementCatalog,
   implemented: ReadonlySet<string>,
+  startingPoint: PipelineOptions["stageStartingPoint"] = "unknown",
 ): BuilderProjectContext {
   const first = packet.requirements[0];
   if (!first) throw new Error(`Packet ${packet.id} has no requirements`);
   const dependencyIds = new Set(
     packet.requirements.flatMap((item) => item.dependencyIds),
   );
+  const stage = first.product.stage;
   return {
     product: first.product,
     ancestors: dedupeAncestors(
@@ -907,6 +916,11 @@ function buildBuilderProjectContext(
     satisfiedDependencies: catalog.requirements
       .filter((item) => dependencyIds.has(item.id) && implemented.has(item.id))
       .map((item) => ({ id: item.id, name: item.name, contract: item.text })),
+    ...(stage ? { progressiveStage: {
+      ...stage,
+      startingPoint: startingPoint ?? "unknown",
+      externalPrerequisiteIds: [...new Set(packet.requirements.flatMap(item => item.externalDependencyIds ?? []))],
+    } } : {}),
   };
 }
 

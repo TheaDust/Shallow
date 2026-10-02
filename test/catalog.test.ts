@@ -81,6 +81,14 @@ test("Catalog classifies known product roots exactly and unknown roots as generi
     },
   );
   await withYaml(
+    `id: ROOT\nname: GitHub - Stage 2\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.equal(catalog.requirements[0].product.kind, "repository_collaboration");
+      assert.equal(catalog.requirements[0].product.stage?.index, 2);
+    },
+  );
+  await withYaml(
     `id: ROOT\nname: Core Requirements for an Online Spreadsheet Data Workspace\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n`,
     async (file) => {
       const catalog = await loadRequirementCatalog(file);
@@ -92,6 +100,46 @@ test("Catalog classifies known product roots exactly and unknown roots as generi
     async (file) => {
       const catalog = await loadRequirementCatalog(file);
       assert.equal(catalog.requirements[0].product.kind, "generic_web");
+    },
+  );
+});
+
+test("Catalog recognises generic progressive stages and keeps earlier-stage dependencies external", async () => {
+  await withYaml(
+    `id: ROOT
+name: Inventory Workspace — Phase 2
+type: FOLDER
+dependencies: []
+description: Add the next set of inventory capabilities.
+children:
+  - id: REQ-3
+    name: Repositories
+    type: FOLDER
+    dependencies: [REQ-1-1-2]
+    description: Repository work.
+    children:
+      - id: REQ-3-1
+        name: Browse repositories
+        type: ATOMIC
+        dependencies: []
+        description: Browse repositories.
+      - id: REQ-3-2
+        name: Edit repositories
+        type: ATOMIC
+        dependencies: [REQ-3-1]
+        description: Edit repositories.
+`,
+    async (file) => {
+      const catalog = await loadRequirementCatalog(file);
+      assert.deepEqual(catalog.requirements[0].product.stage, {
+        index: 2,
+        currentStageTestsOnly: true,
+      });
+      assert.equal(catalog.requirements[0].product.kind, "generic_web");
+      assert.deepEqual(catalog.requirements[0].dependencyIds, []);
+      assert.deepEqual(catalog.requirements[0].externalDependencyIds, ["REQ-1-1-2"]);
+      assert.deepEqual(catalog.requirements[1].dependencyIds, ["REQ-3-1"]);
+      assert.deepEqual(catalog.requirements[1].externalDependencyIds, ["REQ-1-1-2"]);
     },
   );
 });
@@ -108,6 +156,25 @@ test("Catalog rejects duplicate identifiers", async () => {
 test("Catalog rejects unknown dependencies", async () => {
   await withYaml(
     `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: [MISSING]\n    description: One\n`,
+    async (file) => {
+      await assert.rejects(loadRequirementCatalog(file), /Unknown dependency MISSING/);
+    },
+  );
+});
+
+test("Stage 1 still rejects dependencies because no earlier-stage context exists", async () => {
+  await withYaml(
+    `id: ROOT
+name: 库存工作台 - 第 1 阶段
+type: FOLDER
+dependencies: []
+children:
+  - id: X
+    name: One
+    type: ATOMIC
+    dependencies: [MISSING]
+    description: One
+`,
     async (file) => {
       await assert.rejects(loadRequirementCatalog(file), /Unknown dependency MISSING/);
     },

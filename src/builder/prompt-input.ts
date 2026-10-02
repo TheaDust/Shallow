@@ -15,6 +15,12 @@ export interface BuilderProjectContext {
   product: ProductContext;
   ancestors: RequirementAncestor[];
   satisfiedDependencies: Array<{ id: string; name: string; contract: string }>;
+  progressiveStage?: {
+    index: number;
+    currentStageTestsOnly: boolean;
+    startingPoint: "inherited_application" | "blank_template" | "unknown";
+    externalPrerequisiteIds: string[];
+  };
 }
 
 export interface BuilderShadowObservation {

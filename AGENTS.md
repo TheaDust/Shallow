@@ -48,6 +48,7 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口、额外端口段由发现结果决定）
   system/platform-extra-ports.md 额外端口合同段：由验收 spec 发现的端口（{{EXTRA_PORTS}}）双重监听要求
   system/seed-data.md           顶层 data 的种子数据段模板
+  system/progressive-stage-context.md  分阶段任务起点、前序外部依赖与增量/空模板实施边界
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
   judge/probe-planner.md        Judge Planner 计划生成系统提示词（中文）
@@ -59,8 +60,9 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树、ProductContext.seedData 与原子级 seedDeclarations
-                                （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖
-  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及前置需求文字上下文
+                                （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖；识别通用阶段后缀，
+                                当前树外的前序阶段依赖单列为 externalDependencyIds（Stage 1/普通题仍严格拒绝未知依赖）
+  scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及当前树内前置需求文字上下文，前序阶段外部依赖只作上下文、不阻塞或进入当前阶段覆盖
   feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
   llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：完整描述/依赖/容量数据，省略场景正文；首次 64k 输出、
                                 截断重试 128k；解释不作为行为合同
@@ -105,7 +107,7 @@ src/
     pi-app-tool.ts              app 工具：通过 IPC 请求父进程执行平台启动合同
     reference-images.ts        loadReferenceImages：当前 packet 图片读取、真实路径/格式/大小校验
     vision-probe.ts            VisionCapability：一次 1×1 PNG 请求判定网关模型是否接受图片输入，结果按运行缓存
-    prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）
+    prompt-input.ts             BuilderPromptInput 判别联合（implement/repair/root_cause_repair/delivery_repair）及 progressiveStage 起点/外部前置上下文
     prompt.ts                   compileBuilderPrompt / buildBuilderTaskPrompt：系统合同 + 模板填充 + fragments 拼装
                                 + 本包初始数据原文摘录（seedDeclarations 聚合）
     prompt-fragments.ts         selectPromptFragments：产品 kind 基础集 + generic_web 关键词 lexicon + 观测扩展
@@ -189,6 +191,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 题目换成 `data/official-competition/hackathon--github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
+- 分阶段题通过根名称末尾的通用 `Stage N`、`Phase N` 或 `第 N 阶段` 标记识别：各阶段需求树可以互不重叠，Stage 2 以后可引用不在本树中的前序需求 ID；它们是外部上下文，不进入本轮调度、ARC 覆盖或 Judge requirementIds。平台给出完整前序应用时在其上增量修改；没有应用时通用空脚手架只补当前阶段场景需要的最小前序支撑。每轮只验收当前 YAML。详见 `docs/2026-10-02-progressive-stage-support.md`。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听和静态文件服务；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或视觉组件。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { GatewayRequestError, httpGatewayFailure } from "../src/gateway-failure.js";
 import { withModulePipeline } from "./helpers/module-pipeline.js";
@@ -8,6 +9,45 @@ const proposal = { groups: [
   { requirementIds: ["B"], purpose: "独立业务增量" },
   { requirementIds: ["C"], purpose: "后续模块" },
 ] };
+
+test("Progressive stages schedule current requirements while treating prior-stage IDs as context", async () => {
+  await withModulePipeline(async f => {
+    await writeFile(f.options.requirementsFile, JSON.stringify({
+      id: "ROOT", name: "Repository Workspace — Phase 2", type: "FOLDER", dependencies: [],
+      description: "Add the next set of repository capabilities.",
+      children: [{ id: "REQ-3", name: "Repositories", type: "FOLDER", dependencies: ["REQ-1-1-2"],
+        description: "Repository area.", children: [
+          { id: "REQ-3-1", name: "Browse repositories", type: "ATOMIC", dependencies: [],
+            description: "Display the repository workspace." },
+        ] }],
+    }));
+    f.options.stageStartingPoint = "inherited_application";
+    let plannedExternal: string[] | undefined;
+    f.deps.planner.plan = async packet => {
+      plannedExternal = packet.externalPrerequisiteIds;
+      return { packetId: packet.id, cases: [{ id: "case-stage", requirementIds: packet.requirementIds,
+        purpose: "happy_path", expectationBasis: [packet.requirements[0].text],
+        steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] }] };
+    };
+
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.equal(f.builder.requests.length, 1);
+    const request = f.builder.requests[0];
+    if (request.mode !== "implement") throw new Error("expected implement request");
+    assert.deepEqual(request.packet.requirementIds, ["REQ-3-1"]);
+    assert.deepEqual(request.projectContext.progressiveStage, {
+      index: 2,
+      currentStageTestsOnly: true,
+      startingPoint: "inherited_application",
+      externalPrerequisiteIds: ["REQ-1-1-2"],
+    });
+    assert.deepEqual(plannedExternal, ["REQ-1-1-2"]);
+    const started = (await f.events()).find(event => event.type === "pipeline_started");
+    assert.equal(started?.detail?.progressiveStage?.index, 2);
+    assert.equal(started?.detail?.progressiveStage?.startingPoint, "inherited_application");
+  });
+});
 
 test("The main pipeline uses the runtime proposal once while auditing every original atomic", async () => {
   await withModulePipeline(async f => {
