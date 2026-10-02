@@ -39,10 +39,12 @@ test("fillTemplate deduplicates residual placeholder names", () => {
   });
 });
 
-test("loadPrompt reads an asset verbatim with LF endings", () => {
+test("loadPrompt reads an asset verbatim with LF endings", async () => {
+  const source = await readFile(new URL("../prompts/fragments/repository-collaboration.md", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\r/);
   assert.equal(
     loadPrompt("fragments", "repository-collaboration"),
-    "【仓库协作业务】\n本包涉及的仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。代码浏览、分支指向、提交历史、文件内容与差异应反映同一版本关系，变更后不能只更新其中一个视图。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态按需求保持一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
+    source.trimEnd(),
   );
 });
 

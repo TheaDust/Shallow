@@ -179,7 +179,7 @@ test("A compound plan gets one semantic completeness review with the remaining d
   assert.deepEqual(usage, [["plan", 6], ["review", 7]]);
 });
 
-test("Simple and explicitly partial plans skip completeness review; invalid compound reviews use the existing feedback retry", async () => {
+test("Simple plans skip completeness review and partial plans retain omissions when review is invalid", async () => {
   for (const partial of [false, true]) {
     const input = packet();
     const original = plan();
@@ -193,9 +193,13 @@ test("Simple and explicitly partial plans skip completeness review; invalid comp
       requests++;
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(original) } }] }), { headers: { "Content-Type": "application/json" } });
     });
-    await planner.plan(input);
-    assert.equal(requests, 1);
+    const checked = await planner.plan(input);
+    assert.equal(requests, partial ? 2 : 1);
+    assert.deepEqual(checked.uncoveredOutcomes, original.uncoveredOutcomes);
   }
+});
+
+test("Invalid complete compound reviews still use the existing feedback retry", async () => {
   const input = packet();
   input.requirements[0].scenarioContracts![0].steps = [{ keyword: "THEN", content: "The title is saved and the description is saved." }];
   const original = plan();
@@ -209,6 +213,136 @@ test("Simple and explicitly partial plans skip completeness review; invalid comp
   await assert.rejects(planner.plan(input), (error: unknown) => error instanceof ProbePlannerError && error.category === "schema" &&
     error.diagnostics.validationError?.includes("differ") === true);
   assert.equal(requests, 2);
+});
+
+test("An omission review adds a real result assertion before removing the coverage gap", async () => {
+  const input = packet();
+  const complete = plan();
+  const partial = structuredClone(complete);
+  partial.cases[0].steps.pop();
+  partial.cases[0].outcomeChecks!.pop();
+  partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Description check unavailable" }];
+  let requests = 0;
+  const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async (_url, options) => {
+    const payload = JSON.parse(JSON.parse(String(options?.body)).messages[1].content);
+    let content: unknown = partial;
+    if (++requests === 2) {
+      assert.equal(payload.coverageReview, true);
+      assert.equal(payload.originalPlan.uncoveredOutcomes.length, 1);
+      content = { verdict: "corrected", rationale: "Description is observable", corrections: [{
+        caseId: "edit-case", conflict: "The saved description needs its own assertion", basis: ["The description is saved."],
+        case: (toWireProbePlan(complete) as { cases: unknown[] }).cases[0],
+      }] };
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { headers: { "Content-Type": "application/json" } });
+  });
+  const checked = await planner.plan(input);
+  assert.equal(requests, 2);
+  assert.deepEqual(checked.cases[0].steps, complete.cases[0].steps);
+  assert.deepEqual(probeCoverageGaps(checked, input.requirements), []);
+});
+
+test("An omission cannot be resolved by mapping the title assertion to the description", () => {
+  const input = packet();
+  const partial = plan();
+  partial.cases[0].steps.pop();
+  partial.cases[0].outcomeChecks!.pop();
+  partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Description check unavailable" }];
+  const changed = structuredClone(partial);
+  changed.cases[0].outcomeChecks!.push({ scenarioId: "edit", stepIndex: 3, assertionIndexes: [1] });
+  assert.throws(() => parsePlanReview({ verdict: "corrected", rationale: "Reuse the title", corrections: [{
+    caseId: "edit-case", conflict: "Description was omitted", basis: ["The description is saved."],
+    case: (toWireProbePlan(changed) as { cases: unknown[] }).cases[0],
+  }] }, input, partial), /distinct result assertion/);
+  const unused = plan();
+  unused.cases[0].outcomeChecks!.pop();
+  unused.uncoveredOutcomes = partial.uncoveredOutcomes;
+  const review = parsePlanReview({ verdict: "corrected", rationale: "The description assertion already exists", corrections: [{
+    caseId: "edit-case", conflict: "Description assertion was not mapped", basis: ["The description is saved."],
+    case: (toWireProbePlan(plan()) as { cases: unknown[] }).cases[0],
+  }] }, input, unused);
+  assert.equal(review.status, "corrected");
+  if (review.status === "corrected") assert.deepEqual(probeCoverageGaps(review.plan, input.requirements), []);
+});
+
+test("A sound omission review retains the gap, and caller cancellation remains observable", async () => {
+  for (const cancelled of [false, true]) {
+    const input = packet();
+    const partial = plan();
+    partial.cases[0].outcomeChecks!.pop();
+    partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Unsupported result" }];
+    const controller = new AbortController();
+    let requests = 0;
+    const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async () => {
+      const content = ++requests === 1 ? partial : { verdict: "sound", rationale: "The explicit limitation remains" };
+      if (requests === 2 && cancelled) { controller.abort(); throw new Error("caller cancelled"); }
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { headers: { "Content-Type": "application/json" } });
+    });
+    const checked = planner.plan(input, undefined, { timeoutMs: 1000, signal: controller.signal });
+    if (cancelled) await assert.rejects(checked);
+    else assert.equal(probeCoverageGaps(await checked, input.requirements).length, 1);
+    assert.equal(requests, 2);
+  }
+});
+
+test("A repeated result assertion after a new operation can resolve an omitted sequential outcome", () => {
+  const input = packet();
+  input.requirements[0].text = 'Click the button named "Save" twice. Each save displays "Saved" in the status named "Result".';
+  input.requirements[0].scenarioContracts![0].steps[2].content = 'The first save displays "Saved".';
+  input.requirements[0].scenarioContracts![0].steps[3].content = 'The second save displays "Saved".';
+  const partial = plan();
+  partial.cases[0].expectationBasis = [input.requirements[0].text];
+  partial.cases[0].steps = [...partial.cases[0].steps.slice(0, 3), {
+    op: "expectText", locator: { by: "role", role: "status", name: "Result", exact: true }, text: "Saved", exact: true,
+  }];
+  partial.cases[0].outcomeChecks!.pop();
+  partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Second operation was not checked" }];
+  const changed = structuredClone(partial);
+  changed.cases[0].steps.push(structuredClone(changed.cases[0].steps[2]), structuredClone(changed.cases[0].steps[3]));
+  changed.cases[0].outcomeChecks!.push({ scenarioId: "edit", stepIndex: 3, assertionIndexes: [3] });
+  const review = parsePlanReview({ verdict: "corrected", rationale: "Verify the second save independently", corrections: [{
+    caseId: "edit-case", conflict: "The second save was omitted", basis: [input.requirements[0].text],
+    case: (toWireProbePlan(changed) as { cases: unknown[] }).cases[0],
+  }] }, input, partial);
+  assert.equal(review.status, "corrected");
+});
+
+test("Omission review outages preserve a valid partial plan and expired windows start no extra request", async t => {
+  for (const expired of [false, true]) {
+    const input = packet();
+    const partial = plan();
+    partial.cases[0].outcomeChecks!.pop();
+    partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Unsupported result" }];
+    let now = 1000;
+    const clock = t.mock.method(Date, "now", () => now);
+    let requests = 0;
+    const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async () => {
+      if (++requests > 1) return new Response("gateway unavailable", { status: 503 });
+      if (expired) now += 1001;
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(partial) } }] }), { headers: { "Content-Type": "application/json" } });
+    });
+    const checked = await planner.plan(input);
+    assert.equal(requests, expired ? 1 : 2);
+    assert.deepEqual(checked, partial);
+    assert.equal(probeCoverageGaps(checked, input.requirements).length, 1);
+    clock.mock.restore();
+  }
+});
+
+test("An explicitly unbounded planning window remains unbounded for omission review", async t => {
+  const input = packet();
+  const partial = plan();
+  partial.cases[0].outcomeChecks!.pop();
+  partial.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 3, reason: "Unsupported result" }];
+  let requests = 0;
+  const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async () => {
+    const content = ++requests === 1 ? partial : { verdict: "sound", rationale: "The explicit limitation remains" };
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { headers: { "Content-Type": "application/json" } });
+  });
+  const review = t.mock.method(planner, "reviewPlan");
+  await planner.plan(input, undefined, { timeoutMs: 0 });
+  assert.equal(requests, 2);
+  assert.equal(review.mock.calls[0].arguments[4]?.timeoutMs, 0);
 });
 
 test("LLM planning rejects an unexplained coverage omission and accepts an explicitly partial plan", async () => {

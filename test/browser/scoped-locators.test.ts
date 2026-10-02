@@ -29,32 +29,52 @@ test("Label-based selection excludes a same-named region and still rejects two m
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 
-test("Select probes operate an ARIA combobox through its visible named options", async () => {
-  const server = createServer((_request, response) => {
+test("Select probes follow the combobox's listbox relation across scopes and keep option ambiguity", async () => {
+  const server = createServer((request, response) => {
     response.setHeader("content-type", "text/html");
-    response.end(`<label for="rule">Rule type</label>
-      <input id="rule" role="combobox" readonly value="Number range" aria-expanded="false" aria-controls="rules"
+    response.end(`<section aria-label="Rule editor"><label for="rule">Rule type</label>
+      <input id="rule" role="combobox" readonly value="Number range" aria-expanded="false"
+        ${request.url === "/unrelated" ? "" : 'aria-controls="rules:choices"'}
         onclick="this.setAttribute('aria-expanded','true'); document.getElementById('rules').hidden=false">
-      <div id="rules" role="listbox" hidden>
-        <button role="option" onclick="rule.value=this.textContent; rule.setAttribute('aria-expanded','false'); rules.hidden=true">Dropdown</button>
+      </section>
+      <div id="rules" hidden><div id="rules:choices" role="listbox">
         <button role="option" onclick="rule.value=this.textContent; rule.setAttribute('aria-expanded','false'); rules.hidden=true">Number range</button>
-      </div>`);
+        ${request.url === "/missing-option" ? "" : '<button role="option" onclick="rule.value=this.textContent; rule.setAttribute(\'aria-expanded\',\'false\'); rules.hidden=true">Dropdown</button>'}
+        ${request.url === "/ambiguous" ? '<button role="option">Dropdown</button>' : ""}
+      </div></div>
+      <section aria-label="Other editor"><label for="other">Rule type</label>
+        <input id="other" role="combobox" readonly value="Number range" aria-controls="other-rules">
+        <div id="other-rules" role="listbox"><button role="option">Dropdown</button></div>
+      </section>`);
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
     if (!address || typeof address === "string") assert.fail("missing address");
-    const plan = { packetId: "aria-combobox", cases: [{
+    const run = (path: string) => new PlaywrightProbeRunner().run({ packetId: "aria-combobox", cases: [{
       id: "choose", requirementIds: ["A"], purpose: "happy_path" as const, expectationBasis: ["fixture"], steps: [
-        { op: "goto" as const, path: "/" },
-        { op: "select" as const, locator: { by: "label" as const, text: "Rule type", exact: true }, value: "Dropdown" },
-        { op: "expectValue" as const, locator: { by: "label" as const, text: "Rule type", exact: true }, value: "Dropdown" },
+        { op: "goto" as const, path },
+        { op: "select" as const, locator: { by: "label" as const, text: "Rule type", exact: true,
+          scope: { by: "role" as const, role: "region", name: "Rule editor", exact: true } }, value: "Dropdown" },
+        { op: "expectValue" as const, locator: { by: "label" as const, text: "Rule type", exact: true,
+          scope: { by: "role" as const, role: "region", name: "Rule editor", exact: true } }, value: "Dropdown" },
       ],
-    }] };
-    const report = await new PlaywrightProbeRunner().run(plan, {
+    }] }, {
       baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 500, caseTimeoutMs: 5_000,
     });
+    const report = await run("/");
     assert.equal(report.verdict, "pass", JSON.stringify(report.failures));
+    const ambiguous = await run("/ambiguous");
+    assert.equal(ambiguous.verdict, "inconclusive");
+    assert.equal(ambiguous.failures[0].category, "locator");
+    assert.match(ambiguous.failures[0].message, /strict mode violation/);
+    const unrelated = await run("/unrelated");
+    assert.equal(unrelated.verdict, "inconclusive");
+    assert.equal(unrelated.failures[0].stepIndex, 1);
+    assert.match(unrelated.failures[0].message, /aria-controls/);
+    const missingOption = await run("/missing-option");
+    assert.equal(missingOption.verdict, "fail");
+    assert.equal(missingOption.failures[0].stepIndex, 1);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 

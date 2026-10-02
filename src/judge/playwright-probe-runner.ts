@@ -3,9 +3,11 @@ import {
   expect,
   type Browser,
   type BrowserContext,
+  type Download,
   type Locator,
   type Page,
 } from "@playwright/test";
+import type { Readable } from "node:stream";
 
 import { locatorCandidates, type ProbeCase, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 import type { ProbeFailure, ShadowReport } from "../types.js";
@@ -15,6 +17,7 @@ import { sanitizeDiagnosticText } from "../diagnostics.js";
 
 /** Headroom reserved before launching a probe browser (browser + renderer + page). */
 const PROBE_BROWSER_HEADROOM_BYTES = 400 * 1_048_576;
+const MAX_DOWNLOAD_BYTES = 64 * 1_024;
 
 export interface ProbeRunOptions {
   baseUrl: string;
@@ -261,7 +264,16 @@ async function executeStep(
           // control opens. Keep `select` portable across native selects and
           // visible listbox implementations without reaching into app DOM.
           await locator.click({ timeout: timeoutMs });
-          const option = session.page.getByRole("option", { name: step.value, exact: true }).filter({ visible: true });
+          const controlledIds = (await locator.getAttribute("aria-controls", { timeout: timeoutMs }))?.trim().split(/\s+/).filter(Boolean) ?? [];
+          if (!controlledIds.length) {
+            throw new ProbeExecutionError("locator", "Cannot associate the combobox with a listbox without aria-controls");
+          }
+          // The popup may be portalled outside the control's declared scope.
+          // Follow its public ARIA relation instead of choosing an unrelated option.
+          const selector = await session.page.evaluate(ids => ids.map(id => `#${CSS.escape(id)}`).join(","), controlledIds);
+          const listbox = session.page.getByRole("listbox").and(session.page.locator(selector)).filter({ visible: true });
+          await listbox.waitFor({ state: "visible", timeout: timeoutMs });
+          const option = listbox.getByRole("option", { name: step.value, exact: true }).filter({ visible: true });
           await option.click({ timeout: timeoutMs });
         }
         break;
@@ -304,6 +316,22 @@ async function executeStep(
       case "expectText":
         await expectAnyText(locator, step, timeoutMs);
         break;
+      case "expectDownload": {
+        const deadline = Date.now() + timeoutMs;
+        const [download] = await Promise.all([
+          session.page.waitForEvent("download", { timeout: timeoutMs }),
+          locator.click({ timeout: timeoutMs }),
+        ]);
+        if (!download.suggestedFilename().endsWith(step.fileNameSuffix)) {
+          throw new Error("Downloaded filename does not have the required suffix");
+        }
+        const text = await downloadedUtf8Text(download, Math.max(1, deadline - Date.now()));
+        const normalize = (value: string) => value.replace(/\r\n/g, "\n");
+        if (normalize(text) !== normalize(step.text)) {
+          throw new Error(`Downloaded UTF-8 text differs from expected content (expected ${Buffer.byteLength(step.text)} bytes, received ${Buffer.byteLength(text)} bytes)`);
+        }
+        break;
+      }
       case "expectValue":
         await expect(locator).toHaveValue(step.value, { timeout: timeoutMs });
         break;
@@ -313,9 +341,12 @@ async function executeStep(
     }
   } catch (error) {
     const assertion = step.op.startsWith("expect");
-    const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(compactError(error));
-    throw new ProbeExecutionError(invalidProbeOperation ? "runner" : assertion ? "assertion" : "timeout",
-      compactError(error), await ariaSnapshot(session.page, timeoutMs, locator, step.locator.scope));
+    const message = compactError(error);
+    const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(message);
+    const ambiguousSelection = (step.op === "select" || step.op === "expectDownload") && message.includes("strict mode violation");
+    throw new ProbeExecutionError(error instanceof ProbeExecutionError ? error.category
+      : invalidProbeOperation ? "runner" : ambiguousSelection ? "locator" : assertion ? "assertion" : "timeout",
+      message, await ariaSnapshot(session.page, timeoutMs, locator, step.locator.scope));
   }
   return session;
 }
@@ -345,7 +376,7 @@ async function resolveLocator(
   const candidates = locatorCandidates(step.locator);
   // Actions must reach a visible candidate. Uploads can target a hidden native
   // file input, and state/value assertions need only an attached target.
-  const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "setChecked", "expectVisible"].includes(step.op);
+  const needsVisible = ["click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "setChecked", "expectVisible", "expectDownload"].includes(step.op);
   const attempts: NonNullable<ProbeFailure["locatorAttempts"]> = [];
   let lastMiss: unknown;
   let observedTarget: Locator | undefined;
@@ -401,6 +432,41 @@ async function expectAnyText(
 }
 
 const LOCATOR_PROBE_TIMEOUT_MS = 500;
+
+/** Read only the browser-owned download, with bounded memory and completion time. */
+async function downloadedUtf8Text(download: Download, timeoutMs: number): Promise<string> {
+  let stream: Readable | null = null;
+  const closeStream = () => stream?.destroy();
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const reading = (async () => {
+    stream = await download.createReadStream();
+    if (expired) { stream?.destroy(); return ""; }
+    if (!stream) throw new ProbeExecutionError("runner", "Browser download stream is unavailable");
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    for await (const chunk of stream) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.length;
+      if (bytes > MAX_DOWNLOAD_BYTES) throw new ProbeExecutionError("runner", "Download exceeds the 64 KiB probe limit");
+      chunks.push(buffer);
+    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+  })();
+  try {
+    return await Promise.race([reading, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        expired = true;
+        stream?.destroy();
+        void download.cancel().catch(() => {});
+        reject(new ProbeExecutionError("runner", "Browser download did not complete within the probe timeout"));
+      }, timeoutMs);
+    })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    closeStream();
+  }
+}
 
 async function createSession(browser: Browser): Promise<BrowserSession> {
   const context = await browser.newContext();

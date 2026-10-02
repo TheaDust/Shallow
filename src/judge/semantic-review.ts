@@ -131,6 +131,21 @@ export function parsePlanReview(
   if (review.plan == null) throw new Error("PlanReview verdict corrected requires a corrected plan");
   const plan = parseProbePlan({ ...original, ...record(review.plan, "PlanReview.plan"),
     uncoveredOutcomes: original.uncoveredOutcomes, navigationRecovered: original.navigationRecovered }, packet);
+  const omitted = new Set(original.uncoveredOutcomes?.map(outcomeKey));
+  for (const before of original.cases) {
+    const after = plan.cases.find(item => item.id === before.id);
+    if (!after) continue;
+    const businessBefore = before.steps.slice(before.setupStepCount ?? 0);
+    const usedAssertions = new Set(before.outcomeChecks?.flatMap(check =>
+      check.assertionIndexes.map(index => JSON.stringify(businessBefore.slice(0, index + 1)))));
+    const businessAfter = after.steps.slice(after.setupStepCount ?? 0);
+    for (const check of after.outcomeChecks ?? []) {
+      if (omitted.has(outcomeKey(check)) && check.assertionIndexes.every(index =>
+        usedAssertions.has(JSON.stringify(businessAfter.slice(0, index + 1))))) {
+        throw new Error("PlanReview must supply a distinct result assertion before resolving an omitted outcome");
+      }
+    }
+  }
   if (plan.uncoveredOutcomes) plan.uncoveredOutcomes = plan.uncoveredOutcomes.filter(omission =>
     !plan.cases.some(item => item.outcomeChecks?.some(check => outcomeKey(check) === outcomeKey(omission))));
   if (probePlanSha256(plan) === probePlanSha256(original)) {

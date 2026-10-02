@@ -124,18 +124,25 @@ export class LlmProbePlanner implements ProbePlanner {
     }
     const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage, options?.signal);
     const plan = this.parse(content, packet);
-    if (plan.uncoveredOutcomes?.length || !scenarioOutcomes(packet.requirements).some(item => item.clauseIndex !== undefined)) return plan;
+    const hasOmissions = !!plan.uncoveredOutcomes?.length;
+    if (!hasOmissions && !scenarioOutcomes(packet.requirements).some(item => item.clauseIndex !== undefined)) return plan;
     // Clause accounting cannot establish that an assertion actually checks its
-    // claimed result. Review complete compound plans once, within the same call
+    // claimed result. Review compound or incomplete plans once, within the same call
     // window; cached audits do not repeat this planning review.
     try {
+      const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs;
+      const remainingMs = timeoutMs === 0 ? 0 : timeoutMs - (Date.now() - startedAt);
+      if (hasOmissions && timeoutMs > 0 && remainingMs <= 0) return plan;
       const review = await this.reviewPlan(packet, plan, [], undefined, { ...options, coverageReview: true,
         onUsage: options?.onReviewUsage ?? options?.onUsage,
-        timeoutMs: Math.max(1, (options?.timeoutMs ?? this.config.timeoutMs) - (Date.now() - startedAt)) });
+        timeoutMs: timeoutMs === 0 ? 0 : Math.max(1, remainingMs) });
       const reviewed = review.status === "corrected" ? review.plan : plan;
       assertCoverageAccountedFor(reviewed, packet.requirements);
       return reviewed;
     } catch (error) {
+      // A failed optional omission review must not discard an already valid
+      // partial plan or amplify retries. Its uncovered outcomes still block verified.
+      if (hasOmissions && !options?.signal?.aborted) return plan;
       if (error instanceof ProbePlannerError && error.category !== "review") throw error;
       const cause = error instanceof ProbePlannerError ? new Error(error.diagnostics.validationError ?? error.message) : error;
       throw new ProbePlannerError("schema", "Compound plan completeness review failed", { cause, content, apiKey: this.config.apiKey });

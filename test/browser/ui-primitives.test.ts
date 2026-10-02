@@ -34,7 +34,6 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
         const combobox = comboboxes.nth(index);
         await combobox.locator("..").locator("label").click();
         await expect(combobox).toBeFocused();
-        await combobox.click();
         await expect(combobox).toHaveAttribute("aria-expanded", "true");
         await page.getByRole("option", { name: "编辑", exact: true }).click();
         await expect(combobox).toHaveValue("编辑");

@@ -8,6 +8,23 @@ test("setChecked accepts explicit state only on checkable controls", () => {
   assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "role", role: "button", name: "Save" }, checked: true })), /checkbox\/radio/);
   assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "label", text: "Header row" }, checked: "true" })), /boolean/);
 });
+
+test("Download assertions use an interactive trigger and preserve expected content during refinement", () => {
+  const wire = (assertion: unknown) => ({ packetId: "download", cases: [{ id: "export", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: ["fixture"], steps: [{ op: "goto", path: "/" }], assertion }] });
+  const step = { op: "expectDownload", locator: { by: "role", role: "button", name: "Export CSV", exact: true },
+    fileNameSuffix: ".csv", text: "2,4" };
+  const original = parseProbePlan(wire(step));
+  assert.deepEqual(original.cases[0].steps.at(-1), step);
+  assert.throws(() => parseProbePlan(wire({ ...step, locator: { by: "text", text: "Export CSV" } })), /interactive control/);
+  assert.throws(() => parseProbePlan(wire({ ...step, fileNameSuffix: "" })), /fileNameSuffix/);
+  assert.throws(() => parseProbePlan(wire({ ...step, path: "private.csv" })), /unsupported/);
+  const changed = structuredClone(original);
+  const assertion = changed.cases[0].steps.at(-1);
+  if (assertion?.op !== "expectDownload") assert.fail("missing download assertion");
+  assertion.text = "2,=A1*2";
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed), /only locator/);
+});
 import { assertLocatorOnlyRefinement, declaredLocatorRoles, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 import { loadRequirementCatalog } from "../src/catalog.js";

@@ -59,6 +59,7 @@ export type ProbeStep =
   | { op: "expectDisabled" | "expectEnabled"; locator: ProbeLocator }
   | { op: "expectAttribute"; locator: ProbeLocator; attribute: (typeof STATE_ATTRIBUTES)[number]; value: "true" | "false" | "mixed" }
   | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
+  | { op: "expectDownload"; locator: ProbeLocator; fileNameSuffix: string; text: string }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
   | { op: "reload" }
@@ -178,6 +179,8 @@ const STEP_SCHEMA = {
     objectSchema({ op: literalSchema("drag"), from: LOCATOR_REF, to: LOCATOR_REF }),
     objectSchema({ op: literalSchema("uploadFile"), locator: LOCATOR_REF,
       fileName: NONEMPTY_STRING_SCHEMA, content: STRING_SCHEMA }),
+    objectSchema({ op: literalSchema("expectDownload"), locator: LOCATOR_REF,
+      fileNameSuffix: NONEMPTY_STRING_SCHEMA, text: STRING_SCHEMA }),
     objectSchema({ op: literalSchema("setClipboardText"), text: STRING_SCHEMA }),
     objectSchema({ op: literalSchema("setChecked"), locator: LOCATOR_REF, checked: { type: "boolean" } }),
     objectSchema({ op: literalSchema("expectAttribute"), locator: LOCATOR_REF,
@@ -252,7 +255,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectValue, expectCount, reload, newContext. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, reload, newContext. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -874,6 +877,16 @@ function parseStep(value: unknown, location: string): ProbeStep {
         locator: parseLocator(step.locator, `${location}.locator`),
         count: count as number,
       };
+    }
+    case "expectDownload": {
+      keys(step, ["op", "locator", "fileNameSuffix", "text"], location);
+      const locator = parseLocator(step.locator, `${location}.locator`);
+      if (locatorCandidates(locator).some(candidate => candidate.by !== "label" &&
+        (candidate.by !== "role" || !INTERACTIVE_ROLES.has(candidate.role)))) {
+        throw new Error(`${location}: expectDownload requires role or label locators for an interactive control, including fallbacks`);
+      }
+      return { op, locator, fileNameSuffix: text(step.fileNameSuffix, `${location}.fileNameSuffix`),
+        text: dataText(step.text, `${location}.text`) };
     }
     case "reload":
       keys(step, ["op"], location);

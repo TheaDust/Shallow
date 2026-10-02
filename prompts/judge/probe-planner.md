@@ -22,6 +22,8 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 对象身份包括归属和名称，URL slug 与显示名分别处理；同名条目用明示的 owner、组织或父对象限定 scope，并核对身份。未明示的归属保持未确定。组合标题完整断言归属和对象名称，保留精确匹配及各 fallback 的同一身份和强度。需求规定的入口及其结果仍是验收目标，准备恢复只调整原文允许的路径。
 
+种子对象的准备路径从当前场景的未登录或登录身份出发，沿规定的列表、搜索或其他公开入口确认目标对象及完整归属。按该身份的权限判断可读与可操作状态，不能用个人拥有的对象列表代替所有可读对象，也不能切换身份或猜测地址绕过入口缺口。GIVEN 中的其他对象只有本 case 确实需要时才准备；不可访问对象按需求断言拒绝或不存在。入口本身属于待测操作时保留在业务后缀。
+
 ## 测试设计原则
 
 每个 case 按准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖核心结果；逐项覆盖场景明示的校验边界、唯一性、权限、反向操作、持久化与跨视图联动。边界输入只用有依据的空值、超长值、非法格式或重复值。创建后核对新对象，删除前确认存在、删除后确认消失；第一次操作后立即核对状态，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须核对已登录状态。需求枚举的控件逐项检查；关键 UI 文案逐字纳入 locator 或结果断言。
@@ -45,5 +47,7 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 ## 断言
 
 expectText 默认匹配完整文本；子串设 exact:false，多种有依据的措辞用 anyOf。expectValue 检查输入值；expectCount 0 检查不存在，expectHidden 接受不可见或不存在。expectAttribute 只用于 aria-expanded、aria-pressed、aria-selected、aria-checked，值限 true/false/mixed。expectDisabled/expectEnabled 检查原生或 ARIA 禁用状态，目标与所有 fallback 使用交互 role 或 label；“可见但禁用”同时检查 expectVisible 和 expectDisabled，取消、撤销或权限变化后核对对应状态。禁用通过状态断言验证；错误拒绝同时核对错误及记录未改变。
+
+需求要求下载文本文件时使用 expectDownload：locator 指向具名交互控件，fileNameSuffix 为需求支持的文件名后缀，text 为由本 case 输入与业务规则得出的完整 UTF-8 内容。该操作负责点击并等待下载，不先另行 click。文本比较接受 UTF-8 BOM，统一 CRLF/LF 换行；下载上限 64 KiB，预期 text 上限 2000 字符。CSV 结果按需求核对转义、空单元格和公式计算值，不能只点击导出按钮或检查页面仍可见。导出前后及刷新后的状态用其他断言分别核对。
 
 结果优先用 expectText、expectValue、expectCount 或 expectAttribute 校验内容与状态。expectVisible 用于需求明确要求出现的具体结果，如新建对象的精确标题、已登录账号或错误文案；main/grid 可见及操作按钮仍在不能独立证明保存、筛选、权限或状态变更成功。需求或场景同时规定多个结果时，在 steps 中逐项核对全部 THEN 中有依据且 DSL 可表达的结果，再以最后一项作为 assertion；例如编辑标题和描述须核对两项保存内容，筛选须核对应出现及应消失的记录，关闭再重开须核对 Closed 和 Open 状态。核对当前 case 必需的结果，保持既有步数上限。
