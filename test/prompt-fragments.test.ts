@@ -38,7 +38,7 @@ test("Delivery repair loads only the delivery contract", () => {
 
 test("Generic web products select fragments only through the versioned lexicon", () => {
   assert.deepEqual(
-    selectPromptFragments(genericRequest("User may rename a role")),
+    selectPromptFragments(genericRequest("User may rename a user role")),
     ["accessible_web_controls", "auth_and_permission"],
   );
 
@@ -56,6 +56,39 @@ test("Generic web products select fragments only through the versioned lexicon",
     selectPromptFragments(genericRequest("工作表公式引用单元格")),
     ["accessible_web_controls", "spreadsheet_grid"],
   );
+});
+
+test("Generic fragments use requirement text and this packet's public contracts", () => {
+  const request = genericRequest("Manage objects");
+  if (request.mode !== "implement") throw new Error("expected implement request");
+  const contract = "Users can save private objects and reopen them after refresh.";
+  const expected = ["accessible_web_controls", "server_persistence", "auth_and_permission"];
+  request.packet.requirements[0].text = contract;
+  assert.deepEqual(selectPromptFragments(request), expected);
+
+  request.packet.requirements[0].text = "Manage objects.";
+  request.projectContext.product.description = contract;
+  assert.deepEqual(selectPromptFragments(request), expected);
+
+  request.projectContext.product.description = "Root description.";
+  request.projectContext.ancestors[0].description = contract;
+  assert.deepEqual(selectPromptFragments(request), expected);
+});
+
+test("ARIA role wording does not select permission rules", () => {
+  assert.deepEqual(selectPromptFragments(genericRequest("The title uses ARIA role heading")),
+    ["accessible_web_controls"]);
+  assert.deepEqual(selectPromptFragments(genericRequest("Apply access control to shared objects")),
+    ["accessible_web_controls", "auth_and_permission"]);
+});
+
+test("Accessible region wording does not select spreadsheet rules", () => {
+  assert.deepEqual(selectPromptFragments(genericRequest('A region named "Preview" is visible')),
+    ["accessible_web_controls"]);
+  assert.deepEqual(selectPromptFragments(genericRequest("可访问区域 Preview")),
+    ["accessible_web_controls"]);
+  assert.deepEqual(selectPromptFragments(genericRequest("Select a cell range")),
+    ["accessible_web_controls", "spreadsheet_grid"]);
 });
 
 test("Arbitrary Shadow error text cannot select a domain fragment", () => {

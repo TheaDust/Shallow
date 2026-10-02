@@ -406,10 +406,37 @@ test("Catalog extracts verbatim Seed data and Seed values declarations from requ
   });
 });
 
+test("Catalog preserves modern provisioned records and GIVEN facts without seeding creation targets", async () => {
+  const declared = 'The system pre-provisions account `reader` with email `reader@example.test` and password `Valid-password-123!`.';
+  const setup = 'Test setup pre-provisions repository `docs` with file `a.b.md` and content `Hello. And goodbye!`.';
+  const given = 'Public repository `docs` has an Open issue titled `Read and write`.';
+  await withYaml(JSON.stringify({ id: "ROOT", name: "App", type: "FOLDER", children: [
+    { id: "A", name: "Read", type: "ATOMIC", description: declared, scenarios: [{ name: "Read", steps: [
+      { keyword: "GIVEN", content: setup }, { keyword: "AND", content: given },
+      { keyword: "WHEN", content: 'Create repository `new-docs`.' }, { keyword: "THEN", content: 'Repository `new-docs` exists.' },
+    ] }] },
+    { id: "B", name: "Create", type: "ATOMIC", scenarios: [{ name: "Create", steps: [
+      { keyword: "GIVEN", content: 'The username `new-user` and email `new-user@example.test` are not registered.' },
+      { keyword: "WHEN", content: 'Create account `new-user`.' },
+    ] }] },
+  ] }), async file => {
+    const catalog = await loadRequirementCatalog(file);
+    assert.deepEqual(catalog.requirements[0].seedDeclarations, [declared, setup, given]);
+    assert.deepEqual(catalog.requirements[1].seedDeclarations, []);
+  });
+});
+
 test("Bundled competition seeds and legacy Seed data declarations remain extractable", async () => {
   const github = await loadRequirementCatalog(resolve("data/official-competition/hackathon--github/requirements.yaml"));
   assert.equal(github.requirements.length, 47);
-  assert.ok(github.requirements.every((item) => item.seedDeclarations.length > 0));
+  // Registration creates unused names; other GitHub atomics have existing fixtures.
+  assert.deepEqual(github.requirements.filter(item => !item.seedDeclarations.length).map(item => item.id), ["REQ-1-1-1"]);
+  assert.ok(github.requirements.find(item => item.id === "REQ-1-1-2")!.seedDeclarations.some(value => value.includes('username `alice-dev`')));
+  assert.ok(github.requirements.find(item => item.id === "REQ-5-2-2")!.seedDeclarations.some(value => value.includes('`Original issue title`')));
+  for (const stage of [1, 2, 3]) {
+    const catalog = await loadRequirementCatalog(resolve(`data/official-competition/hackathon--github-stage-${stage}/requirements.yaml`));
+    assert.ok(catalog.requirements.filter(item => item.id !== "REQ-1-1-1").every(item => item.seedDeclarations.length > 0));
+  }
 
   const sheet = await loadRequirementCatalog(resolve("data/official-competition/hackathon--sheet/requirements.yaml"));
   assert.equal(sheet.requirements.length, 24);

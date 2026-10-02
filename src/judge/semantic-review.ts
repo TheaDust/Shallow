@@ -1,5 +1,5 @@
 import type { WorkPacket } from "../types.js";
-import { preservesOutcomeCoverage } from "./probe-coverage.js";
+import { outcomeKey, preservesOutcomeCoverage } from "./probe-coverage.js";
 import {
   assertQuotesGrounded,
   parseProbePlan,
@@ -132,7 +132,7 @@ export function parsePlanReview(
   const plan = parseProbePlan({ ...original, ...record(review.plan, "PlanReview.plan"),
     uncoveredOutcomes: original.uncoveredOutcomes, navigationRecovered: original.navigationRecovered }, packet);
   if (plan.uncoveredOutcomes) plan.uncoveredOutcomes = plan.uncoveredOutcomes.filter(omission =>
-    !plan.cases.some(item => item.outcomeChecks?.some(check => check.scenarioId === omission.scenarioId && check.stepIndex === omission.stepIndex)));
+    !plan.cases.some(item => item.outcomeChecks?.some(check => outcomeKey(check) === outcomeKey(omission))));
   if (probePlanSha256(plan) === probePlanSha256(original)) {
     throw new Error("PlanReview corrected plan must differ from the reviewed plan");
   }

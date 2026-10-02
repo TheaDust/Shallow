@@ -131,7 +131,7 @@ test("Earlier-stage dependencies neither block grouping nor become current-stage
 test("Real requirement trees group deterministically with unique coverage", async () => {
   const expectedPackets: Record<string, number> = { "12306": 33, bookstack: 13, ctrip: 36,
     keep: 11, prestashop: 25, stackoverflow: 21, ticketbooking: 1,
-    "official-competition/hackathon--github": 16, "official-competition/hackathon--sheet": 13 };
+    "official-competition/hackathon--github": 14, "official-competition/hackathon--sheet": 13 };
   for (const [name, count] of Object.entries(expectedPackets)) {
     const catalog = await loadRequirementCatalog(resolve(`data/${name}/requirements.yaml`));
     const { packets, stats } = featureGroupPackets(catalog);

@@ -326,8 +326,10 @@ async function resolveLocator(
   // region. Keep the declared label and scope, and retain strict uniqueness
   // among the elements on which Playwright can perform the operation.
   const nativeControl = step.op === "select" ? "select" : step.op === "expectValue" ? "input, textarea, select" : undefined;
-  const candidateLocator = (locator: ProbeLocator) => nativeControl
-    ? locate(session.page, locator).and(session.page.locator(nativeControl)) : locate(session.page, locator);
+  const candidateLocator = (locator: ProbeLocator) => {
+    const target = nativeControl ? locate(session.page, locator).and(session.page.locator(nativeControl)) : locate(session.page, locator);
+    return locator.firstMatch ? target.filter({ visible: true }).first() : target;
+  };
   const primary = candidateLocator(step.locator);
   if (step.op === "expectCount" || step.op === "expectHidden") return primary;
   const candidates = locatorCandidates(step.locator);

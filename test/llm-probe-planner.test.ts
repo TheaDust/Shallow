@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { test } from "node:test";
 
+import { loadRequirementCatalog } from "../src/catalog.js";
 import {
   LlmProbePlanner,
   ProbePlannerError,
@@ -14,6 +16,7 @@ import {
   PROBE_REFINEMENT_JSON_SCHEMA,
 } from "../src/judge/probe-schema.js";
 import type { ProbeFailure, SeedDataCategory, WorkPacket } from "../src/types.js";
+import { scenarioOutcomes } from "../src/judge/probe-coverage.js";
 
 test("Probe Planner accepts a bounded declarative plan", () => {
   const plan = parseProbePlan(validPlan(), packet());
@@ -411,11 +414,18 @@ test("Planner retries preserve scenario coverage and shorten model-length respon
     let instruction = "";
     const planner = new LlmProbePlanner(config(), async (_input, init) => {
       const body = JSON.parse(String(init?.body));
-      instruction = JSON.parse(body.messages.at(-1).content).instruction;
+      const feedback = JSON.parse(body.messages.at(-1).content);
+      instruction = feedback.instruction;
+      assert.equal(Object.hasOwn(feedback, "schema"), false);
+      assert.equal(feedback.validationError, validationError);
+      assert.equal(feedback.previousResponsePreview, "Untrusted previous response");
+      const systemSchema = body.messages[0].content.split("仅返回符合此 schema 的 JSON：\n").at(-1);
+      assert.deepEqual(JSON.parse(systemSchema), PROBE_PLAN_JSON_SCHEMA);
       return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
     });
-    await planner.plan(packet(), { validationError });
+    await planner.plan(packet(), { validationError, contentPreview: "Untrusted previous response" });
     assert.match(instruction, /保持每个需求 ID 和各场景独立约束的覆盖/);
+    assert.match(instruction, /outcomeChecks 映射/);
     assert.match(instruction, /每个 case 的终末 assertion/);
     assert.doesNotMatch(instruction, /最多两个 case/);
     if (validationError === "Probe planner stream was cut off by the model") {
@@ -539,6 +549,59 @@ test("Planner plan and review requests share product and seed prefixes across pa
   }
 });
 
+test("Official scenario contracts retain every field represented by formatted scenario strings", async () => {
+  for (const directory of ["hackathon--github", "hackathon--sheet", "hackathon--github-stage-1",
+    "hackathon--github-stage-2", "hackathon--github-stage-3"]) {
+    const catalog = await loadRequirementCatalog(resolve("data/official-competition", directory, "requirements.yaml"));
+    for (const requirement of catalog.requirements) {
+      const sourceStrings = requirement.scenarioContracts?.map(scenario => [scenario.name,
+        ...scenario.steps.map(step => `${step.keyword}: ${step.content}`)].join("\n"));
+      assert.deepEqual(sourceStrings, requirement.scenarios, `${directory}/${requirement.id}`);
+    }
+  }
+});
+
+test("Plan and review requests preserve structured scenario text and legacy scenario-only inputs", async () => {
+  for (const operation of ["plan", "review"] as const) {
+    for (const contractMode of ["structured", "missing", "empty"] as const) {
+      const input = packet();
+      const requirement = input.requirements[0];
+      const contract = { id: "source-save", name: "Save the profile · 保留原文", steps: [
+        { keyword: "GIVEN", content: 'The current name is "Before\nAfter".' },
+        { keyword: "AND", content: "The profile is editable." },
+        { keyword: "WHEN", content: 'The visitor enters "Ada" and clicks "Save".' },
+        { keyword: "THEN", content: 'The status displays "Saved".' },
+      ] };
+      if (contractMode !== "missing") requirement.scenarioContracts = contractMode === "structured" ? [contract] : [];
+      if (contractMode === "structured") requirement.scenarios = [[contract.name,
+        ...contract.steps.map(step => `${step.keyword}: ${step.content}`)].join("\n")];
+      input.prerequisites = [{ ...requirement, id: "REQ-BASE", scenarios: ["Independent prerequisite source text."] }];
+      const wire = { ...validPlan(), cases: validPlan().cases.map((item, index) => ({ ...item,
+        outcomeChecks: contractMode === "structured" && index === 0
+          ? [{ scenarioId: contract.id, stepIndex: 3, assertionIndexes: [3] }] : [] })) };
+      let payload: Record<string, any> | undefined;
+      const planner = new LlmProbePlanner(config(), async (_input, init) => {
+        const body = JSON.parse(String(init?.body));
+        payload = JSON.parse(body.messages[1].content);
+        const response = operation === "plan" ? wire : { verdict: "sound", rationale: "Fixture evidence is preserved." };
+        return jsonResponse({ choices: [{ message: { content: JSON.stringify(response) } }] });
+      });
+      if (operation === "plan") await planner.plan(input);
+      else await planner.reviewPlan(input, parseProbePlan(wire, input), behaviorFailures());
+      assert.ok(payload);
+      const sent = payload.requirements[0];
+      assert.equal(Object.hasOwn(sent, "scenarios"), contractMode !== "structured");
+      if (contractMode !== "structured") assert.deepEqual(sent.scenarios, requirement.scenarios);
+      assert.deepEqual(sent.scenarioContracts, requirement.scenarioContracts);
+      assert.deepEqual(sent.scenarioOutcomes, scenarioOutcomes([requirement]));
+      assert.equal(sent.text, requirement.text);
+      assert.deepEqual(sent.ancestors, requirement.ancestors);
+      assert.deepEqual(payload.prerequisites[0].scenarios, input.prerequisites[0].scenarios);
+      assert.equal(payload.prerequisites[0].text, input.prerequisites[0].text);
+    }
+  }
+});
+
 test("Probe Planner instructs literal locators and absence, persistence, and deep-link probes", async () => {
   const bodies: string[] = [];
   const fetchFn: typeof fetch = async (_input, init) => {
@@ -558,22 +621,23 @@ test("Probe Planner instructs literal locators and absence, persistence, and dee
   assert.match(body, /Account Area|Profile area/);
   assert.match(body, /未声明的非根路径会被程序拒绝/);
   assert.match(body, /expectAttribute/);
-  assert.match(body, /第一次操作后立即验证状态变化/);
+  assert.match(body, /第一次操作后立即核对状态/);
   assert.match(body, /正则表达式/);
   assert.match(body, /可直接 goto 该路径/);
-  assert.match(body, /exact: false/);
+  assert.match(body, /exact:\s*false/);
   assert.match(body, /count 为 0/);
   assert.match(body, /reload 验证状态/);
   assert.match(body, /newContext/);
-  assert.match(body, /边界 case/);
-  assert.match(body, /空值、超长输入、非法格式/);
+  assert.match(body, /边界输入/);
+  assert.match(body, /空值、超长值、非法格式/);
   assert.match(body, /绝不断言证据未声明的反馈/);
   assert.match(body, /fallback/);
-  assert.match(body, /短操作链/);
-  assert.match(body, /最多选择一条最有价值的连续链/);
-  assert.match(body, /替代重复的单步成功路径/);
+  assert.match(body, /场景明示的连续操作及中间结果必须在同一 case 完整还原/);
+  assert.match(body, /至多额外构造一条有原文依据的跨功能回归链/);
+  assert.match(body, /该限制不适用于场景本身要求的操作链/);
+  assert.match(body, /替代重复单步成功路径/);
   assert.match(body, /anyOf/);
-  assert.match(body, /绝不臆造替代措辞/);
+  assert.match(body, /多种有依据的措辞/);
 });
 
 test("Probe Planner forwards declared seed data and omits it when empty", async () => {

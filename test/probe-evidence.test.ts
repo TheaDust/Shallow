@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { auditPacket } from "../src/judge/audit.js";
-import { assertCoverageAccountedFor, probeCoverageGaps } from "../src/judge/probe-coverage.js";
-import { parseProbePlan, type ProbePlan } from "../src/judge/probe-schema.js";
+import { assertCoverageAccountedFor, probeCoverageGaps, scenarioOutcomes } from "../src/judge/probe-coverage.js";
+import { loadRequirementCatalog } from "../src/catalog.js";
+import { auditPackets } from "../src/scheduler.js";
+import { PlanCache } from "../src/judge/plan-cache.js";
+import { withTempDir } from "./helpers/temp-dir.js";
+import { parseProbePlan, toWireProbePlan, type ProbePlan } from "../src/judge/probe-schema.js";
 import { parsePlanReview } from "../src/judge/semantic-review.js";
 import { rootSearchNavigationPlan } from "../src/judge/navigation-recovery.js";
 import { RunStateStore } from "../src/run-state.js";
@@ -62,6 +66,149 @@ test("Passing a weak plan with an omitted THEN cannot grant verified; a sampled 
     const guard = await auditPacket(packet(), incomplete, f.options, f.deps, state, () => 60_000, { refineLocators: false, checkCoverage: false });
     assert.equal(guard.status, "verified");
   });
+});
+
+test("Compound THEN results retain source fragments and preserve quoted alternatives", () => {
+  const input = packet();
+  input.requirements[0].scenarioContracts![0].steps = [{ keyword: "THEN",
+    content: 'The title is `Read and write. Again!`; the description is "A; B" and the status is Open or Closed.' }];
+  assert.deepEqual(scenarioOutcomes(input.requirements).map(item => [item.clauseIndex, item.text]), [
+    [0, 'The title is `Read and write. Again!`'], [1, 'the description is "A; B"'], [2, 'the status is Open or Closed.'],
+  ]);
+});
+
+test("Real GitHub compound results cannot be covered by a single whole-THEN mapping", async () => {
+  const catalog = await loadRequirementCatalog("data/official-competition/hackathon--github/requirements.yaml");
+  const input = auditPackets(catalog).find(item => item.requirementIds.includes("REQ-5-2-2"))!;
+  const requirement = input.requirements[0];
+  const scenario = requirement.scenarioContracts![0];
+  const outcomes = scenarioOutcomes([requirement]).filter(item => item.scenarioId === scenario.id);
+  assert.equal(outcomes.length, 2);
+  assert.match(outcomes[1].text, /new description/);
+  const weak: ProbePlan = { packetId: input.id, cases: [{ id: "edit", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [scenario.steps.at(-1)!.content], steps: [
+      { op: "goto", path: "/" }, { op: "fill", locator: { by: "label", text: "Issue title", exact: true }, value: "New title" },
+      { op: "expectVisible", locator: { by: "role", role: "heading", name: "New title", exact: true } },
+    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, assertionIndexes: [2] }] }] };
+  assert.throws(() => parseProbePlan(weak, input), /compound result.*clauseIndex/);
+  weak.cases[0].outcomeChecks![0].clauseIndex = 0;
+  const parsed = parseProbePlan(weak, input);
+  const gaps = probeCoverageGaps(parsed, input.requirements);
+  assert.ok(gaps.some(item => item.scenarioId === scenario.id && item.clauseIndex === 1));
+  assert.throws(() => assertCoverageAccountedFor(parsed, input.requirements), /unaccounted/);
+  parsed.uncoveredOutcomes = gaps;
+  assert.doesNotThrow(() => assertCoverageAccountedFor(parsed, input.requirements));
+  await withModulePipeline(async f => {
+    const state = new RunStateStore({ statusByRequirementId: { [requirement.id]: "todo" }, acceptedSha: "baseline", startedAtMs: 0, totalBudgetMs: 60_000 });
+    const result = await auditPacket(input, parsed, f.options, f.deps, state, () => 60_000, { refineLocators: false });
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.failureKind, "coverage");
+  });
+  await withTempDir("compound-plan-cache-", async directory => {
+    const cache = new PlanCache(directory);
+    delete weak.cases[0].outcomeChecks![0].clauseIndex;
+    await cache.write(input.id, weak);
+    assert.equal(await cache.read(input), undefined);
+  });
+});
+
+test("Complete compound mappings survive preparation correction and reject a lost clause", () => {
+  const input = packet();
+  input.requirements[0].scenarioContracts![0].steps = [{ keyword: "GIVEN", content: "A record exists." },
+    { keyword: "WHEN", content: "Save changes." }, { keyword: "THEN", content: "The title is saved and the description is saved." }];
+  const original = plan();
+  original.cases[0].outcomeChecks = [{ scenarioId: "edit", stepIndex: 2, clauseIndex: 0, assertionIndexes: [1] },
+    { scenarioId: "edit", stepIndex: 2, clauseIndex: 1, assertionIndexes: [2] }];
+  assertCoverageAccountedFor(parseProbePlan(original, input), input.requirements);
+  const corrected = parsePlanReview({ verdict: "corrected", rationale: "Prepare the record", corrections: [{
+    caseId: "edit-case", conflict: "Initial state", basis: ["A record exists."], setupSteps: [
+      { op: "goto", path: "/" }, { op: "reload" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+    ],
+  }] }, input, original, { preparationOnlyCaseIds: ["edit-case"], caseCorrectionIds: [] });
+  assert.equal(corrected.status, "corrected");
+  if (corrected.status !== "corrected") assert.fail("expected correction");
+  assertCoverageAccountedFor(corrected.plan, input.requirements);
+  const changed = structuredClone(original.cases[0]);
+  changed.outcomeChecks!.pop();
+  const assertion = changed.steps.pop();
+  assert.throws(() => parsePlanReview({ verdict: "corrected", rationale: "Change checks", corrections: [{
+    caseId: "edit-case", conflict: "Saved values", basis: ["The title is saved"], case: { ...changed, assertion },
+  }] }, input, original), /preserve scenario outcome coverage/);
+});
+
+test("A compound plan gets one semantic completeness review with the remaining deadline and separate usage", async t => {
+  const input = packet();
+  input.requirements[0].scenarioContracts![0].steps = [{ keyword: "GIVEN", content: "A record exists." },
+    { keyword: "WHEN", content: "Save changes." }, { keyword: "THEN", content: "The title is saved and the description is saved." }];
+  const complete = plan();
+  complete.cases[0].outcomeChecks = [{ scenarioId: "edit", stepIndex: 2, clauseIndex: 0, assertionIndexes: [1] },
+    { scenarioId: "edit", stepIndex: 2, clauseIndex: 1, assertionIndexes: [2] }];
+  const weak = structuredClone(complete);
+  weak.cases[0].steps.pop();
+  weak.cases[0].outcomeChecks![1].assertionIndexes = [1];
+  assertCoverageAccountedFor(parseProbePlan(weak, input), input.requirements);
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
+  let requests = 0;
+  const usage: Array<[string, number]> = [];
+  const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 300 }, async (_url, options) => {
+    requests++;
+    const body = JSON.parse(String(options?.body));
+    const payload = JSON.parse(body.messages[1].content);
+    let content: unknown = weak;
+    if (requests === 1) now = 1210;
+    else {
+      assert.equal(payload.coverageReview, true);
+      assert.equal(payload.requirements[0].scenarioOutcomes.length, 2);
+      assert.deepEqual(payload.failures, []);
+      content = { verdict: "corrected", rationale: "The description needs its own result assertion", corrections: [{
+        caseId: "edit-case", conflict: "A title assertion does not check the saved description", basis: ["the description is saved"],
+        case: (toWireProbePlan(complete) as { cases: unknown[] }).cases[0],
+      }] };
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }],
+      usage: { prompt_tokens: 4 + requests, completion_tokens: 1, total_tokens: 5 + requests } }), { headers: { "Content-Type": "application/json" } });
+  });
+  const review = t.mock.method(planner, "reviewPlan");
+  const checked = await planner.plan(input, undefined, { timeoutMs: 300,
+    onUsage: value => { usage.push(["plan", value.total]); }, onReviewUsage: value => { usage.push(["review", value.total]); } });
+  assert.equal(requests, 2);
+  assert.equal(review.mock.callCount(), 1);
+  assert.equal(review.mock.calls[0].arguments[4]?.timeoutMs, 90);
+  assert.deepEqual(checked.cases[0].steps, complete.cases[0].steps);
+  assert.deepEqual(usage, [["plan", 6], ["review", 7]]);
+});
+
+test("Simple and explicitly partial plans skip completeness review; invalid compound reviews use the existing feedback retry", async () => {
+  for (const partial of [false, true]) {
+    const input = packet();
+    const original = plan();
+    if (partial) {
+      input.requirements[0].scenarioContracts![0].steps = [{ keyword: "THEN", content: "The title is saved and the description is saved." }];
+      original.cases[0].outcomeChecks = [{ scenarioId: "edit", stepIndex: 0, clauseIndex: 0, assertionIndexes: [1] }];
+      original.uncoveredOutcomes = [{ scenarioId: "edit", stepIndex: 0, clauseIndex: 1, reason: "Description check unavailable" }];
+    }
+    let requests = 0;
+    const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async () => {
+      requests++;
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(original) } }] }), { headers: { "Content-Type": "application/json" } });
+    });
+    await planner.plan(input);
+    assert.equal(requests, 1);
+  }
+  const input = packet();
+  input.requirements[0].scenarioContracts![0].steps = [{ keyword: "THEN", content: "The title is saved and the description is saved." }];
+  const original = plan();
+  original.cases[0].outcomeChecks = [{ scenarioId: "edit", stepIndex: 0, clauseIndex: 0, assertionIndexes: [1] },
+    { scenarioId: "edit", stepIndex: 0, clauseIndex: 1, assertionIndexes: [2] }];
+  let requests = 0;
+  const planner = new LlmProbePlanner({ baseUrl: "https://gateway.invalid/v1", apiKey: "test", model: "model", timeoutMs: 1000 }, async () => {
+    const content = ++requests === 1 ? original : { verdict: "corrected", rationale: "Missing checks", corrections: [] };
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { headers: { "Content-Type": "application/json" } });
+  });
+  await assert.rejects(planner.plan(input), (error: unknown) => error instanceof ProbePlannerError && error.category === "schema" &&
+    error.diagnostics.validationError?.includes("differ") === true);
+  assert.equal(requests, 2);
 });
 
 test("LLM planning rejects an unexplained coverage omission and accepts an explicitly partial plan", async () => {
@@ -167,4 +314,27 @@ test("Search recovery preserves outcome mappings in setup and leaves a tested en
   businessEntry.cases[0].steps[3] = businessEntry.cases[0].steps[1];
   assert.equal(rootSearchNavigationPlan(input, businessEntry, { packetId: "p", verdict: "inconclusive", passedCases: [],
     failures: [{ ...failure, stepIndex: 3, category: "locator" }] }), undefined);
+});
+
+test("New GitHub provisioned records authorize the declared global-search preparation path", async () => {
+  const catalog = await loadRequirementCatalog("data/official-competition/hackathon--github/requirements.yaml");
+  const input = auditPackets(catalog).find(item => item.requirementIds.includes("REQ-3-3"))!;
+  const original: ProbePlan = { packetId: input.id, cases: [{ id: "overview", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [input.requirements[0].text], setupStepCount: 2, steps: [
+      { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "link", name: "acme-docs", exact: true } },
+      { op: "click", locator: { by: "role", role: "link", name: "acme-docs", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "heading", name: "acme-docs" } },
+    ],
+  }] };
+  const report = { packetId: input.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+    caseId: "overview", stepIndex: 1, category: "precondition" as const, message: "missing homepage entry",
+    locatorSnapshot: '- searchbox "Search"',
+  }] };
+  const recovered = rootSearchNavigationPlan(input, original, report);
+  assert.ok(recovered);
+  assert.equal(recovered.cases[0].steps[1].op, "fill");
+  assert.equal(recovered.cases[0].steps[2].op, "press");
+  assert.equal(recovered.cases[0].setupStepCount, 4);
+  const absentDeclaration = { ...input, requirements: input.requirements.map(item => ({ ...item, seedDeclarations: [] })) };
+  assert.equal(rootSearchNavigationPlan(absentDeclaration, original, report), undefined);
 });

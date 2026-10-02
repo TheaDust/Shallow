@@ -123,7 +123,7 @@ function allowsSearchEntry(evidence: AtomicRequirement[], objects: DeclaredObjec
     /\b(?:link|entry|entries)\b/i.test(unquotedText(text)) && mentionsTarget(text, objects))) return false;
   const entries = [
     /\bsearch(?:es|ing)?(?: results?)?\s+opens?\s+([^,;.!?\n]+)/i,
-    /\bopen(?:s|ing)?\s+([^,;.!?\n]+?)\s+(?:via|through|from|using)\s+(?:a\s+|the\s+)?search(?: results?)?\b/i,
+    /\bopen(?:s|ing)?\s+([^,;.!?\n]+?)\s+(?:via|through|from|using)\s+(?:a\s+|the\s+)?(?:global\s+)?search(?: results?)?\b/i,
     /\bsearch results?\b[^;.!?\n]*?\b(?:for|of)\s+([^,;.!?\n]+)/i,
   ];
   return statements.some(text => {

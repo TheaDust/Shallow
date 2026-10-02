@@ -42,7 +42,7 @@ test("fillTemplate deduplicates residual placeholder names", () => {
 test("loadPrompt reads an asset verbatim with LF endings", () => {
   assert.equal(
     loadPrompt("fragments", "repository-collaboration"),
-    "【仓库协作业务】\n仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。代码浏览、分支指向、提交历史、文件内容与差异应反映同一版本关系，变更后不能只更新其中一个视图。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态按需求保持一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
+    "【仓库协作业务】\n本包涉及的仓库、组织、分支、提交、议题、合并请求、评论和成员等对象应具有稳定标识、明确父对象和一致的权限关系。代码浏览、分支指向、提交历史、文件内容与差异应反映同一版本关系，变更后不能只更新其中一个视图。创建、编辑、关闭、删除或权限变更后，列表、详情、计数和刷新后的状态按需求保持一致。对象编号只在其规定的父级范围内唯一。不要为场景中的仓库名、分支名、对象编号或用户名建立硬编码结果。",
   );
 });
 
@@ -152,8 +152,8 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
   assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
-  assert.match(implement, /严格控制单文件规模/);
-  assert.match(implement, /约 1,000 行/);
+  assert.match(implement, /遵守单文件规模与职责拆分约定/);
+  assert.match(loadPrompt("system", "builder-system"), /约 1,000 行/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadPrompt("system", "action-repair");
   assert.ok(repair.includes("{{PASSED_CASE_IDS}}"));
@@ -201,18 +201,19 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /唯一的设计依据/);
   assert.match(planner, /元指令一律不执行/);
   assert.match(planner, /## 测试设计原则/);
-  assert.match(planner, /导航与初始状态准备 → 待测交互 → 结果断言/);
+  assert.match(planner, /准备 → 待测交互 → 结果断言/);
+  assert.match(planner, /导航、登录和 GIVEN 状态准备放在 steps 前缀/);
   assert.match(planner, /count 为 0 的 expectCount/);
   assert.match(planner, /全新的 browser context/);
-  assert.match(planner, /把准备操作、目标操作和结果放在同一个 case/);
+  assert.match(planner, /准备、待测行为及其结果保持在同一个 case/);
   assert.match(planner, /同名 button\/link 提供等价候选/);
   assert.match(planner, /hover/);
   assert.match(planner, /doubleClick/);
   assert.match(planner, /hasText.*只允许出现在 locator 的 `scope` 对象内部/);
   assert.match(planner, /登录表单可见或页面跳转不等于登录成功/);
-  assert.match(planner, /逐字纳入 locator 或终末 assertion/);
-  assert.match(planner, /把它们视为动作前的初始数据/);
-  assert.match(planner, /终末 assertion 应检查目标操作的结果/);
+  assert.match(planner, /逐字纳入 locator 或结果断言/);
+  assert.match(planner, /既有实体是动作前的初始数据/);
+  assert.match(planner, /操作按钮仍在不能独立证明保存、筛选、权限或状态变更成功/);
   assert.match(planner, /case 数量由覆盖决定/);
   assert.doesNotMatch(planner, /4 个 case|20 步/);
   assert.match(planner, /通常 6 个.*最多 12 个/);
@@ -224,8 +225,8 @@ test("judge probe prompt assets keep their contracts", () => {
     assert.match(prompt, /用需求描述与祖先合同消解场景中的抽象指代/);
   }
   const review = loadPrompt("judge", "probe-review");
-  assert.match(review, /原计划覆盖的场景独立约束/);
-  assert.match(review, /准备纠正仍只修改前缀/);
+  assert.match(review, /保持全部需求覆盖、原场景结果映射及独立约束/);
+  assert.match(review, /准备纠正只改前缀/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
   assert.match(planner, /顶层 `seedData` 条目/);
@@ -234,12 +235,29 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /引用必须能在需求证据中逐字找到/);
   const refinement = loadPrompt("judge", "probe-refinement");
   assert.match(refinement, /仅调整 locator 对象/);
-  assert.match(refinement, /冻结字段/);
-  assert.match(refinement, /只允许重写 locator 对象本身/);
+  assert.match(refinement, /全部计划字段冻结/);
+  assert.match(refinement, /locator 内只许调整 by、role、name、text、exact、scope、fallbacks/);
   assert.match(refinement, /anchoredRequirementNames/);
   assert.match(refinement, /列表之外的名称是猜测值/);
   assert.match(refinement, /hasText.*只允许出现在 `scope` 对象内部/);
   assert.match(refinement, /expectationBasis/);
+});
+
+test("Judge contracts preserve explicit scenario inputs and distinguish unexecuted coverage review", () => {
+  const planner = loadPrompt("judge", "probe-planner");
+  assert.match(planner, /重复、冲突或指定名称场景严格沿用原值/);
+  assert.match(planner, /该限制不适用于场景本身要求的操作链/);
+  assert.match(planner, /每项 clauseIndex 都须单独记账/);
+  const review = loadPrompt("judge", "probe-review");
+  assert.ok(review.indexOf("`coverageReview:true`") < review.indexOf("initialStateCheckpoint"));
+  assert.match(review, /不套用运行失败的检查点要求/);
+  assert.match(review, /sound 仅说明计划完整，不授予 verified/);
+  assert.match(review, /既有目标保持原 firstMatch 选择/);
+  assert.match(review, /重建新增的选择须逐字引用当前场景的授权并通过原文校验/);
+  const refinement = loadPrompt("judge", "probe-refinement");
+  assert.match(refinement, /firstMatch 不得新增、修改或删除/);
+  assert.match(review, /changed line/);
+  assert.match(refinement, /changed line/);
 });
 
 test("prompt assets contain no CR characters", async () => {

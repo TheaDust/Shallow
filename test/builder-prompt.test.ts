@@ -263,6 +263,24 @@ test("Root-cause repair frames the last allowed attempt", () => {
   assert.match(compiled.taskPrompt, /结果：完成 \| 阻塞/);
 });
 
+test("Both boundary repair rounds and root-cause repair share diagnostic safeguards", () => {
+  for (const mode of ["repair", "root_cause_repair"] as const) {
+    for (const attempt of [2, 3] as const) {
+      const request = repairRequest(mode);
+      if (request.mode === "delivery_repair") throw new Error("unexpected mode");
+      request.packet.attempt = attempt;
+      const compiled = compileBuilderPrompt(request);
+      assert.match(compiled.systemPrompt, /precondition 表示准备未完成/);
+      assert.match(compiled.systemPrompt, /locator 表示定位尚需诊断，不能据此认定目标业务失败/);
+      assert.match(compiled.systemPrompt, /重复控件不得为消除定位歧义而随意重命名、隐藏或删除/);
+      if (mode === "repair") {
+        assert.match(compiled.taskPrompt, /任务模式：需求修复/);
+        assert.doesNotMatch(compiled.taskPrompt, /任务模式：第一次修复/);
+      }
+    }
+  }
+});
+
 test("Delivery repair renders the failure without any work packet context", () => {
   const compiled = compileBuilderPrompt(deliveryRequest());
 

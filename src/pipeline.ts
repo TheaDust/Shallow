@@ -214,7 +214,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
         () => planner.plan(packet, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
-          onUsage: plannerUsage(packet.id, "plan"), signal: callOptions?.signal }), callOptions?.signal);
+          onUsage: plannerUsage(packet.id, "plan"), onReviewUsage: plannerUsage(packet.id, "review"), signal: callOptions?.signal }), callOptions?.signal);
     },
     refineLocators: (original, failures, feedback, callOptions) => {
       const remaining = plannerWindow();

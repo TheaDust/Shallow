@@ -10,6 +10,7 @@ test("setChecked accepts explicit state only on checkable controls", () => {
 });
 import { assertLocatorOnlyRefinement, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
+import { loadRequirementCatalog } from "../src/catalog.js";
 
 function packet(text = 'Open "Items" and click "Publish".'): WorkPacket {
   return { id: "packet-a", requirementIds: ["A"], attempt: 1, requirements: [{
@@ -27,6 +28,97 @@ function plan(path = "/"): ProbePlan {
     { op: "expectVisible", locator: { by: "role", role: "status" } },
   ] }] };
 }
+
+test("First-match selection requires an explicit instruction for the same named control", () => {
+  const quote = 'Click the first "Publish" button.';
+  const input = packet(quote);
+  const original = plan();
+  const action = original.cases[0].steps[1];
+  if (action.op !== "click") assert.fail("missing action");
+  action.locator.firstMatch = quote;
+  original.cases[0].expectationBasis = [quote];
+  assert.deepEqual(parseProbePlan(original, input), original);
+  assert.throws(() => parseProbePlan(original, packet()), /quote the requirement evidence verbatim/);
+  for (const text of ['Click "Publish". The first attempt succeeds.', 'The data value is "first Publish".']) {
+    const invalid = structuredClone(original);
+    const step = invalid.cases[0].steps[1];
+    if (step.op !== "click") assert.fail("missing action");
+    step.locator.firstMatch = text;
+    invalid.cases[0].expectationBasis = [text];
+    assert.throws(() => parseProbePlan(invalid, packet(text)), /explicitly select the first/);
+  }
+  const count = structuredClone(original);
+  count.cases[0].steps[1] = { op: "expectCount", locator: action.locator, count: 0 };
+  assert.throws(() => parseProbePlan(count, input), /absence or count/);
+  const weak = structuredClone(original);
+  const step = weak.cases[0].steps[1];
+  if (step.op !== "click") assert.fail("missing action");
+  step.locator.exact = false;
+  assert.throws(() => parseProbePlan(weak, input), /exact named interactive/);
+  step.locator = { by: "text", text: "Publish", exact: true, firstMatch: quote };
+  assert.throws(() => parseProbePlan(weak, input), /exact named interactive/);
+  action.locator.fallbacks = [{ by: "role", role: "link", name: "Publish", exact: true }];
+  assert.throws(() => parseProbePlan(original, input), /fallbacks must preserve firstMatch/);
+});
+
+test("First-match authorization comes from the relevant scenario prose rather than data or another case", () => {
+  const quote = 'Click the first “Publish” button.';
+  const original = plan();
+  original.cases[0].expectationBasis = [quote];
+  const step = original.cases[0].steps[1];
+  if (step.op !== "click") assert.fail("missing action");
+  step.locator.firstMatch = quote;
+  const data = packet(`The stored message is \`${quote}\`.`);
+  data.requirements[0].exactUiStrings.push(quote);
+  assert.throws(() => parseProbePlan(original, data), /prose instruction/);
+  const otherCase = packet('Click “Publish”.');
+  otherCase.requirements[0].scenarioContracts = [
+    { id: "first", name: "First", steps: [{ keyword: "WHEN", content: quote }] },
+    { id: "ordinary", name: "Ordinary", steps: [{ keyword: "THEN", content: "The status is visible." }] },
+  ];
+  otherCase.requirements[0].scenarios = [quote, "The status is visible."];
+  original.cases[0].outcomeChecks = [{ scenarioId: "ordinary", stepIndex: 0, assertionIndexes: [2] }];
+  assert.throws(() => parseProbePlan(original, otherCase), /quote the requirement evidence verbatim/);
+});
+
+test("Locator refinement cannot add or remove first-match selection", () => {
+  const original = plan();
+  const refined = structuredClone(original);
+  const action = refined.cases[0].steps[1];
+  if (action.op !== "click") assert.fail("missing action");
+  action.locator.firstMatch = 'Click the first "Publish" button.';
+  assert.throws(() => assertLocatorOnlyRefinement(original, refined), /preserve firstMatch/);
+  assert.throws(() => assertLocatorOnlyRefinement(refined, original), /preserve firstMatch/);
+});
+
+test("First-container selection needs the named control's declared relationship and the same action", () => {
+  const instruction = "Start a comment on the first changed line.";
+  const text = 'Use the “Add comment” button on a changed line. ' + instruction;
+  const original = plan();
+  original.cases[0].expectationBasis = [instruction];
+  const action = original.cases[0].steps[1];
+  if (action.op !== "click") assert.fail("missing action");
+  action.locator = { by: "role", role: "button", name: "Add comment", exact: true, firstMatch: instruction };
+  assert.doesNotThrow(() => parseProbePlan(original, packet(text)));
+  assert.throws(() => parseProbePlan(original, packet('Use “Add comment”. ' + instruction)), /explicitly select the first/);
+  action.locator.name = "Delete line";
+  assert.throws(() => parseProbePlan(original, packet('Use “Delete line” on a changed line. ' + instruction)), /explicitly select the first/);
+});
+
+test("The latest GitHub pending-review scenario binds its first changed line to Add comment", async () => {
+  const catalog = await loadRequirementCatalog("data/official-competition/hackathon--github-stage-3/requirements.yaml");
+  const requirement = catalog.requirements.find(item => item.id === "REQ-6-3-3")!;
+  const scenario = requirement.scenarioContracts![1];
+  const input: WorkPacket = { id: "pending", requirementIds: [requirement.id], requirements: [requirement], attempt: 1 };
+  const firstMatch = "starts a comment on the first changed line";
+  const raw: ProbePlan = { packetId: input.id, cases: [{ id: "pending", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [scenario.steps[1].content], steps: [
+      { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "button", name: "Add comment", exact: true, firstMatch } },
+      { op: "expectVisible", locator: { by: "label", text: "Comment", exact: true } },
+    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, clauseIndex: 0, assertionIndexes: [2] }],
+  }] };
+  assert.doesNotThrow(() => parseProbePlan(raw, input));
+});
 
 test("Locators reject impossible ARIA roles in targets, fallbacks and scopes", () => {
   for (const variant of ["target", "fallback", "scope"]) {

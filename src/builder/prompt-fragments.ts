@@ -1,6 +1,7 @@
 import { loadPrompt } from "../prompt-assets.js";
 import type {
   BuilderPromptInput,
+  BuilderProjectContext,
   BuilderShadowObservation,
 } from "./prompt-input.js";
 import type { ProductKind, WorkPacket } from "../types.js";
@@ -88,7 +89,8 @@ const GENERIC_FALLBACK_LEXICON: Array<{
       "account",
       "member",
       "owner",
-      "role",
+      "user role",
+      "access control",
       "private",
       "permission",
     ],
@@ -116,13 +118,13 @@ const GENERIC_FALLBACK_LEXICON: Array<{
       "工作表",
       "单元格",
       "公式",
-      "区域",
+      "单元格区域",
       "workbook",
       "worksheet",
       "spreadsheet",
       "cell",
       "formula",
-      "region",
+      "cell range",
     ],
   },
 ];
@@ -139,7 +141,7 @@ export function selectPromptFragments(
   );
 
   if (request.projectContext.product.kind === "generic_web") {
-    for (const fragment of selectGenericFallbackFragments(request.packet)) {
+    for (const fragment of selectGenericFallbackFragments(request.packet, request.projectContext)) {
       selected.add(fragment);
     }
   }
@@ -160,10 +162,15 @@ export function selectPromptFragments(
 
 function selectGenericFallbackFragments(
   packet: WorkPacket,
+  context: BuilderProjectContext,
 ): PromptFragmentId[] {
   const haystack = [
+    context.product.rootName,
+    context.product.description,
+    ...context.ancestors.flatMap((ancestor) => [ancestor.name, ancestor.description]),
     ...packet.requirements.flatMap((requirement) => [
       requirement.name,
+      requirement.text,
       ...requirement.scenarios,
     ]),
   ]

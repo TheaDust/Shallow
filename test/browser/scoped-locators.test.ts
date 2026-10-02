@@ -29,6 +29,41 @@ test("Label-based selection excludes a same-named region and still rejects two m
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
 import { parseProbePlan } from "../../src/judge/probe-schema.js";
+import type { WorkPacket } from "../../src/types.js";
+
+test("A declared first control selects the first visible match while ordinary duplicates stay ambiguous", async () => {
+  const quote = 'Click the first "Add comment" button.';
+  const packet: WorkPacket = { id: "first-control", requirementIds: ["A"], attempt: 1, requirements: [{
+    id: "A", name: "Comment", text: quote, folderPath: ["ROOT"], declarationIndex: 0, ancestors: [], dependencyIds: [],
+    scenarios: [], references: [], exactUiStrings: ["Add comment"], seedDeclarations: [],
+    product: { rootId: "ROOT", rootName: "App", description: "", kind: "generic_web", seedData: [] },
+  }] };
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(`<main><button hidden>Add comment</button>
+      <button onclick="document.querySelector('[role=status]').textContent='First line'">Add comment</button>
+      <button onclick="document.querySelector('[role=status]').textContent='Second line'">Add comment</button>
+      <div role="status"></div></main>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const raw = { packetId: packet.id, cases: [{ id: "comment", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: [quote], steps: [{ op: "goto", path: "/" }, { op: "click", locator: {
+        by: "role", role: "button", name: "Add comment", exact: true, firstMatch: quote,
+      } }], assertion: { op: "expectText", locator: { by: "role", role: "status" }, text: "First line" } }] };
+    const options = { baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 500, caseTimeoutMs: 5_000 };
+    const runner = new PlaywrightProbeRunner();
+    assert.equal((await runner.run(parseProbePlan(raw, packet), options)).verdict, "pass");
+    const ordinary = structuredClone(raw);
+    delete (ordinary.cases[0].steps[1] as { locator: { firstMatch?: string } }).locator.firstMatch;
+    const report = await runner.run(parseProbePlan(ordinary, packet), options);
+    assert.equal(report.verdict, "inconclusive");
+    assert.equal(report.failures[0].locatorAttempts?.[0].matchCount, 2);
+    assert.match(report.failures[0].message, /strict mode violation/);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
 
 test("Ambiguous targets retain their URL, match count and object containers after a large unrelated view", async () => {
   const server = createServer((_request, response) => {

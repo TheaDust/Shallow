@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import type { AtomicRequirement, ProbeFailure, WorkPacket } from "../types.js";
 import { validateOutcomeChecks, type OutcomeCheck, type UncoveredOutcome } from "./probe-coverage.js";
 import { validateHeadingContract } from "./heading-contract.js";
+import { validateFirstMatchInstructions } from "./first-match.js";
 
 export type ProbeScope =
   | { by: "role"; role: string; name?: string; exact?: boolean; hasText?: string }
@@ -11,7 +12,11 @@ export type ProbeScope =
 export type ProbeLocator = (
   | { by: "role"; role: string; name?: string; exact?: boolean; fallbacks?: ProbeLocator[] }
   | { by: "label"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }
-  | { by: "text"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }) & { scope?: ProbeScope };
+  | { by: "text"; text: string; exact?: boolean; fallbacks?: ProbeLocator[] }) & {
+    scope?: ProbeScope;
+    /** Verbatim instruction selecting the first matching named control. */
+    firstMatch?: string;
+  };
 
 export const PRESS_KEYS = [
   "Enter",
@@ -138,10 +143,10 @@ const LOCATOR_FLAT_SCHEMA = {
   anyOf: [
     objectSchema({
       by: literalSchema("role"), role: ARIA_ROLE_SCHEMA,
-      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF, firstMatch: OPTIONAL_STRING_SCHEMA,
     }),
     ...["label", "text"].map((by) => objectSchema({
-      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF, firstMatch: OPTIONAL_STRING_SCHEMA,
     })),
   ],
 };
@@ -149,11 +154,11 @@ const LOCATOR_SCHEMA = {
   anyOf: [
     objectSchema({
       by: literalSchema("role"), role: ARIA_ROLE_SCHEMA,
-      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
+      name: OPTIONAL_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF, firstMatch: OPTIONAL_STRING_SCHEMA,
       fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     }),
     ...["label", "text"].map((by) => objectSchema({
-      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF,
+      by: literalSchema(by), text: NONEMPTY_STRING_SCHEMA, exact: OPTIONAL_BOOLEAN_SCHEMA, scope: SCOPE_REF, firstMatch: OPTIONAL_STRING_SCHEMA,
       fallbacks: { type: ["array", "null"], maxItems: MAX_FALLBACKS, items: { $ref: "#/$defs/locatorFlat" } },
     })),
   ],
@@ -198,7 +203,8 @@ const STEP_SCHEMA = {
   ],
 };
 
-const OUTCOME_REF_SCHEMA = { scenarioId: NONEMPTY_STRING_SCHEMA, stepIndex: { type: "integer", minimum: 0 } };
+const OUTCOME_REF_SCHEMA = { scenarioId: NONEMPTY_STRING_SCHEMA, stepIndex: { type: "integer", minimum: 0 },
+  clauseIndex: { type: ["integer", "null"], minimum: 0 } };
 
 export const PROBE_PLAN_BODY = {
   type: "object",
@@ -235,7 +241,7 @@ export const PROBE_PLAN_BODY = {
           outcomeChecks: { type: "array", maxItems: 200, items: objectSchema({ ...OUTCOME_REF_SCHEMA,
             assertionIndexes: { type: "array", minItems: 1, maxItems: MAX_BUSINESS_STEPS,
               items: { type: "integer", minimum: 0, maximum: MAX_BUSINESS_STEPS - 1 } } }),
-            description: "Map each source THEN/AND result to zero-based assertion positions in this case's tested suffix, after setupStepCount. Multiple assertions may check one result clause." },
+            description: "Map every supplied scenarioOutcome (including each clauseIndex of a compound THEN) to zero-based assertion positions after setupStepCount. Null clauseIndex is allowed only for a single-clause source step." },
           assertion: { anyOf: STEP_SCHEMA.anyOf.filter(schema => {
             const op = schema.properties.op as { enum: string[] };
             return op.enum[0].startsWith("expect");
@@ -343,6 +349,7 @@ export function parseProbePlan(
       const scoped = packet.requirements.filter(item => probeCase.requirementIds.includes(item.id));
       const evidence = [...scoped, ...(packet.prerequisites ?? [])];
       validateScenarioActions(probeCase, evidence);
+      validateFirstMatchInstructions(probeCase, scoped, packet.prerequisites ?? []);
       validateOutcomeChecks(probeCase, scoped);
       validateHeadingContract(probeCase, scoped);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
@@ -379,8 +386,9 @@ export function parseProbePlan(
     .map((value, index) => {
       const location = `ProbePlan.uncoveredOutcomes[${index}]`;
       const item = record(value, location);
-      keys(item, ["scenarioId", "stepIndex", "reason"], location);
-      return { scenarioId: text(item.scenarioId, location), stepIndex: nonnegativeInteger(item.stepIndex, location), reason: text(item.reason, location) };
+      keys(item, ["scenarioId", "stepIndex", "clauseIndex", "reason"], location);
+      return { scenarioId: text(item.scenarioId, location), stepIndex: nonnegativeInteger(item.stepIndex, location),
+        ...(item.clauseIndex == null ? {} : { clauseIndex: nonnegativeInteger(item.clauseIndex, location) }), reason: text(item.reason, location) };
     });
   if (uncoveredOutcomes && uncoveredOutcomes.length > 200) throw new Error("ProbePlan has too many uncovered outcomes");
   return { packetId, cases, ...(uncoveredOutcomes ? { uncoveredOutcomes } : {}),
@@ -415,7 +423,8 @@ function locatorKey(locator: ProbeLocator): string {
   const value = locator.by === "role" ? locator.name : locator.text;
   const normalized = value?.replace(/\s+/g, " ").trim();
   return JSON.stringify([locator.by, locator.by === "role" ? locator.role : null,
-    locator.exact ? normalized : normalized?.toLowerCase(), locator.exact === true, locator.scope ? [locatorKey(locator.scope as ProbeLocator), locator.scope.hasText] : null]);
+    locator.exact ? normalized : normalized?.toLowerCase(), locator.exact === true, locator.firstMatch !== undefined,
+    locator.scope ? [locatorKey(locator.scope as ProbeLocator), locator.scope.hasText] : null]);
 }
 
 export function assertLocatorOnlyRefinement(
@@ -503,6 +512,9 @@ const INTERACTIVE_ROLES = new Set([
 
 function assertRefinementKeepsStrength(before: ProbeLocator, after: ProbeLocator): void {
   const candidates = locatorCandidates(after);
+  if (candidates.some(candidate => candidate.firstMatch !== before.firstMatch)) {
+    throw new Error("Refinement must preserve firstMatch selection; it cannot resolve ordinary ambiguity by selecting the first match");
+  }
   if (before.by === "role" && before.name !== undefined && INTERACTIVE_ROLES.has(before.role) &&
     !candidates.some(candidate => candidate.by === "role")) {
     throw new Error(
@@ -666,8 +678,9 @@ function parseCase(
   const outcomeChecks = candidate.outcomeChecks == null ? undefined : array(candidate.outcomeChecks, `${location}.outcomeChecks`).map((value, index) => {
     const position = `${location}.outcomeChecks[${index}]`;
     const item = record(value, position);
-    keys(item, ["scenarioId", "stepIndex", "assertionIndexes"], position);
+    keys(item, ["scenarioId", "stepIndex", "clauseIndex", "assertionIndexes"], position);
     return { scenarioId: text(item.scenarioId, position), stepIndex: nonnegativeInteger(item.stepIndex, position),
+      ...(item.clauseIndex == null ? {} : { clauseIndex: nonnegativeInteger(item.clauseIndex, position) }),
       assertionIndexes: array(item.assertionIndexes, position).map(value => nonnegativeInteger(value, position)) };
   });
   if (outcomeChecks && outcomeChecks.length > 200) throw new Error(`${location} has too many outcome checks`);
@@ -869,7 +882,7 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
   const by = text(locator.by, `${location}.by`);
   let base: ProbeLocator;
   if (by === "role") {
-    keys(locator, ["by", "role", "name", "exact", "fallbacks", "scope"], location);
+    keys(locator, ["by", "role", "name", "exact", "fallbacks", "scope", "firstMatch"], location);
     const role = text(locator.role, `${location}.role`);
     if (!(ARIA_ROLES as readonly string[]).includes(role)) {
       throw new Error(`${location}.role must be a valid ARIA role; use by:text for body text, not role ${role}`);
@@ -883,7 +896,7 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
         : { exact: boolean(locator.exact, `${location}.exact`) }),
     };
   } else if (by === "label" || by === "text") {
-    keys(locator, ["by", "text", "exact", "fallbacks", "scope"], location);
+    keys(locator, ["by", "text", "exact", "fallbacks", "scope", "firstMatch"], location);
     base = {
       by,
       text: text(locator.text, `${location}.text`),
@@ -894,10 +907,17 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
   } else {
     throw new Error(`${location} ProbePlan locator must use role, label, or text`);
   }
+  if (locator.firstMatch != null) {
+    const name = base.by === "role" ? base.name : base.text;
+    if (!name || base.exact !== true || base.by === "text" || (base.by === "role" && !INTERACTIVE_ROLES.has(base.role))) {
+      throw new Error(`${location}.firstMatch requires an exact named interactive role or label`);
+    }
+    base = { ...base, firstMatch: text(locator.firstMatch, `${location}.firstMatch`) };
+  }
   if (locator.scope != null) {
     const scope = record(locator.scope, `${location}.scope`);
     const { hasText, ...target } = scope;
-    if ("scope" in target || "fallbacks" in target) throw new Error(`${location}.scope must be flat`);
+    if ("scope" in target || "fallbacks" in target || "firstMatch" in target) throw new Error(`${location}.scope must be flat`);
     const parsed = parseLocator(target, `${location}.scope`, false);
     base = { ...base, scope: { ...parsed, ...(hasText == null ? {} : { hasText: text(hasText, `${location}.scope.hasText`) }) } };
   }
@@ -911,6 +931,9 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
   const fallbacks = fallbackValues.map((item, index) =>
     parseLocator(item, `${location}.fallbacks[${index}]`, false),
   );
+  if (fallbacks.some(item => item.firstMatch !== base.firstMatch)) {
+    throw new Error(`${location} fallbacks must preserve firstMatch selection`);
+  }
   return { ...base, fallbacks };
 }
 

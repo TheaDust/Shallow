@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
-import { BASELINE_CONTEXT_WINDOW, deriveBaselinePromptTimeoutMs, loadRootModules } from "../baseline/index.js";
-import { deriveModelTimeouts } from "../src/runtime-config.js";
+import { BASELINE_CONTEXT_WINDOW, deriveBaselinePromptTimeoutMs, loadRootModules, modulePrompt } from "../baseline/index.js";
+import { createArcPlatformContract, deriveModelTimeouts } from "../src/runtime-config.js";
 
 const fixture = resolve("test/fixtures/requirements.yaml");
 
@@ -105,12 +105,51 @@ test("baseline system prompt mirrors the shared platform contract wording", asyn
     "未知路径",
     "404",
     "ROOT 的一个直接子树",
+    "传统测试用 run_tests",
+    "frontend 运行 Vitest",
+    "backend 运行 node:test",
+    "shell 中的传统测试命令会被拒绝",
+    "GIVEN 初态、WHEN 操作和全部 THEN 结果",
+    "待创建的输入不作为种子",
+    "独立的 `http.createServer(handler)`",
+    "监听所有网卡",
+    "仅当 ARC_EXTRA_PORTS=0 时跳过额外端口",
+    "不得搜索或读取官方测试、评分或控制器内部状态",
   ]) {
     assert.ok(prompt.includes(anchor), anchor);
   }
   // The baseline reads the file verbatim: no template placeholders and no packet concepts.
   assert.doesNotMatch(prompt, /\{\{/);
   assert.doesNotMatch(prompt, /工作包|PACKET/);
+});
+
+test("baseline module prompt preserves Stage contracts and renders actual platform ports", () => {
+  const description = "Extend the previous stage application when available; otherwise use a blank template. Only this stage's tests are executed.";
+  const [module] = loadRootModules({
+    id: "ROOT", name: "GitHub - Stage 3", description,
+    children: [{ id: "REQ-5", name: "Issues", dependencies: ["REQ-3-3"], children: [] }],
+  });
+  const prompt = modulePrompt(module, "requirements/current-stage", [], createArcPlatformContract("linux", 41234, 3100, [3301, 3401]));
+
+  assert.match(prompt, /产品\/阶段：GitHub - Stage 3/);
+  assert.ok(prompt.includes(description));
+  assert.ok(prompt.includes(JSON.stringify(module.subtree, null, 2)));
+  assert.match(prompt, /PORT=41234/);
+  assert.match(prompt, /正式评测端口 3100/);
+  assert.match(prompt, /额外监听端口：/);
+  assert.match(prompt, /3301、3401/);
+  assert.match(prompt, /ARC_EXTRA_PORTS=0 PORT=41234/);
+  assert.doesNotMatch(prompt, /\{\{/);
+  assert.doesNotMatch(prompt, /工作包|PACKET/);
+});
+
+test("baseline module prompt omits extra-port requirements when the contract has none", () => {
+  const [module] = loadRootModules({ id: "ROOT", children: [{ id: "A" }] });
+  const prompt = modulePrompt(module, "requirements", ["EARLIER"], createArcPlatformContract("linux", 41235, 3000, []));
+  assert.match(prompt, /已完成的 ROOT 模块：EARLIER/);
+  assert.match(prompt, /PORT=41235/);
+  assert.match(prompt, /正式评测端口 3000/);
+  assert.doesNotMatch(prompt, /额外监听|ARC_EXTRA_PORTS|3301/);
 });
 
 test("baseline asks the shared worker for a 1M context window", () => {

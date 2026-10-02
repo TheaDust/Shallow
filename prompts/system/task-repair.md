@@ -14,7 +14,7 @@
 
 {{WORK_PACKET}}
 
-任务模式：第一次修复
+任务模式：需求修复
 工作包编号：{{PACKET_ID}}
 当前尝试：{{PACKET_ATTEMPT}}
 

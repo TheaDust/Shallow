@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { parse } from "yaml";
+import { maskRequirementLiterals, requirementSentences } from "./requirement-text.js";
 
 import type {
   AtomicRequirement,
@@ -240,7 +241,7 @@ function collectAtomics(
       scenarioContracts: node.scenarios,
       references: [...new Set([node, ...ancestors].flatMap(item => [...extractReferences(item.description), ...(item.visual_reference ?? [])]))],
       exactUiStrings: extractUiStrings(evidenceText),
-      seedDeclarations: extractSeedDeclarations(evidenceText),
+      seedDeclarations: extractSeedDeclarations(evidenceText, node.scenarios),
       product,
       ancestors: ancestors.map((ancestor) => ({
         id: ancestor.id,
@@ -281,8 +282,8 @@ function extractUiStrings(text: string): string[] {
   return values.sort((left, right) => left.index - right.index).map(({ value }) => value);
 }
 
-function extractSeedDeclarations(text: string): string[] {
-  // Keep extraction limited to explicit seed markers; unlabeled prose remains in the full requirement text.
+function extractSeedDeclarations(text: string, scenarios: ParsedScenario[]): string[] {
+  // Modern declarations and GIVEN facts are source excerpts, not inferred records or creation targets.
   const declarations: string[] = [];
   for (const match of text.matchAll(/(Seed (?:data|values):|(?:The )?evaluation seed contains)\s*(.+?)(?=\s+Seed (?:data|values):|\s+(?:The )?evaluation seed contains|[\n]|$)/gim)) {
     const clause = (match[1].toLowerCase().includes("evaluation seed contains")
@@ -294,7 +295,28 @@ function extractSeedDeclarations(text: string): string[] {
     const declaration = `${match[1]} ${clause}`;
     if (clause && !declarations.includes(declaration)) declarations.push(declaration);
   }
-  return declarations;
+  const provisioned = /\b(?:pre-provisions?|pre-provisioned|seed(?:ed)? (?:data|records|history) (?:provides?|includes?|contains?|consists))\b/i;
+  for (const sentence of requirementSentences(text)) {
+    if (provisioned.test(maskRequirementLiterals(sentence))) {
+      declarations.push(sentence.replace(/^(?:GIVEN|WHEN|THEN|AND|BUT):\s*/i, ""));
+    }
+  }
+  for (const scenario of scenarios) {
+    let inGiven = false;
+    for (const step of scenario.steps) {
+      const keyword = step.keyword.toUpperCase();
+      if (keyword !== "AND" && keyword !== "BUT") inGiven = keyword === "GIVEN";
+      if (!inGiven) continue;
+      for (const sentence of requirementSentences(step.content)) {
+        const prose = maskRequirementLiterals(sentence);
+        if (prose === sentence) continue;
+        if (/\b(?:Seed (?:data|values):|evaluation seed contains)\b/i.test(prose)) continue;
+        if (/\b(?:pre-provisions?|pre-provisioned|seeded|existing|already|has|have|contains|exists|authored)\b/i.test(prose) ||
+          /\b(?:is|are)\s+(?!not\b|unused\b|unregistered\b)/i.test(prose)) declarations.push(sentence);
+      }
+    }
+  }
+  return [...new Set(declarations)];
 }
 
 function requireRecord(value: unknown, location: string): Record<string, unknown> {

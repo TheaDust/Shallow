@@ -7,6 +7,7 @@ import { PiWorkerClient } from "../src/builder/pi-worker-client.js";
 import { tmpdir } from "node:os";
 import { ArcEventSink } from "../src/arc-protocol.js";
 import { localDefaultOutputDir, parseCliArgs } from "../src/cli.js";
+import type { PlatformContract } from "../src/types.js";
 import {
   deriveModelTimeouts,
   readEnvFile,
@@ -80,7 +81,7 @@ export async function baselineMain(
       log(`实现 ${module.index}/${module.total}：${module.id} - ${module.name}`);
       await arcEvents.requirementState(module.id, "implement", "running");
       const { outcome } = await runtime.run({ systemPrompt, platformContract,
-        taskPrompt: modulePrompt(module, cli.requirementsDir, completed), outputDir: cli.outputDir,
+        taskPrompt: modulePrompt(module, cli.requirementsDir, completed, platformContract), outputDir: cli.outputDir,
         sessionKey: "baseline", contextWindow: BASELINE_CONTEXT_WINDOW, timeoutMs: cli.budgetMs > 0
           ? Math.min(perPromptTimeoutMs, Math.max(1, cli.budgetMs - (Date.now() - startedAt))) : perPromptTimeoutMs });
       if (outcome === "completed") {
@@ -149,26 +150,32 @@ export function loadRootModules(document: unknown): RootModule[] {
   });
 }
 
-function modulePrompt(
+export function modulePrompt(
   module: RootModule,
   requirementsDir: string,
   completedIds: string[],
+  platformContract: PlatformContract,
 ): string {
   const completed = completedIds.length > 0 ? completedIds.join(", ") : "none";
+  const extraPorts = platformContract.extraPorts ?? [];
   return [
     `实现 ROOT 模块 ${module.index}/${module.total}：${module.id} - ${module.name}`,
     "",
     `需求源目录：${requirementsDir}`,
     `已完成的 ROOT 模块：${completed}`,
     `产品/阶段：${module.productName}`,
-    ...(module.productDescription ? ["阶段合同：", module.productDescription] : []),
+    ...(module.productDescription ? ["产品/阶段合同：", module.productDescription] : []),
+    "",
+    "## 本次运行端口合同",
+    `生成期验证使用独立探针端口 PORT=${platformContract.port}；不要在生成期监听或以任何方式占用正式评测端口 ${platformContract.evaluationPort}；每次检查结束后停止你启动的服务进程。`,
+    ...(extraPorts.length > 0 ? [
+      `额外监听端口：${extraPorts.join("、")}。评测只设置 PORT，这些端口与 PORT 必须服务同一应用。生成期自检使用 ARC_EXTRA_PORTS=0 PORT=${platformContract.port}，不要占用额外端口。`,
+    ] : []),
     "",
     "在当前目标目录完整实现以下子树（含全部后代）：",
     "```json",
     JSON.stringify(module.subtree, null, 2),
     "```",
-    "",
-    "结束时总结本次改动的文件。不要启动长期运行的服务器。",
   ].join("\n");
 }
 
