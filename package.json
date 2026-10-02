@@ -11,6 +11,7 @@
     "smoke:credentials": "tsx --test --test-name-pattern=\"credential smoke\" test/credential-smoke.test.ts",
     "package:baseline": "node scripts/package-baseline.mjs",
     "package:main": "node scripts/package-main.mjs",
+    "package:selftest-app": "node scripts/package-selftest-app.mjs",
     "eval:local": "node scripts/eval-local.mjs",
     "eval:main": "node scripts/eval-local.mjs --agent main",
     "eval:baseline": "node scripts/eval-local.mjs --agent baseline",
