@@ -201,7 +201,9 @@ export function auditPackets(catalog: RequirementCatalog): WorkPacket[] {
     for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${baseId}-${suffix}`;
     usedIds.add(id);
     const dependencies = new Set<string>();
+    const externalDependencies = new Set<string>();
     const visit = (item: AtomicRequirement): void => {
+      for (const capability of item.externalDependencyIds ?? []) externalDependencies.add(capability);
       for (const capability of item.dependencyIds) {
         if (dependencies.has(capability)) continue;
         dependencies.add(capability);
@@ -211,7 +213,10 @@ export function auditPackets(catalog: RequirementCatalog): WorkPacket[] {
     };
     visit(requirement);
     return { ...makePacket(id, [requirement]),
-      prerequisites: catalog.requirements.filter(item => dependencies.has(item.id)) };
+      prerequisites: catalog.requirements.filter(item => dependencies.has(item.id)),
+      ...(externalDependencies.size > 0
+        ? { externalPrerequisiteIds: [...externalDependencies] }
+        : {}) };
   });
 }
 

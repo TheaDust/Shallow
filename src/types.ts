@@ -19,6 +19,11 @@ export interface ProductContext {
   rootName: string;
   description: string;
   seedData: SeedDataCategory[];
+  /** Present when the selected requirement file is one increment of a progressive task. */
+  stage?: {
+    index: number;
+    currentStageTestsOnly: boolean;
+  };
 }
 
 export interface RequirementAncestor {
@@ -34,6 +39,8 @@ export interface AtomicRequirement {
   name: string;
   text: string;
   dependencyIds: string[];
+  /** Dependencies supplied by an earlier stage and intentionally absent from this stage's tree. */
+  externalDependencyIds?: string[];
   scenarios: string[];
   /** Source scenario IDs and steps for outcome coverage; text remains available unchanged. */
   scenarioContracts?: RequirementNode["scenarios"];
@@ -74,6 +81,8 @@ export interface RequirementNode {
 
 export interface WorkPacket {
   prerequisites?: AtomicRequirement[];
+  /** Earlier-stage capabilities are context, not requirements audited in this packet. */
+  externalPrerequisiteIds?: string[];
   id: string;
   requirementIds: string[];
   requirements: AtomicRequirement[];
@@ -141,6 +150,8 @@ interface RunEventDetails {
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
     promptSha256?: string; probeSchemaSha256?: string;
+    progressiveStage?: { index: number; currentStageTestsOnly: boolean;
+      startingPoint: "inherited_application" | "blank_template" | "unknown"; externalDependencyIds: string[] };
     starterScaffold?: { status: import("./starter-scaffold.js").StarterScaffoldStatus; reason: string; files: string[] };
     grouping?: GroupingStats; groupingSource?: "pending_llm" };
   feature_grouping_started: { requirements: number; limits: import("./scheduler.js").FeatureGroupThresholds };

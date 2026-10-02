@@ -22,6 +22,8 @@ export interface RootModule {
   total: number;
   id: string;
   name: string;
+  productName: string;
+  productDescription: string;
   subtree: Record<string, unknown>;
 }
 
@@ -140,6 +142,8 @@ export function loadRootModules(document: unknown): RootModule[] {
       total: subtrees.length,
       id,
       name: String(subtree.name ?? id).trim(),
+      productName: String(root.name ?? "ROOT").trim(),
+      productDescription: String(root.description ?? "").trim(),
       subtree,
     };
   });
@@ -156,6 +160,8 @@ function modulePrompt(
     "",
     `需求源目录：${requirementsDir}`,
     `已完成的 ROOT 模块：${completed}`,
+    `产品/阶段：${module.productName}`,
+    ...(module.productDescription ? ["阶段合同：", module.productDescription] : []),
     "",
     "在当前目标目录完整实现以下子树（含全部后代）：",
     "```json",

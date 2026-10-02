@@ -84,6 +84,9 @@ export class LlmProbePlanner implements ProbePlanner {
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
             text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
             seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
+          ...(packet.externalPrerequisiteIds?.length
+            ? { externalPrerequisiteIds: packet.externalPrerequisiteIds }
+            : {}),
           requirements: packet.requirements.map((requirement) => ({
             id: requirement.id,
             name: requirement.name,
@@ -189,6 +192,9 @@ export class LlmProbePlanner implements ProbePlanner {
           prerequisites: packet.prerequisites?.map(item => ({ id: item.id, name: item.name,
             text: item.text, scenarios: item.scenarios, exactUiStrings: item.exactUiStrings,
             seedDeclarations: item.seedDeclarations, ancestors: item.ancestors })),
+          ...(packet.externalPrerequisiteIds?.length
+            ? { externalPrerequisiteIds: packet.externalPrerequisiteIds }
+            : {}),
           requirements: packet.requirements.map((requirement) => ({
             id: requirement.id,
             name: requirement.name,

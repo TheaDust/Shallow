@@ -12,6 +12,8 @@
 
 顶层使用 packetId、cases、uncoveredOutcomes；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。每个 case 的 outcomeChecks 将 scenarioContracts 中 THEN 及后续 AND/BUT 的原始 scenarioId、stepIndex 映射到 assertionIndexes：索引从准备结束后的业务后缀起按 0 计数，包含终末 assertion。每个结果子句的全部明示结果均须有实际断言；一个子句可引用多个断言，合并等价场景时保留各自映射。无法表达或容量不足的结果在 uncoveredOutcomes 给出 scenarioId、stepIndex、reason；空数组表示没有遗漏。映射只说明检查位置，语义和运行通过仍须成立。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
 
+输入中的 `externalPrerequisiteIds` 是前序阶段能力标识：它们只说明当前需求可能复用的登录、导航、对象或数据上下文，不是本计划要单独覆盖的需求。不得把这些 ID 放入 case.requirementIds，也不得凭 ID 猜测前序合同；准备步骤和断言仍须由当前 requirements、具备正文的 prerequisites 或产品合同支撑。
+
 ## 需求依据与状态
 
 每个 case 的 `expectationBasis` 给出 1–3 条支持预期结果的需求证据逐字引用，可取自 ROOT、原子需求、祖先、场景、前置需求、exactUiStrings 或种子。引用必须能在需求证据中逐字找到；不改写、概括或翻译。找不到依据就换有依据的断言，绝不断言证据未声明的反馈。`exactUiStrings` 是摘录原词，可能是对象名、状态或示例，须回原文判断，不能一律当作控件名。

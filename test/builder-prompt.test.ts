@@ -136,6 +136,30 @@ test("Builder shares its product and platform prefix across packets and repair m
   }
 });
 
+test("Builder receives progressive-stage rules for inherited and blank starting points", () => {
+  for (const [startingPoint, expected] of [
+    ["inherited_application", "继承自前序阶段的应用"],
+    ["blank_template", "空白通用模板"],
+  ] as const) {
+    const request = implementRequest();
+    if (request.mode !== "implement") throw new Error("unexpected mode");
+    request.projectContext.progressiveStage = {
+      index: 3,
+      currentStageTestsOnly: true,
+      startingPoint,
+      externalPrerequisiteIds: ["REQ-1-1-2", "REQ-3-3"],
+    };
+    const prompt = compileBuilderPrompt(request).taskPrompt;
+    assert.match(prompt, /## 分阶段增量上下文/);
+    assert.match(prompt, /当前阶段：Stage 3/);
+    assert.ok(prompt.includes(`本轮起点：${expected}`));
+    assert.match(prompt, /REQ-1-1-2、REQ-3-3/);
+    assert.match(prompt, /不是本轮单独验收的需求/);
+    if (startingPoint === "inherited_application") assert.match(prompt, /不换栈、不推倒重写/);
+    else assert.match(prompt, /最小必要的前序支撑能力/);
+  }
+});
+
 test("Every Builder mode includes the shared architecture handoff contract once", () => {
   const architectureNotes = loadPrompt("system", "architecture-notes");
   for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {

@@ -2,6 +2,8 @@
 
 日期：2026-09-22。状态：已与用户确认设计，待实现。
 
+> 适用范围说明（2026-10-02）：本文描述“同一需求全集跨运行按指纹沿用”的 evolution 模式，不是官方 GitHub 三阶段任务的运行合同。官方阶段是互不重叠的增量需求树、仅测试当前阶段，并允许树外依赖；已实现语义见 `docs/2026-10-02-progressive-stage-support.md`。
+
 参考：`tmp/octos-arc/arc/main.py`（evolution 判定、`unchanged_node_ids`、`regression_cycle`、`already_passing_nodes`）、`docs/2026-09-15-feature-slices-and-builder-loop.md` §3.5（"evolution 先检查已有实现"）。
 
 确认记录：增量依据＝自携带状态清单；回归失败＝就地修复；指纹＝节点本地字段；范围＝仅主线；同 ID 未 verified＝重做。

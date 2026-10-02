@@ -17,6 +17,7 @@ export class LlmFeatureGrouper implements FeatureGrouper {
       id: requirement.id, name: requirement.name,
       moduleId: requirement.folderPath[1] ?? requirement.id,
       folderPath: requirement.folderPath, dependencyIds: requirement.dependencyIds,
+      externalDependencyIds: requirement.externalDependencyIds ?? [],
       text: requirement.text, scenarioCount: requirement.scenarios.length,
       textChars: requirementTextChars(requirement),
     }));

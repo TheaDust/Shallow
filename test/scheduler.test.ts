@@ -115,6 +115,19 @@ test("Atomic audit covers every requirement and carries transitive textual prere
     maxPacketSize: 0, crossModulePackets: 0, cohesionRate: 1, thresholdLimitedPackets: 0 } });
 });
 
+test("Earlier-stage dependencies neither block grouping nor become current-stage audit requirements", () => {
+  const first = requirement("CURRENT-A", 0, { externalDependencies: ["REQ-1-1-2"] });
+  const second = requirement("CURRENT-B", 1, { dependencies: ["CURRENT-A"], externalDependencies: ["REQ-3-3"] });
+  const catalog = makeCatalog([first, second]);
+
+  assert.deepEqual(featureGroupPackets(catalog).packets.map(item => item.requirementIds), [["CURRENT-A"], ["CURRENT-B"]]);
+  const packets = auditPackets(catalog);
+  assert.deepEqual(packets[0].externalPrerequisiteIds, ["REQ-1-1-2"]);
+  assert.deepEqual(packets[1].prerequisites?.map(item => item.id), ["CURRENT-A"]);
+  assert.deepEqual(packets[1].externalPrerequisiteIds, ["REQ-3-3", "REQ-1-1-2"]);
+  assert.deepEqual(packets.flatMap(item => item.requirementIds), ["CURRENT-A", "CURRENT-B"]);
+});
+
 test("Real requirement trees group deterministically with unique coverage", async () => {
   const expectedPackets: Record<string, number> = { "12306": 33, bookstack: 13, ctrip: 36,
     keep: 11, prestashop: 25, stackoverflow: 21, ticketbooking: 1,
@@ -168,6 +181,7 @@ function requirement(
   declarationIndex: number,
   options: {
     dependencies?: string[];
+    externalDependencies?: string[];
     folder?: string[];
     scenarios?: string[];
     text?: string;
@@ -183,6 +197,7 @@ function requirement(
     name: id,
     text: options.text ?? `${id} description`,
     dependencyIds: options.dependencies ?? [],
+    ...(options.externalDependencies ? { externalDependencyIds: options.externalDependencies } : {}),
     scenarios: options.scenarios ?? [],
     references: [],
     exactUiStrings: options.uiStrings ?? [],

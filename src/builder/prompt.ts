@@ -146,6 +146,7 @@ function productContextSection(product: ProductContext): string {
 
 function projectContextSection(context: BuilderProjectContext): string {
   return [
+    ...(context.progressiveStage ? [progressiveStageSection(context.progressiveStage), ""] : []),
     "当前功能路径：",
     context.ancestors.length > 0
       ? context.ancestors
@@ -168,6 +169,26 @@ function projectContextSection(context: BuilderProjectContext): string {
     "",
     "这些依赖已有可运行实现，功能仍以独立验收为准。复用现有代码；若阻碍本包需求，可按需求原文修正并在回执说明。",
   ].join("\n");
+}
+
+function progressiveStageSection(stage: NonNullable<BuilderProjectContext["progressiveStage"]>): string {
+  const inherited = stage.startingPoint === "inherited_application";
+  const startingPoint = inherited
+    ? "继承自前序阶段的应用"
+    : stage.startingPoint === "blank_template"
+      ? "空白通用模板"
+      : "未明确；先检查项目目录判断是否已有应用";
+  const startingPointAction = inherited
+    ? "先阅读并运行既有应用，在原结构上增量修改；保留与当前需求兼容的前序行为，不换栈、不推倒重写。"
+    : stage.startingPoint === "blank_template"
+      ? "当前没有可复用的前序应用。完整实现当前阶段，并为当前场景补足最小必要的前序支撑能力；不要扩张成前序阶段的全量重做。"
+      : "先检查 frontend、backend、ARCHITECTURE.md 与相关源码；有可复用实现就增量扩展，否则按空白模板规则补足当前阶段。";
+  return fillTemplate(loadPrompt("system", "progressive-stage-context"), {
+    STAGE_INDEX: String(stage.index),
+    STARTING_POINT: startingPoint,
+    EXTERNAL_PREREQUISITES: stage.externalPrerequisiteIds.join("、") || "无",
+    STARTING_POINT_ACTION: startingPointAction,
+  });
 }
 
 function workPacketSection(packet: WorkPacket): string {
