@@ -2,7 +2,7 @@
 
 未指定时使用原生语义，不把某个场景的 DOM 结构推广到所有页面。
 
-输入控件使用符合用途的原生类型：文本、密码、多行、搜索、复选、单选和下拉。需求给出的 label 要关联到输入，placeholder 另行实现；仅给 placeholder 时也让输入可访问。校验错误显示在页面中，不只依赖浏览器原生校验气泡。未指定角色时，操作用 button，页面导航用带 href 的 link；要求 heading 时用真实 <h1>–<h6>。打开对象的方式依需求，可由条目、button 或 link 承担；同名操作可以重复，但用 article、row、dialog 等单层容器区分，避免嵌套交互控件。表格按需求使用 table、row、cell。
+输入控件使用符合用途的原生类型：文本、密码、多行、搜索、复选和单选。普通下拉可用原生 select；需求明确称为 combo box/combobox 且给出具名选项时，激活控件后要在页面 DOM 中暴露可见、可点击的 `role="option"`，用脚手架 Combobox 或等价的可访问 listbox 实现，不把选项只留在浏览器原生弹层。需求给出的 label 要关联到输入，placeholder 另行实现；仅给 placeholder 时也让输入可访问。校验错误显示在页面中，不只依赖浏览器原生校验气泡。未指定角色时，操作用 button，页面导航用带 href 的 link；要求 heading 时用真实 <h1>–<h6>。打开对象的方式依需求，可由条目、button 或 link 承担；同名操作可以重复，但用 article、row、dialog 等单层容器区分，避免嵌套交互控件。表格按需求使用 table、row、cell。
 
 需求指定 form、region、group 容器及可访问名时，用对应的语义结构（具名 `<form>`、具名 `<section>`、`<fieldset><legend>` 或具名 `role="group"`），通过 aria-label、指向标题的 aria-labelledby 或 legend 提供需求原名；容器名与内部字段 label 分别保留。
 

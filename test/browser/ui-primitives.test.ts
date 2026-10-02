@@ -22,29 +22,32 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
     return page;
   }
   try {
-    await t.test("repeated Chinese labels identify their own selects across renders", async sub => {
+    await t.test("repeated labels identify accessible comboboxes with clickable options across renders", async sub => {
       const page = await mount();
       sub.after(() => page.close());
-      const selects = page.getByRole("combobox");
-      await expect(selects).toHaveCount(4);
-      const ids = await selects.evaluateAll(elements => elements.map(element => element.id));
+      const comboboxes = page.getByRole("combobox");
+      await expect(comboboxes).toHaveCount(4);
+      const ids = await comboboxes.evaluateAll(elements => elements.map(element => element.id));
       assert.equal(new Set(ids).size, 4);
       assert.equal(ids[3], "explicit-choice");
       for (let index = 0; index < 4; index++) {
-        const select = selects.nth(index);
-        await select.locator("..").locator("label").click();
-        await expect(select).toBeFocused();
-        await page.keyboard.press("Escape");
-        await select.selectOption("write");
-        await expect(select).toHaveValue("write");
+        const combobox = comboboxes.nth(index);
+        await combobox.locator("..").locator("label").click();
+        await expect(combobox).toBeFocused();
+        await combobox.click();
+        await expect(combobox).toHaveAttribute("aria-expanded", "true");
+        await page.getByRole("option", { name: "编辑", exact: true }).click();
+        await expect(combobox).toHaveValue("编辑");
+        await expect(combobox).toHaveAttribute("aria-expanded", "false");
       }
       await page.getByRole("button", { name: "刷新视图", exact: true }).click();
       await expect(page.locator("#refresh-count")).toHaveText("1");
-      assert.deepEqual(await selects.evaluateAll(elements => elements.map(element => element.id)), ids);
+      assert.deepEqual(await comboboxes.evaluateAll(elements => elements.map(element => element.id)), ids);
       const status = page.getByLabel("状态", { exact: true });
       await expect(status).toHaveCount(1);
-      await status.selectOption("read");
-      await expect(page.getByRole("combobox", { name: "状态", exact: true })).toHaveValue("read");
+      await status.click();
+      await page.getByRole("option", { name: "只读", exact: true }).click();
+      await expect(page.getByRole("combobox", { name: "状态", exact: true })).toHaveValue("只读");
       await expect(page.getByLabel("权限", { exact: true })).toHaveAttribute("id", "explicit-choice");
       await expect(page.getByLabel("角色", { exact: true })).toHaveCount(2);
     });
