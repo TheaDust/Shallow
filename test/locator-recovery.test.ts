@@ -26,7 +26,7 @@ function homePlan(role = "tab", basis = "Display the main workspace."): ProbePla
   return { packetId: "packet-a", cases: [{ id: "case-A", requirementIds: ["A"], purpose: "happy_path",
     expectationBasis: [basis],
     steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role, name: role === "button" ? "home" : "Home",
-      ...(role === "button" ? { exact: true } : { fallbacks: [{ by: "text", text: "Home" }] }) } }] }] };
+      ...(role === "button" ? { exact: true } : {}) } }] }] };
 }
 
 for (const mode of ["required", "transient", "guessed", "no-navigation"] as const) {
@@ -71,7 +71,12 @@ for (const first of ["unchanged", "ambiguous"] as const) {
       const address = server.address();
       if (!address || typeof address === "string") assert.fail("missing port");
       const original = homePlan();
-      const planner = new FakeProbePlanner([original, first === "unchanged" ? original : homePlan("link"), homePlan("button")]);
+      const ambiguous = homePlan("link");
+      for (const plan of [original, ambiguous]) {
+        const step = plan.cases[0].steps[1];
+        if ("locator" in step) step.locator.fallbacks = [{ by: "text", text: "Home" }];
+      }
+      const planner = new FakeProbePlanner([original, first === "unchanged" ? original : ambiguous, homePlan("button")]);
       f.deps.planner = planner;
       f.deps.runner = new PlaywrightProbeRunner();
       f.deps.appLifecycle.start = async () => ({ baseUrl: `http://127.0.0.1:${address.port}`, stop: async () => {} });
@@ -730,6 +735,62 @@ test("A reviewed preparation gap stays inconclusive and becomes a diagnostic rep
     assert.equal(result.status, "inconclusive");
     assert.equal(result.repairableProbeFailure, true);
     assert.equal(runs, 2);
+  });
+});
+
+for (const explicitRole of [false, true]) {
+  test(`A same-named control with another role requires role evidence before preparation repair: explicit=${explicitRole}`, async () => {
+    await withModulePipeline(async f => {
+      const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      const basis = explicitRole ? 'Open the link named "Account menu".' : 'Open "Account menu".';
+      tree.children[0].children[0].description = basis;
+      await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+      const original = homePlan("link", basis);
+      original.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Account menu", exact: true } };
+      original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      original.cases[0].setupStepCount = 3;
+      original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      const planner = new FakeProbePlanner([original]);
+      f.deps.planner = planner;
+      planner.refineLocators = async plan => plan;
+      f.deps.runner.run = async current => ({ packetId: current.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+        caseId: "case-A", stepIndex: 1, category: "precondition", message: "link not found",
+        locatorSnapshot: '- main:\n  - button "Account menu"',
+        locatorAttempts: [{ locator: { by: "role", role: "link", name: "Account menu", exact: true }, message: "missing", matchCount: 0 }],
+      }] });
+      const result = await audit(f);
+      assert.equal(result.status, "inconclusive");
+      assert.equal(result.repairableProbeFailure, explicitRole ? true : undefined);
+    });
+  });
+}
+
+test("A guessed preparation role recovers to the observed control without Builder repair", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    const basis = 'Open "Account menu".';
+    tree.children[0].children[0].description = basis;
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const original = homePlan("link", basis);
+    original.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Account menu", exact: true } };
+    original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+    original.cases[0].setupStepCount = 3;
+    original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+    const corrected = structuredClone(original);
+    corrected.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Account menu", exact: true } };
+    const planner = new FakeProbePlanner([original, corrected]);
+    f.deps.planner = planner;
+    f.deps.runner.run = async current => {
+      const step = current.cases[0].steps[1];
+      if ("locator" in step && step.locator.by === "role" && step.locator.role === "button") return pass(current);
+      return { packetId: current.packetId, verdict: "inconclusive", passedCases: [], failures: [{ caseId: "case-A", stepIndex: 1,
+        category: "precondition", message: "link not found", locatorSnapshot: '- button "Account menu"',
+        locatorAttempts: [{ locator: { by: "role", role: "link", name: "Account menu", exact: true }, message: "missing", matchCount: 0 }] }] };
+    };
+    assert.equal((await audit(f)).status, "verified");
+    assert.equal(planner.refinements.length, 1);
+    assert.equal(planner.reviews.length, 0);
+    assert.equal(f.builder.requests.length, 0);
   });
 });
 

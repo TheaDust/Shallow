@@ -29,7 +29,7 @@ import { featureGroupPackets, auditPackets, folderDescendants, makePacket, DEFAU
 import { parseFeatureGrouping, type FeatureGrouper } from "./feature-grouper.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.js";
-import { parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
+import { groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
@@ -533,9 +533,23 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         let regressed = false;
         let progressUnconfirmed = false;
         const rechecked = new Map<string, AuditResult>();
+        const repairChecks = [...regressionChecks];
+        // A verified prerequisite covers only its own paths, not siblings in
+        // the same module that use a shared menu, settings or other control.
+        for (const packet of packets) {
+          if (targetPackets.includes(packet) || repairChecks.some(check => check.packet.id === packet.id)) continue;
+          const previous = results.get(packet.id);
+          if (previous?.status !== "verified" || !previous.plan) continue;
+          const entry = previous.plan.cases.find(item => item.purpose === "happy_path") ??
+            previous.plan.cases.find(item => item.purpose === "persistence") ?? previous.plan.cases[0];
+          if (entry) repairChecks.push({ packet, plan: { ...previous.plan, cases: [entry] } });
+        }
         const pendingCriticalGuards: Array<{ packet: WorkPacket; plan: ProbePlan; policy: AuditPolicy }> = [];
         const criticalGuard = (packet: WorkPacket, plan: ProbePlan) => {
           if (packet.requirementIds.some(id => prerequisiteIds.has(id))) return true;
+          if (plan.cases.some(item => item.steps.some(step => "locator" in step &&
+            (step.locator.by === "label" || (step.locator.by === "role" && step.locator.name !== undefined)) &&
+            groundedLocatorNames(step.locator, packet).length > 0))) return true;
           const declarations = packet.requirements.flatMap(item => [...item.seedDeclarations, ...item.product.seedData.flatMap(category => category.items)]);
           const names = declarations.flatMap(text => [text, ...[...text.matchAll(/[“"`]([^”"`]+)[”"`]/g)].map(match => match[1])]);
           return plan.cases.some(item => item.steps.some(step => {
@@ -573,10 +587,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           if (recheck.status !== "verified" && criticalGuard(packet, guardPlan!)) pendingCriticalGuards.push({ packet, plan: guardPlan!, policy });
           if (previous.status === "verified") rechecked.set(packet.id, recheck);
         }
-        if (!regressed) for (const check of regressionChecks) {
+        if (!regressed) for (const check of repairChecks) {
           if (targetPackets.includes(check.packet)) continue;
           if (budget.remaining("repair") <= 0) { regressed = true; break; }
-          const policy = { refineLocators: false };
+          const policy = regressionChecks.includes(check) ? { refineLocators: false } : recoveryAuditPolicy;
           const recheck = await checkGuard(check.packet, check.plan, policy);
           if (recheck.status === "failed" || recheck.repairableProbeFailure) { regressed = true; break; }
           if (recheck.status !== "verified" && criticalGuard(check.packet, check.plan)) {
@@ -633,6 +647,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             nextResults.set(id, recheck);
           }
           for (const [id, r] of reAudit) {
+            if (r.plan) await planCache.write(id, r.plan).catch(() => {});
             nextResults = new Map(nextResults);
             nextResults.set(id, r);
           }

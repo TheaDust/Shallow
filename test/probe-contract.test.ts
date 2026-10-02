@@ -8,7 +8,7 @@ test("setChecked accepts explicit state only on checkable controls", () => {
   assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "role", role: "button", name: "Save" }, checked: true })), /checkbox\/radio/);
   assert.throws(() => parseProbePlan(wire({ op: "setChecked", locator: { by: "label", text: "Header row" }, checked: "true" })), /boolean/);
 });
-import { assertLocatorOnlyRefinement, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
+import { assertLocatorOnlyRefinement, declaredLocatorRoles, groundedLocatorAnchors, parseProbePlan, PROBE_PLAN_BODY, toWireProbePlan, type ProbeLocator, type ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
 
@@ -28,6 +28,46 @@ function plan(path = "/"): ProbePlan {
     { op: "expectVisible", locator: { by: "role", role: "status" } },
   ] }] };
 }
+
+test("Explicit control roles survive refinement, including every fallback", () => {
+  const input = packet('Click the button named "Publish".');
+  const original = plan();
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Publish", exact: true } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*button/);
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*button/);
+  changed.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Publish", exact: true,
+    fallbacks: [{ by: "role", role: "link", name: "Publish", exact: true }] } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role/);
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role/);
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, changed, [], packet()));
+});
+
+test("Role evidence binds the quoted target, alternatives and explicit scope", () => {
+  const target: ProbeLocator = { by: "role", role: "button", name: "Publish" };
+  for (const text of ['The "Publish" button saves.', 'Use a button with accessible name “Publish”.',
+    'The control has button role and accessible name "Publish".']) {
+    assert.deepEqual(declaredLocatorRoles(target, packet(text)), ["button"]);
+  }
+  assert.deepEqual(declaredLocatorRoles(target, packet('Use a button or link named "Publish".')), ["button", "link"]);
+  assert.deepEqual(declaredLocatorRoles(target, packet('The dialog named "Details" contains "Publish".')), []);
+  assert.deepEqual(declaredLocatorRoles(target, packet('The example value is `button named "Publish"`.')), []);
+  const scoped = packet('Use a button named "Publish" in dialog named "Editor". Use a link named "Publish" in region named "History".');
+  assert.deepEqual(declaredLocatorRoles({ ...target, scope: { by: "role", role: "dialog", name: "Editor" } }, scoped), ["button"]);
+  assert.deepEqual(declaredLocatorRoles(target, scoped), []);
+});
+
+test("Explicit form roles preserve label queries when refinement adds a field scope", () => {
+  const input = packet('Fill the textbox named "Publish".');
+  const original = plan();
+  original.cases[0].steps[1] = { op: "fill", locator: { by: "label", text: "Publish", exact: true }, value: "draft" };
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { op: "fill", locator: { by: "label", text: "Publish", exact: true,
+    scope: { by: "role", role: "dialog", name: "Editor" } }, value: "draft" };
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(original, changed, [], input));
+  changed.cases[0].steps[1] = { op: "fill", locator: { by: "role", role: "button", name: "Publish", exact: true }, value: "draft" };
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*textbox/);
+});
 
 test("First-match selection requires an explicit instruction for the same named control", () => {
   const quote = 'Click the first "Publish" button.';

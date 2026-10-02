@@ -4,6 +4,7 @@ import type { AtomicRequirement, ProbeFailure, WorkPacket } from "../types.js";
 import { validateOutcomeChecks, type OutcomeCheck, type UncoveredOutcome } from "./probe-coverage.js";
 import { validateHeadingContract } from "./heading-contract.js";
 import { validateFirstMatchInstructions } from "./first-match.js";
+import { maskRequirementLiterals, requirementSentences } from "../requirement-text.js";
 
 export type ProbeScope =
   | { by: "role"; role: string; name?: string; exact?: boolean; hasText?: string }
@@ -354,6 +355,8 @@ export function parseProbePlan(
       validateHeadingContract(probeCase, scoped);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
+        const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
+        for (const locator of locators) assertDeclaredLocatorRole(locator, { requirements: scoped, prerequisites: packet.prerequisites });
         if (step.op === "goto" && step.path !== "/") {
           // A guessed server path cannot reach a hash-routed page. Only public
           // requirement text can authorize a deep link; never infer it from a name.
@@ -473,6 +476,15 @@ export function assertLocatorOnlyRefinement(
           throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
         }
         assertRefinementKeepsStrength(before.locator, after.locator);
+        if (packet) {
+          const evidence = { ...packet, requirements: packet.requirements.filter(item => beforeCase.requirementIds.includes(item.id)) };
+          const roles = declaredLocatorRoles(before.locator, evidence);
+          if (roles.length && locatorCandidates(after.locator).some(candidate =>
+            !matchesDeclaredLocatorRole(candidate, roles))) {
+            throw new Error(`Refinement must preserve the requirement-declared role: ${roles.join(" or ")}`);
+          }
+          assertDeclaredLocatorRole(after.locator, evidence);
+        }
         if (anchors.length && before.locator.exact === true &&
           locatorCandidates(after.locator).some(candidate => candidate.exact !== true)) {
           throw new Error("Refinement must keep exact matching for requirement-declared names; a grader anchors on the exact name");
@@ -935,6 +947,49 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
     throw new Error(`${location} fallbacks must preserve firstMatch selection`);
   }
   return { ...base, fallbacks };
+}
+
+/** Only direct role/name declarations establish a role; data and other scopes do not. */
+export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">): string[] {
+  const name = candidateTargetName(locator);
+  if (!name) return [];
+  const role = `(?:${ARIA_ROLES.join("|")})`;
+  const roleList = `${role}(?:\\s+or\\s+${role})*`;
+  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s*$`, "i");
+  const after = new RegExp(`^\\s*(${roleList})\\b`, "i");
+  const scoped = new RegExp(`\\b(?:in|within|inside)\\s+(?:the\\s+)?(?:${role}\\s+(?:named\\s+)?)?(?:\"([^\"\\n]+)\"|“([^”]+)”|\x60([^\x60]+)\x60)`, "gi");
+  const scopeName = locator.scope && candidateTargetName(locator.scope as ProbeLocator);
+  const roles = new Set<string>();
+  for (const text of requirementEvidenceTexts(packet.requirements, packet.prerequisites)) {
+    for (const sentence of requirementSentences(text.replace(/\r?\n/g, " "))) {
+      const containers = [...sentence.matchAll(scoped)].map(match => match[1] ?? match[2] ?? match[3]);
+      if (containers.length && (!scopeName || !containers.some(value => normalizeName(value) === normalizeName(scopeName)))) continue;
+      for (const literal of sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)) {
+        if (normalizeName(literal[1] ?? literal[2] ?? literal[3]) !== normalizeName(name)) continue;
+        const binding = before.exec(maskRequirementLiterals(sentence.slice(0, literal.index)))?.[1] ??
+          after.exec(sentence.slice(literal.index! + literal[0].length))?.[1];
+        if (binding) for (const value of binding.toLowerCase().split(/\s+or\s+/)) roles.add(value);
+      }
+    }
+  }
+  return [...roles];
+}
+
+/** Labeled form controls retain the DSL's native label-query semantics. */
+export function matchesDeclaredLocatorRole(locator: ProbeLocator, roles: readonly string[]): boolean {
+  if (locator.by === "role") return roles.includes(locator.role);
+  return locator.by === "label" && roles.every(role =>
+    ["textbox", "searchbox", "combobox", "spinbutton", "checkbox", "radio", "switch", "slider"].includes(role));
+}
+
+function assertDeclaredLocatorRole(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">): void {
+  const roles = declaredLocatorRoles(locator, packet);
+  if (roles.length && locatorCandidates(locator).some(candidate => !matchesDeclaredLocatorRole(candidate, roles))) {
+    throw new Error(`Locator must preserve the requirement-declared role: ${roles.join(" or ")}`);
+  }
+  for (const candidate of locatorCandidates(locator)) {
+    if (candidate.scope) assertDeclaredLocatorRole(candidate.scope as ProbeLocator, packet);
+  }
 }
 
 function record(value: unknown, location: string): Record<string, unknown> {

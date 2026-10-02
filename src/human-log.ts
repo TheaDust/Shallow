@@ -69,7 +69,7 @@ function describe(type: string, event: RunEvent): string | null {
     case "audit_result":
       return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}${detail?.navigationRecovered ? "；使用已确认的导航恢复" : ""}${detail?.uncoveredOutcomes ? `；未覆盖场景结果 ${detail.uncoveredOutcomes}` : ""}${reason ? `；${reason}` : ""}`;
     case "repair_guard_checked":
-      return `修复守卫${({ passed: "通过", regressed: "确认回归", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "检查"}（${packetId}）${detail?.critical ? "；共享身份或前置路径" : ""}${detail?.retried ? "；已用新应用实例重试" : ""}${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
+      return `修复守卫${({ passed: "通过", regressed: "确认回归", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "检查"}（${packetId}）${detail?.critical ? "；必须确认的既有路径" : ""}${detail?.retried ? "；已用新应用实例重试" : ""}${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":

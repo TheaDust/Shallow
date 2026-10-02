@@ -8,7 +8,7 @@ import { GatewayRequestError } from "../gateway-failure.js";
 import { isModelLengthCutoff, planValidationFeedback, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { rootSearchNavigationPlan } from "./navigation-recovery.js";
 import { isPreparationOnlyCorrection } from "./semantic-review.js";
-import { assertLocatorOnlyRefinement, groundedLocatorAnchors, groundedLocatorNames, locatorCandidates, parseProbePlan, probePlanSha256, type ProbePlan, type ProbeStep } from "./probe-schema.js";
+import { assertLocatorOnlyRefinement, declaredLocatorRoles, groundedLocatorAnchors, groundedLocatorNames, locatorCandidates, matchesDeclaredLocatorRole, parseProbePlan, probePlanSha256, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
 export interface AuditResult {
@@ -258,17 +258,22 @@ async function reviewBehaviorFailures(
 function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: ProbeStep): boolean {
   if (!failure.locatorAttempts || !failure.locatorSnapshot || isLocatorAmbiguity(failure) ||
     step.op.startsWith("expect") || !("locator" in step)) return true;
+  return equivalentSnapshotControls(failure, step.locator).length > 0;
+}
+
+function equivalentSnapshotControls(failure: ShadowReport["failures"][number], locator: ProbeLocator): string[] {
+  if (!failure.locatorSnapshot) return [];
   const roles = /^(button|link|menuitem|menuitemcheckbox|menuitemradio|checkbox|radio|switch|tab|treeitem|option|textbox|searchbox|combobox|spinbutton|gridcell|rowheader|columnheader)$/;
   const controls = [...failure.locatorSnapshot.matchAll(/^\s*- ([a-z]+) ("(?:\\.|[^"\\])*")/gm)];
-  return controls.some(([, role, encoded]) => {
-    if (!roles.test(role)) return false;
+  return controls.flatMap(([, role, encoded]) => {
+    if (!roles.test(role)) return [];
     let name: string;
-    try { name = JSON.parse(encoded); } catch { return false; }
-    return locatorCandidates(step.locator).some(candidate => {
+    try { name = JSON.parse(encoded); } catch { return []; }
+    return locatorCandidates(locator).some(candidate => {
       const target = candidate.by === "role" ? candidate.name : candidate.text;
       return target === undefined ? candidate.by === "role" && role === candidate.role
         : candidate.exact === false ? name.includes(target) : name === target;
-    });
+    }) ? [role] : [];
   });
 }
 
@@ -284,7 +289,17 @@ function groundedPreparationTarget(packet: WorkPacket, plan: ProbePlan, failure:
   const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
   return locators.length > 0 && locators.every(locator => groundedLocatorNames(locator, packet).length > 0 &&
     (!locator.scope || (locator.scope.by === "role" && !locator.scope.name) ||
-      groundedLocatorNames(locator.scope, packet).length > 0));
+      groundedLocatorNames(locator.scope, packet).length > 0) && groundedControlRole(locator, packet, failure));
+}
+
+function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure: ShadowReport["failures"][number]): boolean {
+  const declared = declaredLocatorRoles(locator, packet);
+  if (declared.length) return locatorCandidates(locator).every(candidate => matchesDeclaredLocatorRole(candidate, declared));
+  const observed = equivalentSnapshotControls(failure, locator);
+  // An existing same-named control does not justify changing its role to a
+  // planner assumption. Recover the locator/prefix before diagnosing the app.
+  return !observed.length || locatorCandidates(locator).some(candidate =>
+    (candidate.by === "role" && observed.includes(candidate.role)) || candidate.by === "label");
 }
 
 function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ShadowReport["failures"] {
@@ -298,6 +313,7 @@ function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowR
     // an absent initial page locator alone is not evidence against the app.
     return step && ["click", "fill", "select", "doubleClick"].includes(step.op) && "locator" in step &&
       groundedLocatorNames(step.locator, packet).length > 0 &&
+      groundedControlRole(step.locator, packet, failure) &&
       steps!.slice(0, failure.stepIndex).some(item => ["click", "fill", "select"].includes(item.op));
   });
 }
@@ -444,7 +460,9 @@ async function runShadowProbes(
     const refinableFailures = () => report.failures.filter(failure => {
       const step = currentPlan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex];
       const locatorFailure = failure.category === "locator" ||
-        (failure.category === "precondition" && isLocatorAmbiguity(failure));
+        (failure.category === "precondition" && (isLocatorAmbiguity(failure) ||
+          (failure.locatorAttempts?.length && failure.locatorAttempts.every(attempt => attempt.matchCount === 0) &&
+            step && "locator" in step && equivalentSnapshotControls(failure, step.locator).length > 0)));
       return locatorFailure && failure.locatorSnapshot && step && "locator" in step && locatorPatchMayHelp(failure, step);
     });
     while (policy.refineLocators &&

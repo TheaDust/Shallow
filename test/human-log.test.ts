@@ -31,6 +31,9 @@ test("Audit and guard logs expose coverage and uncertainty without declaring a r
   }));
   assert.match(guard, /无法判定.*新应用实例重试.*执行故障/);
   assert.doesNotMatch(guard, /确认回归/);
+  assert.match(formatLine(formatter, eventLine("2026-10-02T00:00:02Z", "repair_guard_checked", {
+    packetId: "menu", detail: { status: "passed", critical: true },
+  })), /通过.*必须确认的既有路径/);
 });
 
 test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {

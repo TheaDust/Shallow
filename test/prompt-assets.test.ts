@@ -240,6 +240,9 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(refinement, /anchoredRequirementNames/);
   assert.match(refinement, /列表之外的名称是猜测值/);
   assert.match(refinement, /hasText.*只允许出现在 `scope` 对象内部/);
+  assert.match(refinement, /只有角色未规定时/);
+  assert.match(refinement, /每个 fallback 均遵守同一合同/);
+  assert.match(review, /名字有依据，不代表其角色有依据/);
   assert.match(refinement, /expectationBasis/);
 });
 

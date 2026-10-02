@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 test("Partial case improvements are confirmed and retained across the existing two repair rounds", async () => {
@@ -255,6 +255,73 @@ test("Boundary repairs also protect sampled seeded entries outside their depende
     assert.equal(f.git.restoredShas.length, 1);
     assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
     assert.deepEqual(summary.failedRequirementIds, ["C"]);
+  });
+});
+
+test("A passing prerequisite cannot hide a sibling control regression during another module's repair", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    tree.children[0].children[1].dependencies = [];
+    tree.children[0].children[1].description = 'The page contains one button named "Account menu".';
+    tree.children[1].children[0].dependencies = ["A"];
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const planned: string[] = [];
+    const checks: Array<{ packet: string; cases: number; repaired: boolean }> = [];
+    f.deps.planner.plan = async packet => {
+      planned.push(packet.id);
+      const plan = testPlan(packet);
+      if (packet.id === "packet-b") {
+        plan.cases[0].steps.splice(1, 0, { op: "click", locator: { by: "role", role: "button", name: "Account menu", exact: true } });
+        plan.cases[0].setupStepCount = 3;
+        plan.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+        plan.cases.push({ ...structuredClone(plan.cases[0]), id: "persisted-B", purpose: "persistence" });
+      }
+      return plan;
+    };
+    f.deps.runner.run = async plan => {
+      const repaired = f.builder.requests.some(request => request.mode === "repair") && !f.git.restoredShas.length;
+      checks.push({ packet: plan.packetId, cases: plan.cases.length, repaired });
+      if (plan.packetId === "packet-c") return repaired ? pass(plan) : fail(plan);
+      if (plan.packetId === "packet-b" && repaired) return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
+        failures: [{ caseId: plan.cases[0].id, stepIndex: 1, category: "precondition", message: "button was replaced by a link",
+          locatorSnapshot: '- link "Account menu"', locatorAttempts: [{ locator: { by: "role", role: "button", name: "Account menu" }, message: "missing", matchCount: 0 }] }] };
+      return pass(plan);
+    };
+    const summary = await f.run();
+    assert.equal(f.git.restoredShas.length, 1);
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B"]);
+    assert.ok(checks.some(check => check.packet === "packet-a" && check.repaired));
+    assert.ok(checks.some(check => check.packet === "packet-b" && check.repaired && check.cases === 1));
+    assert.equal(checks.filter(check => check.packet === "packet-b").at(-1)?.cases, 2);
+    assert.deepEqual(planned.sort(), ["packet-a", "packet-b", "packet-c"]);
+  });
+});
+
+test("An accepted target repair persists its recovered plan to the cache and product mirror", async () => {
+  await withModulePipeline(async f => {
+    f.options.progressDir = join(f.options.outputDir, "shallow-progress");
+    let refined = false;
+    f.deps.planner.refineLocators = async original => {
+      const plan = structuredClone(original);
+      plan.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "main", name: "Repaired workspace" } };
+      refined = true;
+      return plan;
+    };
+    f.deps.runner.run = async plan => {
+      if (plan.packetId !== "packet-c") return pass(plan);
+      const repaired = f.builder.requests.some(request => request.mode === "repair");
+      if (!repaired) return fail(plan);
+      return refined ? pass(plan) : fail(plan, "locator");
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.ok(refined);
+    for (const directory of [join(dirname(f.options.ledgerFile), "plans"), join(f.options.outputDir, "shallow-progress", "plans")]) {
+      const file = (await readdir(directory)).find(name => name.startsWith("packet-c-"));
+      assert.ok(file);
+      const plan = JSON.parse(await readFile(join(directory, file), "utf8"));
+      assert.equal(plan.cases[0].steps[1].locator.name, "Repaired workspace");
+    }
   });
 });
 
