@@ -165,6 +165,9 @@ test("Every Builder mode includes the shared architecture handoff contract once"
   for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {
     const compiled = compileBuilderPrompt(request);
     assert.equal(compiled.systemPrompt.split(architectureNotes).length, 2);
+    assert.match(compiled.systemPrompt, /选定本包实现入口、调用方和测试/);
+    assert.match(compiled.systemPrompt, /已读且未变化的内容沿用上下文/);
+    assert.match(compiled.systemPrompt, /修改后按需要重读受影响片段/);
     assert.match(compiled.taskPrompt, /按 ARCHITECTURE\.md 交接约定/);
   }
 });

@@ -143,6 +143,9 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   const selfTest = loadPrompt("system", "self-test");
   assert.match(selfTest, /默认实际执行/);
   assert.match(selfTest, /独立于运行数据和构建产物的确定性测试设置 reuse=true/);
+  assert.match(selfTest, /先完成同一改动面的实现与测试/);
+  assert.match(selfTest, /同一源码状态不重复全量测试、类型检查或构建/);
+  assert.match(selfTest, /状态与集成检查按当前输入实际执行/);
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
@@ -153,6 +156,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /实施计划/);
   assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
   assert.match(implement, /遵守单文件规模与职责拆分约定/);
+  assert.match(implement, /集中完成同一改动面的实现与测试/);
   assert.match(loadPrompt("system", "builder-system"), /约 1,000 行/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
   const repair = loadPrompt("system", "action-repair");
@@ -244,6 +248,16 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(refinement, /每个 fallback 均遵守同一合同/);
   assert.match(review, /名字有依据，不代表其角色有依据/);
   assert.match(refinement, /expectationBasis/);
+});
+
+test("Feature grouping balances session overhead with cohesion and hard capacity", () => {
+  const grouping = loadPrompt("planning", "feature-grouping");
+  assert.match(grouping, /严格使用 limits/);
+  assert.match(grouping, /共享登录、入口或目录本身不足以证明内聚/);
+  assert.match(grouping, /容量、依赖和内聚程度相当/);
+  assert.match(grouping, /优先选择包数较少的方案/);
+  assert.match(grouping, /referenceGroups/);
+  assert.match(grouping, /可依据实际业务链重组或拆分/);
 });
 
 test("Judge contracts preserve explicit scenario inputs and distinguish unexecuted coverage review", () => {

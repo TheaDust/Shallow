@@ -1,7 +1,7 @@
 import { FEATURE_GROUPING_SCHEMA, type FeatureGrouper, type FeatureGroupingOptions } from "./feature-grouper.js";
 import { PlannerJsonClient, PlannerRequestError, extractJsonPayload, type PlannerJsonConfig } from "./planner-json-client.js";
 import { loadPrompt } from "./prompt-assets.js";
-import { DEFAULT_FEATURE_GROUP_THRESHOLDS, requirementTextChars } from "./scheduler.js";
+import { DEFAULT_FEATURE_GROUP_THRESHOLDS, featureGroupPackets, requirementTextChars } from "./scheduler.js";
 import type { RequirementCatalog } from "./types.js";
 
 export class LlmFeatureGrouper implements FeatureGrouper {
@@ -34,6 +34,7 @@ export class LlmFeatureGrouper implements FeatureGrouper {
         product: catalog.requirements[0]?.product,
         ancestors: [...ancestors.values()],
         modules: [...modules].map(([moduleId, requirementIds]) => ({ moduleId, requirementIds })),
+        referenceGroups: featureGroupPackets(catalog).packets.map(packet => packet.requirementIds),
         scenarioInput: "本次省略场景正文；容量仍用原始场景计数。需求描述完整提供。",
         requirements,
         ...(options.feedback ? { previousAttempt: options.feedback,
