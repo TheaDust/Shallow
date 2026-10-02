@@ -6,6 +6,7 @@ function Fixture() {
   const [refreshes, setRefreshes] = useState(0);
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState("");
+  const [status, setStatus] = useState("write");
   const [tab, setTab] = useState("overview");
   const [messages, setMessages] = useState([
     { id: "saved", message: "已保存", dismissLabel: "关闭成功提示" },
@@ -18,7 +19,7 @@ function Fixture() {
     <p id="refresh-count">{refreshes}</p>
     <Combobox label="角色" options={options} />
     <Combobox label="角色" options={options} />
-    <Combobox label="状态" options={options} />
+    <Combobox label="状态" options={options} value={status} onChange={event => setStatus(event.target.value)} />
     <Combobox id="explicit-choice" label="权限" options={options} />
     <Button onClick={() => setOpen(true)}>打开编辑器</Button>
     <Dialog open={open} title="编辑项目" closeLabel="关闭编辑器" onOpenChange={setOpen}>

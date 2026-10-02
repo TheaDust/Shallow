@@ -38,7 +38,7 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 当前场景原文明确要求第一个具名控件时，locator 可附 firstMatch，值为逐字引用该选择指令的原文。例如 firstMatch 为 clicks the first `Add comment` button，同时保持 role:button、name:Add comment、exact:true。程序核对引用与目标名，并选择 scope 内第一个可见匹配。“在第一条 changed line 开始评论”这类指令还须由原文明确绑定具名控件与该容器，例如 Add comment 按钮位于 changed line；不能只凭 first 一词或位置猜测。所有 fallback 保持同一 firstMatch。没有明确指令时不使用 firstMatch；它不用于 count 或不存在断言，普通 locator 该字段填 null。
 
-入口未指定时以 goto `/` 开始，再按可见入口进入目标视图；需求或前置需求逐字声明完整页面路径时，可直接 goto 该路径，保留 hash/query，未声明的非根路径会被程序拒绝。种子实体存在不等于首页有链接；首页直点只在需求明确给出该入口时使用。若允许经搜索结果或列表进入，先使用该入口再点目标。账号菜单中的入口先打开账号菜单；页面名或区域名不能据此推断成需要再次点击的链接。用 click、hover、doubleClick、fill、select 按需求交互；原生 combobox 用 select，不能依靠点击原生 option；只有键盘提交时 press Enter。reload 验证状态在刷新后存活。需求或场景包含确认时，把明确命名的确认按钮纳入完整操作链，再断言提交结果；描述允许直接完成或经确认完成时，先按场景的确认链规划，后续依据实际页面在既有复核中核对该分支。
+入口未指定时以 goto `/` 开始，再按可见入口进入目标视图；需求或前置需求逐字声明完整页面路径时，可直接 goto 该路径，保留 hash/query，未声明的非根路径会被程序拒绝。种子实体存在不等于首页有链接；首页直点只在需求明确给出该入口时使用。若允许经搜索结果或列表进入，先使用该入口再点目标。账号菜单中的入口先打开账号菜单；页面名或区域名不能据此推断成需要再次点击的链接。用 click、hover、doubleClick、fill、select 按需求交互；select 同时支持原生 select 与激活后暴露 role=option 的 ARIA combobox，value 使用需求给出的选项可访问名。只有键盘提交时 press Enter。reload 验证状态在刷新后存活。需求或场景包含确认时，把明确命名的确认按钮纳入完整操作链，再断言提交结果；描述允许直接完成或经确认完成时，先按场景的确认链规划，后续依据实际页面在既有复核中核对该分支。
 
 原生文件控件用 `uploadFile` 的 locator、纯文件名 fileName 和内联 UTF-8 content，不用 fill 或虚构 `fixtures/...` 路径。CSV 内容按需求格式和值构造，断言实际导入结果。网格上下文菜单先 rightClick 行号、列头或单元格，再 click menuitem；工具栏菜单按需求打开对应入口。矩形选区用 drag 的 from/to locator。外部粘贴先 setClipboardText，再点 Paste 或 press ControlOrMeta+V；内部复制/剪切先选源区、执行 Copy/Cut，再选目标粘贴。press 也支持 ControlOrMeta+C/X 和 Shift+F10。每个 case 自行建立菜单、剪贴板及选区前提。
 

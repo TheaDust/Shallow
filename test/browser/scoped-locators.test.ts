@@ -28,6 +28,36 @@ test("Label-based selection excludes a same-named region and still rejects two m
     assert.match(ambiguous.failures[0].message, /strict mode violation/);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });
+
+test("Select probes operate an ARIA combobox through its visible named options", async () => {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "text/html");
+    response.end(`<label for="rule">Rule type</label>
+      <input id="rule" role="combobox" readonly value="Number range" aria-expanded="false" aria-controls="rules"
+        onclick="this.setAttribute('aria-expanded','true'); document.getElementById('rules').hidden=false">
+      <div id="rules" role="listbox" hidden>
+        <button role="option" onclick="rule.value=this.textContent; rule.setAttribute('aria-expanded','false'); rules.hidden=true">Dropdown</button>
+        <button role="option" onclick="rule.value=this.textContent; rule.setAttribute('aria-expanded','false'); rules.hidden=true">Number range</button>
+      </div>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") assert.fail("missing address");
+    const plan = { packetId: "aria-combobox", cases: [{
+      id: "choose", requirementIds: ["A"], purpose: "happy_path" as const, expectationBasis: ["fixture"], steps: [
+        { op: "goto" as const, path: "/" },
+        { op: "select" as const, locator: { by: "label" as const, text: "Rule type", exact: true }, value: "Dropdown" },
+        { op: "expectValue" as const, locator: { by: "label" as const, text: "Rule type", exact: true }, value: "Dropdown" },
+      ],
+    }] };
+    const report = await new PlaywrightProbeRunner().run(plan, {
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 500, caseTimeoutMs: 5_000,
+    });
+    assert.equal(report.verdict, "pass", JSON.stringify(report.failures));
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
 import { parseProbePlan } from "../../src/judge/probe-schema.js";
 import type { WorkPacket } from "../../src/types.js";
 

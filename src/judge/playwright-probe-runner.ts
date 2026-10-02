@@ -254,7 +254,16 @@ async function executeStep(
           buffer: Buffer.from(step.content, "utf8") }, { timeout: timeoutMs });
         break;
       case "select":
-        await locator.selectOption(step.value, { timeout: timeoutMs });
+        if (await locator.evaluate(element => element.tagName === "SELECT", undefined, { timeout: timeoutMs })) {
+          await locator.selectOption(step.value, { timeout: timeoutMs });
+        } else {
+          // Select-only ARIA comboboxes expose their choices only after the
+          // control opens. Keep `select` portable across native selects and
+          // visible listbox implementations without reaching into app DOM.
+          await locator.click({ timeout: timeoutMs });
+          const option = session.page.getByRole("option", { name: step.value, exact: true }).filter({ visible: true });
+          await option.click({ timeout: timeoutMs });
+        }
         break;
       case "setChecked":
         await locator.setChecked(step.checked, { timeout: timeoutMs });
@@ -322,10 +331,11 @@ async function resolveLocator(
   step: Extract<ProbeStep, { locator: ProbeLocator }>,
   timeoutMs: number,
 ): Promise<Locator> {
-  // Native select/value operations cannot target a same-named aria-label
-  // region. Keep the declared label and scope, and retain strict uniqueness
-  // among the elements on which Playwright can perform the operation.
-  const nativeControl = step.op === "select" ? "select" : step.op === "expectValue" ? "input, textarea, select" : undefined;
+  // Selection/value operations cannot target a same-named aria-label region.
+  // Retain only controls on which the operation is meaningful while allowing
+  // both native selects and custom ARIA comboboxes.
+  const nativeControl = step.op === "select" ? 'select, [role="combobox"]'
+    : step.op === "expectValue" ? "input, textarea, select" : undefined;
   const candidateLocator = (locator: ProbeLocator) => {
     const target = nativeControl ? locate(session.page, locator).and(session.page.locator(nativeControl)) : locate(session.page, locator);
     return locator.firstMatch ? target.filter({ visible: true }).first() : target;
