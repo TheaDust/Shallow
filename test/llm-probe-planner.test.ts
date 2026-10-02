@@ -406,15 +406,24 @@ test("Probe Planner assembles split SSE deltas and tolerates a damaged usage tra
   assert.equal((await planner.plan(packet())).cases.length, 2);
 });
 
-test("A model-length retry requests a shorter complete plan", async () => {
-  let requestBody = "";
-  const planner = new LlmProbePlanner(config(), async (_input, init) => {
-    requestBody = String(init?.body);
-    return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
-  });
-  await planner.plan(packet(), { validationError: "Probe planner stream was cut off by the model" });
-  assert.match(requestBody, /最多两个 case/);
-  assert.match(requestBody, /保持每个需求 ID 的覆盖/);
+test("Planner retries preserve scenario coverage and shorten model-length responses within the schema limits", async () => {
+  for (const validationError of ["Probe planner stream was cut off by the model", "Invalid plan schema"]) {
+    let instruction = "";
+    const planner = new LlmProbePlanner(config(), async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      instruction = JSON.parse(body.messages.at(-1).content).instruction;
+      return jsonResponse({ choices: [{ message: { content: JSON.stringify(validPlan()) } }] });
+    });
+    await planner.plan(packet(), { validationError });
+    assert.match(instruction, /保持每个需求 ID 和各场景独立约束的覆盖/);
+    assert.match(instruction, /每个 case 的终末 assertion/);
+    assert.doesNotMatch(instruction, /最多两个 case/);
+    if (validationError === "Probe planner stream was cut off by the model") {
+      assert.match(instruction, /等价条件合并重复路径/);
+      assert.match(instruction, /planLimits/);
+      assert.match(instruction, /uncoveredOutcomes/);
+    }
+  }
 });
 
 test("Probe Planner rejects an SSE stream that ends before completion", async () => {
@@ -1067,6 +1076,28 @@ test("Probe Planner semantic review returns sound or a validated corrected plan"
   const reviewSchema = secondRequest.messages[0].content.split("仅返回符合此 schema 的 JSON：\n").at(-1)!;
   assert.match(reviewSchema, /"case"/);
   assert.doesNotMatch(reviewSchema, /"plan"/);
+});
+
+test("Review distinguishes a failed initial-state checkpoint from a later business failure", async () => {
+  const payloads: Array<Record<string, any>> = [];
+  const planner = new LlmProbePlanner(config(), async (_url, init) => {
+    const request = JSON.parse(String(init?.body));
+    payloads.push(JSON.parse(request.messages[1].content));
+    return jsonResponse({ choices: [{ message: { content: JSON.stringify({ verdict: "sound", rationale: "fixture" }) } }] });
+  });
+  const wire = validPlan();
+  wire.cases[0].steps.splice(1, 0, { op: "expectValue", locator: { by: "label", text: "Profile name", exact: true }, value: "" });
+  const original = parseProbePlan(wire, packet());
+  original.cases[0].setupStepCount = 2;
+  for (const stepIndex of [1, 3]) {
+    await planner.reviewPlan(packet(), original, [{ caseId: "save-profile", stepIndex,
+      category: stepIndex === 1 ? "precondition" : "assertion", message: "fixture failure" }]);
+  }
+  assert.deepEqual(payloads.map(payload => payload.failures[0].initialStateCheckpoint), [false, true].map(passed => ({
+    stepIndex: 1, assertion: original.cases[0].steps[1], passed,
+  })));
+  assert.equal(payloads[0].failures[0].preparationCheckpointPassed, false);
+  assert.equal(payloads[1].failures[0].preparationCheckpointPassed, true);
 });
 
 test("Review contract violations are review-category errors with diagnostics", async () => {

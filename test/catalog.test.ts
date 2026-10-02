@@ -40,6 +40,8 @@ test("Catalog preserves atomic requirements and source evidence in declaration o
     "Save a profile\nGIVEN: The profile page is open.\nWHEN: The user fills “Profile name” and clicks `Save`.\nTHEN: The saved name remains visible after refresh.",
     "Reject an empty profile\nWHEN: The user clicks `Save` without a name.\nTHEN: The page displays “Name is required”.",
   ]);
+  assert.equal(first.scenarioContracts?.[0].id, "REQ-A::0");
+  assert.deepEqual(first.scenarioContracts?.[0].steps.at(-1), { keyword: "THEN", content: "The saved name remains visible after refresh." });
   assert.deepEqual(first.product, {
     kind: "generic_web",
     rootId: "ROOT",

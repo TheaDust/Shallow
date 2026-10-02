@@ -67,7 +67,9 @@ function describe(type: string, event: RunEvent): string | null {
     case "module_rescued":
       return `Builder 未完成回执，但写出的应用可运行，已保存为可运行版本（${packetId}）；需求 ${strings(detail?.requirementIds).join("、")}${reason ? `；回执原因：${reason}` : ""}`;
     case "audit_result":
-      return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${reason ? `；${reason}` : ""}`;
+      return `独立验收${detail?.status === "verified" ? "通过" : detail?.status === "failed" ? "业务失败已复现" : "无法判断"}（${packetId}）；保留可运行检查点${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}${detail?.navigationRecovered ? "；使用已确认的导航恢复" : ""}${detail?.uncoveredOutcomes ? `；未覆盖场景结果 ${detail.uncoveredOutcomes}` : ""}${reason ? `；${reason}` : ""}`;
+    case "repair_guard_checked":
+      return `修复守卫${({ passed: "通过", regressed: "确认回归", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "检查"}（${packetId}）${detail?.critical ? "；共享身份或前置路径" : ""}${detail?.retried ? "；已用新应用实例重试" : ""}${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":
@@ -230,10 +232,14 @@ function describe(type: string, event: RunEvent): string | null {
       for (const status of Object.values(results)) {
         if (status === "verified" || status === "failed" || status === "inconclusive") counts[status]++;
       }
-      return `模块边界验收完成（${pickString(detail, "moduleId") ?? ""}）；通过 ${counts.verified}，失败 ${counts.failed}，无法判断 ${counts.inconclusive}`;
+      const checks = strings(detail?.regressionPacketIds).length;
+      return `模块边界验收完成（${pickString(detail, "moduleId") ?? ""}）；通过 ${counts.verified}，失败 ${counts.failed}，无法判断 ${counts.inconclusive}${checks ? `；跨模块种子入口抽查 ${checks} 条` : ""}`;
     }
-    case "pipeline_finished":
-      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
+    case "pipeline_finished": {
+      const breakdown = asRecord(detail?.inconclusiveByKind);
+      const categories = breakdown ? Object.entries(breakdown).map(([kind, ids]) => `${inconclusiveKindText(kind)} ${strings(ids).length}`).join("、") : "";
+      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}${categories ? `；无法判断分类：${categories}` : ""}${strings(detail.missingPlanRequirementIds).length ? `；缺计划 ID：${strings(detail.missingPlanRequirementIds).join("、")}` : ""}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
+    }
     default:
       return null;
   }
@@ -285,6 +291,10 @@ function describeBuilderExecution(value: unknown): string {
   if (compactions !== null) parts.push(`压缩 ${compactions}`);
   const termination = asRecord(execution.termination);
   if (termination?.compactionReason) parts.push(`压缩原因 ${termination.compactionReason}`);
+  if (typeof termination?.progressedAfterOverflowCompaction === "boolean" &&
+    termination.compactionReason === "overflow") {
+    parts.push(`压缩后推进 ${termination.progressedAfterOverflowCompaction}`);
+  }
   if (termination?.recoveryError) parts.push(`恢复失败 ${sanitizeDiagnosticText(String(termination.recoveryError))}`);
   if (termination?.compactionPending || termination?.retryPending) {
     parts.push(`终态 ${termination.lastMessageRole ?? "未知"}；压缩等待 ${Boolean(termination.compactionPending)}；重试等待 ${Boolean(termination.retryPending)}`);
@@ -372,4 +382,9 @@ function renderBytes(bytes: number): string {
   if (bytes < 1024) return `${Math.max(0, Math.round(bytes))}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KiB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MiB`;
+}
+
+function inconclusiveKindText(kind: string): string {
+  return ({ planning: "计划生成", coverage: "场景覆盖", preparation: "准备失败", locator: "定位歧义或缺口",
+    execution: "执行故障", review: "语义复核", gateway: "模型网关", budget: "预算耗尽", unreproduced: "失败未复现" } as Record<string, string>)[kind] ?? kind;
 }

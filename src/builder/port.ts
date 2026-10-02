@@ -27,6 +27,8 @@ export interface BuilderTermination {
   compactionPending: boolean;
   retryPending: boolean;
   compactionReason?: string;
+  /** Set only after an overflow compaction: whether the session made another tool call since. */
+  progressedAfterOverflowCompaction?: boolean;
   recoveryError?: string;
 }
 

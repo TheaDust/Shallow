@@ -120,8 +120,14 @@ test("LLM grouping sends descriptions and original metrics once, with independen
   const payload = JSON.parse(body.messages[1].content);
   assert.deepEqual(payload.limits, DEFAULT_FEATURE_GROUP_THRESHOLDS);
   assert.equal(payload.requirements.length, 24);
+  assert.deepEqual(payload.modules.flatMap((module: { requirementIds: string[] }) => module.requirementIds).sort(),
+    catalog.requirements.map(requirement => requirement.id).sort());
+  assert.equal(new Set(payload.modules.map((module: { moduleId: string }) => module.moduleId)).size, payload.modules.length);
   for (let i = 0; i < catalog.requirements.length; i++) {
     const original = catalog.requirements[i], sent = payload.requirements[i];
+    assert.equal(sent.moduleId, original.folderPath[1] ?? original.id);
+    assert.ok(payload.modules.find((module: { moduleId: string; requirementIds: string[] }) =>
+      module.moduleId === sent.moduleId)?.requirementIds.includes(original.id));
     assert.equal(sent.text, original.text);
     assert.equal(sent.scenarioCount, original.scenarios.length);
     assert.equal(sent.textChars, original.text.length + original.scenarios.reduce((sum, scenario) => sum + scenario.length, 0));

@@ -131,7 +131,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
   assert.match(loadPrompt("system", "builder-system"), /单个场景 GIVEN 中的初始条件/);
   assert.match(loadPrompt("system", "builder-system"), /等待目标数据期间给出忙碌状态/);
-  assert.match(loadPrompt("system", "builder-system"), /最多 200 行且不超过 16 KiB/);
+  assert.match(loadPrompt("system", "architecture-notes"), /最多 200 行且不超过 16 KiB/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
   );
@@ -141,6 +141,8 @@ test("fixed system assets keep their Chinese anchors", () => {
 
 test("Module action assets retain placeholders and bounded self-test responsibilities", () => {
   const selfTest = loadPrompt("system", "self-test");
+  assert.match(selfTest, /默认实际执行/);
+  assert.match(selfTest, /独立于运行数据和构建产物的确定性测试设置 reuse=true/);
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
@@ -211,8 +213,19 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /逐字纳入 locator 或终末 assertion/);
   assert.match(planner, /把它们视为动作前的初始数据/);
   assert.match(planner, /终末 assertion 应检查目标操作的结果/);
-  assert.match(planner, /不超过 4 个 case、每 case 不超过 20 步/);
-  assert.match(planner, /硬上限仍为 6 个 case、每 case 30 步/);
+  assert.match(planner, /case 数量由覆盖决定/);
+  assert.doesNotMatch(planner, /4 个 case|20 步/);
+  assert.match(planner, /通常 6 个.*最多 12 个/);
+  assert.match(planner, /准备最多 15 步、业务与结果最多 30 步/);
+  assert.match(planner, /仅覆盖需求 ID 不等于覆盖其场景/);
+  for (const prompt of [loadPrompt("system", "builder-system"), planner]) {
+    assert.match(prompt, /对象身份、初始条件、待测操作与预期实质等价/);
+    assert.match(prompt, /全部 THEN 明示的结果、持久化和失败后应保留的状态/);
+    assert.match(prompt, /用需求描述与祖先合同消解场景中的抽象指代/);
+  }
+  const review = loadPrompt("judge", "probe-review");
+  assert.match(review, /原计划覆盖的场景独立约束/);
+  assert.match(review, /准备纠正仍只修改前缀/);
   assert.match(planner, /count 为 0 的 expectCount 只检查当前 locator/);
   assert.match(planner, /expectationBasis/);
   assert.match(planner, /顶层 `seedData` 条目/);

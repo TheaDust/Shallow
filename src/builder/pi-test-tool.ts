@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import { Type } from "typebox";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { toolEnvironment } from "../process-lifecycle.js";
+import { PROGRESS_DIR_NAME } from "../progress-journal.js";
 
 const FRONTEND_TIMEOUT_MS = 600_000;
 const BACKEND_TIMEOUT_MS = 600_000;
@@ -17,6 +18,9 @@ const parameters = Type.Object({
   }),
   filter: Type.Optional(Type.String({
     description: "Optional single test-file name or substring pattern; run only matching tests",
+  })),
+  reuse: Type.Optional(Type.Boolean({
+    description: "Explicitly reuse a successful deterministic test run independent of runtime data and generated output; defaults to false",
   })),
 });
 
@@ -36,7 +40,7 @@ interface SuiteResult {
   cached?: boolean;
 }
 
-const DIGEST_IGNORED_DIRECTORIES = new Set(["node_modules", "dist", "build", "coverage", ".data", ".git"]);
+const DIGEST_IGNORED_DIRECTORIES = new Set(["node_modules", "dist", "build", "coverage", ".data", ".git", ".arc", PROGRESS_DIR_NAME]);
 
 /**
  * Bounded-memory test runner for the Builder: tests run single-worker so the
@@ -54,24 +58,27 @@ export function createTestTool(cwd: string, options: TestToolOptions = {}): Tool
     description:
       "Run the application's traditional tests with bounded memory (single worker, no watch mode). " +
       "frontend runs the Vitest suite in frontend/, backend runs node:test in backend/, all runs both in sequence. " +
-      "Pass filter to run only one test file/pattern. An identical successful target/filter is reused while its source digest is unchanged. " +
+      "Pass filter to run only one test file/pattern. Tests execute by default; reuse=true is only for deterministic tests independent of runtime data and generated output. " +
+      "Explicit reuse requires an identical successful target/filter and unchanged project source, test, configuration and lockfile inputs. " +
       "Returns exit code, duration and the output tail (failures print at the end).",
     promptSnippet: "run_tests: bounded-memory test runner (frontend/backend/all, single worker)",
     parameters,
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
+      signal?.throwIfAborted();
       const targets = params.target === "all" ? (["frontend", "backend"] as const) : ([params.target] as const);
       const results: SuiteResult[] = [];
       for (const target of targets) {
-        const digest = await suiteDigest(cwd, target, params.filter);
-        const cached = successful.get(digest);
+        const digest = params.reuse ? await suiteDigest(cwd, target, params.filter) : undefined;
+        signal?.throwIfAborted();
+        const cached = digest ? successful.get(digest) : undefined;
         if (cached) {
           results.push({ ...cached, durationMs: 0, cached: true });
           continue;
         }
         const result = await runSuite(spawnFn, cwd, target, timeouts[target], params.filter, signal);
         results.push(result);
-        if (result.exitCode === 0 && !result.timedOut) successful.set(digest, result);
+        if (digest && result.exitCode === 0 && !result.timedOut) successful.set(digest, result);
       }
       return {
         content: [{ type: "text" as const, text: results.map(formatResult).join("\n\n") }],
@@ -85,9 +92,9 @@ export function createTestTool(cwd: string, options: TestToolOptions = {}): Tool
   };
 }
 
-/** Hash test-visible project inputs, excluding dependencies and generated/runtime output. */
+/** Explicit reuse covers project inputs across suites; generated/runtime tests execute normally. */
 async function suiteDigest(cwd: string, target: "frontend" | "backend", filter: string | undefined): Promise<string> {
-  const root = join(cwd, target);
+  const root = cwd;
   const hash = createHash("sha256").update(`${target}\0${filter ?? ""}\0`);
   const visit = async (directory: string): Promise<void> => {
     const entries = await readdir(directory, { withFileTypes: true });

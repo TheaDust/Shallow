@@ -18,6 +18,7 @@ import type {
   WorkPacket,
 } from "../src/types.js";
 import { FakeBuilder } from "./fakes/fake-builder.js";
+import { loadPrompt } from "../src/prompt-assets.js";
 
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
@@ -60,6 +61,8 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /先规划，再实施/);
   assert.match(compiled.taskPrompt, /严格符合需求文档/);
   assert.match(compiled.taskPrompt, /覆盖本包每条需求和场景新增的具体约束/);
+  assert.match(compiled.taskPrompt, /按需求 ID 和场景名或序号/);
+  assert.match(compiled.taskPrompt, /尚未实现或尚未验证的场景约束/);
   assert.match(compiled.taskPrompt, /完整业务链路/);
   assert.match(compiled.taskPrompt, /不要为某个示例数据/);
   assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
@@ -81,7 +84,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /使用 status 或 alert/);
   assert.match(compiled.taskPrompt, /禁用的原生控件用 disabled/);
   assert.match(compiled.taskPrompt, /对话框有可访问名称/);
-  assert.match(compiled.taskPrompt, /次要操作是否悬停后出现，依据需求和参考图决定/);
+  assert.match(compiled.taskPrompt, /需求或场景要求悬停显示的次要操作应在悬停后出现/);
   assert.match(compiled.taskPrompt, /可访问的 option、radio、checkbox/);
   assert.match(compiled.taskPrompt, /背景不可操作/);
   assert.match(compiled.taskPrompt, /npm --prefix frontend run build/);
@@ -110,6 +113,8 @@ test("Builder shares its product and platform prefix across packets and repair m
     request.packet.attempt = (index + 1) as 1 | 2 | 3;
     request.packet.requirements[0].text += ` Packet evidence ${index}.`;
     const compiled = compileBuilderPrompt(request);
+    assert.match(compiled.systemPrompt, /逐场景还原 GIVEN/);
+    assert.match(compiled.systemPrompt, /逐场景核对 GIVEN、准备、WHEN 操作和全部 THEN 结果/);
     assert.ok(compiled.taskPrompt.includes(`Path ${index}`));
     assert.ok(compiled.taskPrompt.includes(`Contract ${index}`));
     assert.ok(compiled.taskPrompt.includes(`Packet evidence ${index}.`));
@@ -155,7 +160,16 @@ test("Builder receives progressive-stage rules for inherited and blank starting 
   }
 });
 
-test("Module and consolidated repair prompts bound self-test and keep implementation notes optional", () => {
+test("Every Builder mode includes the shared architecture handoff contract once", () => {
+  const architectureNotes = loadPrompt("system", "architecture-notes");
+  for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {
+    const compiled = compileBuilderPrompt(request);
+    assert.equal(compiled.systemPrompt.split(architectureNotes).length, 2);
+    assert.match(compiled.taskPrompt, /按 ARCHITECTURE\.md 交接约定/);
+  }
+});
+
+test("Module and consolidated repair prompts bound self-test and maintain architecture handoff notes", () => {
   for (const request of [implementRequest(), repairRequest("repair")]) {
     const compiled = compileBuilderPrompt(request);
     assert.match(compiled.systemPrompt, /传统测试/);

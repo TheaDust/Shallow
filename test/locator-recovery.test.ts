@@ -8,6 +8,7 @@ import { loadRequirementCatalog } from "../src/catalog.js";
 import { auditPackets } from "../src/scheduler.js";
 import { RunStateStore } from "../src/run-state.js";
 import { ExecutionFault } from "../src/execution-fault.js";
+import { GatewayRequestError } from "../src/gateway-failure.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { ProbePlannerError, type ProbePlannerFeedback } from "../src/judge/llm-probe-planner.js";
 import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
@@ -390,6 +391,309 @@ test("Seed navigation after sign-in scopes same-name results to the declared own
     packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`."];
     packet.requirements[0].seedDeclarations.push("Seed data: repository `other`, owner `alice`.");
     assert.equal(rootSearchNavigationPlan(packet, searched, ambiguous), undefined);
+  });
+});
+
+test("Seed identity scopes both a visibility assertion and its click inside nested result containers", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    packet.requirements[0].text = "Opening the repository shows Issues.";
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`, owner `alice`."];
+    const original: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true,
+          fallbacks: [{ by: "role", role: "link", name: "docs", exact: true }] } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const result = (identity: string) => `  - listitem:\n    - article:\n      - link "docs"\n      - paragraph: ${identity}`;
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "strict mode violation",
+      locatorSnapshot: `- list:\n${result("alice/docs")}\n${result("org/docs")}`,
+    }] };
+    const recovered = rootSearchNavigationPlan(packet, original, report)!;
+    assert.ok(recovered);
+    const scope = { by: "role", role: "article", hasText: "alice/docs" };
+    for (const step of recovered.cases[0].steps.slice(1, 3)) {
+      assert.ok(step.op === "expectVisible" || step.op === "click");
+      assert.deepEqual(step.locator.scope, scope);
+      assert.equal(step.locator.by === "role" && step.locator.name, "docs");
+      assert.equal(step.locator.exact, true);
+    }
+    const click = recovered.cases[0].steps[2];
+    assert.ok(click.op === "click");
+    assert.deepEqual(click.locator.fallbacks?.[0].scope, scope);
+    assert.deepEqual(recovered.cases[0].steps.at(-1), original.cases[0].steps.at(-1));
+    report.failures[0].locatorSnapshot = `- list:\n${result("alice/docs")}\n${result("alice/docs")}`;
+    assert.equal(rootSearchNavigationPlan(packet, original, report), undefined, "distinct same-identity results remain ambiguous");
+  });
+});
+
+test("Search navigation accepts any seed-declared object kind and quote style", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description =
+      'Seed data: workbook "Q3 Sales". A search result opens the workbook. Opening the workbook shows Sheet1.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the workbook shows Sheet1."], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "link", name: "Q3 Sales", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Sheet1", exact: true } },
+      ] }] };
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "missing home link",
+      locatorSnapshot: '- searchbox "Search"',
+    }] };
+    const recovered = rootSearchNavigationPlan(packet, plan, report)!;
+    assert.deepEqual(recovered.cases[0].steps.slice(1, 3), [
+      { op: "fill", locator: { by: "role", role: "searchbox", name: "Search", exact: true }, value: "Q3 Sales" },
+      { op: "press", locator: { by: "role", role: "searchbox", name: "Search", exact: true }, key: "Enter" },
+    ]);
+    assert.deepEqual(recovered.cases[0].steps[3], plan.cases[0].steps[1]);
+  });
+});
+
+test("Seed identity scopes same-name results using double-quoted declaration names", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    packet.requirements[0].text = "Opening the note shows its body.";
+    packet.requirements[0].seedDeclarations = ['Seed data: note "docs", owner "alice".'];
+    const original: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the note shows its body."], steps: [
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "main" } },
+      ] }] };
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "strict mode violation",
+      locatorSnapshot: '- list:\n  - listitem:\n    - link "docs"\n    - paragraph: alice/docs\n' +
+        '  - listitem:\n    - link "docs"\n    - paragraph: org/docs',
+    }] };
+    const recovered = rootSearchNavigationPlan(packet, original, report)!;
+    const scope = { by: "role", role: "listitem", hasText: "alice/docs" };
+    for (const step of recovered.cases[0].steps.slice(1, 3)) {
+      assert.ok(step.op === "expectVisible" || step.op === "click");
+      assert.deepEqual(step.locator, { by: "role", role: "link", name: "docs", exact: true, scope });
+    }
+  });
+});
+
+test("A snapshot identity repeating only the target name adds no disambiguation scope", async () => {
+  await withModulePipeline(async f => {
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    packet.requirements[0].seedDeclarations = ["Seed data: repository `docs`, owner `alice`."];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening it shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "main" } },
+      ] }] };
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "strict mode violation",
+      locatorSnapshot: '- listitem:\n  - link "docs"\n  - paragraph: docs',
+    }] };
+    assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+  });
+});
+
+test("A declared seed target without a requirement-authorized search entry stays dark", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description =
+      'Seed data: workbook "Q3 Sales". The user clicks the visible Q3 Sales workbook entry. Opening it shows Sheet1.';
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening it shows Sheet1."], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "link", name: "Q3 Sales", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Sheet1", exact: true } },
+      ] }] };
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "missing home link",
+      locatorSnapshot: '- searchbox "Search"',
+    }] };
+    assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+  });
+});
+
+for (const scenario of [
+  { name: "a branch value cannot act as the owner", declarations: ['Seed data: note "docs", owner "alice", branch "main".'], identity: "main/docs" },
+  { name: "a substring in another object's identity is not the target", declarations: ['Seed data: note "docs", owner "alice".', 'Seed data: note "mydocs", owner "bob".'], identity: "bob/mydocs" },
+  { name: "an owner of another object in the same declaration is not the target owner", declarations: ['Seed data: note "docs", owner "alice"; note "other", owner "bob".'], identity: "bob/docs" },
+  { name: "conflicting owners do not select the only visible identity", declarations: ['Seed data: note "docs", owner "alice".', 'Seed data: note "docs", owner "bob".'], identity: "bob/docs" },
+]) {
+  test(`Seed identity rejects ${scenario.name}`, async () => {
+    await withModulePipeline(async f => {
+      const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+      packet.requirements[0].text = "Opening the note shows its body.";
+      packet.requirements[0].seedDeclarations = scenario.declarations;
+      const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+        expectationBasis: ["Opening the note shows its body."], steps: [
+          { op: "goto", path: "/" },
+          { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+          { op: "expectVisible", locator: { by: "role", role: "main" } },
+        ] }] };
+      const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+        caseId: "entry", stepIndex: 1, category: "locator" as const, message: "strict mode violation",
+        locatorSnapshot: `- listitem:\n  - link "docs"\n  - paragraph: ${scenario.identity}`,
+      }] };
+      assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+    });
+  });
+}
+
+test("A gateway-interrupted review remains retryable and is classified separately from an invalid review", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.runner.run = async plan => fail(plan);
+    f.deps.planner.reviewPlan = async () => {
+      if (++calls === 1) throw new GatewayRequestError({ kind: "unavailable", retryable: true, status: 503 });
+      return { status: "sound", rationale: "The original outcome is requirement-backed" };
+    };
+    const policy = { refineLocators: true, noProgressRefinements: new Set<string>() };
+    const interrupted = await audit(f, () => 60_000, policy);
+    assert.equal(interrupted.status, "inconclusive");
+    assert.equal(interrupted.failureKind, "gateway");
+    assert.equal((await audit(f, () => 60_000, policy)).status, "failed");
+    assert.equal(calls, 2);
+  });
+});
+
+test("A planning feedback retry interrupted by the gateway retains the gateway classification", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.planner.plan = async () => {
+      if (++calls === 1) throw new ProbePlannerError("schema", "invalid plan", { cause: new Error("missing assertion") });
+      throw new GatewayRequestError({ kind: "unavailable", retryable: true, status: 503 });
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.failureKind, "gateway");
+    assert.equal(calls, 2);
+  });
+});
+
+for (const description of [
+  'Seed data: workbook "Q3 Sales", branch "feature-search". The home page must show the workbook link.',
+  'Seed data: workbook "Q3 Sales", query "search result opens the workbook".',
+  'Seed data: workbook "Q3 Sales", query "missing. A search result opens the workbook".',
+  'Seed data: workbook "Q3 Sales". The user opens the workbook by direct address.',
+  'Seed data: workbook "Q3 Sales". A search result opens a note.',
+  'Seed data: workbook "Q3 Sales". A search result opens workbook "Other".',
+  'Seed data: workbook "Q3 Sales". The home page must show a link "Q3 Sales". A search result opens the workbook.',
+]) {
+  test(`Search navigation requires the target's search entry: ${description}`, async () => {
+    await withModulePipeline(async f => {
+      const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+      packet.requirements[0].text = `${description} Opening it shows Sheet1.`;
+      packet.requirements[0].seedDeclarations = ['Seed data: workbook "Q3 Sales", branch "feature-search".'];
+      const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+        expectationBasis: ["Opening it shows Sheet1."], steps: [
+          { op: "goto", path: "/" },
+          { op: "click", locator: { by: "role", role: "link", name: "Q3 Sales", exact: true } },
+          { op: "expectVisible", locator: { by: "role", role: "link", name: "Sheet1", exact: true } },
+        ] }] };
+      const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+        caseId: "entry", stepIndex: 1, category: "locator" as const, message: "missing home link",
+        locatorSnapshot: '- searchbox "Search"',
+      }] };
+      assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+    });
+  });
+}
+
+test("Another case's search entry cannot authorize navigation for this case", async () => {
+  await withModulePipeline(async f => {
+    const packets = auditPackets(await loadRequirementCatalog(f.options.requirementsFile));
+    const packet = packets[0];
+    packet.requirements[0].text = "Opening the workbook shows Sheet1.";
+    packet.requirements[0].seedDeclarations = ['Seed data: workbook "Q3 Sales".'];
+    const other = packets[1].requirements[0];
+    other.text = "A search result opens the workbook.";
+    other.seedDeclarations = ['Seed data: workbook "Other".'];
+    packet.requirements.push(other);
+    packet.requirementIds.push(other.id);
+    const plan: ProbePlan = { packetId: packet.id, cases: [
+      { id: "entry", requirementIds: ["A"], purpose: "happy_path", expectationBasis: ["Opening the workbook shows Sheet1."], steps: [
+        { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "link", name: "Q3 Sales", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Sheet1", exact: true } },
+      ] },
+      { id: "other", requirementIds: [other.id], purpose: "happy_path", expectationBasis: [other.text], steps: [
+        { op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } },
+      ] },
+    ] };
+    const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: ["other"], failures: [{
+      caseId: "entry", stepIndex: 1, category: "locator" as const, message: "missing home link", locatorSnapshot: '- searchbox "Search"',
+    }] };
+    assert.equal(rootSearchNavigationPlan(packet, plan, report), undefined);
+  });
+});
+
+for (const sentence of ['The user opens workbook "Q3 Sales" from search results.',
+  'A visitor has a search result, a workbook-list item, or a direct address for the workbook.']) {
+  test(`Search navigation accepts an explicit target entry: ${sentence}`, async () => {
+    await withModulePipeline(async f => {
+      const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+      packet.requirements[0].text = `${sentence} Opening it shows Sheet1.`;
+      packet.requirements[0].seedDeclarations = ['Seed data: workbook "Q3 Sales".'];
+      const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+        expectationBasis: ["Opening it shows Sheet1."], steps: [
+          { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "link", name: "Q3 Sales", exact: true } },
+          { op: "expectVisible", locator: { by: "role", role: "link", name: "Sheet1", exact: true } },
+        ] }] };
+      const report = { packetId: packet.id, verdict: "inconclusive" as const, passedCases: [], failures: [{
+        caseId: "entry", stepIndex: 1, category: "locator" as const, message: "missing home link", locatorSnapshot: '- searchbox "Search"',
+      }] };
+      const recovered = rootSearchNavigationPlan(packet, plan, report)!;
+      assert.ok(recovered);
+      assert.deepEqual(recovered.cases[0].steps.slice(1, 3).map(step => step.op), ["fill", "press"]);
+      assert.deepEqual(recovered.cases[0].steps.slice(3), plan.cases[0].steps.slice(1));
+    });
+  });
+}
+
+test("Detection-only auditing resolves declared seed identity in Chromium and confirms it on a fresh application", async () => {
+  await withModulePipeline(async f => {
+    const catalog = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    catalog.children[0].children[0].description = "Seed data: repository `docs`, owner `alice`. Opening the repository shows Issues.";
+    await writeFile(f.options.requirementsFile, JSON.stringify(catalog));
+    const packet = auditPackets(await loadRequirementCatalog(f.options.requirementsFile))[0];
+    const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "entry", requirementIds: ["A"], purpose: "happy_path",
+      expectationBasis: ["Opening the repository shows Issues."], steps: [
+        { op: "goto", path: "/" },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "click", locator: { by: "role", role: "link", name: "docs", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "link", name: "Issues", exact: true } },
+      ] }] };
+    const server = createServer((req, res) => {
+      res.setHeader("content-type", "text/html");
+      res.end(req.url === "/alice/docs" ? '<main><a href="/issues">Issues</a></main>' :
+        '<main><ul><li><article><a href="/alice/docs">docs</a><p>alice/docs</p></article></li>' +
+        '<li><article><a href="/org/docs">docs</a><p>org/docs</p></article></li></ul></main>');
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const runner = new PlaywrightProbeRunner();
+    let starts = 0;
+    f.deps.appLifecycle.start = async () => { starts++; return {
+      baseUrl: `http://127.0.0.1:${(server.address() as { port: number }).port}`, stop: async () => {},
+    }; };
+    f.deps.runner = runner;
+    try {
+      const state = new RunStateStore({ statusByRequirementId: { A: "todo" }, acceptedSha: "checkpoint",
+        startedAtMs: 0, totalBudgetMs: 30_000 }, f.options.ledgerFile);
+      const result = await auditPacket(packet, plan, f.options, f.deps, state, () => 30_000, { refineLocators: false });
+      assert.equal(result.status, "verified");
+      assert.equal(starts, 3, "initial run, recovered run, and fresh confirmation");
+      assert.equal((await f.events()).filter(event => event.type === "probe_navigation_attempted").length, 1);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 });
 

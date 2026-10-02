@@ -322,7 +322,13 @@ async function resolveLocator(
   step: Extract<ProbeStep, { locator: ProbeLocator }>,
   timeoutMs: number,
 ): Promise<Locator> {
-  const primary = locate(session.page, step.locator);
+  // Native select/value operations cannot target a same-named aria-label
+  // region. Keep the declared label and scope, and retain strict uniqueness
+  // among the elements on which Playwright can perform the operation.
+  const nativeControl = step.op === "select" ? "select" : step.op === "expectValue" ? "input, textarea, select" : undefined;
+  const candidateLocator = (locator: ProbeLocator) => nativeControl
+    ? locate(session.page, locator).and(session.page.locator(nativeControl)) : locate(session.page, locator);
+  const primary = candidateLocator(step.locator);
   if (step.op === "expectCount" || step.op === "expectHidden") return primary;
   const candidates = locatorCandidates(step.locator);
   // Actions must reach a visible candidate. Uploads can target a hidden native
@@ -333,7 +339,7 @@ async function resolveLocator(
   let observedTarget: Locator | undefined;
   for (let index = 0; index < candidates.length; index += 1) {
     const isFinal = index === candidates.length - 1;
-    const candidate = locate(session.page, candidates[index]);
+    const candidate = candidateLocator(candidates[index]);
     try {
       await candidate.waitFor({
         state: needsVisible ? "visible" : "attached",

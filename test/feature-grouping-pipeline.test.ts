@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { GatewayRequestError, httpGatewayFailure } from "../src/gateway-failure.js";
+import { LlmFeatureGrouper } from "../src/llm-feature-grouper.js";
 import { withModulePipeline } from "./helpers/module-pipeline.js";
 
 const proposal = { groups: [
@@ -94,6 +95,42 @@ test("Invalid model coverage gets feedback retry before fallback without losing 
     const retry = (await f.events()).find(event => event.type === "feature_grouping_retry");
     assert.ok(retry?.type === "feature_grouping_retry");
     assert.doesNotMatch(retry.detail?.reason ?? "", /fixture-key/);
+  });
+});
+
+test("Cross-module grouping gives exact ownership feedback before accepting the corrected LLM proposal", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.grouper = new LlmFeatureGrouper({ baseUrl: "https://gateway.example/v1",
+      apiKey: "fixture-key", model: "fixture-model", timeoutMs: 1000 }, async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const payload = JSON.parse(body.messages[1].content);
+      assert.equal(f.builder.requests.length, 0);
+      assert.deepEqual(payload.modules, [
+        { moduleId: "FIRST", requirementIds: ["A", "B"] },
+        { moduleId: "SECOND", requirementIds: ["C"] },
+      ]);
+      const response = ++calls === 1 ? { groups: [proposal.groups[0],
+        { requirementIds: ["B", "C"], purpose: "shared dependency" }] } : proposal;
+      if (calls === 2) {
+        assert.equal(payload.previousAttempt.validationError, "Feature group 2 crosses ROOT modules: B=FIRST, C=SECOND");
+        assert.equal(payload.previousAttempt.cutOffByModel, false);
+        assert.equal(body.max_tokens, 65536);
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(response) } }] }));
+    });
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.equal(calls, 2);
+    assert.deepEqual(result.verifiedRequirementIds.sort(), ["A", "B", "C"]);
+    assert.deepEqual(f.builder.requests.map(request => "packet" in request ? request.packet.requirementIds : []),
+      [["A"], ["B"], ["C"]]);
+    const events = await f.events();
+    const finished = events.find(event => event.type === "feature_grouping_finished");
+    assert.equal(finished?.detail?.source, "llm");
+    assert.equal(finished?.detail?.attempts, 2);
+    assert.match(events.find(event => event.type === "feature_grouping_retry")?.detail?.reason ?? "",
+      /B=FIRST, C=SECOND/);
   });
 });
 

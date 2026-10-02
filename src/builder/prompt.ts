@@ -24,7 +24,11 @@ export interface CompiledBuilderPrompt {
   fragmentIds: PromptFragmentId[];
 }
 
-const SYSTEM_PROMPT = [loadPrompt("system", "builder-system"), loadPrompt("system", "self-test")].join("\n\n");
+const SYSTEM_PROMPT = [
+  loadPrompt("system", "builder-system"),
+  loadPrompt("system", "architecture-notes"),
+  loadPrompt("system", "self-test"),
+].join("\n\n");
 
 export function compileBuilderPrompt(
   request: BuilderPromptInput,

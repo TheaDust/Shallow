@@ -155,7 +155,7 @@ test("Reconstructed prefixes still obey initial-state assertions, the combined s
     corrections: [{ ...response.corrections[0], setupSteps }] }, packet(), preparedPlan(), preparationTargets);
   assert.throws(() => parse([{ op: "goto", path: "/" }]), /end preparation with an initial-state assertion/);
   assert.throws(() => parse([...Array.from({ length: 27 }, () => ({ op: "reload" })),
-    { op: "expectVisible", locator: { by: "role", role: "main" } }]), /at most 30 steps/);
+    { op: "expectVisible", locator: { by: "role", role: "main" } }]), /at most 15 preparation steps/);
   assert.throws(() => parse([{ op: "execute", code: "arbitrary code" }]), /operation is not allowed/);
   assert.throws(() => parse([{ op: "goto", path: "/private" },
     { op: "expectVisible", locator: { by: "role", role: "main" } }]), /undeclared goto path/);

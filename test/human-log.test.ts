@@ -13,6 +13,26 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Module boundary logs distinguish sampled seed entries from full atomic verification", () => {
+  const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-01T00:00:00Z", "module_boundary_audit_finished", {
+    detail: { moduleId: "SECOND", packetIds: ["packet-c"], regressionPacketIds: ["packet-a"], results: { "packet-c": "verified" } },
+  }));
+  assert.match(line, /通过 1，失败 0，无法判断 0；跨模块种子入口抽查 1 条/);
+});
+
+test("Audit and guard logs expose coverage and uncertainty without declaring a regression", () => {
+  const formatter = new HumanRunFormatter();
+  const audit = formatLine(formatter, eventLine("2026-10-02T00:00:00Z", "audit_result", {
+    packetId: "p", detail: { status: "inconclusive", failureKind: "coverage", navigationRecovered: true, uncoveredOutcomes: 2 },
+  }));
+  assert.match(audit, /无法判断.*场景覆盖.*导航恢复.*未覆盖场景结果 2/);
+  const guard = formatLine(formatter, eventLine("2026-10-02T00:00:01Z", "repair_guard_checked", {
+    packetId: "p", detail: { status: "unresolved", critical: false, retried: true, failureKind: "execution" },
+  }));
+  assert.match(guard, /无法判定.*新应用实例重试.*执行故障/);
+  assert.doesNotMatch(guard, /确认回归/);
+});
+
 test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {
   const formatter = new HumanRunFormatter();
   const at = "2026-09-29T00:00:00Z";
@@ -316,6 +336,20 @@ test("HumanRunFormatter breaks Builder time into model and tool and reports toke
   assert.match(detailed, /各工具 shell 20、read 9/);
   assert.match(detailed, /压缩 2/);
   assert.match(detailed, /本阶段耗时 24m31s/);
+  // The overflow signal only matters while the reason is overflow; a threshold
+  // compaction must not print a context-bound verdict.
+  for (const [progressed, expected] of [[true, /压缩后推进 true/], [false, /压缩后推进 false/]] as const) {
+    assert.match(formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+      packetId: "p", detail: { outcome: "timed_out", execution: { usage: { status: "unavailable" },
+        termination: { compactionPending: false, retryPending: false, compactionReason: "overflow",
+          progressedAfterOverflowCompaction: progressed } } },
+    })), expected);
+  }
+  assert.doesNotMatch(formatLine(formatter, eventLine("2026-09-17T00:00:00.000Z", "builder_finished", {
+    packetId: "p", detail: { outcome: "timed_out", execution: { usage: { status: "unavailable" },
+      termination: { compactionPending: false, retryPending: false, compactionReason: "threshold",
+        progressedAfterOverflowCompaction: false } } },
+  })), /压缩后推进/);
   const partial = formatLine(formatter, eventLine("2026-09-17T00:00:01.000Z", "builder_finished", {
     packetId: "p", detail: { outcome: "failed", execution: { usage: { status: "unavailable" } } },
   }));

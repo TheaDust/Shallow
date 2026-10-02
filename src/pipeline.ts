@@ -28,8 +28,8 @@ import { RunStateStore, sanitizeDiagnosticText, type LogSink } from "./run-state
 import { featureGroupPackets, auditPackets, folderDescendants, makePacket, DEFAULT_FEATURE_GROUP_THRESHOLDS } from "./scheduler.js";
 import { parseFeatureGrouping, type FeatureGrouper } from "./feature-grouper.js";
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
-import { auditPacket, type AuditResult } from "./judge/audit.js";
-import { probePlanSha256 } from "./judge/probe-schema.js";
+import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.js";
+import { parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
@@ -39,6 +39,7 @@ import { GatewayRequestError } from "./gateway-failure.js";
 import { GatewayRecovery } from "./gateway-recovery.js";
 import type { CandidateRuntime } from "./candidate-runtime.js";
 import type { CandidateEvidence } from "./types.js";
+import type { InconclusiveKind } from "./types.js";
 import type {
   PlatformContract,
   RequirementCatalog,
@@ -128,6 +129,8 @@ export interface RunSummary {
   failedRequirementIds?: string[];
   inconclusiveRequirementIds?: string[];
   pendingRequirementIds?: string[];
+  missingPlanRequirementIds?: string[];
+  inconclusiveByKind?: Partial<Record<InconclusiveKind, string[]>>;
 }
 
 export async function runPipeline(options: PipelineOptions, deps: PipelineDeps): Promise<RunSummary> {
@@ -335,6 +338,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     let candidate: CandidateEvidence | undefined;
     let preserved = false;
     let reason: string | undefined;
+    const recoveredPlans = new Map<string, ProbePlan>();
     try {
       candidate = await runnable();
       // Interrupted checkpoints must preserve independently established passes.
@@ -350,25 +354,36 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         const checked = await auditPacket(packetToCheck, guard, options, deps, state,
           () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false });
         if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
+        if (checked.plan) {
+          const recovered = mergeCheckedPlan(plan, checked.plan, packetToCheck);
+          if (probePlanSha256(recovered) !== probePlanSha256(plan)) recoveredPlans.set(packetToCheck.id, recovered);
+        }
       }
       preserved = true;
     }
     catch (error) { reason = errorMessage(error); await deps.git.restoreAccepted(state.snapshot.acceptedSha); }
-    if (preserved) await checkpoint([], `interrupted ${packet.id}`, candidate);
+    if (preserved) {
+      await checkpoint([], `interrupted ${packet.id}`, candidate);
+      for (const [id, plan] of recoveredPlans) {
+        results.set(id, { ...results.get(id)!, plan });
+        await planCache.write(id, plan).catch(() => {});
+      }
+    }
     await state.record({ at: now(), type: "builder_work_preserved", packetId: packet.id,
       detail: { preserved, requirementIds: packet.requirementIds, ...(reason ? { reason } : {}) } });
   };
   const audit = async (name: PipelinePhase, previous = results): Promise<Map<string, AuditResult>> => {
     const audited = new Map<string, AuditResult>();
-    // Previously passed paths are checked first after edits, so regressions stop repairs early.
-    const ordered = [...packets].sort((a, b) => Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
+    // Complete missing plans before replaying cached final probes. Runtime edits
+    // still check previously passed paths first during delivery revalidation.
+    const ordered = [...packets].sort((a, b) =>
+      (name === "audit" ? Number(!previous.get(b.id)?.plan) - Number(!previous.get(a.id)?.plan) : 0) ||
+      Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
     for (const packet of ordered) {
       if (!packet.requirementIds.every(id => implemented.has(id))) continue;
       const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
-      const result = previous.get(packet.id)?.reason === "gateway recovery window exhausted" && !cached
-        ? previous.get(packet.id)!
-        : budget.remaining(name) <= 0
-        ? { status: "inconclusive" as const, plan: cached, reason: "audit phase budget exhausted" }
+      const result = budget.remaining(name) <= 0
+        ? { status: "inconclusive" as const, failureKind: "budget" as const, plan: cached, reason: "audit phase budget exhausted" }
         : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
       // Detection-only audits never refine; persist a freshly planned result so
       // future audits skip the LLM call.
@@ -385,7 +400,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (!result) continue;
       state.markRequirements(packet.requirementIds, result.status);
       await state.record({ at: now(), type: "audit_result", packetId: packet.id,
-        detail: { requirementIds: packet.requirementIds, status: result.status, reason: result.reason } });
+        detail: { requirementIds: packet.requirementIds, status: result.status, reason: result.reason,
+          failureKind: result.failureKind, navigationRecovered: result.navigationRecovered, uncoveredOutcomes: result.coverageGaps?.length } });
       // The platform has no inconclusive status: leave implementation completed, never claim passed.
       for (const id of packet.requirementIds) {
         if (result.status !== "inconclusive") await emitArc(deps, state, arc => arc.requirementState(id, "test", result.status === "verified" ? "passed" : "failed"));
@@ -409,6 +425,35 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     // Reuse cached probes for verified prerequisites while there is still a repair window.
     const targetPackets = packets.filter(packet => packetIds.includes(packet.id) ||
       (results.get(packet.id)?.status === "verified" && packet.requirementIds.some(id => prerequisiteIds.has(id))));
+    // Shared seeded entries can regress without an explicit dependency edge.
+    // Sample one cached successful path per other module, escalating a miss to
+    // its full audit and the current boundary's existing repair quota.
+    const moduleOf = (packet: WorkPacket) => packet.requirements[0].folderPath[1] ?? packet.requirements[0].id;
+    const coveredModules = new Set(targetPackets.map(moduleOf));
+    const regressionChecks: Array<{ packet: WorkPacket; plan: ProbePlan }> = [];
+    for (const packet of packets) {
+      const previous = results.get(packet.id);
+      const ownerModule = moduleOf(packet);
+      if (coveredModules.has(ownerModule) || previous?.status !== "verified" || !previous.plan ||
+        !packet.requirements.some(item => item.seedDeclarations.length > 0 || item.product.seedData.length > 0)) continue;
+      const entry = previous.plan.cases.find(item => item.purpose === "happy_path") ??
+        previous.plan.cases.find(item => item.purpose === "persistence");
+      if (!entry || budget.remaining("audit") <= 0) continue;
+      coveredModules.add(ownerModule);
+      const check = { packet, plan: { ...previous.plan, cases: [entry] } };
+      regressionChecks.push(check);
+      const checked = await auditPacket(packet, check.plan, options, deps, state,
+        () => budget.remaining("audit"), { refineLocators: false, retryPlan: false, checkCoverage: false });
+      if (checked.status !== "verified") targetPackets.push(packet);
+      else if (checked.plan) {
+        check.plan = checked.plan;
+        const recovered = mergeCheckedPlan(previous.plan, checked.plan, packet);
+        if (probePlanSha256(recovered) !== probePlanSha256(previous.plan)) {
+          results.set(packet.id, { ...previous, plan: recovered });
+          await planCache.write(packet.id, recovered).catch(() => {});
+        }
+      }
+    }
     const ordered = [...targetPackets]
       .filter(packet => packet.requirementIds.every(id => implemented.has(id)))
       .sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
@@ -426,7 +471,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const [packet] = ordered.splice(nextIndex, 1);
       const cached = results.get(packet.id)?.plan ?? await planCache.read(packet);
       if (budget.remaining("audit") <= 0) {
-        boundaryResults.set(packet.id, { status: "inconclusive", plan: cached, reason: "module boundary audit budget exhausted" });
+        boundaryResults.set(packet.id, { status: "inconclusive", failureKind: "budget", plan: cached, reason: "module boundary audit budget exhausted" });
         continue;
       }
       const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"),
@@ -442,7 +487,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
     await state.record({ at: now(), type: "module_boundary_audit_finished",
       detail: { moduleId, moduleName, packetIds: targetPackets.map(packet => packet.id),
-        results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])) } });
+        results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])),
+        regressionPacketIds: regressionChecks.map(item => item.packet.id) } });
     // Inline repair for module boundary failures, using per-module repair budget.
     while (boundaryRepairCount < 2 && budget.remaining("repair") > 0) {
       const failures = targetPackets.filter(p => {
@@ -487,6 +533,30 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         let regressed = false;
         let progressUnconfirmed = false;
         const rechecked = new Map<string, AuditResult>();
+        const pendingCriticalGuards: Array<{ packet: WorkPacket; plan: ProbePlan; policy: AuditPolicy }> = [];
+        const criticalGuard = (packet: WorkPacket, plan: ProbePlan) => {
+          if (packet.requirementIds.some(id => prerequisiteIds.has(id))) return true;
+          const declarations = packet.requirements.flatMap(item => [...item.seedDeclarations, ...item.product.seedData.flatMap(category => category.items)]);
+          const names = declarations.flatMap(text => [text, ...[...text.matchAll(/[“"`]([^”"`]+)[”"`]/g)].map(match => match[1])]);
+          return plan.cases.some(item => item.steps.some(step => {
+            if (!step.op.startsWith("expect") || !("locator" in step)) return false;
+            const name = step.locator.by === "role" ? step.locator.name : step.locator.text;
+            const values = [...(name ? [name] : []), ...(step.op === "expectText" ? step.anyOf ?? [step.text] : [])];
+            return values.some(value => names.some(name => name.length > 0 &&
+              (value === name || value.startsWith(`${name}/`) || value.endsWith(`/${name}`))));
+          }));
+        };
+        const checkGuard = async (packet: WorkPacket, plan: ProbePlan, policy: AuditPolicy): Promise<AuditResult> => {
+          const guardPolicy = { ...policy, checkCoverage: false, retryPlan: false };
+          let checked = await auditPacket(packet, plan, options, deps, state, () => budget.remaining("repair"), guardPolicy);
+          const retried = checked.status === "inconclusive" && !checked.repairableProbeFailure && budget.remaining("repair") > 0;
+          if (retried) checked = await auditPacket(packet, checked.plan ?? plan, options, deps, state, () => budget.remaining("repair"), guardPolicy);
+          await state.record({ at: now(), type: "repair_guard_checked", packetId: packet.id,
+            detail: { requirementIds: packet.requirementIds, status: checked.status === "verified" ? "passed"
+              : checked.status === "failed" || checked.repairableProbeFailure ? "regressed" : "unresolved",
+            critical: criticalGuard(packet, plan), retried, failureKind: checked.failureKind } });
+          return checked;
+        };
         for (const packet of targetPackets) {
           const previous = results.get(packet.id);
           if (!previous) continue;
@@ -497,10 +567,24 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           const guardPlan = previous.status === "verified" ? cachedPlan : {
             ...cachedPlan!, cases: cachedPlan!.cases.filter(item => passed.includes(item.id)),
           };
-          const recheck = await auditPacket(packet, guardPlan, options, deps, state, () => budget.remaining("repair"),
-            previous.status === "verified" ? recoveryAuditPolicy : { refineLocators: false });
-          if (recheck.status !== "verified") { regressed = true; break; }
+          const policy = previous.status === "verified" ? recoveryAuditPolicy : { refineLocators: false };
+          const recheck = await checkGuard(packet, guardPlan!, policy);
+          if (recheck.status === "failed" || recheck.repairableProbeFailure) { regressed = true; break; }
+          if (recheck.status !== "verified" && criticalGuard(packet, guardPlan!)) pendingCriticalGuards.push({ packet, plan: guardPlan!, policy });
           if (previous.status === "verified") rechecked.set(packet.id, recheck);
+        }
+        if (!regressed) for (const check of regressionChecks) {
+          if (targetPackets.includes(check.packet)) continue;
+          if (budget.remaining("repair") <= 0) { regressed = true; break; }
+          const policy = { refineLocators: false };
+          const recheck = await checkGuard(check.packet, check.plan, policy);
+          if (recheck.status === "failed" || recheck.repairableProbeFailure) { regressed = true; break; }
+          if (recheck.status !== "verified" && criticalGuard(check.packet, check.plan)) {
+            pendingCriticalGuards.push({ packet: check.packet, plan: check.plan, policy });
+          }
+          const previous = results.get(check.packet.id)!;
+          if (recheck.plan) rechecked.set(check.packet.id, { ...previous, ...recheck,
+            plan: mergeCheckedPlan(previous.plan!, recheck.plan, check.packet) });
         }
         const reAudit = new Map<string, AuditResult>();
         if (!regressed) {
@@ -508,22 +592,32 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           for (const packet of failures) {
             const cachedPlan = results.get(packet.id)?.plan ?? await planCache.read(packet);
             const r = budget.remaining("repair") <= 0
-              ? { status: "inconclusive" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
+              ? { status: "inconclusive" as const, failureKind: "budget" as const, plan: cachedPlan, reason: "module boundary repair budget exhausted" }
               : await auditPacket(packet, cachedPlan, options, deps, state, () => budget.remaining("repair"), recoveryAuditPolicy);
             reAudit.set(packet.id, r);
             const progress = repairCaseProgress(results.get(packet.id)!, r);
             if (progress.passed.length && r.status !== "verified") {
               const confirmation = await auditPacket(packet, { ...r.plan!,
                 cases: r.plan!.cases.filter(item => progress.passed.includes(item.id)) },
-              options, deps, state, () => budget.remaining("repair"), { refineLocators: false });
+              options, deps, state, () => budget.remaining("repair"), { refineLocators: false, checkCoverage: false });
               if (confirmation.status !== "verified") { progressUnconfirmed = true; break; }
             }
             improvedCases += progress.passed.length;
             resolvedGaps += progress.resolvedGaps.length;
           }
         }
+        let criticalUnconfirmed = false;
+        if (!regressed) for (const guard of pendingCriticalGuards) {
+          const checked = await checkGuard(guard.packet, guard.plan, guard.policy);
+          if (checked.status === "failed" || checked.repairableProbeFailure) { regressed = true; break; }
+          if (checked.status !== "verified") { criticalUnconfirmed = true; continue; }
+          const previous = results.get(guard.packet.id)!;
+          if (previous.status === "verified") rechecked.set(guard.packet.id, { ...checked,
+            plan: mergeCheckedPlan(previous.plan!, checked.plan!, guard.packet) });
+        }
         const improved = failures.some(item => reAudit.get(item.id)?.status === "verified") || improvedCases > 0 || resolvedGaps > 0;
         if (regressed) reason = "previously verified behavior was lost or could not be reverified";
+        else if (criticalUnconfirmed) reason = "critical shared identity or prerequisite guard could not be reverified";
         else if (progressUnconfirmed) reason = "newly passed repair cases could not be reverified";
         else if (!improved) reason = "repair produced no independently verified improvement";
         else {
@@ -534,9 +628,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             const previousPlan = results.get(id)?.plan;
             if (recheck.plan && (!previousPlan || probePlanSha256(recheck.plan) !== probePlanSha256(previousPlan))) {
               await planCache.write(id, recheck.plan).catch(() => {});
-              nextResults = new Map(nextResults);
-              nextResults.set(id, recheck);
             }
+            nextResults = new Map(nextResults);
+            nextResults.set(id, recheck);
           }
           for (const [id, r] of reAudit) {
             nextResults = new Map(nextResults);
@@ -628,13 +722,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
     const implementationQueue = [...featureGrouping.packets];
-    // "recovery" atoms follow an unfinished attempt and get one bounded call;
-    // "dependency" atoms have not run yet and keep the first-attempt window and continuation.
+    // A split-out atom is a first implementation of its own requirement: the
+    // unfinished package it came from never delivered it, so the atom keeps the
+    // first-attempt window plus one bounded continuation. Only "dependency"
+    // atoms additionally follow their declared order, which the queue already
+    // preserves, so both kinds share the same attempt budget.
     const splitPacket = async (packet: WorkPacket, index: number, reason: string,
       kind: "recovery" | "dependency"): Promise<boolean> => {
       if (packet.requirements.length < 2 || budget.remaining("implementation") <= 0 || gateway.exhausted) return false;
       const recovery = packet.requirements.map((requirement, i) => kind === "recovery"
-        ? makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 3)
+        ? makePacket(`${packet.id}-recovery-${i + 1}`, [requirement], 2)
         : makePacket(`${packet.id}-split-${i + 1}`, [requirement]));
       implementationQueue.splice(index + 1, 0, ...recovery);
       await state.record({ at: now(), type: "implementation_split", packetId: packet.id,
@@ -724,8 +821,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (needsImplementationRetry(result)) {
         mayContinue = false;
         await preserveInterruptedWork(packet);
+        // A compaction reason is a historical marker, not a cause. Only an
+        // overflow compaction followed by no further tool call shows the
+        // context window ended the call; anything else is clock-bound and
+        // still deserves the whole-package continuation.
         const firstAttemptOverflow = packet.attempt !== 3 && result.outcome === "timed_out" &&
-          result.execution?.termination?.compactionReason === "overflow";
+          result.execution?.termination?.compactionReason === "overflow" &&
+          result.execution.termination.progressedAfterOverflowCompaction === false;
         if (firstAttemptOverflow && await splitPacket(packet, packetIndex,
           "First implementation attempt exhausted the context window", "recovery")) continue;
         const retryTimeoutMs = packet.attempt === 3 ? 0 : budget.callTimeout("implementation", IMPLEMENTATION_RETRY_CEILING_MS);
@@ -875,9 +977,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const statuses = state.snapshot.statusByRequirementId;
     const ids = (status: typeof statuses[string]) => catalog.requirements.filter(item => statuses[item.id] === status).map(item => item.id);
     const verifiedRequirementIds = ids("verified");
+    const missingPlanRequirementIds = packets.filter(packet => packet.requirementIds.every(id => implemented.has(id)) && !results.get(packet.id)?.plan)
+      .flatMap(packet => packet.requirementIds);
+    const inconclusiveByKind: Partial<Record<InconclusiveKind, string[]>> = {};
+    for (const packet of packets) {
+      const result = results.get(packet.id);
+      if (result?.status !== "inconclusive") continue;
+      (inconclusiveByKind[result.failureKind ?? "unreproduced"] ??= []).push(...packet.requirementIds);
+    }
     const summary: RunSummary = { status: !finalReport.ok ? "failed" : verifiedRequirementIds.length === catalog.requirements.length ? "delivered" : "partial",
       acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented], verifiedRequirementIds,
-      blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive"), pendingRequirementIds: ids("todo") };
+      blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive"), pendingRequirementIds: ids("todo"),
+      missingPlanRequirementIds, inconclusiveByKind };
     await state.record({ at: now(), type: "pipeline_finished", detail: { ...summary, pendingRequirementIds: ids("todo"), memory: await memorySnapshot() } });
     await emitFolderRollup();
     await emitArc(deps, state, arc => arc.runnerState(finalReport.ok ? "completed" : "failed", `summary ${summary.status}`));
@@ -989,5 +1100,12 @@ async function runFinalVerifier(
   }
 }
 
+
+/** A successful sampled check may recover locators, but cannot replace untested cases. */
+function mergeCheckedPlan(original: ProbePlan, checked: ProbePlan, packet: WorkPacket): ProbePlan {
+  const cases = new Map(checked.cases.map(item => [item.id, item]));
+  return parseProbePlan({ ...original, ...(checked.navigationRecovered ? { navigationRecovered: true } : {}),
+    cases: original.cases.map(item => cases.get(item.id) ?? item) }, packet);
+}
 
 function now(): string { return new Date().toISOString(); }

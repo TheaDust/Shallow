@@ -9,6 +9,39 @@ import { GitCliOps } from "../src/git-ops.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import { withModulePipeline, testPlan, fail, pass } from "./helpers/module-pipeline.js";
 
+test("Final auditing replans a missing packet after its boundary gateway window expires", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    let attempts = 0;
+    let boundaryUnknown = false;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") {
+        attempts++;
+        if (attempts <= 2) throw new ProbePlannerError("schema", "invalid initial plan", { cause: new Error("missing result") });
+        if (attempts === 3) {
+          elapsed += 720_000;
+          throw new ProbePlannerError("transport", "headers timeout");
+        }
+      }
+      return testPlan(packet);
+    };
+    f.deps.logSink = { write: line => {
+      const event = JSON.parse(line);
+      if (event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "FIRST") {
+        boundaryUnknown = event.detail.results["packet-a"] === "inconclusive";
+      }
+    } };
+    const summary = await f.run();
+    assert.equal(boundaryUnknown, true);
+    assert.equal(attempts, 4);
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(summary.missingPlanRequirementIds, []);
+  });
+});
+
 test("Zero-tool 429 retries the same feature group before advancing implementation", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;

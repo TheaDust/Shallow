@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PipelineDeps, PipelineOptions, AppLifecycle } from "../pipeline.js";
-import type { WorkPacket, ShadowReport } from "../types.js";
+import type { WorkPacket, ShadowReport, InconclusiveKind } from "../types.js";
+import { probeCoverageGaps, type UncoveredOutcome } from "./probe-coverage.js";
 import type { RunStateStore } from "../run-state.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { GatewayRequestError } from "../gateway-failure.js";
@@ -17,6 +18,9 @@ export interface AuditResult {
   reason?: string;
   /** Reviewed, reproduced preparation/control gap; diagnostic repair, not a failed verdict. */
   repairableProbeFailure?: boolean;
+  failureKind?: InconclusiveKind;
+  coverageGaps?: UncoveredOutcome[];
+  navigationRecovered?: boolean;
 }
 
 export interface AuditPolicy {
@@ -30,6 +34,8 @@ export interface AuditPolicy {
   retryPlan?: boolean;
   /** Shared across audits so an identical failed page does not ask the model again. */
   noProgressRefinements?: Set<string>;
+  /** A sampled guard proves only the selected paths, not the full scenario set. */
+  checkCoverage?: boolean;
 }
 
 const DEFAULT_AUDIT_POLICY: AuditPolicy = { refineLocators: true };
@@ -39,11 +45,30 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
   options: PipelineOptions, deps: PipelineDeps, state: RunStateStore, remaining: () => number,
   policy: AuditPolicy = DEFAULT_AUDIT_POLICY,
 ): Promise<AuditResult> {
+  const result = await performAudit(packet, cached, options, deps, state, remaining, policy);
+  if (result.plan?.navigationRecovered) result.navigationRecovered = true;
+  if (result.status === "verified" && result.plan && policy.checkCoverage !== false) {
+    const gaps = probeCoverageGaps(result.plan, packet.requirements);
+    if (gaps.length) return { ...result, status: "inconclusive", failureKind: "coverage", coverageGaps: gaps,
+      reason: `${gaps.length} scenario outcomes lack verified assertion coverage` };
+  }
+  if (result.status === "inconclusive" && !result.failureKind) {
+    result.failureKind = result.report?.failures.some(item => item.category === "precondition") ? "preparation"
+      : result.report?.failures.some(item => item.category === "locator") ? "locator"
+      : result.report?.failures.some(item => item.category === "runner") ? "execution" : "unreproduced";
+  }
+  return result;
+}
+
+async function performAudit(packet: WorkPacket, cached: ProbePlan | undefined,
+  options: PipelineOptions, deps: PipelineDeps, state: RunStateStore, remaining: () => number,
+  policy: AuditPolicy,
+): Promise<AuditResult> {
   let plan = cached;
   try {
-    if (remaining() <= 0) return { status: "inconclusive", plan, reason: "audit budget exhausted" };
+    if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, reason: "audit budget exhausted" };
     plan ??= await planProbe(packet, options, deps, state, remaining, policy.retryPlan !== false);
-    if (!plan) return { status: "inconclusive", reason: "probe planner failed" };
+    if (!plan) return { status: "inconclusive", failureKind: "planning", reason: "probe planner failed" };
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
     let first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
@@ -59,13 +84,13 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     if (policy.refineLocators && first.report.verdict !== "pass" && first.source === "probe" &&
       first.report.failures.some(item => item.category !== "runner") && !reviewed && reviewAttempts > 0 && remaining() > 0) {
       if (policy.noProgressRefinements?.has(`review:unavailable:${reviewKey}`)) {
-        return { status: "inconclusive", plan, report: first.report, reason: "Identical plan review previously could not establish valid evidence" };
+        return { status: "inconclusive", failureKind: "review", plan, report: first.report, reason: "Identical plan review previously could not establish valid evidence" };
       }
       const review = await reviewBehaviorFailures(packet, plan, first.report, deps, state, remaining, reviewAttempts,
         reviewUsesRecoveryQuota ? recovery : undefined);
       if (review.status === "unavailable") {
-        policy.noProgressRefinements?.add(`review:unavailable:${reviewKey}`);
-        return { status: "inconclusive", plan, report: first.report, reason: review.reason };
+        if (review.failureKind !== "gateway") policy.noProgressRefinements?.add(`review:unavailable:${reviewKey}`);
+        return { status: "inconclusive", failureKind: review.failureKind ?? "review", plan, report: first.report, reason: review.reason };
       }
       reviewed = true;
       if (review.status === "sound") policy.noProgressRefinements?.add(`review:sound:${reviewKey}`);
@@ -77,7 +102,7 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
     }
     if (first.report.verdict === "pass") {
       if (!first.navigationRecovered) return { status: "verified", plan, report: first.report };
-      if (remaining() <= 0) return { status: "inconclusive", plan, report: first.report, reason: "navigation recovery confirmation budget exhausted" };
+      if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, report: first.report, reason: "navigation recovery confirmation budget exhausted" };
       const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
       return confirmed.report.verdict === "pass"
         ? { status: "verified", plan, report: confirmed.report }
@@ -89,7 +114,7 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
       (policy.refineLocators && businessFailures.length > 0 && !reviewed)) {
       return { status: "inconclusive", plan, report: first.report, reason: "Judge could not establish valid behavior evidence" };
     }
-    if (remaining() <= 0) return { status: "inconclusive", plan, reason: "failure confirmation budget exhausted" };
+    if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, reason: "failure confirmation budget exhausted" };
     // Fresh application state: failed actions may have changed server-side data.
     const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
     plan = confirmed.plan;
@@ -110,12 +135,12 @@ export async function auditPacket(packet: WorkPacket, cached: ProbePlan | undefi
         : { reason: "failure was not reproducible" }) };
   } catch (error) {
     if (error instanceof GatewayRequestError) {
-      return { status: "inconclusive", plan, reason: "gateway recovery window exhausted" };
+      return { status: "inconclusive", failureKind: "gateway", plan, reason: "gateway recovery window exhausted" };
     }
     // Judge faults do not edit or discard the buildable application checkpoint.
     await state.record({ at: now(), type: "execution_fault", packetId: packet.id,
       detail: { source: "judge", message: errorMessage(error), retry: false } });
-    return { status: "inconclusive", plan, reason: errorMessage(error) };
+    return { status: "inconclusive", failureKind: error instanceof ProbePlannerError ? "planning" : "execution", plan, reason: errorMessage(error) };
   }
 }
 
@@ -132,7 +157,7 @@ const DEFAULT_SEMANTIC_REVIEW_ATTEMPTS = 2;
 type SemanticReviewOutcome =
   | { status: "sound" }
   | { status: "corrected"; plan: ProbePlan }
-  | { status: "unavailable"; reason: string };
+  | { status: "unavailable"; reason: string; failureKind?: "gateway" };
 
 async function reviewBehaviorFailures(
   packet: WorkPacket,
@@ -219,7 +244,7 @@ async function reviewBehaviorFailures(
       const detail = plannerFailureDetail(error);
       await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
         detail: { ...detail, planSha256: beforePlanSha256 } });
-      if (error instanceof GatewayRequestError) return { status: "unavailable", reason: "gateway recovery window exhausted" };
+      if (error instanceof GatewayRequestError) return { status: "unavailable", failureKind: "gateway", reason: "gateway recovery window exhausted" };
       feedback = error instanceof ProbePlannerError
         ? { validationError: String(detail.validationError ?? detail.message),
             ...(typeof detail.contentPreview === "string" ? { contentPreview: detail.contentPreview } : {}) }
@@ -394,10 +419,11 @@ async function runShadowProbes(
         searched.failures.some(failure => {
           const previous = previousReport.failures.find(item => item.caseId === failure.caseId);
           const step = beforePlan.cases.find(item => item.id === failure.caseId)?.steps[previous?.stepIndex ?? -1];
-          if (step?.op !== "click" || step.locator.by !== "role" || step.locator.role !== "link") return false;
+          if (!step || (step.op !== "click" && step.op !== "expectVisible") ||
+            step.locator.by !== "role" || step.locator.role !== "link") return false;
           const targetName = step.locator.name;
           const targetIndex = currentPlan.cases.find(item => item.id === failure.caseId)?.steps.findIndex(item =>
-            item.op === "click" && item.locator.by === "role" && item.locator.name === targetName) ?? -1;
+            item.op === step.op && item.locator.by === "role" && item.locator.name === targetName) ?? -1;
           return targetIndex >= 0 && failure.stepIndex > targetIndex;
         });
       await state.record({ at: now(), type: "probe_navigation_attempted", packetId: packet.id,
@@ -517,6 +543,7 @@ async function planProbe(
       detail: plannerFailureDetail(error),
     });
     if (error instanceof ProbePlannerError && error.fatal) throw error;
+    if (error instanceof GatewayRequestError) throw error;
     return undefined;
   }
 }

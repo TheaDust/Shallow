@@ -1,4 +1,4 @@
-部分题目的官方验收测试把目标地址硬编码为 {{EXTRA_PORTS}}，而评测环境只设置 PORT。后端必须满足：
+部分题目的官方验收测试把目标端口硬编码为 {{EXTRA_PORTS}}（目标地址形如 `http://127.0.0.1:<端口>`），而评测环境只设置 PORT。后端必须满足：
 
 - 在监听 PORT 的同时额外监听这些端口，两个端口服务同一个应用。
 - 为每个端口各建一个独立的 `http.createServer(handler)` 实例；同一个 Server 只能 `listen()` 一次，对同一实例再次 `listen()` 会抛 `ERR_SERVER_ALREADY_LISTEN` 并让进程退出。

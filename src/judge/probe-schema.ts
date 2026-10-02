@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Page } from "@playwright/test";
 import type { AtomicRequirement, ProbeFailure, WorkPacket } from "../types.js";
+import { validateOutcomeChecks, type OutcomeCheck, type UncoveredOutcome } from "./probe-coverage.js";
+import { validateHeadingContract } from "./heading-contract.js";
 
 export type ProbeScope =
   | { by: "role"; role: string; name?: string; exact?: boolean; hasText?: string }
@@ -65,15 +67,25 @@ export interface ProbeCase {
   /** Prefix ending in an assertion that establishes the scenario's initial state. */
   setupStepCount?: number;
   steps: ProbeStep[];
+  outcomeChecks?: OutcomeCheck[];
 }
 
 export interface ProbePlan {
   packetId: string;
   cases: ProbeCase[];
+  uncoveredOutcomes?: UncoveredOutcome[];
+  /** Controller evidence, persisted with the recovered plan. */
+  navigationRecovered?: boolean;
 }
 
-const MAX_CASES = 6;
-const MAX_STEPS = 30;
+const MAX_CASES = 12;
+const MAX_SETUP_STEPS = 15;
+const MAX_BUSINESS_STEPS = 30;
+const MAX_STEPS = MAX_SETUP_STEPS + MAX_BUSINESS_STEPS;
+export const PROBE_LIMITS = { cases: MAX_CASES, setupSteps: MAX_SETUP_STEPS, businessSteps: MAX_BUSINESS_STEPS, totalSteps: MAX_STEPS };
+export function probeCaseLimit(requirements: readonly AtomicRequirement[] = []): number {
+  return Math.min(MAX_CASES, Math.max(6, requirements.reduce((count, item) => count + (item.scenarioContracts?.length ?? 0), 0)));
+}
 const MAX_STRING = 2_000;
 const MAX_FALLBACKS = 3;
 const MAX_TEXT_ALTERNATIVES = 4;
@@ -186,20 +198,23 @@ const STEP_SCHEMA = {
   ],
 };
 
+const OUTCOME_REF_SCHEMA = { scenarioId: NONEMPTY_STRING_SCHEMA, stepIndex: { type: "integer", minimum: 0 } };
+
 export const PROBE_PLAN_BODY = {
   type: "object",
   additionalProperties: false,
-  required: ["packetId", "cases"],
+  required: ["packetId", "uncoveredOutcomes", "cases"],
   properties: {
     packetId: { type: "string" },
+    uncoveredOutcomes: { type: "array", maxItems: 200, items: objectSchema({ ...OUTCOME_REF_SCHEMA, reason: NONEMPTY_STRING_SCHEMA }) },
     cases: {
       type: "array",
       minItems: 1,
-      maxItems: 6,
+      maxItems: MAX_CASES,
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "requirementIds", "purpose", "setupStepCount", "expectationBasis", "assertion", "steps"],
+        required: ["id", "requirementIds", "purpose", "setupStepCount", "expectationBasis", "outcomeChecks", "assertion", "steps"],
         properties: {
           id: { type: "string" },
           requirementIds: { type: "array", minItems: 1, items: { type: "string" } },
@@ -207,7 +222,7 @@ export const PROBE_PLAN_BODY = {
             type: "string",
             enum: ["happy_path", "persistence", "negative", "permission"],
           },
-          setupStepCount: { type: ["integer", "null"], minimum: 0, maximum: MAX_STEPS - 1,
+          setupStepCount: { type: ["integer", "null"], minimum: 0, maximum: MAX_SETUP_STEPS,
             description: "Number of initial preparation steps, including a final initial-state assertion. Preparation failures are inconclusive; do not include the behavior being tested or its result assertion." },
           expectationBasis: {
             type: "array",
@@ -217,6 +232,10 @@ export const PROBE_PLAN_BODY = {
               "1-3 verbatim quotes copied from the requirement evidence (ROOT product description, requirement text, scenarios, ancestor descriptions, exactUiStrings, seed items, or prerequisites) that justify this case's expected outcome. Quotes are validated as literal substrings.",
             items: NONEMPTY_STRING_SCHEMA,
           },
+          outcomeChecks: { type: "array", maxItems: 200, items: objectSchema({ ...OUTCOME_REF_SCHEMA,
+            assertionIndexes: { type: "array", minItems: 1, maxItems: MAX_BUSINESS_STEPS,
+              items: { type: "integer", minimum: 0, maximum: MAX_BUSINESS_STEPS - 1 } } }),
+            description: "Map each source THEN/AND result to zero-based assertion positions in this case's tested suffix, after setupStepCount. Multiple assertions may check one result clause." },
           assertion: { anyOf: STEP_SCHEMA.anyOf.filter(schema => {
             const op = schema.properties.op as { enum: string[] };
             return op.enum[0].startsWith("expect");
@@ -296,15 +315,16 @@ export function parseProbePlan(
   const plan = received.id === received.packetId && typeof received.packetId === "string"
     ? Object.fromEntries(Object.entries(received).filter(([key]) => key !== "id"))
     : received;
-  keys(plan, ["packetId", "cases"], "ProbePlan");
+  keys(plan, ["packetId", "cases", "uncoveredOutcomes", "navigationRecovered"], "ProbePlan");
   const packetId = text(plan.packetId, "ProbePlan.packetId");
   if (packet && packetId !== packet.id) {
     throw new Error(`ProbePlan packetId ${packetId} does not match ${packet.id}`);
   }
   const caseValues = array(plan.cases, "ProbePlan.cases");
   if (caseValues.length === 0) throw new Error("ProbePlan requires at least one case");
-  if (caseValues.length > MAX_CASES) {
-    throw new Error(`ProbePlan allows at most ${MAX_CASES} cases`);
+  const caseLimit = packet?.requirements ? probeCaseLimit(packet.requirements) : MAX_CASES;
+  if (caseValues.length > caseLimit) {
+    throw new Error(`ProbePlan allows at most ${caseLimit} cases`);
   }
   const seen = new Set<string>();
   const cases = caseValues.map((candidate, index) => {
@@ -323,6 +343,8 @@ export function parseProbePlan(
       const scoped = packet.requirements.filter(item => probeCase.requirementIds.includes(item.id));
       const evidence = [...scoped, ...(packet.prerequisites ?? [])];
       validateScenarioActions(probeCase, evidence);
+      validateOutcomeChecks(probeCase, scoped);
+      validateHeadingContract(probeCase, scoped);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         if (step.op === "goto" && step.path !== "/") {
@@ -353,12 +375,27 @@ export function parseProbePlan(
         `ProbePlan case ${probeCase.id}.expectationBasis`);
     }
   }
-  return { packetId, cases };
+  const uncoveredOutcomes = plan.uncoveredOutcomes == null ? undefined : array(plan.uncoveredOutcomes, "ProbePlan.uncoveredOutcomes")
+    .map((value, index) => {
+      const location = `ProbePlan.uncoveredOutcomes[${index}]`;
+      const item = record(value, location);
+      keys(item, ["scenarioId", "stepIndex", "reason"], location);
+      return { scenarioId: text(item.scenarioId, location), stepIndex: nonnegativeInteger(item.stepIndex, location), reason: text(item.reason, location) };
+    });
+  if (uncoveredOutcomes && uncoveredOutcomes.length > 200) throw new Error("ProbePlan has too many uncovered outcomes");
+  return { packetId, cases, ...(uncoveredOutcomes ? { uncoveredOutcomes } : {}),
+    ...(plan.navigationRecovered == null ? {} : { navigationRecovered: boolean(plan.navigationRecovered, "ProbePlan.navigationRecovered") }) };
+}
+
+function nonnegativeInteger(value: unknown, location: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`${location} must be a nonnegative integer`);
+  return value as number;
 }
 
 /** Wire cases require a final assertion; internal execution keeps a single ordered step list. */
 export function toWireProbePlan(plan: ProbePlan): unknown {
-  return { ...plan, cases: plan.cases.map(item => {
+  const { navigationRecovered: _navigationRecovered, ...wire } = plan;
+  return { ...wire, cases: plan.cases.map(item => {
     const last = item.steps.at(-1);
     if (!last?.op.startsWith("expect")) throw new Error("Wire cases must end in an assertion");
     return { ...item, setupStepCount: item.setupStepCount ?? null, steps: item.steps.slice(0, -1), assertion: last };
@@ -391,6 +428,8 @@ export function assertLocatorOnlyRefinement(
     throw new Error("Refinement may change only locator fields");
   }
 
+  if (JSON.stringify(original.uncoveredOutcomes) !== JSON.stringify(refined.uncoveredOutcomes) ||
+    original.navigationRecovered !== refined.navigationRecovered) throw new Error("Refinement may change only locator fields");
   for (let caseIndex = 0; caseIndex < original.cases.length; caseIndex += 1) {
     const beforeCase = original.cases[caseIndex];
     const afterCase = refined.cases[caseIndex];
@@ -400,6 +439,7 @@ export function assertLocatorOnlyRefinement(
       beforeCase.setupStepCount !== afterCase.setupStepCount ||
       JSON.stringify(beforeCase.requirementIds) !== JSON.stringify(afterCase.requirementIds) ||
       JSON.stringify(beforeCase.expectationBasis) !== JSON.stringify(afterCase.expectationBasis) ||
+      JSON.stringify(beforeCase.outcomeChecks) !== JSON.stringify(afterCase.outcomeChecks) ||
       beforeCase.steps.length !== afterCase.steps.length
     ) {
       throw new Error("Refinement may change only locator fields");
@@ -416,20 +456,18 @@ export function assertLocatorOnlyRefinement(
         throw new Error("Refinement may change only locator fields");
       }
       if ("locator" in before && "locator" in after && JSON.stringify(before.locator) !== JSON.stringify(after.locator)) {
-        if (packet) {
-          const anchors = groundedLocatorNames(before.locator, packet);
-          if (anchors.length && locatorCandidates(after.locator).some(candidate => {
-            const name = candidate.by === "role" ? candidate.name : candidate.text;
-            return !name || !anchors.some(anchor => containsTargetName(name, anchor));
-          })) {
-            throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
-          }
-          if (anchors.length && before.locator.exact === true &&
-            !locatorCandidates(after.locator).some(candidate => candidate.exact === true)) {
-            throw new Error("Refinement must keep exact matching for requirement-declared names; a grader anchors on the exact name");
-          }
+        const anchors = packet ? groundedLocatorNames(before.locator, packet) : [];
+        if (anchors.length && locatorCandidates(after.locator).some(candidate => {
+          const name = candidate.by === "role" ? candidate.name : candidate.text;
+          return !name || !anchors.some(anchor => containsTargetName(name, anchor));
+        })) {
+          throw new Error("Refinement must preserve the requirement-grounded target name; an unrelated visible element is not a replacement");
         }
         assertRefinementKeepsStrength(before.locator, after.locator);
+        if (anchors.length && before.locator.exact === true &&
+          locatorCandidates(after.locator).some(candidate => candidate.exact !== true)) {
+          throw new Error("Refinement must keep exact matching for requirement-declared names; a grader anchors on the exact name");
+        }
       }
     }
   }
@@ -482,7 +520,8 @@ function normalizeName(value: string): string {
 }
 
 function containsTargetName(value: string, anchor: string): boolean {
-  const escaped = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Normalize the anchor here too: callers may pass requirement text in original casing.
+  const escaped = normalizeName(anchor).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // "Publish item" still names the action; "Unpublish" does not.
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(normalizeName(value));
 }
@@ -538,6 +577,7 @@ export function requirementEvidenceTexts(
     item.product.description,
     item.text,
     ...item.scenarios,
+    ...(item.scenarioContracts ?? []).flatMap(scenario => [scenario.name, ...scenario.steps.map(step => step.content)]),
     ...item.ancestors.map(ancestor => ancestor.description),
     ...item.exactUiStrings,
     ...item.product.seedData.flatMap(category => category.items),
@@ -561,7 +601,7 @@ function parseCase(
 ): ProbeCase {
   const location = `ProbePlan.cases[${index}]`;
   const candidate = record(value, location);
-  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion", "expectationBasis", "setupStepCount"], location);
+  keys(candidate, ["id", "requirementIds", "purpose", "steps", "assertion", "expectationBasis", "setupStepCount", "outcomeChecks"], location);
   const id = text(candidate.id, `${location}.id`);
   const requirementIds = array(candidate.requirementIds, `${location}.requirementIds`).map(
     (item, requirementIndex) =>
@@ -602,6 +642,9 @@ function parseCase(
   if (stepValues.length > MAX_STEPS) {
     throw new Error(`${location} allows at most ${MAX_STEPS} steps`);
   }
+  if (stepValues.length - Number(candidate.setupStepCount ?? 0) > MAX_BUSINESS_STEPS) {
+    throw new Error(`${location} allows at most ${MAX_BUSINESS_STEPS} steps after preparation`);
+  }
   const steps = stepValues.map((step, stepIndex) =>
     parseStep(step, `${location}.steps[${stepIndex}]`),
   );
@@ -618,7 +661,22 @@ function parseCase(
   if (!steps.slice(setupStepCount as number).some(step => step.op.startsWith("expect"))) {
     throw new Error(`${location} requires a result assertion after preparation`);
   }
+  if ((setupStepCount as number) > MAX_SETUP_STEPS) throw new Error(`${location} allows at most ${MAX_SETUP_STEPS} preparation steps`);
+  if (steps.length - (setupStepCount as number) > MAX_BUSINESS_STEPS) throw new Error(`${location} allows at most ${MAX_BUSINESS_STEPS} steps after preparation`);
+  const outcomeChecks = candidate.outcomeChecks == null ? undefined : array(candidate.outcomeChecks, `${location}.outcomeChecks`).map((value, index) => {
+    const position = `${location}.outcomeChecks[${index}]`;
+    const item = record(value, position);
+    keys(item, ["scenarioId", "stepIndex", "assertionIndexes"], position);
+    return { scenarioId: text(item.scenarioId, position), stepIndex: nonnegativeInteger(item.stepIndex, position),
+      assertionIndexes: array(item.assertionIndexes, position).map(value => nonnegativeInteger(value, position)) };
+  });
+  if (outcomeChecks && outcomeChecks.length > 200) throw new Error(`${location} has too many outcome checks`);
+  if (outcomeChecks?.some(item => !item.assertionIndexes.length || item.assertionIndexes.length > MAX_BUSINESS_STEPS ||
+    item.assertionIndexes.some(index => !steps[index + (setupStepCount as number)]?.op.startsWith("expect")))) {
+    throw new Error(`${location}.outcomeChecks must reference result assertions after preparation`);
+  }
   return { id, requirementIds, purpose, expectationBasis, steps,
+    ...(outcomeChecks ? { outcomeChecks } : {}),
     ...(setupStepCount ? { setupStepCount: setupStepCount as number } : {}) };
 }
 

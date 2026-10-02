@@ -1,6 +1,7 @@
 import type { ProbeLocator, ProbePlan } from "./judge/probe-schema.js";
 
 export type RequirementStatus = "todo" | "verified" | "blocked" | "failed" | "inconclusive";
+export type InconclusiveKind = "planning" | "coverage" | "preparation" | "locator" | "execution" | "review" | "gateway" | "budget" | "unreproduced";
 
 export type ProductKind =
   | "repository_collaboration"
@@ -41,6 +42,8 @@ export interface AtomicRequirement {
   /** Dependencies supplied by an earlier stage and intentionally absent from this stage's tree. */
   externalDependencyIds?: string[];
   scenarios: string[];
+  /** Source scenario IDs and steps for outcome coverage; text remains available unchanged. */
+  scenarioContracts?: RequirementNode["scenarios"];
   references: string[];
   exactUiStrings: string[];
   /** Seed declarations with source wording from requirement evidence (ancestors included). */
@@ -137,7 +140,9 @@ interface RunEventDetails {
   checkpoint_saved: { requirementIds: string[]; reason: string; candidate?: CandidateEvidence };
   module_failed: { requirementIds: string[]; reason: string };
   module_rescued: { requirementIds: string[]; reason: string };
-  audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string };
+  audit_result: { requirementIds: string[]; status: "verified" | "failed" | "inconclusive"; reason?: string;
+    failureKind?: InconclusiveKind; navigationRecovered?: boolean; uncoveredOutcomes?: number };
+  repair_guard_checked: { requirementIds: string[]; status: "passed" | "regressed" | "unresolved"; critical: boolean; retried: boolean; failureKind?: InconclusiveKind };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string; improvedCases?: number; resolvedGaps?: number };
   repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
@@ -196,11 +201,13 @@ interface RunEventDetails {
   delivery_repair_restored: { round?: number };
   delivery_finished: { ok: boolean; stage: string; message: string };
   module_boundary_audit_finished: { moduleId: string; moduleName?: string; packetIds: string[];
+    regressionPacketIds?: string[];
     results: Record<string, "verified" | "failed" | "inconclusive"> };
   verification_started: { retryCount: number };
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];
-    blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string; memory?: Record<string, unknown> };
+    blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string; memory?: Record<string, unknown>;
+    missingPlanRequirementIds?: string[]; inconclusiveByKind?: Partial<Record<InconclusiveKind, string[]>> };
   pipeline_failed: DiagnosticDetail;
   arc_projection_failed: DiagnosticDetail;
   evidence_write_failed: Record<string, never>;

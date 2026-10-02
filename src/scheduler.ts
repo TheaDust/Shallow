@@ -136,7 +136,8 @@ export function featureGroupingFromIds(
       return requirement;
     });
     const modules = new Set(requirements.map(requirement => requirement.folderPath[1] ?? requirement.id));
-    if (modules.size > 1) throw new Error(`Feature group ${index + 1} crosses ROOT modules`);
+    if (modules.size > 1) throw new Error(`Feature group ${index + 1} crosses ROOT modules: `
+      + requirements.map(requirement => `${requirement.id}=${requirement.folderPath[1] ?? requirement.id}`).join(", "));
     const scenarios = requirements.reduce((total, requirement) => total + requirement.scenarios.length, 0);
     const chars = requirements.reduce((total, requirement) => total + requirementTextChars(requirement), 0);
     if (requirements.length > thresholds.maxRequirements || (requirements.length > 1 &&
