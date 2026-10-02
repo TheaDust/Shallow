@@ -1,0 +1,382 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172033;
+  background: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+.app-main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0 2rem 3rem;
+}
+
+.app-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.app-topbar__brand {
+  color: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app-topbar__session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-topbar__status {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 0.875rem;
+}
+
+.app-topbar__username {
+  font-weight: 600;
+}
+
+.page {
+  display: block;
+  padding-top: 2rem;
+}
+
+.page--narrow {
+  max-width: 28rem;
+}
+
+.page__lead {
+  max-width: 42rem;
+  color: var(--ui-muted);
+}
+
+.page__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.account-access {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.app-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.75rem;
+  background: var(--ui-surface-subtle);
+}
+
+.app-form__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.app-form__error,
+.app-form__hint,
+.app-form__status {
+  margin: 0;
+}
+
+.app-form__error {
+  color: var(--ui-danger);
+}
+
+.app-form__hint {
+  margin-top: 1.5rem;
+  color: var(--ui-muted);
+}
+
+.app-form__status {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.5rem;
+  background: var(--ui-surface-subtle);
+  font-weight: 600;
+}
+
+.ui-menu__item {
+  text-decoration: none;
+  color: inherit;
+}
+
+.ui-menu__item[data-tone="danger"] {
+  color: var(--ui-danger);
+}
+
+.settings-nav {
+  margin-top: 1.5rem;
+}
+
+.settings-nav__list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.75rem;
+  background: var(--ui-surface-subtle);
+  list-style: none;
+}
+
+.app-form__success {
+  margin: 0;
+  color: #1a7f37;
+}
+
+.app-field--checkbox {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.app-field--checkbox .ui-field__error {
+  grid-column: 1 / -1;
+}
+
+/* Organizations and repositories */
+
+.page-section {
+  margin-top: 2.5rem;
+}
+
+.organization-directory,
+.organization-list,
+.repository-list,
+.member-list,
+.team-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.organization-directory__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.organization-list__item {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.organization-list__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.organization-list__repositories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--ui-border);
+}
+
+.organization-list__repository-name {
+  color: var(--ui-accent);
+}
+
+.organization-list__name,
+.organization-directory__name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
+.organization-list__role,
+.member-list__role,
+.team-list__parent {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  color: var(--ui-muted);
+  font-size: 0.8125rem;
+}
+
+.org-overview__display-name {
+  margin: 0.25rem 0 0;
+  color: var(--ui-muted);
+}
+
+.org-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 1.5rem;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.org-tabs__entry {
+  padding: 0.65rem 0.8rem;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  text-decoration: none;
+}
+
+.org-tabs__entry[aria-current="page"] {
+  border-bottom-color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.org-repositories__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.org-repositories__filters .ui-field {
+  min-width: 14rem;
+}
+
+.repository-list__item {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.75rem;
+}
+
+.repository-list__name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
+.repository-list__description {
+  margin: 0.35rem 0 0;
+  color: var(--ui-muted);
+}
+
+.repository-list__meta,
+.repository-overview__meta {
+  margin: 0.5rem 0 0;
+  color: var(--ui-muted);
+  font-size: 0.875rem;
+}
+
+.repository-overview__description {
+  max-width: 42rem;
+  color: var(--ui-muted);
+}
+
+.repository-breadcrumb {
+  margin: 0 0 0.5rem;
+}
+
+/* Teams */
+
+.org-teams__empty,
+.team-members__empty {
+  margin: 1.5rem 0 0;
+  color: var(--ui-muted);
+}
+
+.team-list__item,
+.member-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.team-list__name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
+.team-members,
+.team-settings {
+  margin-top: 1.5rem;
+}
+
+.team-members .app-form,
+.team-settings .app-form {
+  margin-top: 0;
+}
+
+/* Repository access management */
+
+.repository-access {
+  margin-top: 1.5rem;
+}
+
+.access-table {
+  width: 100%;
+  margin-top: 1.5rem;
+  border-collapse: collapse;
+}
+
+.access-table th,
+.access-table td {
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--ui-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.access-table__row {
+  display: table-row;
+}
+
+.access-table__name {
+  font-weight: 600;
+}
+
+.access-table__role .ui-combobox {
+  min-width: 9rem;
+}
+
+.access-table__actions {
+  white-space: nowrap;
+}
+
+.access-table__actions > * + * {
+  margin-left: 0.75rem;
+}
+
+.access-picker__teams {
+  display: grid;
+  gap: 0.25rem;
+  max-height: 12rem;
+  margin: 0.25rem 0;
+  overflow-y: auto;
+}
+
+.access-picker__option {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--ui-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.access-picker__option[aria-selected="true"] {
+  border-color: var(--ui-accent);
+  font-weight: 600;
+}
+
+.access-picker__empty {
+  margin: 0;
+  color: var(--ui-muted);
+}

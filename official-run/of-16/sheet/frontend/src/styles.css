@@ -1,0 +1,455 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172033;
+  background: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+main.editor {
+  max-width: none;
+  padding: 1rem 1.5rem 2rem;
+}
+
+.home__header,
+.editor__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.home__header {
+  justify-content: space-between;
+}
+
+.home__header h1,
+.editor__header { margin-block: 0 1rem; }
+
+.home__error {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.workbook-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  list-style: none;
+}
+
+.workbook-list__item {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+}
+
+.workbook-list__link {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0b57d0;
+}
+
+.workbook-list__updated {
+  margin: 0.35rem 0 0;
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.editor__header {
+  flex-wrap: wrap;
+  border-bottom: 1px solid #d0d7de;
+  padding-bottom: 0.75rem;
+}
+
+.editor__home { margin: 0; }
+
+.editor__title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1 1 auto;
+}
+
+.editor__title h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.editor__updated {
+  margin: 0;
+  color: #57606a;
+  font-size: 0.9rem;
+}
+
+.editor__notice {
+  color: #b3261e;
+}
+
+.home__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+
+.csv-import {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.csv-import__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.csv-import__status {
+  margin: 0;
+  color: #57606a;
+}
+
+.rename-workbook {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.rename-workbook__actions,
+.creation__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.worksheet-tabbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.worksheet-tabs {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+}
+
+.worksheet-tabs__slot {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.worksheet-tabbar__add {
+  margin-bottom: 0.25rem;
+}
+
+.worksheet-tabs__tab {
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.worksheet-tabs__tab[aria-selected="true"] {
+  border-bottom-color: #0b57d0;
+  font-weight: 600;
+}
+
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.worksheet-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.worksheet-rename__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.formula-bar input {
+  flex: 1 1 auto;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.375rem;
+  font: inherit;
+}
+
+.worksheet-panel {
+  overflow: auto;
+  max-height: 65vh;
+  border: 1px solid #d0d7de;
+  border-radius: 0.375rem;
+}
+
+.worksheet-grid {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.875rem;
+}
+
+.worksheet-grid__row {
+  display: grid;
+}
+
+.worksheet-grid__corner,
+.worksheet-grid__column-header,
+.worksheet-grid__row-header,
+.worksheet-grid__cell {
+  padding: 0.25rem 0.4rem;
+  border-right: 1px solid #e4e8eb;
+  border-bottom: 1px solid #e4e8eb;
+  min-height: 1.6rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.worksheet-grid__column-header,
+.worksheet-grid__row-header {
+  background: #f6f8fa;
+  color: #57606a;
+  text-align: center;
+  font-weight: 600;
+  cursor: context-menu;
+  user-select: none;
+}
+
+.worksheet-grid__column-header:focus-visible,
+.worksheet-grid__row-header:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: -2px;
+}
+
+.worksheet-grid__cell[aria-selected="true"] {
+  background: #e8f0fe;
+}
+
+.worksheet-grid__cell {
+  user-select: none;
+  cursor: cell;
+  position: relative;
+}
+
+/* Filter and dropdown entry points live inside their cell; the caret is drawn by
+   CSS so the cell text (its accessible content) stays exactly the cell value. */
+.worksheet-grid__filter,
+.worksheet-grid__dropdown {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #57606a;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.worksheet-grid__filter::after,
+.worksheet-grid__dropdown::after {
+  content: "\25BE";
+  font-size: 0.7rem;
+}
+
+.worksheet-grid__filter[data-filter-active="true"] {
+  color: #0b57d0;
+}
+
+.worksheet-grid__filter:focus-visible,
+.worksheet-grid__dropdown:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: -2px;
+}
+
+.cell-options {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 8rem;
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.25rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.375rem;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(23, 32, 51, 0.18);
+  font-size: 0.875rem;
+}
+
+.cell-options__option {
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.cell-options__option[aria-selected="true"] {
+  background: #e8f0fe;
+  font-weight: 600;
+}
+
+.filter-dialog,
+.data-validation,
+.sort-range {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pivot-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-block: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  background: #f8fafc;
+}
+
+.pivot-editor__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pivot-editor__error,
+.create-pivot__error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #b3261e;
+}
+
+.create-pivot {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.create-pivot__source {
+  margin: 0;
+}
+
+.create-pivot__destination {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+}
+
+.create-pivot__destination label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sort-range__header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sort-range__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.sort-range__error {
+  margin: 0;
+  color: #b3261e;
+}
+
+.filter-dialog__values {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+
+.filter-dialog__list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.filter-dialog__value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.data-validation__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.data-validation__error {
+  margin: 0;
+  color: #b3261e;
+}
+
+.worksheet-grid__editor {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #0b57d0;
+  border-radius: 0.15rem;
+  padding: 0;
+  font: inherit;
+  background: #ffffff;
+}
+
+.paste-data {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.paste-data textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.375rem;
+}
+
+.worksheet-grid__cell:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: -2px;
+}
