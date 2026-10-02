@@ -420,8 +420,8 @@ test("Planner retries preserve scenario coverage and shorten model-length respon
     assert.doesNotMatch(instruction, /最多两个 case/);
     if (validationError === "Probe planner stream was cut off by the model") {
       assert.match(instruction, /等价条件合并重复路径/);
-      assert.match(instruction, /6 个 case、每 case 30 步/);
-      assert.match(instruction, /不得删减独立场景约束/);
+      assert.match(instruction, /planLimits/);
+      assert.match(instruction, /uncoveredOutcomes/);
     }
   }
 });

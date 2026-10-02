@@ -203,6 +203,7 @@ function collectAtomics(
       text: node.description,
       dependencyIds: [...node.dependencies],
       scenarios,
+      scenarioContracts: node.scenarios,
       references: [...new Set([node, ...ancestors].flatMap(item => [...extractReferences(item.description), ...(item.visual_reference ?? [])]))],
       exactUiStrings: extractUiStrings(evidenceText),
       seedDeclarations: extractSeedDeclarations(evidenceText),

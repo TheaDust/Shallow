@@ -2,15 +2,15 @@
 
 复选框和单选框需要确定选中状态时用 `setChecked`，字段为 locator 和布尔 checked；已经符合状态时保持不变。只有需求明确测试切换动作时才用 click，不假设初始为未选中。`expectAttribute` 的 aria-checked 按原生 checked/indeterminate 或 ARIA 状态验证，aria-selected 对原生 option 按 selected 状态验证；原生控件无需人为添加 ARIA 属性。原生和自定义控件都要核对实际状态，不能以可见性代替。
 
-当前场景的可变初始值须通过需求允许的可见输入、选择或批量操作建立，并在准备前缀末尾核对；互斥 GIVEN 不能假设全部是默认种子。准备只操作本 case 依赖的值，保留其他共享状态；声明已存在且彼此相容的共享种子仍须由应用提供。为准备留下步数，用需求允许的批量操作和简短导航压缩冗余，使准备与业务在 30 步内自足完成。
+当前场景的可变初始值须通过需求允许的可见输入、选择或批量操作建立，并在准备前缀末尾核对；互斥 GIVEN 不能假设全部是默认种子。准备只操作本 case 依赖的值，保留其他共享状态；声明已存在且彼此相容的共享种子仍须由应用提供。准备最多 15 步、业务与结果最多 30 步，每 case 合计最多 45 步；用需求允许的批量操作和简短导航压缩重复准备。
 
-只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。规划前逐场景核对核心结果、独立校验边界、权限、反向操作、持久化和跨视图联动，再用自足的 case 覆盖各场景的独立约束；仅覆盖需求 ID 不等于覆盖其场景。只有对象身份、初始条件、待测操作与预期实质等价时才合并重复路径，合并后保留各场景的独立约束，case 数量由覆盖决定。使用既有 DSL，在上限内压缩重复准备与冗余步骤，不以删除独立场景约束换取短计划，也不添加 schema 外的覆盖字段。硬上限仍为 6 个 case、每 case 30 步。示例：
+只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。规划前逐场景核对核心结果、独立校验边界、权限、反向操作、持久化和跨视图联动，再用自足的 case 覆盖各场景的独立约束；仅覆盖需求 ID 不等于覆盖其场景。只有对象身份、初始条件、待测操作与预期实质等价时才合并重复路径，合并后保留各场景的独立约束。case 数量由覆盖决定，上限以输入 planLimits 为准：通常 6 个，较多独立场景可增加至最多 12 个。准备与业务分列计数，遵守 planLimits；容量不足的独立结果在 uncoveredOutcomes 逐项说明。示例：
 
 ```json
-{"packetId":"<输入 packetId>","cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"persistence","setupStepCount":null,"expectationBasis":["<需求原文逐字声明保存值在刷新后保留>"],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name","exact":true},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save","exact":true}},{"op":"reload"}],"assertion":{"op":"expectValue","locator":{"by":"label","text":"Name","exact":true},"value":"Example"}}]}
+{"packetId":"<输入 packetId>","uncoveredOutcomes":[],"cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"persistence","setupStepCount":null,"expectationBasis":["<需求原文逐字声明保存值在刷新后保留>"],"outcomeChecks":[{"scenarioId":"<输入 scenarioId>","stepIndex":2,"assertionIndexes":[4]}],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name","exact":true},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save","exact":true}},{"op":"reload"}],"assertion":{"op":"expectValue","locator":{"by":"label","text":"Name","exact":true},"value":"Example"}}]}
 ```
 
-顶层只用 packetId、cases；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
+顶层使用 packetId、cases、uncoveredOutcomes；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。每个 case 的 outcomeChecks 将 scenarioContracts 中 THEN 及后续 AND/BUT 的原始 scenarioId、stepIndex 映射到 assertionIndexes：索引从准备结束后的业务后缀起按 0 计数，包含终末 assertion。每个结果子句的全部明示结果均须有实际断言；一个子句可引用多个断言，合并等价场景时保留各自映射。无法表达或容量不足的结果在 uncoveredOutcomes 给出 scenarioId、stepIndex、reason；空数组表示没有遗漏。映射只说明检查位置，语义和运行通过仍须成立。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
 
 ## 需求依据与状态
 
@@ -22,11 +22,13 @@ Seed data、Seed values、evaluation seed 与既有实体：把它们视为动�
 
 按需求声明的页面顺序进入对象：主页提供搜索或父级入口时，先经该入口到对象列表，再点击对象。对象身份包括归属和名称；同名条目用声明的 owner、组织或父对象限定 row/listitem/article scope，并核对目标身份。对象在页面内的位置不能仅凭“从首页开始”推断为首页直接存在该对象链接。
 
+对象显示名按声明原文核对，URL slug 与显示名分别处理。需求明确规定组合标题时，完整断言归属和对象名称，保留精确匹配；各 fallback 均须保持同一身份和强度。需求规定的入口属于验收目标，准备恢复后仍保留该入口及其结果断言；只有原文允许的准备路径可以调整。未明示的归属保持未确定，引用明确关系核对对象。
+
 ## 测试设计原则
 
 每个 case 按导航与初始状态准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖需求核心结果；场景明示的校验、唯一性、持久化或权限规则逐项覆盖，重复的成功路径按等价条件合并。边界 case 只用有依据的空值、超长输入、非法格式或重复值。终末 assertion 应检查目标操作的结果，不检查原本就存在的 main、菜单或按钮来充数；创建后找新对象，删除前确认存在、删除后确认消失，第一次操作后立即验证状态变化，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须断言已登录状态。需求逐项枚举的控件至少用一个 case 逐项检查；关键的逐字 UI 文案要逐字纳入 locator 或终末 assertion。
 
-需求或前置需求明确描述同一对象的连续操作、联动或权限变化时，优先把一条成功或持久化 case 写成短操作链：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 同时核对新结果与仍应保留的先前状态。沿用本 case 的应用数据，必要时 reload 或按原文切换账号；联动以中间断言和终末 assertion 验证。每份计划最多选择一条最有价值的连续链，用它替代重复的单步成功路径，遵守 6/30 硬上限并保留独立行为维度。链中的相关功能及保留/改变的状态须有当前需求或 prerequisites 原文依据；仅引用当前 requirements 的 ID。所选场景的连续操作和中间结果须完整还原，不能拆开 case 后借用其他 case 的状态。
+需求或前置需求明确描述同一对象的连续操作、联动或权限变化时，优先把一条成功或持久化 case 写成短操作链：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 同时核对新结果与仍应保留的先前状态。沿用本 case 的应用数据，必要时 reload 或按原文切换账号；联动以中间断言和终末 assertion 验证。每份计划最多选择一条最有价值的连续链，用它替代重复的单步成功路径，遵守 planLimits 的准备、业务与 case 上限并保留独立行为维度。链中的相关功能及保留/改变的状态须有当前需求或 prerequisites 原文依据；仅引用当前 requirements 的 ID。所选场景的连续操作和中间结果须完整还原，不能拆开 case 后借用其他 case 的状态。
 
 每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。newContext 只新建匿名浏览器会话，actor 字段仅作说明，不会自动登录；切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。等待异步目标出现，不把短暂加载判为缺失。
 

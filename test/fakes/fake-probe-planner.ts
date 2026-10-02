@@ -2,6 +2,7 @@ import type { ProbePlanner, ProbePlannerFeedback, ProbeRefinementOptions } from 
 import type { ProbePlan } from "../../src/judge/probe-schema.js";
 import type { PlanReview } from "../../src/judge/semantic-review.js";
 import type { ProbeFailure, WorkPacket } from "../../src/types.js";
+import { scenarioOutcomes } from "../../src/judge/probe-coverage.js";
 
 export class FakeProbePlanner implements ProbePlanner {
   readonly packets: WorkPacket[] = [];
@@ -16,7 +17,14 @@ export class FakeProbePlanner implements ProbePlanner {
     const plan = this.plans[this.planIndex] ?? this.plans.at(-1);
     this.planIndex += 1;
     if (!plan) throw new Error("FakeProbePlanner has no plan");
-    return structuredClone(plan);
+    const copy = structuredClone(plan);
+    for (const item of copy.cases) {
+      if (item.outcomeChecks) continue;
+      const outcomes = scenarioOutcomes(packet.requirements.filter(requirement => item.requirementIds.includes(requirement.id)));
+      if (outcomes.length) item.outcomeChecks = outcomes.map(outcome => ({ scenarioId: outcome.scenarioId, stepIndex: outcome.stepIndex,
+        assertionIndexes: [item.steps.length - (item.setupStepCount ?? 0) - 1] }));
+    }
+    return copy;
   }
 
   async refineLocators(original: ProbePlan, failures: ProbeFailure[], feedback?: ProbePlannerFeedback, options?: ProbeRefinementOptions): Promise<ProbePlan> {

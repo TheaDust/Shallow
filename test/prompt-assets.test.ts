@@ -210,7 +210,8 @@ test("judge probe prompt assets keep their contracts", () => {
   assert.match(planner, /终末 assertion 应检查目标操作的结果/);
   assert.match(planner, /case 数量由覆盖决定/);
   assert.doesNotMatch(planner, /4 个 case|20 步/);
-  assert.match(planner, /硬上限仍为 6 个 case、每 case 30 步/);
+  assert.match(planner, /通常 6 个.*最多 12 个/);
+  assert.match(planner, /准备最多 15 步、业务与结果最多 30 步/);
   assert.match(planner, /仅覆盖需求 ID 不等于覆盖其场景/);
   for (const prompt of [loadPrompt("system", "builder-system"), planner]) {
     assert.match(prompt, /对象身份、初始条件、待测操作与预期实质等价/);

@@ -21,7 +21,9 @@
 7. 需求要求禁用的控件是否应以 expectDisabled 验证，而非点击后等待超时；恢复可用时以 expectEnabled 验证。两种断言的目标及所有 fallback 使用交互 role 或 label，仍保留需求规定的可见性和记录状态断言。
 8. case 是否还原对应场景的 GIVEN、WHEN 和全部 THEN 中有依据且 DSL 可表达的结果；是否遗漏连续操作的中间结果、刷新或重开后的状态、失败后应保留的原状态。用需求描述与祖先合同消解抽象指代，不把重复模板当控件名；修正受影响 case 时保留原计划覆盖的场景独立约束，以需求原文纠正不成立的断言。
 
-逐 case 区分准备缺口、定位歧义和已执行的业务失败，依据各自的状态证据评估。准备与业务合计仍受每 case 30 步限制。需求允许批量编辑或粘贴时，通过该入口准备相关范围并核对初始状态；省去重复打开菜单、逐格准备等冗余，保持目标操作和结果覆盖。
+核对 outcomeChecks 指向的每条断言是否实际验证对应结果子句的全部明示结果，映射存在不等于语义成立。修正 case 保留原有场景结果引用；准备纠正保留业务后缀及相对该后缀的 assertionIndexes。完整标题按需求模板检查归属和显示名，保留精确匹配与需求明确指定的入口。
+
+逐 case 区分准备缺口、定位歧义和已执行的业务失败，依据各自的状态证据评估。准备最多 15 步、业务与结果最多 30 步，合计最多 45 步。需求允许批量编辑或粘贴时，通过该入口准备相关范围并核对初始状态；省去重复打开菜单、逐格准备等冗余，保持目标操作和结果覆盖。
 
 Seed/GIVEN 声明描述应有状态，不是该状态已在本次运行中成立的证据。输入的 preparationCheckpointPassed 和 passedAssertionsBeforeFailure 是已执行断言的记录；核对它们是否确认当前 case 依赖的值、对象身份及权限。仅 grid/main 可见只证明页面已打开。带种子的业务失败缺少有效初始状态检查点时，重建准备并标记 setupStepCount，不返回 sound。可用公开操作建立互斥初始值时先建立，再检测业务结果。
 
@@ -33,6 +35,6 @@ Seed/GIVEN 声明描述应有状态，不是该状态已在本次运行中成立
   - `corrections`：只列受影响的 case；每项包含 `caseId`、`conflict`（与哪句原文冲突）与 `basis`（1-3 条逐字引用）。完整计划始终由程序用原计划和这些局部结果恢复，不要返回 `plan`。
   - 输入有 `preparationOnlyCaseIds` 时，使用局部修正协议：该名单内的每个 correction 再附 `setupSteps`；混合失败中，名单外且在 `caseCorrectionIds` 内的 correction 再附 `case`（该用例完整的 wire 内容，含终末 `assertion`）。只输出受影响的 correction，完整计划由程序恢复；此协议不带 `plan`。例如：`{"verdict":"corrected","rationale":"...","corrections":[{"caseId":"...","conflict":"...","basis":["原文"],"setupSteps":[...]}]}`。
   - 输入无该名单时，每个 correction 再附 `case`（该受影响用例完整的 wire 内容，含终末 `assertion`）；导航或准备错误允许在该 case 内增删步骤。未受影响的 case 不输出。
-- 修正规则：保持全部需求覆盖及原计划覆盖的场景独立约束；保持 case 的 `id` 与 `requirementIds`；不得删除困难 case、降低预期、缩减覆盖或臆造需求未声明的反馈；准备纠正仍只修改前缀，未受影响的 case 原样保留（含 expectationBasis）。rationale 不超过 2000 字符，conflict 不超过 1000 字符，corrections 至多 6 条，超出会被程序拒绝。
+- 修正规则：保持全部需求覆盖及原计划覆盖的场景独立约束；保持 case 的 `id` 与 `requirementIds`；不得删除困难 case、降低预期、缩减覆盖或臆造需求未声明的反馈；准备纠正仍只修改前缀，未受影响的 case 原样保留（含 expectationBasis）。rationale 不超过 2000 字符，conflict 不超过 1000 字符，corrections 至多 12 条，超出会被程序拒绝。
 - `expectationBasis` 与 `basis` 引用必须能在需求证据中逐字找到（程序会校验）。改写、概括或翻译都会导致复核被拒绝。
 - 不要提出代码修复建议，不要引用任何源码、构建产物或会话内容。

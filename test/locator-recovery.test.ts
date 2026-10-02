@@ -8,6 +8,7 @@ import { loadRequirementCatalog } from "../src/catalog.js";
 import { auditPackets } from "../src/scheduler.js";
 import { RunStateStore } from "../src/run-state.js";
 import { ExecutionFault } from "../src/execution-fault.js";
+import { GatewayRequestError } from "../src/gateway-failure.js";
 import { PlaywrightProbeRunner } from "../src/judge/playwright-probe-runner.js";
 import { ProbePlannerError, type ProbePlannerFeedback } from "../src/judge/llm-probe-planner.js";
 import { probePlanSha256, type ProbePlan } from "../src/judge/probe-schema.js";
@@ -545,6 +546,37 @@ for (const scenario of [
     });
   });
 }
+
+test("A gateway-interrupted review remains retryable and is classified separately from an invalid review", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.runner.run = async plan => fail(plan);
+    f.deps.planner.reviewPlan = async () => {
+      if (++calls === 1) throw new GatewayRequestError({ kind: "unavailable", retryable: true, status: 503 });
+      return { status: "sound", rationale: "The original outcome is requirement-backed" };
+    };
+    const policy = { refineLocators: true, noProgressRefinements: new Set<string>() };
+    const interrupted = await audit(f, () => 60_000, policy);
+    assert.equal(interrupted.status, "inconclusive");
+    assert.equal(interrupted.failureKind, "gateway");
+    assert.equal((await audit(f, () => 60_000, policy)).status, "failed");
+    assert.equal(calls, 2);
+  });
+});
+
+test("A planning feedback retry interrupted by the gateway retains the gateway classification", async () => {
+  await withModulePipeline(async f => {
+    let calls = 0;
+    f.deps.planner.plan = async () => {
+      if (++calls === 1) throw new ProbePlannerError("schema", "invalid plan", { cause: new Error("missing assertion") });
+      throw new GatewayRequestError({ kind: "unavailable", retryable: true, status: 503 });
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.failureKind, "gateway");
+    assert.equal(calls, 2);
+  });
+});
 
 for (const description of [
   'Seed data: workbook "Q3 Sales", branch "feature-search". The home page must show the workbook link.',

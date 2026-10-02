@@ -1,4 +1,5 @@
 import type { WorkPacket } from "../types.js";
+import { preservesOutcomeCoverage } from "./probe-coverage.js";
 import {
   assertQuotesGrounded,
   parseProbePlan,
@@ -40,7 +41,7 @@ export function isPreparationOnlyCorrection(before: ProbeCase, after: ProbeCase)
 const MAX_RATIONALE = 2_000;
 const MAX_CONFLICT = 1_000;
 const MAX_QUOTE = 2_000;
-const MAX_CORRECTIONS = 6;
+const MAX_CORRECTIONS = 12;
 const MAX_BASIS_QUOTES = 3;
 
 const REVIEW_CORRECTION_METADATA = {
@@ -128,7 +129,10 @@ export function parsePlanReview(
   }
   if (review.verdict !== "corrected") throw new Error("PlanReview.verdict must be sound or corrected");
   if (review.plan == null) throw new Error("PlanReview verdict corrected requires a corrected plan");
-  const plan = parseProbePlan(review.plan, packet);
+  const plan = parseProbePlan({ ...original, ...record(review.plan, "PlanReview.plan"),
+    uncoveredOutcomes: original.uncoveredOutcomes, navigationRecovered: original.navigationRecovered }, packet);
+  if (plan.uncoveredOutcomes) plan.uncoveredOutcomes = plan.uncoveredOutcomes.filter(omission =>
+    !plan.cases.some(item => item.outcomeChecks?.some(check => check.scenarioId === omission.scenarioId && check.stepIndex === omission.stepIndex)));
   if (probePlanSha256(plan) === probePlanSha256(original)) {
     throw new Error("PlanReview corrected plan must differ from the reviewed plan");
   }
@@ -168,6 +172,7 @@ export function parsePlanReview(
   }
   for (const before of original.cases) {
     const after = plan.cases.find(item => item.id === before.id)!;
+    if (!preservesOutcomeCoverage(before, after)) throw new Error("PlanReview must preserve scenario outcome coverage");
     if (before.purpose !== after.purpose || JSON.stringify(before.requirementIds) !== JSON.stringify(after.requirementIds)) {
       throw new Error("PlanReview must preserve each case's purpose and requirementIds");
     }
@@ -210,7 +215,7 @@ function mergeLocalReview(review: Record<string, unknown>, original: ProbePlan,
     }
     return { caseId, conflict: correction.conflict, basis: correction.basis };
   });
-  return { ...review, corrections, plan: { packetId: original.packetId,
+  return { ...review, corrections, plan: { ...original,
     cases: original.cases.map(item => cases.get(item.id)) } };
 }
 

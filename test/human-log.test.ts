@@ -20,6 +20,19 @@ test("Module boundary logs distinguish sampled seed entries from full atomic ver
   assert.match(line, /通过 1，失败 0，无法判断 0；跨模块种子入口抽查 1 条/);
 });
 
+test("Audit and guard logs expose coverage and uncertainty without declaring a regression", () => {
+  const formatter = new HumanRunFormatter();
+  const audit = formatLine(formatter, eventLine("2026-10-02T00:00:00Z", "audit_result", {
+    packetId: "p", detail: { status: "inconclusive", failureKind: "coverage", navigationRecovered: true, uncoveredOutcomes: 2 },
+  }));
+  assert.match(audit, /无法判断.*场景覆盖.*导航恢复.*未覆盖场景结果 2/);
+  const guard = formatLine(formatter, eventLine("2026-10-02T00:00:01Z", "repair_guard_checked", {
+    packetId: "p", detail: { status: "unresolved", critical: false, retried: true, failureKind: "execution" },
+  }));
+  assert.match(guard, /无法判定.*新应用实例重试.*执行故障/);
+  assert.doesNotMatch(guard, /确认回归/);
+});
+
 test("Runtime grouping logs show its validated source, fallback reason and actual usage", () => {
   const formatter = new HumanRunFormatter();
   const at = "2026-09-29T00:00:00Z";

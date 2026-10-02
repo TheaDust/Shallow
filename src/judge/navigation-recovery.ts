@@ -1,5 +1,5 @@
 import type { AtomicRequirement, ShadowReport, WorkPacket } from "../types.js";
-import { parseProbePlan, type ProbePlan, type ProbeStep } from "./probe-schema.js";
+import { parseProbePlan, PROBE_LIMITS, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 
 /** Recover requirement-backed seed navigation using the visible search and declared object identity. */
 export function rootSearchNavigationPlan(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ProbePlan | undefined {
@@ -44,7 +44,10 @@ export function rootSearchNavigationPlan(packet: WorkPacket, plan: ProbePlan, re
     }
     // A visible but ambiguous target needs identity evidence, not another search.
     if (snapshot.includes(`- link "${target}"`) || !allowsSearchEntry(evidence, objects) ||
-      probeCase.steps.length > 28) continue;
+      probeCase.steps.length > PROBE_LIMITS.totalSteps - 2 ||
+      // Search repairs preparation; a tested entry/result keeps its original route.
+      (probeCase.setupStepCount && failure.stepIndex >= probeCase.setupStepCount) ||
+      probeCase.outcomeChecks?.some(check => check.assertionIndexes.includes(failure.stepIndex - (probeCase.setupStepCount ?? 0)))) continue;
     const searchboxes = [...snapshot.matchAll(/^\s*- searchbox "([^"\n]+)"/gm)];
     if (searchboxes.length !== 1) continue;
     if (probeCase.steps.slice(0, failure.stepIndex).some(step => step.op === "fill" && step.value === target &&
@@ -57,10 +60,12 @@ export function rootSearchNavigationPlan(packet: WorkPacket, plan: ProbePlan, re
     ] });
   }
   if (changes.size === 0) return undefined;
-  const alternative = { ...plan, cases: plan.cases.map(item => {
+  const alternative = { ...plan, navigationRecovered: true, cases: plan.cases.map(item => {
     const change = changes.get(item.id);
     return change ? { ...item,
       ...(item.setupStepCount && change.index < item.setupStepCount ? { setupStepCount: item.setupStepCount + change.inserted } : {}),
+      ...(item.outcomeChecks && change.index >= (item.setupStepCount ?? 0) ? { outcomeChecks: item.outcomeChecks.map(check => ({ ...check,
+        assertionIndexes: check.assertionIndexes.map(index => index >= change.index - (item.setupStepCount ?? 0) ? index + change.inserted : index) })) } : {}),
       steps: [...item.steps.slice(0, change.index), ...change.steps, ...item.steps.slice(change.index + change.replaced)] } : item;
   }) };
   return parseProbePlan(alternative, packet);

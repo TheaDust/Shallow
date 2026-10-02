@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { WorkPacket } from "../types.js";
 import { planValidationFeedback, type ProbePlanner } from "./llm-probe-planner.js";
 import { parseProbePlan, type ProbePlan } from "./probe-schema.js";
+import { assertCoverageAccountedFor } from "./probe-coverage.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
 type CachedPacket = Pick<WorkPacket, "id" | "requirementIds"> &
@@ -33,7 +34,9 @@ export class PlanCache {
   async read(packet: CachedPacket): Promise<ProbePlan | undefined> {
     try {
       const raw = await readFile(this.pathFor(packet.id), "utf8");
-      return parseProbePlan(JSON.parse(raw), packet);
+      const plan = parseProbePlan(JSON.parse(raw), packet);
+      if (packet.requirements) assertCoverageAccountedFor(plan, packet.requirements);
+      return plan;
     } catch {
       return undefined;
     }
