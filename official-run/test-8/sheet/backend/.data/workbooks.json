@@ -1,0 +1,4499 @@
+{
+  "workbooks": [
+    {
+      "id": "workbook-q3-sales",
+      "name": "Q3 Sales",
+      "createdAt": "2024-07-01T09:00:00.000Z",
+      "updatedAt": "2024-07-01T09:00:00.000Z",
+      "activeWorksheetId": "workbook-q3-sales-sheet-1",
+      "worksheets": [
+        {
+          "id": "workbook-q3-sales-sheet-1",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "C1": "Status",
+            "A2": "East",
+            "B2": "1200",
+            "C2": "Open",
+            "A3": "North",
+            "B3": "800",
+            "C3": "Closed",
+            "A4": "South",
+            "B4": "700",
+            "C4": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "workbook-q3-sales-sheet-2",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "6e9788ac-b5c6-4aaf-af56-d0090efa8db7",
+      "name": "pw-open-workbook-1790976788649-60q4pa",
+      "createdAt": "2026-10-02T21:33:08.960Z",
+      "updatedAt": "2026-10-02T21:33:09.333Z",
+      "activeWorksheetId": "ac94aa19-0155-4657-a9f8-9baf4fd076e0",
+      "worksheets": [
+        {
+          "id": "ac94aa19-0155-4657-a9f8-9baf4fd076e0",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-open-value-1790976788649-ywfe2w"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "2a44037f-c1eb-4fef-9a2e-e1fd57c2b47d",
+      "name": "pw-first-workbook-1790976799619-k6e45h",
+      "createdAt": "2026-10-02T21:33:19.858Z",
+      "updatedAt": "2026-10-02T21:33:20.235Z",
+      "activeWorksheetId": "7bd8529c-e2f2-43a5-a44a-cedd2dc64122",
+      "worksheets": [
+        {
+          "id": "7bd8529c-e2f2-43a5-a44a-cedd2dc64122",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-first-value-1790976799619-0fpwz6"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "d6f4c157-5e68-4ff2-8c50-06a834203519",
+      "name": "pw-second-workbook-1790976799619-g8jlqk",
+      "createdAt": "2026-10-02T21:33:20.541Z",
+      "updatedAt": "2026-10-02T21:33:20.899Z",
+      "activeWorksheetId": "6bfaa12a-362d-4028-ad35-bfcaa7926d31",
+      "worksheets": [
+        {
+          "id": "6bfaa12a-362d-4028-ad35-bfcaa7926d31",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-second-value-1790976799619-r5xm7m"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "019ea4a5-367f-46fc-bca1-87acd5544889",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:21.757Z",
+      "updatedAt": "2026-10-02T21:33:21.757Z",
+      "activeWorksheetId": "d8dc3dc8-d927-463a-b131-540abfbf0ce2",
+      "worksheets": [
+        {
+          "id": "d8dc3dc8-d927-463a-b131-540abfbf0ce2",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "13c6d8b9-9479-4f86-9266-a76053e2fdb1",
+      "name": "pw-workbook-1790976802576-z0l41z",
+      "createdAt": "2026-10-02T21:33:22.458Z",
+      "updatedAt": "2026-10-02T21:33:22.799Z",
+      "activeWorksheetId": "19f646f8-3595-4dc9-bf23-c3409c64f49c",
+      "worksheets": [
+        {
+          "id": "19f646f8-3595-4dc9-bf23-c3409c64f49c",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Existing data"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "34d5fe7b-9e52-4767-b36d-268b03ff21d6",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:23.507Z",
+      "updatedAt": "2026-10-02T21:33:23.507Z",
+      "activeWorksheetId": "9e4b6e04-ecb0-454a-8906-f46b6aff1120",
+      "worksheets": [
+        {
+          "id": "9e4b6e04-ecb0-454a-8906-f46b6aff1120",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1f9f0f50-0c46-4536-afc0-3bade0ca3eff",
+      "name": "pw-import-1790976814335-wrqxjx",
+      "createdAt": "2026-10-02T21:33:34.655Z",
+      "updatedAt": "2026-10-02T21:33:34.655Z",
+      "activeWorksheetId": "6367fa4e-5f1a-4dfe-8e39-eadb0fd3918b",
+      "worksheets": [
+        {
+          "id": "6367fa4e-5f1a-4dfe-8e39-eadb0fd3918b",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Name",
+            "B1": "Note",
+            "C1": "Count",
+            "D1": "Blank",
+            "A2": "Alex",
+            "B2": "Harbor District, East",
+            "C2": "42",
+            "A3": "Jordan",
+            "B3": "They said\"hello\"\nnext line",
+            "C3": "3",
+            "A4": "Alice",
+            "B4": "English text",
+            "C4": "007"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "59ab2504-9d09-4490-ad0d-a2bb3c8973c9",
+      "name": "pw-import-1790976815842-2fgwcd",
+      "createdAt": "2026-10-02T21:33:36.071Z",
+      "updatedAt": "2026-10-02T21:33:36.071Z",
+      "activeWorksheetId": "f498e88a-75ef-47d4-9b24-9c5110ff0f2a",
+      "worksheets": [
+        {
+          "id": "f498e88a-75ef-47d4-9b24-9c5110ff0f2a",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "City",
+            "B1": "Description",
+            "C1": "Count",
+            "A2": "London",
+            "B2": "Capital",
+            "C2": "1",
+            "A3": "Berlin",
+            "C3": "2",
+            "A4": "Paris",
+            "B4": "Finance",
+            "C4": "3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "d072738f-e7a8-4a38-948d-6dba37e0b69d",
+      "name": "pw-single-column-import-1790976816445-c5tdwz",
+      "createdAt": "2026-10-02T21:33:36.671Z",
+      "updatedAt": "2026-10-02T21:33:36.671Z",
+      "activeWorksheetId": "6978aaae-bf65-4da1-9153-c4dc65e66538",
+      "worksheets": [
+        {
+          "id": "6978aaae-bf65-4da1-9153-c4dc65e66538",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Title",
+            "A2": "Alpha",
+            "A3": "Beta",
+            "A4": "Gamma"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "5683bb62-f33f-4ee8-b8d0-90c12ca6e7cd",
+      "name": "pw-export-special-1790976817042-2y7ulb",
+      "createdAt": "2026-10-02T21:33:37.238Z",
+      "updatedAt": "2026-10-02T21:33:37.238Z",
+      "activeWorksheetId": "bfc25853-ea49-447e-b566-e35d18a34519",
+      "worksheets": [
+        {
+          "id": "bfc25853-ea49-447e-b566-e35d18a34519",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Description",
+            "C1": "Count",
+            "D1": "Blank",
+            "E1": "Formula result",
+            "A2": "West",
+            "B2": "Contains, commas",
+            "C2": "2",
+            "E2": "=C2*2",
+            "A3": "North",
+            "B3": "They said \"hello\"\n next line",
+            "C3": "3",
+            "E3": "=C3+2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 4
+            },
+            "focus": {
+              "row": 1,
+              "col": 4
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "61febdff-0cab-4f87-926d-d64ea7bf2053",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:48.474Z",
+      "updatedAt": "2026-10-02T21:33:48.828Z",
+      "activeWorksheetId": "5d1c528e-6b83-4798-be2e-5c3caf2b3a04",
+      "worksheets": [
+        {
+          "id": "5d1c528e-6b83-4798-be2e-5c3caf2b3a04",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "2",
+            "B1": "=A1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "0ec27ba4-1d1a-42d6-80e7-a7e0fedc4123",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:49.657Z",
+      "updatedAt": "2026-10-02T21:33:50.163Z",
+      "activeWorksheetId": "caf19f0b-c343-415f-9ebc-73e358a1fd20",
+      "worksheets": [
+        {
+          "id": "4494614c-ae8b-4dfe-87f6-e48ebd439a97",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Sheet1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "caf19f0b-c343-415f-9ebc-73e358a1fd20",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Sheet2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "69bfd98b-99a0-4c9e-843d-f7c15bb4379e",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:50.790Z",
+      "updatedAt": "2026-10-02T21:33:51.474Z",
+      "activeWorksheetId": "4c2cfd68-42e9-41f5-9000-d2003e1bfa8d",
+      "worksheets": [
+        {
+          "id": "4c2cfd68-42e9-41f5-9000-d2003e1bfa8d",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "First"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "0876e819-2ee0-46d4-9b6d-733b631e11ab",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Second"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "21cec3cf-66c8-4908-9f13-a910e779bf42",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:52.007Z",
+      "updatedAt": "2026-10-02T21:33:52.640Z",
+      "activeWorksheetId": "306fda0b-4187-4bfd-a6d3-7f6f9e6319ce",
+      "worksheets": [
+        {
+          "id": "aa046634-80b2-44b6-a400-e4faf5c03604",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Existing data"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "306fda0b-4187-4bfd-a6d3-7f6f9e6319ce",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "bb0c7617-517e-44c8-8110-f4b2e2f3dc93",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:53.356Z",
+      "updatedAt": "2026-10-02T21:33:53.860Z",
+      "activeWorksheetId": "04c0eb0a-b0ee-462f-b788-f7751da0436f",
+      "worksheets": [
+        {
+          "id": "04b96ecd-f369-49cf-b374-00246c9a37d6",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "87c025f1-4b74-4bfa-a473-541a6f464904",
+          "name": "Sheet3",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "04c0eb0a-b0ee-462f-b788-f7751da0436f",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1fdcb97d-17af-4201-8791-ce643e1190af",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:54.489Z",
+      "updatedAt": "2026-10-02T21:33:55.440Z",
+      "activeWorksheetId": "64983c74-602f-4849-93c2-e79f3d2784a2",
+      "worksheets": [
+        {
+          "id": "64983c74-602f-4849-93c2-e79f3d2784a2",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "2",
+            "B1": "=A1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "100f9f55-ef7a-41a5-a1e5-7297cf072b4f",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Other"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "0bd7cca3-2ef0-4b63-979c-fd8359c43aa0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:56.173Z",
+      "updatedAt": "2026-10-02T21:33:57.256Z",
+      "activeWorksheetId": "0e9e8dbd-aa00-4f6e-91f5-05a1e61e0007",
+      "worksheets": [
+        {
+          "id": "7b9ec7a3-d204-4221-b255-f06723bdf065",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "2",
+            "B1": "=A1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "0e9e8dbd-aa00-4f6e-91f5-05a1e61e0007",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Other"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "c03799dc-7fa6-4ce4-93ba-804a799e32ab",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:57.890Z",
+      "updatedAt": "2026-10-02T21:33:59.390Z",
+      "activeWorksheetId": "c8fea6db-6092-43a5-a8be-1ecb906fa7b4",
+      "worksheets": [
+        {
+          "id": "45ab307f-20e8-41f9-b921-557295d62ba7",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Status",
+            "A2": "East",
+            "B2": "Open",
+            "A3": "North",
+            "B3": "Closed"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 2,
+              "col": 1
+            }
+          },
+          "validations": [
+            {
+              "id": "50bba76f-0e75-4f6c-b6a9-f1486c846496",
+              "type": "dropdown",
+              "values": [
+                "Open",
+                "Closed"
+              ],
+              "range": {
+                "minRow": 1,
+                "maxRow": 1,
+                "minCol": 2,
+                "maxCol": 2
+              }
+            }
+          ],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 2,
+              "minCol": 0,
+              "maxCol": 1
+            },
+            "columns": []
+          }
+        },
+        {
+          "id": "c8fea6db-6092-43a5-a8be-1ecb906fa7b4",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Other sheet"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "69ae74c4-e22c-45a5-8e97-0f52372a1172",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:33:59.989Z",
+      "updatedAt": "2026-10-02T21:34:01.423Z",
+      "activeWorksheetId": "e4315422-5e61-4645-9f8d-268fd1aba663",
+      "worksheets": [
+        {
+          "id": "1ad1becb-4c12-4560-ac44-935603c3cea9",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Sheet1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "8a255baa-8ea7-4ac5-84f4-10519cb6c3bc",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "B2": "Sheet2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "e4315422-5e61-4645-9f8d-268fd1aba663",
+          "name": "Sheet3",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "C3": "Sheet3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 2,
+              "col": 2
+            },
+            "focus": {
+              "row": 2,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "c7464783-dc8f-4e64-925c-aa03074a2cb1",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:02.056Z",
+      "updatedAt": "2026-10-02T21:34:03.023Z",
+      "activeWorksheetId": "ce140767-5283-4e36-86e3-b2b7425bff6d",
+      "worksheets": [
+        {
+          "id": "00402e3b-418b-4a63-8181-6135b587b92e",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "2",
+            "B1": "=A1*3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "ce140767-5283-4e36-86e3-b2b7425bff6d",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Other"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "5cf4996c-e6c2-4435-b4a2-9c6772ff4b84",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:03.656Z",
+      "updatedAt": "2026-10-02T21:34:04.164Z",
+      "activeWorksheetId": "b995ab0e-cd68-4b05-92c0-ac74e6f67310",
+      "worksheets": [
+        {
+          "id": "1bca5fa3-5aea-4c5b-9ab5-f3d660f92953",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "b995ab0e-cd68-4b05-92c0-ac74e6f67310",
+          "name": "pw-sheet-1790976844089-fp66zp",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Existing worksheet data"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "277a02e6-9597-4f90-abf3-704f0243c58f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:04.756Z",
+      "updatedAt": "2026-10-02T21:34:04.895Z",
+      "activeWorksheetId": "0be64818-82f5-4637-89a9-3145a4e606dc",
+      "worksheets": [
+        {
+          "id": "6c0538b3-db80-48e6-a589-6d624dd9111e",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "0be64818-82f5-4637-89a9-3145a4e606dc",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "6d22744a-1d76-4591-849d-fa725b2b768e",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:16.038Z",
+      "updatedAt": "2026-10-02T21:34:16.038Z",
+      "activeWorksheetId": "eff7b128-05a5-43c0-9d22-1bb7ad46506a",
+      "worksheets": [
+        {
+          "id": "eff7b128-05a5-43c0-9d22-1bb7ad46506a",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1b6a08fb-eac6-40e9-8a77-90de5be08d1c",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:26.972Z",
+      "updatedAt": "2026-10-02T21:34:27.360Z",
+      "activeWorksheetId": "65555391-c339-438d-a939-e55e5063ec2a",
+      "worksheets": [
+        {
+          "id": "65555391-c339-438d-a939-e55e5063ec2a",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "aaab8ae6-5e07-4662-a8fd-fd37e989bffc",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:27.972Z",
+      "updatedAt": "2026-10-02T21:34:27.972Z",
+      "activeWorksheetId": "ab815ec2-6f08-4c15-b0f9-8d941630f6b7",
+      "worksheets": [
+        {
+          "id": "ab815ec2-6f08-4c15-b0f9-8d941630f6b7",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "014309e2-9b4a-4003-a6b3-e5a74543bafc",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:39.138Z",
+      "updatedAt": "2026-10-02T21:34:40.589Z",
+      "activeWorksheetId": "2659491e-e109-4129-b472-bc00c58aa059",
+      "worksheets": [
+        {
+          "id": "2659491e-e109-4129-b472-bc00c58aa059",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "North",
+            "B3": "200"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 2,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "5acd4501-d99b-4984-98df-532a1e321698",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "SUM of Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "North",
+            "B3": "200",
+            "A4": "Grand Total",
+            "B4": "300"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "09382e66-4cff-498c-8434-038b25d9dbad",
+          "sourceWorksheetId": "2659491e-e109-4129-b472-bc00c58aa059",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 2,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "SUM",
+          "resultWorksheetId": "5acd4501-d99b-4984-98df-532a1e321698"
+        }
+      ]
+    },
+    {
+      "id": "bb899efb-158c-4ebf-817f-7e8dd7af21a0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:41.105Z",
+      "updatedAt": "2026-10-02T21:34:42.691Z",
+      "activeWorksheetId": "934a0bca-4606-4124-8db5-1720ebee7496",
+      "worksheets": [
+        {
+          "id": "934a0bca-4606-4124-8db5-1720ebee7496",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "4e1748a8-1ae3-46d9-9683-0efa55a63ade",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:43.255Z",
+      "updatedAt": "2026-10-02T21:34:43.642Z",
+      "activeWorksheetId": "9028269c-aa7b-4d9b-b8ec-4b63e9931e3a",
+      "worksheets": [
+        {
+          "id": "9028269c-aa7b-4d9b-b8ec-4b63e9931e3a",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Item",
+            "B1": "Amount",
+            "A2": "Alpha",
+            "B2": "10",
+            "A4": "Beta",
+            "B4": "20"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "bf3b420a-e8d0-4c7b-9e09-e47d5fd4609d",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:44.371Z",
+      "updatedAt": "2026-10-02T21:34:44.707Z",
+      "activeWorksheetId": "ed8d169b-adc4-40db-9bf0-f2a04b70cad8",
+      "worksheets": [
+        {
+          "id": "ed8d169b-adc4-40db-9bf0-f2a04b70cad8",
+          "name": "Sheet1",
+          "rowCount": 49,
+          "columnCount": 26,
+          "cells": {
+            "A2": "Alpha",
+            "A3": "Beta"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 0
+            },
+            "focus": {
+              "row": 1,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "c8e18d21-1fc5-4e01-89e9-0ed94983289d",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:45.371Z",
+      "updatedAt": "2026-10-02T21:34:45.991Z",
+      "activeWorksheetId": "db26fbc7-d48e-4a52-ab8b-7ab3986ac8e3",
+      "worksheets": [
+        {
+          "id": "db26fbc7-d48e-4a52-ab8b-7ab3986ac8e3",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Alpha",
+            "A3": "Beta"
+          },
+          "selection": {
+            "anchor": {
+              "row": 2,
+              "col": 0
+            },
+            "focus": {
+              "row": 2,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "ffc8a316-4cd7-4f44-a3e8-512e150e0290",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:46.671Z",
+      "updatedAt": "2026-10-02T21:34:47.327Z",
+      "activeWorksheetId": "784a45d4-ec53-4edc-8660-b033355e1342",
+      "worksheets": [
+        {
+          "id": "784a45d4-ec53-4edc-8660-b033355e1342",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 26,
+          "cells": {
+            "A2": "2",
+            "B2": "=A2*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "2c9f4d75-bf42-482f-9a23-1b0072eed93c",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:48.187Z",
+      "updatedAt": "2026-10-02T21:34:48.875Z",
+      "activeWorksheetId": "8277eb96-3a22-4bd5-8437-b8093a72cb7a",
+      "worksheets": [
+        {
+          "id": "8277eb96-3a22-4bd5-8437-b8093a72cb7a",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 26,
+          "cells": {
+            "A3": "50"
+          },
+          "selection": {
+            "anchor": {
+              "row": 2,
+              "col": 0
+            },
+            "focus": {
+              "row": 2,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "ebbf3151-48a7-47a7-ba27-617de3cd3a0a",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 2,
+                "maxRow": 2,
+                "minCol": 0,
+                "maxCol": 0
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "8efa05a1-84b8-47ee-aeb7-cafcba8344e3",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:34:59.254Z",
+      "updatedAt": "2026-10-02T21:34:59.591Z",
+      "activeWorksheetId": "315700ca-c33e-4142-bcc1-6a8eefc62ada",
+      "worksheets": [
+        {
+          "id": "315700ca-c33e-4142-bcc1-6a8eefc62ada",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 27,
+          "cells": {
+            "A1": "Alpha",
+            "C1": "Beta",
+            "D1": "Gamma"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "3bda2573-a977-423d-972c-376e94efcdd1",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:00.254Z",
+      "updatedAt": "2026-10-02T21:35:00.641Z",
+      "activeWorksheetId": "22103c85-584b-4cd6-8e55-89ef83fce621",
+      "worksheets": [
+        {
+          "id": "22103c85-584b-4cd6-8e55-89ef83fce621",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 25,
+          "cells": {
+            "A1": "Unit price",
+            "B1": "Total",
+            "A2": "10",
+            "B2": "=A2*#REF!"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "d005dd54-7347-48d6-a80e-8ea0eabe97d4",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:01.370Z",
+      "updatedAt": "2026-10-02T21:35:01.925Z",
+      "activeWorksheetId": "37673775-0e6d-4945-bbe5-4e0b44e11769",
+      "worksheets": [
+        {
+          "id": "37673775-0e6d-4945-bbe5-4e0b44e11769",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 27,
+          "cells": {
+            "A1": "Alpha",
+            "C1": "Beta"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "18f86ab9-2103-4129-bf1b-44fdab0c5fc0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:02.587Z",
+      "updatedAt": "2026-10-02T21:35:03.158Z",
+      "activeWorksheetId": "002f2ea1-0bbc-4e1f-bf8f-050f042e7b3c",
+      "worksheets": [
+        {
+          "id": "002f2ea1-0bbc-4e1f-bf8f-050f042e7b3c",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 27,
+          "cells": {
+            "B1": "2",
+            "C1": "=B1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "0095c67b-e930-47bf-bb77-a21da1630ee5",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:03.970Z",
+      "updatedAt": "2026-10-02T21:35:04.774Z",
+      "activeWorksheetId": "84169e2e-d3da-4508-a8ef-bacfeb60fc53",
+      "worksheets": [
+        {
+          "id": "84169e2e-d3da-4508-a8ef-bacfeb60fc53",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 27,
+          "cells": {
+            "C1": "50"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [
+            {
+              "id": "8828a72f-a7a7-4ada-8292-f452f562d910",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 0,
+                "maxRow": 0,
+                "minCol": 2,
+                "maxCol": 2
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1a18c0ba-bd23-4483-b3c8-44a4735b4a9e",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:15.136Z",
+      "updatedAt": "2026-10-02T21:35:15.829Z",
+      "activeWorksheetId": "d92ea6fd-b91a-44c4-ac25-d8d9e27f4eb6",
+      "worksheets": [
+        {
+          "id": "d92ea6fd-b91a-44c4-ac25-d8d9e27f4eb6",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "3",
+            "B1": "=A1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "f7b40d26-ad7d-465b-8e0e-802efd530c95",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:16.786Z",
+      "updatedAt": "2026-10-02T21:35:16.965Z",
+      "activeWorksheetId": "13fbd480-7ea1-439d-9e9b-f81b74302c1f",
+      "worksheets": [
+        {
+          "id": "13fbd480-7ea1-439d-9e9b-f81b74302c1f",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Saved value"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "8bfecfd9-1566-4558-aa84-ffa070c3474e",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:17.987Z",
+      "updatedAt": "2026-10-02T21:35:19.506Z",
+      "activeWorksheetId": "7c732a68-3fd5-4bac-8045-c2a62215a608",
+      "worksheets": [
+        {
+          "id": "7c732a68-3fd5-4bac-8045-c2a62215a608",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Plain text",
+            "A2": "42",
+            "A3": "TRUE",
+            "A4": "2026-08-06",
+            "A5": "=A2*2",
+            "B1": "Committed by selection change"
+          },
+          "selection": {
+            "anchor": {
+              "row": 4,
+              "col": 0
+            },
+            "focus": {
+              "row": 4,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "d22e11a6-e2d6-4119-b776-32da3feb9779",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:20.352Z",
+      "updatedAt": "2026-10-02T21:35:20.718Z",
+      "activeWorksheetId": "7cc7fac0-61ce-4422-b095-dc729123f098",
+      "worksheets": [
+        {
+          "id": "7cc7fac0-61ce-4422-b095-dc729123f098",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "C3": "7",
+            "D4": "=C3*3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 3,
+              "col": 3
+            },
+            "focus": {
+              "row": 3,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "a52b8322-4374-4d24-b7e8-6114e0909c6f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:21.536Z",
+      "updatedAt": "2026-10-02T21:35:22.078Z",
+      "activeWorksheetId": "fcb2323b-f91f-43bd-adff-163f9d4775c9",
+      "worksheets": [
+        {
+          "id": "fcb2323b-f91f-43bd-adff-163f9d4775c9",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Outside",
+            "E4": "Keep",
+            "B2": "Alpha",
+            "D2": "3",
+            "B3": "Beta",
+            "C3": "Middle",
+            "D3": "4"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "aa6fcf92-9d12-44ce-989b-a22a641e41c2",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:22.986Z",
+      "updatedAt": "2026-10-02T21:35:23.820Z",
+      "activeWorksheetId": "b4822fd3-f1b8-48eb-9ab7-3eda3442677f",
+      "worksheets": [
+        {
+          "id": "b4822fd3-f1b8-48eb-9ab7-3eda3442677f",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "10",
+            "A2": "20"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "c5fd517f-0c0a-45c9-8cb0-1e418626b1f3",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 0,
+                "maxRow": 1,
+                "minCol": 0,
+                "maxCol": 0
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "023de57a-a4b8-42e2-baf7-1fcce0badb2f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:34.169Z",
+      "updatedAt": "2026-10-02T21:35:34.961Z",
+      "activeWorksheetId": "809a734b-adc7-4fb4-8af5-ce9306256f73",
+      "worksheets": [
+        {
+          "id": "809a734b-adc7-4fb4-8af5-ce9306256f73",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "3",
+            "B1": "5",
+            "C1": "=B1+1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "b6f2da52-8ea3-44da-9778-a78fbeaac783",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:35.802Z",
+      "updatedAt": "2026-10-02T21:35:36.123Z",
+      "activeWorksheetId": "de56386d-b832-4069-befb-c44a89b8a974",
+      "worksheets": [
+        {
+          "id": "de56386d-b832-4069-befb-c44a89b8a974",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "E4": "Keep",
+            "A1": "Alpha",
+            "C1": "Gamma"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "96cc03f3-c991-4375-8e29-fd78dcb38eb2",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:36.869Z",
+      "updatedAt": "2026-10-02T21:35:37.281Z",
+      "activeWorksheetId": "dab3def2-3926-4e56-8a27-177ff1c7fb7c",
+      "worksheets": [
+        {
+          "id": "dab3def2-3926-4e56-8a27-177ff1c7fb7c",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Outside",
+            "C3": "One",
+            "D3": "Two",
+            "C4": "Three",
+            "D4": "Four"
+          },
+          "selection": {
+            "anchor": {
+              "row": 2,
+              "col": 2
+            },
+            "focus": {
+              "row": 2,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "61e242ad-3942-4ca9-a3cb-839e62000cfc",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:37.986Z",
+      "updatedAt": "2026-10-02T21:35:37.986Z",
+      "activeWorksheetId": "594e2a8d-cd29-446d-81c2-0f255b8c8b9d",
+      "worksheets": [
+        {
+          "id": "594e2a8d-cd29-446d-81c2-0f255b8c8b9d",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "0803b4e5-b3c5-4868-b5a3-7905cdfd35ae",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:38.969Z",
+      "updatedAt": "2026-10-02T21:35:38.969Z",
+      "activeWorksheetId": "570a30df-666e-4d02-9596-c2ca621c63d5",
+      "worksheets": [
+        {
+          "id": "570a30df-666e-4d02-9596-c2ca621c63d5",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "c644ae0d-071b-47f6-a840-764a60112853",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:40.152Z",
+      "updatedAt": "2026-10-02T21:35:40.730Z",
+      "activeWorksheetId": "eaf10324-5f39-48b2-aa01-3316371c825d",
+      "worksheets": [
+        {
+          "id": "eaf10324-5f39-48b2-aa01-3316371c825d",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "1",
+            "B1": "2",
+            "A2": "3",
+            "B2": "=A1+$B$1",
+            "G1": "Keep",
+            "D1": "1",
+            "E1": "2",
+            "D2": "3",
+            "E2": "=D1+$B$1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 4
+            },
+            "focus": {
+              "row": 1,
+              "col": 4
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "61bedeb4-f4b4-4e09-a44c-5000e6df2849",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:41.585Z",
+      "updatedAt": "2026-10-02T21:35:42.181Z",
+      "activeWorksheetId": "8c38f8dd-d1af-4a85-822f-10c7c5a229e3",
+      "worksheets": [
+        {
+          "id": "8c38f8dd-d1af-4a85-822f-10c7c5a229e3",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "G1": "Keep",
+            "D1": "A",
+            "E1": "B",
+            "D2": "C",
+            "E2": "D"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 3
+            },
+            "focus": {
+              "row": 0,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "2f3a2480-bfb7-4f42-be0a-aa0fc94aa269",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:43.068Z",
+      "updatedAt": "2026-10-02T21:35:44.337Z",
+      "activeWorksheetId": "b6757957-4de8-422f-beb9-7127a1bd6eba",
+      "worksheets": [
+        {
+          "id": "b6757957-4de8-422f-beb9-7127a1bd6eba",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "10",
+            "A2": "120",
+            "D1": "1",
+            "D2": "2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 3
+            },
+            "focus": {
+              "row": 0,
+              "col": 3
+            }
+          },
+          "validations": [
+            {
+              "id": "41a33ca8-5551-4b81-bc13-59d25e903d63",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 0,
+                "maxRow": 1,
+                "minCol": 3,
+                "maxCol": 3
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "206efa57-e785-4ae4-a73a-ccf202b51e1b",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:54.168Z",
+      "updatedAt": "2026-10-02T21:35:54.822Z",
+      "activeWorksheetId": "99d8dff4-bfec-4139-8304-6255cfb44961",
+      "worksheets": [
+        {
+          "id": "99d8dff4-bfec-4139-8304-6255cfb44961",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Copied text",
+            "B1": "Copied second cell",
+            "D4": "Copied text"
+          },
+          "selection": {
+            "anchor": {
+              "row": 3,
+              "col": 3
+            },
+            "focus": {
+              "row": 3,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "15e48f67-22a4-43dd-9e8c-8ca344ecba0b",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:55.568Z",
+      "updatedAt": "2026-10-02T21:35:56.056Z",
+      "activeWorksheetId": "780b0406-53e6-4ed3-90ed-0a2e0ded4a11",
+      "worksheets": [
+        {
+          "id": "780b0406-53e6-4ed3-90ed-0a2e0ded4a11",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-redo-value-1790976955691-p8isiu"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "017af5d6-9604-443e-89c4-c5d6f9752990",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:56.802Z",
+      "updatedAt": "2026-10-02T21:35:57.361Z",
+      "activeWorksheetId": "8bdd5024-36d3-4e85-b5d6-5a7bda31b943",
+      "worksheets": [
+        {
+          "id": "8bdd5024-36d3-4e85-b5d6-5a7bda31b943",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-new-branch-1790976956921-b8pgog"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "d78abce2-acdc-4533-b9c7-a125d7dc3a38",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:58.101Z",
+      "updatedAt": "2026-10-02T21:35:59.054Z",
+      "activeWorksheetId": "9a322430-312a-4986-bb15-44bc31631f4b",
+      "worksheets": [
+        {
+          "id": "9a322430-312a-4986-bb15-44bc31631f4b",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "3",
+            "B1": "=A1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1593a5c0-4f0b-45cc-a104-f0c6b6a44a6d",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:35:59.751Z",
+      "updatedAt": "2026-10-02T21:36:00.272Z",
+      "activeWorksheetId": "6374e9be-c543-4a3b-b8d7-f33b1767771a",
+      "worksheets": [
+        {
+          "id": "6374e9be-c543-4a3b-b8d7-f33b1767771a",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "A",
+            "B1": "B",
+            "A2": "C",
+            "B2": "D"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "fa4c3f73-db3a-4a5c-a0ed-57c70b491a80",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:01.050Z",
+      "updatedAt": "2026-10-02T21:36:02.020Z",
+      "activeWorksheetId": "54013dc5-21cf-4c96-8123-9f49b15ee25b",
+      "worksheets": [
+        {
+          "id": "54013dc5-21cf-4c96-8123-9f49b15ee25b",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "D1": "Left",
+            "E1": "Right"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 3
+            },
+            "focus": {
+              "row": 0,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "2d0fa0cb-8d4f-4511-b25a-25d0f9064c15",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:02.750Z",
+      "updatedAt": "2026-10-02T21:36:04.104Z",
+      "activeWorksheetId": "0fcea798-8a2f-4ddb-a085-e0bf42604a79",
+      "worksheets": [
+        {
+          "id": "0fcea798-8a2f-4ddb-a085-e0bf42604a79",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 27,
+          "cells": {
+            "B2": "Keep"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [
+            {
+              "id": "d2da082a-622a-4e69-ad13-c5870239c246",
+              "type": "dropdown",
+              "values": [
+                "Keep",
+                "Other"
+              ],
+              "range": {
+                "minRow": 1,
+                "maxRow": 1,
+                "minCol": 1,
+                "maxCol": 1
+              }
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "73af8441-0aed-49f6-98c9-15db8f5a5dc9",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:04.784Z",
+      "updatedAt": "2026-10-02T21:36:04.967Z",
+      "activeWorksheetId": "d66be473-2abe-45b2-8cfc-2d140a886691",
+      "worksheets": [
+        {
+          "id": "d66be473-2abe-45b2-8cfc-2d140a886691",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-first-workbook-1790976964905-71leoy"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "3798db03-2cd4-43cf-8c48-5f3b781300b9",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:05.316Z",
+      "updatedAt": "2026-10-02T21:36:05.671Z",
+      "activeWorksheetId": "7b1c26a2-0e64-40ad-be4f-59bcde1b1403",
+      "worksheets": [
+        {
+          "id": "7b1c26a2-0e64-40ad-be4f-59bcde1b1403",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {},
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "540e5c3f-d27f-4f41-ac74-9268301adf81",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:15.850Z",
+      "updatedAt": "2026-10-02T21:36:16.422Z",
+      "activeWorksheetId": "7a9859c4-e747-40bb-88b3-50f5a54f5cea",
+      "worksheets": [
+        {
+          "id": "7a9859c4-e747-40bb-88b3-50f5a54f5cea",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "3",
+            "B1": "4",
+            "C1": "=(A1+B1)*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "be8df911-40d8-4bfd-b0c7-1be397776219",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:17.250Z",
+      "updatedAt": "2026-10-02T21:36:17.519Z",
+      "activeWorksheetId": "ecc4823e-e4eb-421b-816e-51c3b72ceccc",
+      "worksheets": [
+        {
+          "id": "ecc4823e-e4eb-421b-816e-51c3b72ceccc",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "B2": "2",
+            "B4": "4",
+            "B6": "6",
+            "B8": "not numeric",
+            "B9": "TRUE",
+            "D2": "=sum(B2:B10)",
+            "D3": "=AVERAGE(B2:B10)",
+            "D4": "=COUNT(B2:B10)",
+            "D5": "=MIN(B2:B10)",
+            "D6": "=MAX(B2:B10)"
+          },
+          "selection": {
+            "anchor": {
+              "row": 5,
+              "col": 3
+            },
+            "focus": {
+              "row": 5,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "85ec0c7b-8c9f-40ff-aa74-9ab06fe0fabf",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:18.884Z",
+      "updatedAt": "2026-10-02T21:36:20.120Z",
+      "activeWorksheetId": "0b1fc294-18f1-46ad-b495-7fb2f898929e",
+      "worksheets": [
+        {
+          "id": "0b1fc294-18f1-46ad-b495-7fb2f898929e",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "9",
+            "B1": "3",
+            "C1": "=A1-B1",
+            "C2": "=A1/B1",
+            "C3": "=10-3*2",
+            "C4": "=42"
+          },
+          "selection": {
+            "anchor": {
+              "row": 3,
+              "col": 2
+            },
+            "focus": {
+              "row": 3,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "37aee8a1-5d07-45b2-8b43-4fd54afe7c72",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:21.050Z",
+      "updatedAt": "2026-10-02T21:36:21.989Z",
+      "activeWorksheetId": "efa54b8d-1ce2-4f9e-af4e-1435dc9bc59a",
+      "worksheets": [
+        {
+          "id": "efa54b8d-1ce2-4f9e-af4e-1435dc9bc59a",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "8",
+            "B1": "4",
+            "C1": "2",
+            "D1": "=(A1+B1)*C1",
+            "D2": "=A1-B1/2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 3
+            },
+            "focus": {
+              "row": 0,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "4341812f-2d35-43a9-9690-98bfd65f213f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:22.750Z",
+      "updatedAt": "2026-10-02T21:36:23.724Z",
+      "activeWorksheetId": "bcbde411-2d41-4468-9a66-4c055c625a3e",
+      "worksheets": [
+        {
+          "id": "bcbde411-2d41-4468-9a66-4c055c625a3e",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "5",
+            "B1": "6",
+            "C1": "4",
+            "D1": "=A1*B1+C1",
+            "D2": "=(A1+B1)/C1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 3
+            },
+            "focus": {
+              "row": 1,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "5b97eb5c-9137-423d-82ea-9bbb484fd2ed",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:24.483Z",
+      "updatedAt": "2026-10-02T21:36:25.578Z",
+      "activeWorksheetId": "7b12159d-c19e-492e-afa7-c7d4d3951e8f",
+      "worksheets": [
+        {
+          "id": "7b12159d-c19e-492e-afa7-c7d4d3951e8f",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "1",
+            "B1": "2",
+            "A2": "10",
+            "C1": "=A1+$B$1",
+            "C2": "=A2+$B$1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 2
+            },
+            "focus": {
+              "row": 1,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "ca05b68c-b340-49b6-b2ab-fe50b244a5ba",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:26.516Z",
+      "updatedAt": "2026-10-02T21:36:27.151Z",
+      "activeWorksheetId": "73967773-a7d6-4cbd-80ca-c1d7c7998d06",
+      "worksheets": [
+        {
+          "id": "73967773-a7d6-4cbd-80ca-c1d7c7998d06",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "=#REF!",
+            "B1": "=A1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "6f2bb9d7-c07e-48ae-8b95-07a6b8614c2f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:27.950Z",
+      "updatedAt": "2026-10-02T21:36:29.834Z",
+      "activeWorksheetId": "d8728c86-b881-46af-bdad-6a6bfe973727",
+      "worksheets": [
+        {
+          "id": "d8728c86-b881-46af-bdad-6a6bfe973727",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "20",
+            "B1": "=A1*2",
+            "C1": "=B1+5"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "a862c014-89a7-41df-8da8-0fa786101304",
+          "name": "Sheet2",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Other",
+            "B1": "=1+1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "f8c81156-950b-4c9e-9f17-575a5855abe5",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:30.583Z",
+      "updatedAt": "2026-10-02T21:36:31.326Z",
+      "activeWorksheetId": "822da672-4355-4184-8dc3-061bafe34978",
+      "worksheets": [
+        {
+          "id": "822da672-4355-4184-8dc3-061bafe34978",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "3",
+            "B1": "=A1*2",
+            "C1": "=B1+1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 2
+            },
+            "focus": {
+              "row": 0,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "eaaeb5b0-9e39-4ab4-b8d1-d89761bb291b",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:32.183Z",
+      "updatedAt": "2026-10-02T21:36:33.242Z",
+      "activeWorksheetId": "731d8ba2-9a5e-48d0-b22c-b8992666e124",
+      "worksheets": [
+        {
+          "id": "731d8ba2-9a5e-48d0-b22c-b8992666e124",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "B1": "2",
+            "C1": "=B1*2",
+            "D1": "=C1+1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 3
+            },
+            "focus": {
+              "row": 0,
+              "col": 3
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "fdbf319c-f846-41ed-86a4-2e8b5734fd12",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:34.216Z",
+      "updatedAt": "2026-10-02T21:36:36.042Z",
+      "activeWorksheetId": "b88963e8-0153-44d0-851b-b6b598402ba2",
+      "worksheets": [
+        {
+          "id": "b88963e8-0153-44d0-851b-b6b598402ba2",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "pw-unrelated-cell-1790976993943-5ekoy3",
+            "B1": "=1/0",
+            "B2": "=A0",
+            "B3": "=UNSUPPORTED(1)",
+            "B4": "=1+",
+            "B5": "=B5",
+            "C1": "3",
+            "C2": "=C1*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 4,
+              "col": 1
+            },
+            "focus": {
+              "row": 4,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "5a7cf3c3-5a47-48c9-9046-e320a34fc16c",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:37.183Z",
+      "updatedAt": "2026-10-02T21:36:37.873Z",
+      "activeWorksheetId": "84870ad0-f98a-44a7-8694-a88a45289637",
+      "worksheets": [
+        {
+          "id": "84870ad0-f98a-44a7-8694-a88a45289637",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "2",
+            "B1": "=A1*3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1f07efc9-fc16-4078-9487-303a959e781f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:38.599Z",
+      "updatedAt": "2026-10-02T21:36:39.017Z",
+      "activeWorksheetId": "17dad652-b7c7-48a0-8001-9a698a8fb7cf",
+      "worksheets": [
+        {
+          "id": "17dad652-b7c7-48a0-8001-9a698a8fb7cf",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "=B1",
+            "B1": "=A1"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "298b4dee-d8e9-4c31-87e4-199a2a2a0ad0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:39.750Z",
+      "updatedAt": "2026-10-02T21:36:40.117Z",
+      "activeWorksheetId": "4c28cdbe-6e2f-4e9e-a1fd-36bb37503812",
+      "worksheets": [
+        {
+          "id": "4c28cdbe-6e2f-4e9e-a1fd-36bb37503812",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "=NOPE(1)",
+            "B1": "=1+"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 1
+            },
+            "focus": {
+              "row": 0,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "e13a8d93-7c57-448f-bf34-ff1febdef25f",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:40.899Z",
+      "updatedAt": "2026-10-02T21:36:41.327Z",
+      "activeWorksheetId": "bcd4eb00-80b5-415d-a13b-10101332079e",
+      "worksheets": [
+        {
+          "id": "bcd4eb00-80b5-415d-a13b-10101332079e",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "=2+2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "f3895a53-fd6b-465e-b07d-f291f42610d0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:42.116Z",
+      "updatedAt": "2026-10-02T21:36:43.035Z",
+      "activeWorksheetId": "0ebde07c-0b3b-4945-b451-d3c0312bccee",
+      "worksheets": [
+        {
+          "id": "0ebde07c-0b3b-4945-b451-d3c0312bccee",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "C1": "Status",
+            "E1": "Outside",
+            "A2": "East",
+            "B2": "1200",
+            "C2": "Open",
+            "A3": "South",
+            "B3": "1200",
+            "C3": "Pending",
+            "A4": "North",
+            "B4": "800",
+            "C4": "Closed",
+            "A5": "West",
+            "B5": "500",
+            "C5": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 4,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "e690bd90-4a19-4e04-9351-428a1aa20124",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:43.799Z",
+      "updatedAt": "2026-10-02T21:36:45.134Z",
+      "activeWorksheetId": "f9782198-d051-4f7a-a2d2-18876f4d5247",
+      "worksheets": [
+        {
+          "id": "f9782198-d051-4f7a-a2d2-18876f4d5247",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Name",
+            "B1": "Date",
+            "C1": "Value",
+            "A2": "Charlie",
+            "B2": "2026-03-10",
+            "C2": "30",
+            "A3": "Bravo",
+            "B3": "2026-02-01",
+            "C3": "20",
+            "A4": "Alpha",
+            "B4": "2026-01-15",
+            "C4": "10"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "51f06a08-0f3e-4b93-a363-e276aea56c21",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:45.882Z",
+      "updatedAt": "2026-10-02T21:36:47.619Z",
+      "activeWorksheetId": "50b1262b-3037-4da9-a077-007d89b2e2b0",
+      "worksheets": [
+        {
+          "id": "50b1262b-3037-4da9-a077-007d89b2e2b0",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Item",
+            "B1": "Score",
+            "C1": "Double",
+            "A2": "Bravo",
+            "B2": "1",
+            "A3": "Charlie",
+            "B3": "2",
+            "A4": "Alpha",
+            "B4": "3",
+            "C2": "=B2*2",
+            "C3": "=B3*2",
+            "C4": "=B4*2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [
+            {
+              "id": "cf3587fb-1e06-43b4-99fb-100d566e18f1",
+              "type": "numeric",
+              "min": 0,
+              "max": 10,
+              "range": {
+                "minRow": 1,
+                "maxRow": 3,
+                "minCol": 1,
+                "maxCol": 1
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "0a824d6d-9a2b-48c2-b0f1-3773bfe6a20a",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:36:56.982Z",
+      "updatedAt": "2026-10-02T21:36:57.753Z",
+      "activeWorksheetId": "09dca25e-7869-4987-8a08-c0e2ff516301",
+      "worksheets": [
+        {
+          "id": "09dca25e-7869-4987-8a08-c0e2ff516301",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Item",
+            "B1": "Score",
+            "A2": "Alpha",
+            "B2": "3",
+            "A3": "Bravo",
+            "B3": "1",
+            "A4": "Charlie",
+            "B4": "2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 3,
+              "minCol": 0,
+              "maxCol": 1
+            },
+            "columns": [
+              {
+                "col": 1,
+                "kind": "condition",
+                "operator": "greaterThan",
+                "value": "1"
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "c99ec6f9-2c61-4e17-be6c-2bcbecb7e638",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:02.799Z",
+      "updatedAt": "2026-10-02T21:37:03.535Z",
+      "activeWorksheetId": "33c6c97c-0801-4fa7-9082-649211b91df3",
+      "worksheets": [
+        {
+          "id": "33c6c97c-0801-4fa7-9082-649211b91df3",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Item",
+            "B1": "Score",
+            "C1": "Note",
+            "A2": "Charlie",
+            "B2": "1",
+            "C2": "Third",
+            "A3": "Alpha",
+            "B3": "3",
+            "C3": "First",
+            "A4": "Bravo",
+            "B4": "3",
+            "C4": "Second"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "6eda04b6-a69e-446d-8653-f8756e5ac93e",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:04.282Z",
+      "updatedAt": "2026-10-02T21:37:05.251Z",
+      "activeWorksheetId": "8159f664-bd36-420c-a08d-324484446db6",
+      "worksheets": [
+        {
+          "id": "8159f664-bd36-420c-a08d-324484446db6",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Name",
+            "B1": "Date",
+            "C1": "City",
+            "A2": "Bravo",
+            "B2": "2026-03-20",
+            "C2": "Beijing",
+            "A3": "Charlie",
+            "B3": "2026-02-15",
+            "C3": "Tianjin",
+            "A4": "Alpha",
+            "B4": "2026-01-10",
+            "C4": "Shanghai",
+            "E1": "Outside"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "cf9d101a-a378-4619-8a7d-3f4f20d75b55",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:05.981Z",
+      "updatedAt": "2026-10-02T21:37:07.351Z",
+      "activeWorksheetId": "1afea82f-9371-4413-8d1f-09f126bc5061",
+      "worksheets": [
+        {
+          "id": "1afea82f-9371-4413-8d1f-09f126bc5061",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "C1": "Status",
+            "A2": "East",
+            "B2": "1200",
+            "C2": "Open",
+            "A3": "East",
+            "B3": "900",
+            "C3": "Closed",
+            "A4": "North",
+            "B4": "2000",
+            "C4": "Open",
+            "A5": "East",
+            "B5": "1500",
+            "C5": "Closed",
+            "A6": "South",
+            "B6": "700",
+            "C6": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 5,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "e57fd156-ba39-4fa7-9045-a7956fc47853",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:08.381Z",
+      "updatedAt": "2026-10-02T21:37:09.167Z",
+      "activeWorksheetId": "1ac68a3f-8ef4-4a39-b4e1-726e0c6b5b04",
+      "worksheets": [
+        {
+          "id": "1ac68a3f-8ef4-4a39-b4e1-726e0c6b5b04",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Name",
+            "B1": "Date",
+            "C1": "Note",
+            "A2": "Alpha East",
+            "B2": "2026-01-10",
+            "A3": "Alpha West",
+            "B3": "2026-02-10",
+            "C3": "Filled",
+            "A4": "Beta",
+            "B4": "2025-12-01"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 3,
+              "minCol": 0,
+              "maxCol": 2
+            },
+            "columns": [
+              {
+                "col": 0,
+                "kind": "condition",
+                "operator": "contains",
+                "value": "Alpha"
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "78c90eda-cd58-464e-b177-999b2d085a13",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:19.449Z",
+      "updatedAt": "2026-10-02T21:37:20.251Z",
+      "activeWorksheetId": "1e781112-afd2-4222-bc61-d62635aad0eb",
+      "worksheets": [
+        {
+          "id": "1e781112-afd2-4222-bc61-d62635aad0eb",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "North",
+            "B3": "200",
+            "A4": "East",
+            "B4": "300"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 3,
+              "minCol": 0,
+              "maxCol": 1
+            },
+            "columns": [
+              {
+                "col": 0,
+                "kind": "values",
+                "values": [
+                  "East"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1173f5c9-9d78-4126-97e4-62138f198d83",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:20.999Z",
+      "updatedAt": "2026-10-02T21:37:22.385Z",
+      "activeWorksheetId": "7ceb4f0d-52fd-4e11-8709-494caa4d153f",
+      "worksheets": [
+        {
+          "id": "7ceb4f0d-52fd-4e11-8709-494caa4d153f",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "C1": "Status",
+            "A2": "East",
+            "B2": "1200",
+            "C2": "Open",
+            "A3": "East",
+            "B3": "900",
+            "C3": "Closed",
+            "A4": "North",
+            "B4": "2000",
+            "C4": "Open",
+            "A5": "South",
+            "B5": "700",
+            "C5": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 4,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 4,
+              "minCol": 0,
+              "maxCol": 2
+            },
+            "columns": [
+              {
+                "col": 2,
+                "kind": "condition",
+                "operator": "contains",
+                "value": "Open"
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "eb82494e-d01a-4d5d-b50b-dc937ffed3cf",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:22.999Z",
+      "updatedAt": "2026-10-02T21:37:23.667Z",
+      "activeWorksheetId": "ba13f4f6-1efb-4156-95c3-edc9f7c70243",
+      "worksheets": [
+        {
+          "id": "ba13f4f6-1efb-4156-95c3-edc9f7c70243",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Name",
+            "B1": "Date",
+            "C1": "Note",
+            "A2": "Alpha East",
+            "B2": "2026-01-10",
+            "C2": "Filled",
+            "A3": "Alpha West",
+            "B3": "2026-02-10",
+            "C3": "Also filled"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 2,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 2,
+              "minCol": 0,
+              "maxCol": 2
+            },
+            "columns": [
+              {
+                "col": 0,
+                "kind": "condition",
+                "operator": "contains",
+                "value": "Gamma"
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "edc3a3ef-e7e4-4c82-b5f3-41d2d693b85a",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:24.447Z",
+      "updatedAt": "2026-10-02T21:37:25.017Z",
+      "activeWorksheetId": "e7459b42-7641-49f9-b03f-bfc1072b0f43",
+      "worksheets": [
+        {
+          "id": "e7459b42-7641-49f9-b03f-bfc1072b0f43",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "In Progress"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 1,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "ed9c82b3-7245-4b94-abf1-32ae981cecde",
+              "type": "dropdown",
+              "values": [
+                "Not Started",
+                "In Progress",
+                "Completed"
+              ],
+              "range": {
+                "minRow": 0,
+                "maxRow": 1,
+                "minCol": 0,
+                "maxCol": 0
+              }
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "f19f298e-8b02-4f2d-bfd6-cee0972ab9ec",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:25.681Z",
+      "updatedAt": "2026-10-02T21:37:26.943Z",
+      "activeWorksheetId": "8d6fec55-b0d7-41ab-8395-f020b06e7189",
+      "worksheets": [
+        {
+          "id": "8d6fec55-b0d7-41ab-8395-f020b06e7189",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "100"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "a442b5db-9703-4694-9500-017cb419a205",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 0,
+                "maxRow": 0,
+                "minCol": 0,
+                "maxCol": 0
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "4e248da9-fc70-4bec-9f0b-e3aedaff58e2",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:27.648Z",
+      "updatedAt": "2026-10-02T21:37:28.184Z",
+      "activeWorksheetId": "91887753-e40f-499e-96c2-f8c1f116399d",
+      "worksheets": [
+        {
+          "id": "91887753-e40f-499e-96c2-f8c1f116399d",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "50"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "2aae7101-e977-4afb-b9cd-f6721aa383f8",
+              "type": "numeric",
+              "min": 0,
+              "max": 100,
+              "range": {
+                "minRow": 0,
+                "maxRow": 0,
+                "minCol": 0,
+                "maxCol": 0
+              },
+              "style": "between"
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "3814076b-8a93-4d89-8b46-d8919dcb58e7",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:29.080Z",
+      "updatedAt": "2026-10-02T21:37:30.555Z",
+      "activeWorksheetId": "f98f74bf-c370-4266-a06d-cd46a5b92d2f",
+      "worksheets": [
+        {
+          "id": "f98f74bf-c370-4266-a06d-cd46a5b92d2f",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "5"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "e07ce7b6-a976-456a-a322-e5753decabc0",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:31.264Z",
+      "updatedAt": "2026-10-02T21:37:31.783Z",
+      "activeWorksheetId": "50976731-9529-4c90-8f87-c5f5b02721ed",
+      "worksheets": [
+        {
+          "id": "50976731-9529-4c90-8f87-c5f5b02721ed",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "62b6d849-48c5-418b-87a1-967121d891a3",
+              "type": "dropdown",
+              "values": [
+                "Open",
+                "Closed"
+              ],
+              "range": {
+                "minRow": 0,
+                "maxRow": 0,
+                "minCol": 0,
+                "maxCol": 0
+              }
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "1d3f739d-978a-40ca-b23a-50ea39744af7",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:32.864Z",
+      "updatedAt": "2026-10-02T21:37:33.907Z",
+      "activeWorksheetId": "13026832-65f7-4326-89a1-b6f78362431b",
+      "worksheets": [
+        {
+          "id": "13026832-65f7-4326-89a1-b6f78362431b",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "In Progress",
+            "A2": "Completed"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 0
+            },
+            "focus": {
+              "row": 1,
+              "col": 0
+            }
+          },
+          "validations": [
+            {
+              "id": "197d322f-3963-44a2-aaa5-0a55dfe2c933",
+              "type": "dropdown",
+              "values": [
+                "Not Started",
+                "In Progress",
+                "Completed"
+              ],
+              "range": {
+                "minRow": 0,
+                "maxRow": 1,
+                "minCol": 0,
+                "maxCol": 0
+              }
+            }
+          ],
+          "filter": null
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "3517cd15-fe26-41a5-b02a-72a88f18d2f6",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:34.681Z",
+      "updatedAt": "2026-10-02T21:37:36.118Z",
+      "activeWorksheetId": "3c634265-2a5f-4d4a-a0ab-47f72146a463",
+      "worksheets": [
+        {
+          "id": "90cc1567-da7d-4586-af24-57e0be7cdd39",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "1200",
+            "A3": "North",
+            "B3": "800",
+            "A4": "East",
+            "B4": "600",
+            "A5": "South",
+            "B5": "1000",
+            "A6": "North",
+            "B6": "700"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 5,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "3c634265-2a5f-4d4a-a0ab-47f72146a463",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "SUM of Sales",
+            "A2": "East",
+            "B2": "1800",
+            "A3": "North",
+            "B3": "1500",
+            "A4": "South",
+            "B4": "1000",
+            "A5": "Grand Total",
+            "B5": "4300"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "80660808-948c-4974-b68b-83dc2fc2aa5b",
+          "sourceWorksheetId": "90cc1567-da7d-4586-af24-57e0be7cdd39",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 5,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "SUM",
+          "resultWorksheetId": "3c634265-2a5f-4d4a-a0ab-47f72146a463"
+        }
+      ]
+    },
+    {
+      "id": "e6a7fff0-88ea-466e-ab96-e07fd8fd1867",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:36.864Z",
+      "updatedAt": "2026-10-02T21:37:38.566Z",
+      "activeWorksheetId": "a45ce449-67e9-4c86-8f1a-bec631462ea6",
+      "worksheets": [
+        {
+          "id": "73a970ee-bd5d-43e8-90cd-9def308e2b28",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "1500",
+            "A3": "North",
+            "B3": "800",
+            "A4": "East",
+            "B4": "600"
+          },
+          "selection": {
+            "anchor": {
+              "row": 1,
+              "col": 1
+            },
+            "focus": {
+              "row": 1,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "a45ce449-67e9-4c86-8f1a-bec631462ea6",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "SUM of Sales",
+            "A2": "East",
+            "B2": "2100",
+            "A3": "North",
+            "B3": "800",
+            "A4": "Grand Total",
+            "B4": "2900"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "76695a1e-5d69-4bdf-afb5-6ba678701259",
+          "sourceWorksheetId": "73a970ee-bd5d-43e8-90cd-9def308e2b28",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 3,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "SUM",
+          "resultWorksheetId": "a45ce449-67e9-4c86-8f1a-bec631462ea6"
+        }
+      ]
+    },
+    {
+      "id": "f9bd07ea-83af-480a-9d0c-1610de0fbb15",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:39.297Z",
+      "updatedAt": "2026-10-02T21:37:40.417Z",
+      "activeWorksheetId": "ecb6ddea-5024-4c3e-8d16-aac988bde707",
+      "worksheets": [
+        {
+          "id": "a319818b-93ff-4ea9-b916-0a39f51ccfc9",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Quarter",
+            "C1": "Sales",
+            "A2": "East",
+            "B2": "Q1",
+            "C2": "100",
+            "A3": "East",
+            "B3": "Q1",
+            "C3": "200",
+            "A4": "East",
+            "B4": "Q2",
+            "C4": "150",
+            "A5": "North",
+            "B5": "Q1",
+            "C5": "300",
+            "A6": "North",
+            "B6": "Q2"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 5,
+              "col": 2
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "ecb6ddea-5024-4c3e-8d16-aac988bde707",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Q1",
+            "C1": "Q2",
+            "D1": "Grand Total",
+            "A2": "East",
+            "B2": "2",
+            "C2": "1",
+            "D2": "3",
+            "A3": "North",
+            "B3": "1",
+            "C3": "0",
+            "D3": "1",
+            "A4": "Grand Total",
+            "B4": "3",
+            "C4": "1",
+            "D4": "4"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "2e37cf4c-d816-4c7e-b2c7-96f6c8330e37",
+          "sourceWorksheetId": "a319818b-93ff-4ea9-b916-0a39f51ccfc9",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 5,
+            "minCol": 0,
+            "maxCol": 2
+          },
+          "rowField": "Region",
+          "columnField": "Quarter",
+          "valueField": "Sales",
+          "summarizeBy": "COUNT",
+          "resultWorksheetId": "ecb6ddea-5024-4c3e-8d16-aac988bde707"
+        }
+      ]
+    },
+    {
+      "id": "a9193bf0-3637-472c-a3b8-a827319ac845",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:41.263Z",
+      "updatedAt": "2026-10-02T21:37:42.566Z",
+      "activeWorksheetId": "7db343fa-de40-4255-85d7-964782442170",
+      "worksheets": [
+        {
+          "id": "580e7eac-c14c-4f76-95f2-79d003e57098",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "East",
+            "B3": "not numeric",
+            "A4": "East",
+            "B4": "300",
+            "A5": "North",
+            "B5": "200",
+            "A6": "North"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 5,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "7db343fa-de40-4255-85d7-964782442170",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "AVERAGE of Sales",
+            "A2": "East",
+            "B2": "200",
+            "A3": "North",
+            "B3": "200",
+            "A4": "Grand Total",
+            "B4": "200"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "3be1b7e5-a294-4c05-bf86-d8dbf3b56f62",
+          "sourceWorksheetId": "580e7eac-c14c-4f76-95f2-79d003e57098",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 5,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "AVERAGE",
+          "resultWorksheetId": "7db343fa-de40-4255-85d7-964782442170"
+        }
+      ]
+    },
+    {
+      "id": "21b57c6d-c6d4-4d82-95e0-4754ac1babe2",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:43.147Z",
+      "updatedAt": "2026-10-02T21:37:44.615Z",
+      "activeWorksheetId": "f4a35cf8-a9c0-4fe0-9645-5a74b6f39409",
+      "worksheets": [
+        {
+          "id": "1c3d703e-6972-4769-bf60-e732cd10e99d",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Status",
+            "A2": "East",
+            "B2": "Open",
+            "A3": "East",
+            "B3": "Closed",
+            "A4": "North",
+            "B4": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "f4a35cf8-a9c0-4fe0-9645-5a74b6f39409",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Status",
+            "B1": "COUNT of Region",
+            "A2": "Open",
+            "B2": "2",
+            "A3": "Closed",
+            "B3": "1",
+            "A4": "Grand Total",
+            "B4": "3"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "1ad61bc3-69b7-420a-b7b7-736acdcc98d5",
+          "sourceWorksheetId": "1c3d703e-6972-4769-bf60-e732cd10e99d",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 3,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Status",
+          "columnField": null,
+          "valueField": "Region",
+          "summarizeBy": "COUNT",
+          "resultWorksheetId": "f4a35cf8-a9c0-4fe0-9645-5a74b6f39409"
+        }
+      ]
+    },
+    {
+      "id": "a421be34-6457-47f8-a2c3-8c56db7ceb6c",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:45.364Z",
+      "updatedAt": "2026-10-02T21:37:46.099Z",
+      "activeWorksheetId": "719b262f-b837-4cfd-8050-f27cff7b1675",
+      "worksheets": [
+        {
+          "id": "719b262f-b837-4cfd-8050-f27cff7b1675",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "North",
+            "B3": "200",
+            "A4": "East",
+            "B4": "300"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": {
+            "range": {
+              "minRow": 0,
+              "maxRow": 3,
+              "minCol": 0,
+              "maxCol": 1
+            },
+            "columns": [
+              {
+                "col": 0,
+                "kind": "values",
+                "values": [
+                  "East"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "pivots": []
+    },
+    {
+      "id": "edd705c7-3f7c-41be-9b28-fa4e71c9e5b9",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:37:56.464Z",
+      "updatedAt": "2026-10-02T21:37:58.416Z",
+      "activeWorksheetId": "57238d76-6309-488c-996b-1022365b0430",
+      "worksheets": [
+        {
+          "id": "ef2fc932-a053-49f5-8bf1-798756430d48",
+          "name": "Sheet1",
+          "rowCount": 51,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Sales",
+            "A2": "East",
+            "B2": "100",
+            "A3": "North",
+            "B3": "200",
+            "A5": "East",
+            "B5": "300",
+            "A4": "East",
+            "B4": "50"
+          },
+          "selection": {
+            "anchor": {
+              "row": 3,
+              "col": 1
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "57238d76-6309-488c-996b-1022365b0430",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "SUM of Sales",
+            "A2": "East",
+            "B2": "150",
+            "A3": "North",
+            "B3": "200",
+            "A4": "Grand Total",
+            "B4": "350"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "c4265c74-e445-46f6-ad09-7570bb0c606a",
+          "sourceWorksheetId": "ef2fc932-a053-49f5-8bf1-798756430d48",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 3,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "SUM",
+          "resultWorksheetId": "57238d76-6309-488c-996b-1022365b0430"
+        }
+      ]
+    },
+    {
+      "id": "fec43c63-a162-408e-8378-6077f89f039a",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:38:07.563Z",
+      "updatedAt": "2026-10-02T21:38:09.248Z",
+      "activeWorksheetId": "03afbbf2-dba9-4a60-94e7-6e58b9737cad",
+      "worksheets": [
+        {
+          "id": "568fd11a-ddc9-428f-bc82-ac8a95ef5da4",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 25,
+          "cells": {
+            "A1": "Region",
+            "A2": "East",
+            "A3": "North",
+            "A4": "East"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 3,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "03afbbf2-dba9-4a60-94e7-6e58b9737cad",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "SUM of Sales",
+            "A2": "East",
+            "B2": "400",
+            "A3": "North",
+            "B3": "200",
+            "A4": "Grand Total",
+            "B4": "600"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "dbabae91-b44f-4e6b-899f-a85c27daf7af",
+          "sourceWorksheetId": "568fd11a-ddc9-428f-bc82-ac8a95ef5da4",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 3,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Sales",
+          "summarizeBy": "SUM",
+          "resultWorksheetId": "03afbbf2-dba9-4a60-94e7-6e58b9737cad"
+        }
+      ]
+    },
+    {
+      "id": "5958077e-0289-4c6f-b387-fd8a88ee5cb2",
+      "name": "Untitled spreadsheet",
+      "createdAt": "2026-10-02T21:38:09.863Z",
+      "updatedAt": "2026-10-02T21:38:10.816Z",
+      "activeWorksheetId": "8f21480c-ee0b-4f0a-acd8-3cc02b59c55b",
+      "worksheets": [
+        {
+          "id": "3dbb0126-4d39-4773-a8da-76604c0d3a86",
+          "name": "Sheet1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "Status",
+            "A2": "East",
+            "B2": "Open",
+            "A3": "East",
+            "B3": "Closed",
+            "A4": "North",
+            "B4": "Open",
+            "A5": "South",
+            "B5": "Open"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 4,
+              "col": 1
+            }
+          },
+          "validations": [],
+          "filter": null
+        },
+        {
+          "id": "8f21480c-ee0b-4f0a-acd8-3cc02b59c55b",
+          "name": "Pivot1",
+          "rowCount": 50,
+          "columnCount": 26,
+          "cells": {
+            "A1": "Region",
+            "B1": "COUNT of Status",
+            "A2": "East",
+            "B2": "2",
+            "A3": "North",
+            "B3": "1",
+            "A4": "South",
+            "B4": "1",
+            "A5": "Grand Total",
+            "B5": "4"
+          },
+          "selection": {
+            "anchor": {
+              "row": 0,
+              "col": 0
+            },
+            "focus": {
+              "row": 0,
+              "col": 0
+            }
+          },
+          "validations": [],
+          "filter": null
+        }
+      ],
+      "pivots": [
+        {
+          "id": "df9d86c5-2c28-4914-817e-8e8cda37729a",
+          "sourceWorksheetId": "3dbb0126-4d39-4773-a8da-76604c0d3a86",
+          "sourceRange": {
+            "minRow": 0,
+            "maxRow": 4,
+            "minCol": 0,
+            "maxCol": 1
+          },
+          "rowField": "Region",
+          "columnField": null,
+          "valueField": "Status",
+          "summarizeBy": "COUNT",
+          "resultWorksheetId": "8f21480c-ee0b-4f0a-acd8-3cc02b59c55b"
+        }
+      ]
+    }
+  ]
+}

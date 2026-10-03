@@ -1,0 +1,602 @@
+{
+  "REQ-3-1::0": {
+    "scenario_id": "REQ-3-1::0",
+    "id": "REQ-3-1::0",
+    "name": "REQ-3-1: Search for and Locate Repositories - Scenario 1",
+    "req_id": "REQ-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo` and private repository `secret-research` in the same organization. The visitor is not authenticated."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor fills the top searchbox named “Search” with `acme-docs` and presses Enter, then clicks the exact result link named `acme-docs`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The repository overview displays a visible heading containing `acme-docs`."
+      }
+    ]
+  },
+  "REQ-3-1::1": {
+    "scenario_id": "REQ-3-1::1",
+    "id": "REQ-3-1::1",
+    "name": "REQ-3-1: Search for and Locate Repositories - Scenario 2",
+    "req_id": "REQ-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo` and private repository `secret-research` in the same organization. The visitor is not authenticated."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor fills the top searchbox named “Search” with `secret-research` and presses Enter."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The search results contain no exact link named `secret-research`."
+      }
+    ]
+  },
+  "REQ-3-1::2": {
+    "scenario_id": "REQ-3-1::2",
+    "id": "REQ-3-1::2",
+    "name": "REQ-3-1: Search for and Locate Repositories - Scenario 3",
+    "req_id": "REQ-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo` and private repository `secret-research` in the same organization. The visitor is not authenticated."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor fills the top searchbox named “Search” with `no-such-repository` and presses Enter."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays a no-results message such as “No results” or “No repositories”."
+      }
+    ]
+  },
+  "REQ-3-1::3": {
+    "scenario_id": "REQ-3-1::3",
+    "id": "REQ-3-1::3",
+    "name": "REQ-3-1: Search for and Locate Repositories - Scenario 4",
+    "req_id": "REQ-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo` and private repository `secret-research` in the same organization. The visitor is not authenticated."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor fills the top searchbox named “Search” with `acme-docs` and presses Enter, then opens the exact `acme-docs` result."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The repository overview displays a visible heading containing `acme-docs`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After reloading the repository overview, the heading containing `acme-docs` remains visible."
+      }
+    ]
+  },
+  "REQ-3-2-1::0": {
+    "scenario_id": "REQ-3-2-1::0",
+    "id": "REQ-3-2-1::0",
+    "name": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 1",
+    "req_id": "REQ-3-2-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The pre-provisioned `repo-owner` (`repo-owner@example.test`, password `Valid-password-123!`) owns the personal namespace and may create repositories there. The existing repository `acme-docs` is available for duplicate-name validation, while the candidate repository name is unused. the creation page from “New repository”; the personal namespace is selectable. If an organization namespace is selected, the user has permission to create repositories for that organization, and the candidate repository name is unused in the target namespace."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The user selects the target owner, enters a valid and unique repository name and optional description, selects “Private”, checks “Add a README file”, and clicks “Create repository”. Seed values: public repository `acme-docs`, private repository `secret-research`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The system enters the “owner/repository name” overview page, marked Private; the default branch contains a README file, and the commit history contains one initialization commit; the repository also appears in the target owner's repository list. Seed values: public repository `acme-docs`, private repository `secret-research`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After refreshing the overview page, the owner, visibility, README, and initialization commit remain; if the name is empty or duplicated, the user lacks organization-creation permission, or any step fails during creation, the system displays the reason and leaves no partially created repository. Seed values: public repository `acme-docs`, private repository `secret-research`."
+      }
+    ]
+  },
+  "REQ-3-2-1::1": {
+    "scenario_id": "REQ-3-2-1::1",
+    "id": "REQ-3-2-1::1",
+    "name": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 2",
+    "req_id": "REQ-3-2-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The pre-provisioned `repo-owner` (`repo-owner@example.test`, password `Valid-password-123!`) owns the personal namespace. The repository `acme-docs` already exists in that namespace."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor signs in as `repo-owner`, opens “New repository”, enters the existing repository name `acme-docs`, and clicks “Create repository”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays the repository-name conflict message and does not display the existing repository overview heading."
+      }
+    ]
+  },
+  "REQ-3-2-1::2": {
+    "scenario_id": "REQ-3-2-1::2",
+    "id": "REQ-3-2-1::2",
+    "name": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 3",
+    "req_id": "REQ-3-2-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The pre-provisioned `repo-owner` (`repo-owner@example.test`, password `Valid-password-123!`) owns the personal namespace."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor signs in as `repo-owner`, opens “New repository”, leaves “Repository name” empty, and clicks “Create repository”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays a repository-name-required validation message."
+      }
+    ]
+  },
+  "REQ-3-2-2::0": {
+    "scenario_id": "REQ-3-2-2::0",
+    "id": "REQ-3-2-2::0",
+    "name": "REQ-3-2-2: Fork a Repository into Another Namespace - Scenario 1",
+    "req_id": "REQ-3-2-2",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions the verified account `fork-user` (`fork-user@example.test`, password `Valid-password-123!`) with permission to read public repository `acme-docs` and create repositories in its personal namespace. No fork with the generated test name exists in that namespace."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The user clicks “Fork”, selects the target namespace, keeps or enters a valid new repository name and optional visibility, then clicks “Create fork”. Seed values: public repository `acme-docs`, private repository `secret-research`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The system opens the target “owner/fork name” overview page, which displays the source repository of the fork; the default branch contains the accessible history and files from the source repository, and subsequent commits to the fork do not modify the source repository. Seed values: public repository `acme-docs`, private repository `secret-research`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After refreshing the fork page and target owner's repository list, the fork and source link still exist; if the target name conflicts, the user lacks permission in the target namespace, or the source repository is inaccessible, no fork is created."
+      }
+    ]
+  },
+  "REQ-3-2-2::1": {
+    "scenario_id": "REQ-3-2-2::1",
+    "id": "REQ-3-2-2::1",
+    "name": "REQ-3-2-2: Fork a Repository into Another Namespace - Scenario 2",
+    "req_id": "REQ-3-2-2",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions the verified account `fork-user` (`fork-user@example.test`, password `Valid-password-123!`) with permission to read public repository `acme-docs` and create repositories in its personal namespace. The personal namespace already contains fork `acme-docs-fork`."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor signs in as `fork-user`, opens public repository `acme-docs`, clicks “Fork”, enters the existing fork name `acme-docs-fork`, and clicks “Create fork”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays a repository-name conflict message."
+      }
+    ]
+  },
+  "REQ-3-2-3::0": {
+    "scenario_id": "REQ-3-2-3::0",
+    "id": "REQ-3-2-3::0",
+    "name": "REQ-3-2-3: Copy a Repository Clone Value - Scenario 1",
+    "req_id": "REQ-3-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo`; the visitor can open its overview without signing in. The browser grants clipboard read and write permission."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor clicks “Code”, selects the “HTTPS” tab, and clicks the button for copying the selected clone value."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays brief “Copied” feedback for the selected protocol and keeps the `acme-docs` repository heading visible."
+      }
+    ]
+  },
+  "REQ-3-2-3::1": {
+    "scenario_id": "REQ-3-2-3::1",
+    "id": "REQ-3-2-3::1",
+    "name": "REQ-3-2-3: Copy a Repository Clone Value - Scenario 2",
+    "req_id": "REQ-3-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo`; the visitor can open its overview without signing in. The browser grants clipboard read and write permission."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor clicks “Code”, selects the “SSH” tab, and clicks the button for copying the selected clone value."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays brief “Copied” feedback for the selected protocol and keeps the `acme-docs` repository heading visible."
+      }
+    ]
+  },
+  "REQ-3-3::0": {
+    "scenario_id": "REQ-3-3::0",
+    "id": "REQ-3-3::0",
+    "name": "REQ-3-3: View a Public Repository Overview - Scenario 1",
+    "req_id": "REQ-3-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` in organization `Acme Demo`; the visitor can open its overview without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor opens the visible `acme-docs` repository entry."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The overview displays a heading containing `acme-docs`, a visible “Public” marker, and a “Code” navigation link."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After the visitor reloads the page, the `acme-docs` repository heading remains visible."
+      }
+    ]
+  },
+  "REQ-3-4::0": {
+    "scenario_id": "REQ-3-4::0",
+    "id": "REQ-3-4::0",
+    "name": "REQ-3-4: Change Repository Visibility with Permission Checks - Scenario 1",
+    "req_id": "REQ-3-4",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions private repository `visibility-demo` and account `visibility-admin` with email `visibility-admin@example.test`, password `Valid-password-123!`, and administrator permission on that repository. The administrator starts from the application home page."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The administrator signs in, opens `visibility-demo`, clicks “Settings” and “General”, clicks “Change visibility”, selects the “Public” radio, and clicks “Confirm visibility”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The repository overview displays a visible “Public” marker. After the session cookies are cleared, a visitor can reopen `visibility-demo` and see its repository heading."
+      }
+    ]
+  },
+  "REQ-3-4::1": {
+    "scenario_id": "REQ-3-4::1",
+    "id": "REQ-3-4::1",
+    "name": "REQ-3-4: Change Repository Visibility with Permission Checks - Scenario 2",
+    "req_id": "REQ-3-4",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions repository `visibility-demo` and non-admin collaborator account `collaborator` with email `collaborator@example.test`, password `Valid-password-123!`, and no repository-administrator permission on that repository. The collaborator starts from the application home page."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The collaborator signs in, opens `visibility-demo`, and, if a “Settings” link is visible, opens it."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The collaborator does not see an actionable “Change visibility” button."
+      }
+    ]
+  },
+  "REQ-4-1::0": {
+    "scenario_id": "REQ-4-1::0",
+    "id": "REQ-4-1::0",
+    "name": "REQ-4-1: Browse Repository Files and Directories - Scenario 1",
+    "req_id": "REQ-4-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` with directory `src` containing text file `README.md`; the visitor can open its Code page without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor clicks the `src` directory link and then clicks the `README.md` file link."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The file page displays the seeded `README.md` content `Document search flow`."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After the visitor reloads the file page, the content `Document search flow` remains visible."
+      }
+    ]
+  },
+  "REQ-4-2-1::0": {
+    "scenario_id": "REQ-4-2-1::0",
+    "id": "REQ-4-2-1::0",
+    "name": "REQ-4-2-1: View Repository Commit History - Scenario 1",
+    "req_id": "REQ-4-2-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` with commit message `Document search flow` authored by `alice-dev`; the visitor can open the repository without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor opens `acme-docs` and clicks the “Commits” link."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The commit history displays `Document search flow`, `alice-dev`, and a relative timestamp containing “ago”."
+      }
+    ]
+  },
+  "REQ-4-2-2::0": {
+    "scenario_id": "REQ-4-2-2::0",
+    "id": "REQ-4-2-2::0",
+    "name": "REQ-4-2-2: Inspect Commit and Revision Differences - Scenario 1",
+    "req_id": "REQ-4-2-2",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` with an accessible commit entry and changed file `src/search.ts`; the visitor can open the commit entry without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor opens the seeded commit entry."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The commit detail displays `src/search.ts`, a “Changed files” summary, and numeric additions and deletions."
+      }
+    ]
+  },
+  "REQ-4-2-3::0": {
+    "scenario_id": "REQ-4-2-3::0",
+    "id": "REQ-4-2-3::0",
+    "name": "REQ-4-2-3: Search Code Within a Repository - Scenario 1",
+    "req_id": "REQ-4-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` with file `README.md` containing the text `search flow`; the visitor can open it without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor enters `search flow` in the repository Search box, presses Enter, opens the “Code” results, and opens the `README.md` result."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The opened file displays the exact text `search flow`."
+      }
+    ]
+  },
+  "REQ-4-2-3::1": {
+    "scenario_id": "REQ-4-2-3::1",
+    "id": "REQ-4-2-3::1",
+    "name": "REQ-4-2-3: Search Code Within a Repository - Scenario 2",
+    "req_id": "REQ-4-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs`, and the query `no-such-token` does not occur in its searchable code."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor enters `no-such-token` in the repository Search box, presses Enter, and opens the “Code” results."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays a no-code-results message and the Search box retains the value `no-such-token`."
+      }
+    ]
+  },
+  "REQ-4-2-3::2": {
+    "scenario_id": "REQ-4-2-3::2",
+    "id": "REQ-4-2-3::2",
+    "name": "REQ-4-2-3: Search Code Within a Repository - Scenario 3",
+    "req_id": "REQ-4-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs` with file `README.md` containing the text `search flow`."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor searches for `search flow`, opens the “Code” results, and opens the `README.md` result."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The file displays `search flow`; after reload, the same text and an exact `README.md` link remain visible."
+      }
+    ]
+  },
+  "REQ-4-2-3::3": {
+    "scenario_id": "REQ-4-2-3::3",
+    "id": "REQ-4-2-3::3",
+    "name": "REQ-4-2-3: Search Code Within a Repository - Scenario 4",
+    "req_id": "REQ-4-2-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `acme-docs`, and the query `no-such-token` does not occur in its searchable code."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor searches for `no-such-token` from `acme-docs`, opens the “Code” results, returns to the repository, and repeats the same search."
+      },
+      {
+        "keyword": "THEN",
+        "content": "Both searches display a no-code-results message."
+      }
+    ]
+  },
+  "REQ-4-3-1::0": {
+    "scenario_id": "REQ-4-3-1::0",
+    "id": "REQ-4-3-1::0",
+    "name": "REQ-4-3-1: List and Switch Repository Branches - Scenario 1",
+    "req_id": "REQ-4-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The visitor starts at the application home page in a fresh unauthenticated browser session. The system pre-provisions public repository `branch-switch-demo` with active branch `main`, target branch `feature-search`, and file `main-only.md` available only on the target branch; the visitor can open the repository without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor opens the branch selector, enters `feature-search` in the `Find branch` textbox, and clicks the exact `feature-search` option."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The branch selector displays `feature-search` and the page exposes the exact `main-only.md` file link."
+      }
+    ]
+  },
+  "REQ-4-3-1::1": {
+    "scenario_id": "REQ-4-3-1::1",
+    "id": "REQ-4-3-1::1",
+    "name": "REQ-4-3-1: List and Switch Repository Branches - Scenario 2",
+    "req_id": "REQ-4-3-1",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `branch-switch-demo` with active branch `main` and an available `feature-search` branch. The visitor starts at the application home page in a fresh unauthenticated browser session and can open the repository without signing in."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The visitor opens the branch selector, enters `missing-branch` in the `Find branch` textbox, observes the no-matching-branch state, and presses Escape."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The selector remains on `main`; after reload, the active branch button still displays `main`."
+      }
+    ]
+  },
+  "REQ-4-3-2::0": {
+    "scenario_id": "REQ-4-3-2::0",
+    "id": "REQ-4-3-2::0",
+    "name": "REQ-4-3-2: Create a Branch from an Existing Revision - Scenario 1",
+    "req_id": "REQ-4-3-2",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `branch-switch-demo` with branch `main` and account `branch-contributor` with email `branch-contributor@example.test`, password `Valid-password-123!`, and Write permission. The generated branch name `pw-branch-<unique suffix>` is unused."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The contributor signs in, opens `branch-switch-demo`, opens the branch selector, enters the generated `pw-branch-<unique suffix>` name, and selects the matching “Create branch: <name>” option."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The selector switches to the generated branch name; after reload, the same branch remains selected."
+      }
+    ]
+  },
+  "REQ-4-3-2::1": {
+    "scenario_id": "REQ-4-3-2::1",
+    "id": "REQ-4-3-2::1",
+    "name": "REQ-4-3-2: Create a Branch from an Existing Revision - Scenario 2",
+    "req_id": "REQ-4-3-2",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `branch-switch-demo` with branch `main` and account `branch-contributor` with email `branch-contributor@example.test`, password `Valid-password-123!`, and Write permission. The invalid name `invalid..branch` does not identify an existing branch."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The contributor signs in, opens `branch-switch-demo`, opens the branch selector, and enters `invalid..branch` in the `Find branch` textbox."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The selector displays an “Invalid branch” validation message."
+      }
+    ]
+  },
+  "REQ-4-3-3::0": {
+    "scenario_id": "REQ-4-3-3::0",
+    "id": "REQ-4-3-3::0",
+    "name": "REQ-4-3-3: Change the Repository Default Branch - Scenario 1",
+    "req_id": "REQ-4-3-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `default-branch-demo` with branches `main` and `release`, current default branch `main`, and account `default-branch-admin` with email `default-branch-admin@example.test`, password `Valid-password-123!`, and repository-administrator permission."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The administrator signs in, opens `default-branch-demo`, opens “Settings” and “Branches”, selects `release` in the “Default branch” combobox, clicks “Update”, and clicks “Confirm”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "After reopening `default-branch-demo`, the branch button displays `release`, and the branch selector still offers the existing `main` option."
+      }
+    ]
+  },
+  "REQ-4-3-3::1": {
+    "scenario_id": "REQ-4-3-3::1",
+    "id": "REQ-4-3-3::1",
+    "name": "REQ-4-3-3: Change the Repository Default Branch - Scenario 2",
+    "req_id": "REQ-4-3-3",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `default-branch-demo` with branches `main` and `release`, and account `default-branch-viewer` with email `default-branch-viewer@example.test`, password `Valid-password-123!`, and no repository-administration permission. The viewer starts from the application home page."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The viewer signs in, opens `default-branch-demo`, and, when available, opens “Settings” and “Branches”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page has no “Default branch” combobox and no actionable “Update default branch” button."
+      }
+    ]
+  },
+  "REQ-4-4::0": {
+    "scenario_id": "REQ-4-4::0",
+    "id": "REQ-4-4::0",
+    "name": "REQ-4-4: Manage Repository Files Through the Web Interface - Scenario 1",
+    "req_id": "REQ-4-4",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `file-management-demo` and account `file-contributor` with email `file-contributor@example.test`, password `Valid-password-123!`, and Write permission on that repository. The contributor starts from the application home page; the generated `pw-file-<unique suffix>.md` path is unused."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The contributor signs in, opens `file-management-demo`, clicks “Add file” and “Create new file”, enters the generated filename, nonempty content, and commit message `Add <file name>`, then clicks “Commit changes”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The created file view displays the exact submitted content. Its “Commits” link opens history containing the exact commit message `Add <file name>`."
+      }
+    ]
+  },
+  "REQ-4-4::1": {
+    "scenario_id": "REQ-4-4::1",
+    "id": "REQ-4-4::1",
+    "name": "REQ-4-4: Manage Repository Files Through the Web Interface - Scenario 2",
+    "req_id": "REQ-4-4",
+    "steps": [
+      {
+        "keyword": "GIVEN",
+        "content": "The system pre-provisions public repository `file-management-demo` and account `file-contributor` with email `file-contributor@example.test`, password `Valid-password-123!`, and Write permission on that repository. The contributor starts from the application home page."
+      },
+      {
+        "keyword": "WHEN",
+        "content": "The contributor signs in, opens `file-management-demo`, clicks “Add file” and “Create new file”, enters path `../invalid.md`, enters content `must not be saved`, leaves the commit message empty, and clicks “Commit changes”."
+      },
+      {
+        "keyword": "THEN",
+        "content": "The page displays an invalid-path message or a required-commit-message message; the invalid submission is not accepted."
+      }
+    ]
+  }
+}

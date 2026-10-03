@@ -1,0 +1,1291 @@
+{
+  "config": {
+    "configFile": "/workspace/tests/playwright.config.ts",
+    "rootDir": "/workspace/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "/workspace/template/.arc/playwright-report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/workspace/tests/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 10000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "REQ-3-1-search-repositories.spec.ts",
+      "file": "REQ-3-1-search-repositories.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-1: Search for and Locate Repositories - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 843,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:06.823Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfe92b005e23d01fc5f-57b8815e11c6ce77a5ef",
+          "file": "REQ-3-1-search-repositories.spec.ts",
+          "line": 8,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-1: Search for and Locate Repositories - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 313,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:07.919Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfe92b005e23d01fc5f-c6c3b55b11d9c01b565a",
+          "file": "REQ-3-1-search-repositories.spec.ts",
+          "line": 18,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-1: Search for and Locate Repositories - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 412,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:08.265Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfe92b005e23d01fc5f-03d88dbad704a43c97b5",
+          "file": "REQ-3-1-search-repositories.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-1: Search for and Locate Repositories - Scenario 4",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 552,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:08.688Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ecfe92b005e23d01fc5f-dd5a0c3ce5bc960d5593",
+          "file": "REQ-3-1-search-repositories.spec.ts",
+          "line": 34,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-2-1-create-repository.spec.ts",
+      "file": "REQ-3-2-1-create-repository.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 910,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:09.258Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e381f19d1fb623516fde-43ad449e53fa5437758e",
+          "file": "REQ-3-2-1-create-repository.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 736,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:10.180Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e381f19d1fb623516fde-410a6379b72627d411b2",
+          "file": "REQ-3-2-1-create-repository.spec.ts",
+          "line": 29,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-2-1: Create a Repository with Owner, Visibility, and Initialization Options - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 750,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:10.989Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "e381f19d1fb623516fde-e115edc65366fb61aff2",
+          "file": "REQ-3-2-1-create-repository.spec.ts",
+          "line": 42,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-2-2-fork-repository.spec.ts",
+      "file": "REQ-3-2-2-fork-repository.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-2-2: Fork a Repository into Another Namespace - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 889,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:11.755Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1e38ba682e2ec9d5db97-2ae60f467e0b4f0bb687",
+          "file": "REQ-3-2-2-fork-repository.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-2-2: Fork a Repository into Another Namespace - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 933,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:12.656Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1e38ba682e2ec9d5db97-2a18075a7ba99735bf03",
+          "file": "REQ-3-2-2-fork-repository.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-2-3-copy-clone-url.spec.ts",
+      "file": "REQ-3-2-3-copy-clone-url.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-2-3: Copy a Repository Clone Value - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 550,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:13.605Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "743e26dc5b1ea3aaec1b-a61e8fae0d3a5c4268fe",
+          "file": "REQ-3-2-3-copy-clone-url.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-2-3: Copy a Repository Clone Value - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 558,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:14.166Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "743e26dc5b1ea3aaec1b-f8be1eca733999dbb546",
+          "file": "REQ-3-2-3-copy-clone-url.spec.ts",
+          "line": 24,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-3-view-public-repository.spec.ts",
+      "file": "REQ-3-3-view-public-repository.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-3: View a Public Repository Overview - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 513,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:14.740Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "23c7b0fc087e57a3b572-50528af9935a007eb269",
+          "file": "REQ-3-3-view-public-repository.spec.ts",
+          "line": 10,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-4-change-repository-visibility.spec.ts",
+      "file": "REQ-3-4-change-repository-visibility.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-4: Change Repository Visibility with Permission Checks - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 783,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:15.269Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a06af1b1a3d9794c9b4e-283dcc6f0def2b840727",
+          "file": "REQ-3-4-change-repository-visibility.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-4: Change Repository Visibility with Permission Checks - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 608,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:16.063Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "a06af1b1a3d9794c9b4e-f3175b059cd81577fc5c",
+          "file": "REQ-3-4-change-repository-visibility.spec.ts",
+          "line": 21,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-1-browse-files.spec.ts",
+      "file": "REQ-4-1-browse-files.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-1: Browse Repository Files and Directories - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 657,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:16.686Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "363462154574d8ef6307-3b9dab1e13ade73a13ad",
+          "file": "REQ-4-1-browse-files.spec.ts",
+          "line": 10,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-2-1-view-commit-history.spec.ts",
+      "file": "REQ-4-2-1-view-commit-history.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-2-1: View Repository Commit History - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 579,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('alice-dev', { exact: true })\nExpected: visible\nError: strict mode violation: getByText('alice-dev', { exact: true }) resolved to 2 elements:\n    1) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').first()\n    2) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for getByText('alice-dev', { exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('alice-dev', { exact: true })\nExpected: visible\nError: strict mode violation: getByText('alice-dev', { exact: true }) resolved to 2 elements:\n    1) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').first()\n    2) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for getByText('alice-dev', { exact: true })\u001b[22m\n\n    at /workspace/tests/REQ-4-2-1-view-commit-history.spec.ts:18:63",
+                    "location": {
+                      "file": "/workspace/tests/REQ-4-2-1-view-commit-history.spec.ts",
+                      "column": 63,
+                      "line": 18
+                    },
+                    "snippet": "  16 |   await page.getByRole('link', { name: /commits/i }).click();\n  17 |   await expect(page.getByText(commitMessage, { exact: true })).toBeVisible();\n> 18 |   await expect(page.getByText(commitAuthor, { exact: true })).toBeVisible();\n     |                                                               ^\n  19 |   await expect(page.getByText(/ago/i).first()).toBeVisible();\n  20 | });\n  21 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/REQ-4-2-1-view-commit-history.spec.ts",
+                        "column": 63,
+                        "line": 18
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('alice-dev', { exact: true })\nExpected: visible\nError: strict mode violation: getByText('alice-dev', { exact: true }) resolved to 2 elements:\n    1) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').first()\n    2) <span class=\"commit-list__author\">alice-dev</span> aka getByText('alice-dev').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for getByText('alice-dev', { exact: true })\u001b[22m\n\n\n  16 |   await page.getByRole('link', { name: /commits/i }).click();\n  17 |   await expect(page.getByText(commitMessage, { exact: true })).toBeVisible();\n> 18 |   await expect(page.getByText(commitAuthor, { exact: true })).toBeVisible();\n     |                                                               ^\n  19 |   await expect(page.getByText(/ago/i).first()).toBeVisible();\n  20 | });\n  21 |\n    at /workspace/tests/REQ-4-2-1-view-commit-history.spec.ts:18:63"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:17.376Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-4-2-1-view-commit-hist-0b178-Commit-History---Scenario-1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/REQ-4-2-1-view-commit-history.spec.ts",
+                    "column": 63,
+                    "line": 18
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5db41ab7a100beed7d47-d5b7e60952ae10ca4f80",
+          "file": "REQ-4-2-1-view-commit-history.spec.ts",
+          "line": 10,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-2-2-view-commit-diff.spec.ts",
+      "file": "REQ-4-2-2-view-commit-diff.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-2-2: Inspect Commit and Revision Differences - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 631,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"Document search flow\"",
+                    "stack": "Error: Could not find a visible navigation target named \"Document search flow\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:213:9)\n    at openVisibleTarget (/workspace/tests/support/e2e.ts:230:3)\n    at /workspace/tests/REQ-4-2-2-view-commit-diff.spec.ts:14:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 213
+                    },
+                    "snippet": "   at support/e2e.ts:213\n\n  211 |   }\n  212 |\n> 213 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  214 | }\n  215 |\n  216 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 213
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"Document search flow\"\n\n   at support/e2e.ts:213\n\n  211 |   }\n  212 |\n> 213 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  214 | }\n  215 |\n  216 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:213:9)\n    at openVisibleTarget (/workspace/tests/support/e2e.ts:230:3)\n    at /workspace/tests/REQ-4-2-2-view-commit-diff.spec.ts:14:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:18.811Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-4-2-2-view-commit-diff-eace5-on-Differences---Scenario-1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 213
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "105ccf190e5ad9880fa2-537d723649dd9be57c20",
+          "file": "REQ-4-2-2-view-commit-diff.spec.ts",
+          "line": 10,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-2-3-search-code.spec.ts",
+      "file": "REQ-4-2-3-search-code.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-2-3: Search Code Within a Repository - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 743,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:20.563Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d41476c1168962e14ec0-c71625759b74fb4fa13f",
+          "file": "REQ-4-2-3-search-code.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-2-3: Search Code Within a Repository - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10014,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/REQ-4-2-3-search-code.spec.ts",
+                        "column": 78,
+                        "line": 33
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveValue\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('searchbox', { name: 'Search', exact: true })\nExpected: \u001b[32m\"no-such-token\"\u001b[39m\nReceived: \u001b[31m\"\"\u001b[39m\n\nCall log:\n\u001b[2m  - Expect \"toHaveValue\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('searchbox', { name: 'Search', exact: true })\u001b[22m\n\u001b[2m    13 × locator resolved to <input name=\"q\" value=\"\" type=\"search\" aria-label=\"Search\" placeholder=\"Search\" class=\"repository-search__input\"/>\u001b[22m\n\u001b[2m       - unexpected value \"\"\u001b[22m\n\n\n  31 |\n  32 |   await expect(page.getByText(/no.*code.*results|no results/i)).toBeVisible();\n> 33 |   await expect(page.getByRole('searchbox', { name: 'Search', exact: true })).toHaveValue(query);\n     |                                                                              ^\n  34 | });\n  35 |\n  36 | test('REQ-4-2-3: Search Code Within a Repository - Scenario 3', async ({ page }, testInfo) => {\n    at /workspace/tests/REQ-4-2-3-search-code.spec.ts:33:78"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:21.596Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-4-2-3-search-code-REQ--37987-n-a-Repository---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "d41476c1168962e14ec0-e0c4b52bbada472cef56",
+          "file": "REQ-4-2-3-search-code.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-2-3: Search Code Within a Repository - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10018,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/REQ-4-2-3-search-code.spec.ts",
+                        "column": 56,
+                        "line": 49
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('search flow', { exact: true })\nExpected: visible\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for getByText('search flow', { exact: true })\u001b[22m\n\n\n  47 |\n  48 |   await page.reload();\n> 49 |   await expect(page.getByText(query, { exact: true })).toBeVisible();\n     |                                                        ^\n  50 |   await expect(page.getByRole('link', { name: fileName, exact: true })).toBeVisible();\n  51 | });\n  52 |\n    at /workspace/tests/REQ-4-2-3-search-code.spec.ts:49:56"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:32.523Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-4-2-3-search-code-REQ--cdf3a-n-a-Repository---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "d41476c1168962e14ec0-0245e7e8fca4e61cf45c",
+          "file": "REQ-4-2-3-search-code.spec.ts",
+          "line": 36,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-2-3: Search Code Within a Repository - Scenario 4",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1057,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:43.618Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d41476c1168962e14ec0-81952bb01a6c3a27905a",
+          "file": "REQ-4-2-3-search-code.spec.ts",
+          "line": 53,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-3-1-switch-branches.spec.ts",
+      "file": "REQ-4-3-1-switch-branches.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-3-1: List and Switch Repository Branches - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 552,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:44.908Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "968220ffbb8493e508e9-ada0684f3022f8b1718d",
+          "file": "REQ-4-3-1-switch-branches.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-3-1: List and Switch Repository Branches - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 528,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:45.510Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "968220ffbb8493e508e9-39f8253e2e27fb612059",
+          "file": "REQ-4-3-1-switch-branches.spec.ts",
+          "line": 23,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-3-2-create-branch.spec.ts",
+      "file": "REQ-4-3-2-create-branch.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-3-2: Create a Branch from an Existing Revision - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 879,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:46.058Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "bb648dc4e59080613d49-2cf690773bf5927f1ce2",
+          "file": "REQ-4-3-2-create-branch.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-3-2: Create a Branch from an Existing Revision - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 688,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:46.951Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "bb648dc4e59080613d49-4075af1115561bd062b3",
+          "file": "REQ-4-3-2-create-branch.spec.ts",
+          "line": 25,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-3-3-change-default-branch.spec.ts",
+      "file": "REQ-4-3-3-change-default-branch.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-3-3: Change the Repository Default Branch - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1130,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:47.658Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ff29d43dd54676795f11-c5bcea9f03fd5fd8fbfd",
+          "file": "REQ-4-3-3-change-default-branch.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-3-3: Change the Repository Default Branch - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 547,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:48.799Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "ff29d43dd54676795f11-8dda6cf2fd4aa4f8e519",
+          "file": "REQ-4-3-3-change-default-branch.spec.ts",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-4-4-manage-files.spec.ts",
+      "file": "REQ-4-4-manage-files.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-4-4: Manage Repository Files Through the Web Interface - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 693,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:49.363Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "3c2e25713d1f1fe5366c-32dafe8a22fe36e81c76",
+          "file": "REQ-4-4-manage-files.spec.ts",
+          "line": 10,
+          "column": 1
+        },
+        {
+          "title": "REQ-4-4: Manage Repository Files Through the Web Interface - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10016,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/REQ-4-4-manage-files.spec.ts",
+                        "column": 66,
+                        "line": 24
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('menuitem', { name: /create new file/i })\u001b[22m\n\n\n  22 |   await openVisibleTarget(page, repositoryEntry);\n  23 |   await page.getByRole('button', { name: /add file/i }).click();\n> 24 |   await page.getByRole('menuitem', { name: /create new file/i }).click();\n     |                                                                  ^\n  25 |   await page.getByLabel(/file name/i).fill('../invalid.md');\n  26 |   await page.getByRole('textbox', { name: /file contents/i }).fill('must not be saved');\n  27 |   await page.getByRole('button', { name: /commit changes/i }).click();\n    at /workspace/tests/REQ-4-4-manage-files.spec.ts:24:66"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-02T21:15:50.068Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-4-4-manage-files-REQ-4-06595--Web-Interface---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "3c2e25713d1f1fe5366c-b4d1b8bd2efb0d9f203e",
+          "file": "REQ-4-4-manage-files.spec.ts",
+          "line": 18,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-02T21:15:06.065Z",
+    "duration": 54183.364,
+    "expected": 24,
+    "skipped": 0,
+    "unexpected": 5,
+    "flaky": 0
+  }
+}

@@ -1,0 +1,377 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #172033;
+  background: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.page-header__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.empty-state {
+  color: #57606a;
+}
+
+.form-error {
+  color: #cf222e;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.workbook-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.workbook-list__item {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+}
+
+.workbook-list__link {
+  font-weight: 600;
+  color: #0969da;
+  text-decoration: none;
+}
+
+.workbook-list__link:hover {
+  text-decoration: underline;
+}
+
+.workbook-list__meta {
+  margin: 0;
+  color: #57606a;
+  font-size: 0.875rem;
+}
+
+.create-workbook-form,
+.rename-workbook-form,
+.import-csv-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 28rem;
+}
+
+.editor-header {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.editor-header__home {
+  color: #57606a;
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.editor-header__title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.editor-header__title h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.editor-toolbar {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editor-header__meta {
+  margin: 0;
+  color: #57606a;
+  font-size: 0.875rem;
+}
+
+.editor-error {
+  color: #cf222e;
+}
+
+.formula-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.formula-bar label {
+  white-space: nowrap;
+  color: #57606a;
+  font-size: 0.875rem;
+}
+
+.formula-bar__input {
+  flex: 1;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #d0d7de;
+  border-radius: 0.375rem;
+  font: inherit;
+}
+
+.worksheet-tabbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid #d0d7de;
+  margin-bottom: 0.75rem;
+}
+
+.worksheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.worksheet-tabs__item {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.worksheet-tabs__item .ui-menu .ui-button {
+  padding: 0.25rem 0.4rem;
+  font-size: 0.7rem;
+  color: #57606a;
+}
+
+.worksheet-tabbar__add {
+  margin-bottom: 0.4rem;
+}
+
+.worksheet-tabs__tab {
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.worksheet-tabs__tab[aria-selected="true"] {
+  border-bottom-color: #0969da;
+  font-weight: 600;
+}
+
+.worksheet-panel {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.worksheet-grid {
+  display: inline-block;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.worksheet-grid__row {
+  display: flex;
+}
+
+.worksheet-grid__corner,
+.worksheet-grid__rowheader,
+.worksheet-grid__columnheader,
+.worksheet-grid__cell {
+  box-sizing: border-box;
+  width: 6rem;
+  min-height: 1.75rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #d0d7de;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.worksheet-grid__corner,
+.worksheet-grid__rowheader {
+  width: 2.5rem;
+  text-align: right;
+  color: #57606a;
+  background: #f6f8fa;
+}
+
+.worksheet-grid__columnheader {
+  width: 6rem;
+  text-align: center;
+  color: #57606a;
+  background: #f6f8fa;
+}
+
+.worksheet-grid__columnheader {
+  position: relative;
+}
+
+.worksheet-grid__filter,
+.worksheet-grid__cell-dropdown {
+  border: 0;
+  background: transparent;
+  color: #57606a;
+  font: inherit;
+  line-height: 1;
+  padding: 0 0.15rem;
+  cursor: pointer;
+}
+
+.worksheet-grid__filter {
+  position: absolute;
+  right: 0.15rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* The affordance glyph is decorative: the accessible name comes from aria-label. */
+.worksheet-grid__filter::after,
+.worksheet-grid__cell-dropdown::after {
+  content: "▾";
+}
+
+.worksheet-grid__cell-dropdown {
+  flex: none;
+}
+
+.dropdown-options {
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.filter-dialog__values {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.filter-dialog__value-list {
+  display: grid;
+  gap: 0.25rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.filter-dialog__value {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sort-range-dialog {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.sort-range-dialog__header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.worksheet-grid__rowheader,
+.worksheet-grid__columnheader {
+  cursor: context-menu;
+  user-select: none;
+}
+
+.ui-context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 12rem;
+  padding: 0.25rem;
+  display: grid;
+  gap: 0.1rem;
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(31, 35, 40, 0.15);
+}
+
+.ui-context-menu__item {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.35rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ui-context-menu__item:hover,
+.ui-context-menu__item:focus-visible {
+  background: #f3f4f6;
+  outline: none;
+}
+
+.ui-context-menu__item[data-tone="danger"] {
+  color: #cf222e;
+}
+
+.worksheet-grid__cell[data-selected="true"] {
+  background: #ddf4ff;
+  outline: 1px solid #0969da;
+  outline-offset: -1px;
+}
+
+.worksheet-grid__cell {
+  cursor: cell;
+  user-select: none;
+}
+
+.worksheet-grid__cell:focus-visible,
+.worksheet-grid__cell:focus {
+  outline: 2px solid #0969da;
+  outline-offset: -2px;
+}
+
+.worksheet-grid__cell[data-editing="true"] {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #0969da;
+}
+
+.worksheet-grid__cell-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
+  user-select: text;
+}
