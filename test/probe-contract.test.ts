@@ -92,7 +92,10 @@ test("Composite role phrases bind navigation links and menu items without changi
     ["Code", "link", 'Use a navigation link named "Code".'],
     ["Rename", "menuitem", 'The "Rename" menu item opens the editor.'],
     ["Rename", "menuitem", 'Use a menu item named "Rename".'],
+    ["Publish", "button", 'The "Publish" confirmation button saves.'],
+    ["Publish", "button", 'Use a confirmation button named "Publish".'],
     ["navigation link", "button", 'Click the button named "navigation link".'],
+    ["confirmation button", "link", 'Use a link named "confirmation button".'],
   ]) {
     const input = packet(text);
     input.requirements[0].exactUiStrings = [name];
@@ -106,6 +109,32 @@ test("Composite role phrases bind navigation links and menu items without changi
     changed.cases[0].steps[1] = { op: "click", locator: { ...target, role: role === "button" ? "link" : "button" } };
     assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role/);
   }
+});
+
+test("A confirmation button keeps its role when the dialog has the same name", () => {
+  const input = packet('A dialog named "Publish" provides a "Publish" confirmation button.');
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "dialog", name: "Publish", exact: true } });
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "button", name: "Publish" }, input, "click"), ["button"]);
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "dialog", name: "Publish" }, input, "expectVisible"), ["dialog"]);
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Publish", exact: true } };
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*button/);
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*button/);
+  const replacedDialog = structuredClone(original);
+  replacedDialog.cases[0].steps[3] = { op: "expectVisible", locator: { by: "role", role: "button", name: "Publish", exact: true } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, replacedDialog, [], input), /requirement-declared role.*dialog/);
+  const mixedDialog = structuredClone(original);
+  mixedDialog.cases[0].steps[3] = { op: "expectVisible", locator: { by: "role", role: "dialog", name: "Publish", exact: true,
+    fallbacks: [{ by: "role", role: "button", name: "Publish", exact: true }] } };
+  assert.throws(() => parseProbePlan(mixedDialog, input), /requirement-declared role.*dialog/);
+  const controlOnly = packet('Use a confirmation button named "Publish".');
+  const wrongRole = plan();
+  wrongRole.cases[0].expectationBasis = [controlOnly.requirements[0].text];
+  wrongRole.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "heading", name: "Publish", exact: true } };
+  assert.throws(() => parseProbePlan(wrongRole, controlOnly), /requirement-declared role.*button/);
 });
 
 test("A named popup and its untyped menu trigger keep separate role contracts", () => {

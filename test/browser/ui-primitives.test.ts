@@ -68,6 +68,30 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
       await expect(page.getByLabel("角色", { exact: true })).toHaveCount(2);
     });
 
+    await t.test("combobox focus changes close other lists and retain their own option interaction", async sub => {
+      const page = await mount();
+      sub.after(() => page.close());
+      const status = page.getByLabel("状态", { exact: true });
+      const permissions = page.getByLabel("权限", { exact: true });
+      const option = page.getByRole("option", { name: "编辑", exact: true });
+
+      await status.click();
+      await expect(option).toHaveCount(1);
+      await permissions.focus();
+      await expect(page.getByRole("listbox")).toHaveCount(0);
+      await permissions.press("Space");
+      await expect(option).toHaveCount(1);
+      await expect(page.getByRole("listbox", { name: "权限", exact: true })).toBeVisible();
+      await option.focus();
+      await expect(option).toBeVisible();
+      await option.click();
+      await expect(permissions).toHaveValue("write");
+      await expect(permissions).toBeFocused();
+      await expect(page.getByRole("listbox")).toHaveCount(0);
+      await status.selectOption({ label: "只读" });
+      await expect(status).toHaveValue("read");
+    });
+
     await t.test("modal dialogs isolate focus and restore it after closing", async sub => {
       const page = await mount();
       sub.after(() => page.close());

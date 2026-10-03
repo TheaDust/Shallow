@@ -26,7 +26,9 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 ## 测试设计原则
 
-角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
+角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem，confirmation button 指 button。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
+
+核对账号身份或数据展示时，按需求规定的角色定位；未规定交互角色时，使用有依据的显示文本或观测到的展示角色建立状态断言。
 
 填写 outcomeChecks 前，将 steps 与终末 assertion 按顺序拼接，去掉 setupStepCount 前缀，按剩余序列中 expect 操作的位置填写 assertionIndexes。校验反馈列出合法位置时，按实际对应的结果重算映射。
 

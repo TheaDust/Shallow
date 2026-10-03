@@ -972,7 +972,8 @@ const CONTROL_OPERATIONS = new Set<ProbeStep["op"]>([
 ]);
 
 function canonicalRolePhrase(value: string): string {
-  return value.replace(/\bnavigation\s+link\b/gi, "link").replace(/\bmenu\s+item\b/gi, "menuitem");
+  return value.replace(/\bnavigation\s+link\b/gi, "link").replace(/\bmenu\s+item\b/gi, "menuitem")
+    .replace(/\bconfirmation\s+button\b/gi, "button");
 }
 
 /** Bind each role to its named referent; a popup's role does not define its same-named trigger. */
@@ -1005,7 +1006,8 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
     }
   }
   const namedControl = locator.by !== "role" || INTERACTIVE_ROLES.has(locator.role);
-  if (scopeRole && !namedControl) return [...roles].filter(role => !INTERACTIVE_ROLES.has(role));
+  const containerRoles = [...roles].filter(role => !INTERACTIVE_ROLES.has(role));
+  if (!namedControl && (scopeRole || operation?.startsWith("expect") && containerRoles.length)) return containerRoles;
   const controlQuery = operation && CONTROL_OPERATIONS.has(operation) && namedControl ||
     operation?.startsWith("expect") && locator.by === "role" && INTERACTIVE_ROLES.has(locator.role);
   if (controlQuery) {

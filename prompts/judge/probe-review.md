@@ -18,7 +18,9 @@
 
 准备目标的名字有依据，不代表其角色有依据。页面已有同名可操作控件而准备步骤的角色未获原文授权时，纠正 locator 或准备前缀；只有原文明确规定该角色时，另一种角色才可能是应用缺口。明示角色、所属容器和各 fallback 保持一致，不用定位猜测覆盖公共入口的需求合同。
 
-navigation link 的角色是 link，menu item 的角色是 menuitem。同名的触发控件与弹出 dialog/menu 分别核对角色；容器的角色不限定未指定角色的触发器。重建 case 后，将 steps 与终末 assertion 拼接并去掉准备前缀，重新核对业务后缀中的 expect 位置；校验反馈列出的合法索引只说明位置，实际结果含义仍须成立。
+准备断言核对账号身份或数据展示时，若同名目标仅以 heading 或显示文本呈现且原文未规定交互角色，按该展示纠正状态断言，再继续原业务后缀。
+
+navigation link 的角色是 link，menu item 的角色是 menuitem，confirmation button 的角色是 button。同名的触发控件与弹出 dialog/menu 分别核对角色；容器的角色不限定未指定角色的触发器。重建 case 后，将 steps 与终末 assertion 拼接并去掉准备前缀，重新核对业务后缀中的 expect 位置；校验反馈列出的合法索引只说明位置，实际结果含义仍须成立。
 
 ## 你的任务
 对当前模式允许复核的 case 检查：

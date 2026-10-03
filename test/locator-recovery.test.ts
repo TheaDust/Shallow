@@ -765,6 +765,128 @@ for (const explicitRole of [false, true]) {
   });
 }
 
+for (const display of ['- heading "reader-user" [level=1]', '- text: reader-user']) {
+  for (const explicitRole of [false, true]) {
+    test(`A displayed identity does not authorize a guessed preparation button: ${display}, explicit=${explicitRole}`, async () => {
+      await withModulePipeline(async f => {
+        const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+        const basis = explicitRole ? 'Show the button named "reader-user" after signing in.'
+          : 'Show the current username "reader-user" after signing in.';
+        tree.children[0].children[0].description = basis;
+        await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+        const original = homePlan("button", basis);
+        original.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "button", name: "reader-user", exact: true } };
+        original.cases[0].setupStepCount = 2;
+        original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+        const planner = new FakeProbePlanner([original]);
+        f.deps.planner = planner;
+        let runs = 0;
+        f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+          caseId: "case-A", stepIndex: 1, category: "precondition", message: "button not found",
+          locatorSnapshot: `- main:\n  ${display}`,
+          locatorAttempts: [{ locator: { by: "role", role: "button", name: "reader-user", exact: true }, message: "missing", matchCount: 0 }],
+        }] }; };
+        const result = await audit(f);
+        assert.equal(result.status, "inconclusive");
+        assert.equal(result.repairableProbeFailure, explicitRole ? true : undefined);
+        assert.equal(planner.reviews.length, explicitRole ? 1 : 2);
+        assert.equal(runs, explicitRole ? 2 : 1);
+        assert.equal(f.builder.requests.length, 0);
+      });
+    });
+  }
+}
+
+for (const operation of ["click", "expectVisible"] as const) {
+  test(`An untyped missing preparation entry remains repairable: ${operation}`, async () => {
+    await withModulePipeline(async f => {
+      const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      const basis = 'Open "Items" before using the workspace.';
+      tree.children[0].children[0].description = basis;
+      await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+      const original = homePlan("button", basis);
+      original.cases[0].steps[1] = { op: operation, locator: { by: "role", role: "button", name: "Items", exact: true } };
+      if (operation === "click") original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      original.cases[0].setupStepCount = original.cases[0].steps.length;
+      original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+      const planner = new FakeProbePlanner([original]);
+      f.deps.planner = planner;
+      let runs = 0;
+      f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+        caseId: "case-A", stepIndex: 1, category: "precondition", message: "entry not found",
+        // A displayed name cannot replace an actual required action; the
+        // assertion case has no same-named display evidence at all.
+        locatorSnapshot: operation === "click" ? '- heading "Items" [level=1]' : '- text: Items archive',
+      }] }; };
+      const result = await audit(f);
+      assert.equal(result.status, "inconclusive");
+      assert.equal(result.repairableProbeFailure, true);
+      assert.equal(runs, 2);
+      assert.equal(planner.reviews.length, 1);
+    });
+  });
+}
+
+test("A displayed name does not suppress a preparation state failure on the observed control", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    const basis = 'Use "Publish" before opening the workspace.';
+    tree.children[0].children[0].description = basis;
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const original = homePlan("button", basis);
+    original.cases[0].steps[1] = { op: "expectEnabled", locator: { by: "role", role: "button", name: "Publish", exact: true } };
+    original.cases[0].setupStepCount = 2;
+    original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+    const planner = new FakeProbePlanner([original]);
+    f.deps.planner = planner;
+    let runs = 0;
+    f.deps.runner.run = async plan => { runs++; return { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{
+      caseId: "case-A", stepIndex: 1, category: "precondition", message: "button is disabled",
+      locatorSnapshot: '- heading "Publish" [level=1]\n- button "Publish" [disabled]',
+    }] }; };
+    assert.equal((await audit(f)).repairableProbeFailure, true);
+    assert.equal(runs, 2);
+    assert.equal(planner.reviews.length, 1);
+  });
+});
+
+test("A displayed identity corrects a guessed preparation button within the existing two review calls", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    const basis = 'Show the current username "reader-user" after signing in.';
+    tree.children[0].children[0].description = basis;
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    const original = homePlan("button", basis);
+    original.cases[0].steps[1] = { op: "expectVisible", locator: { by: "role", role: "button", name: "reader-user", exact: true } };
+    original.cases[0].setupStepCount = 2;
+    original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "main" } });
+    const planner = new FakeProbePlanner([original]);
+    f.deps.planner = planner;
+    let reviews = 0, runs = 0;
+    planner.reviewPlan = async (_packet, plan, _failures, feedback?: ProbePlannerFeedback) => {
+      if (++reviews === 1) return { status: "sound", rationale: "Mistakenly assumed an identity button" };
+      assert.match(feedback?.validationError ?? "", /requirement-grounded targets/);
+      const corrected = structuredClone(plan);
+      corrected.cases[0].steps[1] = { op: "expectVisible", locator: { by: "text", text: "reader-user", exact: true } };
+      return { status: "corrected", rationale: "Check the displayed identity", plan: corrected,
+        corrections: [{ caseId: "case-A", conflict: "The identity is displayed rather than an interactive button", basis: [basis] }] };
+    };
+    f.deps.runner.run = async plan => {
+      runs++;
+      const step = plan.cases[0].steps[1];
+      return "locator" in step && step.locator.by === "text" ? pass(plan)
+        : { packetId: plan.packetId, verdict: "inconclusive", passedCases: [], failures: [{ caseId: "case-A", stepIndex: 1,
+          category: "precondition", message: "button not found", locatorSnapshot: '- generic: "reader-user"' }] };
+    };
+    const result = await audit(f);
+    assert.equal(result.status, "verified");
+    assert.equal(reviews, 2);
+    assert.equal(runs, 2);
+    assert.deepEqual(result.plan?.cases[0].steps.slice(2), original.cases[0].steps.slice(2));
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
 test("A guessed preparation role recovers to the observed control without Builder repair", async () => {
   await withModulePipeline(async f => {
     const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

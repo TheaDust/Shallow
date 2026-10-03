@@ -261,12 +261,13 @@ function locatorPatchMayHelp(failure: ShadowReport["failures"][number], step: Pr
   return equivalentSnapshotControls(failure, step.locator).length > 0;
 }
 
+const SNAPSHOT_CONTROL_ROLES = /^(button|link|menuitem|menuitemcheckbox|menuitemradio|checkbox|radio|switch|tab|treeitem|option|textbox|searchbox|combobox|spinbutton|gridcell|rowheader|columnheader)$/;
+
 function equivalentSnapshotControls(failure: ShadowReport["failures"][number], locator: ProbeLocator): string[] {
   if (!failure.locatorSnapshot) return [];
-  const roles = /^(button|link|menuitem|menuitemcheckbox|menuitemradio|checkbox|radio|switch|tab|treeitem|option|textbox|searchbox|combobox|spinbutton|gridcell|rowheader|columnheader)$/;
   const controls = [...failure.locatorSnapshot.matchAll(/^\s*- ([a-z]+) ("(?:\\.|[^"\\])*")/gm)];
   return controls.flatMap(([, role, encoded]) => {
-    if (!roles.test(role)) return [];
+    if (!SNAPSHOT_CONTROL_ROLES.test(role)) return [];
     let name: string;
     try { name = JSON.parse(encoded); } catch { return []; }
     return locatorCandidates(locator).some(candidate => {
@@ -275,6 +276,21 @@ function equivalentSnapshotControls(failure: ShadowReport["failures"][number], l
         : candidate.exact === false ? name.includes(target) : name === target;
     }) ? [role] : [];
   });
+}
+
+function snapshotDisplaysControlName(snapshot: string | undefined, locator: ProbeLocator): boolean {
+  if (!snapshot) return false;
+  const displayNames = [...snapshot.matchAll(/^\s*- heading ("(?:\\.|[^"\\])*")|^\s*- (?:text|generic|paragraph): ([^\r\n]+)/gm)]
+    .flatMap(([, heading, content]) => {
+      const value = (heading ?? content).trim();
+      if (value.startsWith('"')) {
+        try { return [JSON.parse(value) as string]; } catch { return []; }
+      }
+      return [value.startsWith("'") && value.endsWith("'") ? value.slice(1, -1).replace(/''/g, "'") : value];
+    });
+  return locatorCandidates(locator).some(candidate => candidate.by === "role" && candidate.name !== undefined &&
+    SNAPSHOT_CONTROL_ROLES.test(candidate.role) && displayNames.some(name =>
+      candidate.exact === false ? name.includes(candidate.name!) : name === candidate.name));
 }
 
 function isLocatorAmbiguity(failure: ShadowReport["failures"][number]): boolean {
@@ -298,8 +314,12 @@ function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure:
   const observed = equivalentSnapshotControls(failure, locator);
   // An existing same-named control does not justify changing its role to a
   // planner assumption. Recover the locator/prefix before diagnosing the app.
-  return !observed.length || locatorCandidates(locator).some(candidate =>
+  if (observed.length) return locatorCandidates(locator).some(candidate =>
     (candidate.by === "role" && observed.includes(candidate.role)) || candidate.by === "label");
+  // Displayed identity/data does not establish an undeclared interactive role
+  // for a preparation assertion. Recover the prefix instead of adding a control.
+  return !(failure.category === "precondition" && operation.startsWith("expect") && operation !== "expectDownload" &&
+    snapshotDisplaysControlName(failure.locatorSnapshot, locator));
 }
 
 function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowReport): ShadowReport["failures"] {

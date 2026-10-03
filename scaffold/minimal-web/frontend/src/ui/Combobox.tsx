@@ -73,7 +73,9 @@ export function Combobox({
   };
 
   return (
-    <div className="ui-combobox" ref={rootRef}>
+    <div className="ui-combobox" ref={rootRef} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
       <label htmlFor={controlId}>{label}</label>
       <select
         {...selectProps}
