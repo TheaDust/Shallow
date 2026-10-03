@@ -9,20 +9,31 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
   const bundle = await build({
     entryPoints: [resolve("test/fixtures/ui-primitives.jsx")],
     bundle: true, write: false, format: "iife", platform: "browser", jsx: "automatic",
+    alias: {
+      react: resolve("node_modules/react"),
+      "react-dom": resolve("node_modules/react-dom"),
+    },
     logLevel: "silent",
   });
   const css = await readFile("scaffold/minimal-web/frontend/src/ui/primitives.css", "utf8");
   const browser = await chromium.launch({ headless: true });
   async function mount() {
     const page = await browser.newPage();
+    const pageErrors: string[] = [];
+    page.on("pageerror", error => pageErrors.push(error.stack ?? error.message));
     await page.setContent('<div id="root"></div>');
     await page.addStyleTag({ content: css });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    await page.waitForTimeout(50);
+    if (pageErrors.length) throw new Error(`UI primitives fixture failed to render:\n${pageErrors.join("\n")}`);
+    if (await page.getByRole("heading", { name: "UI primitives fixture", exact: true }).count() === 0) {
+      throw new Error(`UI primitives fixture produced no heading: ${await page.locator("body").innerHTML()}`);
+    }
     await expect(page.getByRole("heading", { name: "UI primitives fixture", exact: true })).toBeVisible();
     return page;
   }
   try {
-    await t.test("repeated labels identify accessible comboboxes with clickable options across renders", async sub => {
+    await t.test("repeated labels identify native comboboxes compatible with selectOption across renders", async sub => {
       const page = await mount();
       sub.after(() => page.close());
       const comboboxes = page.getByRole("combobox");
@@ -34,19 +45,18 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
         const combobox = comboboxes.nth(index);
         await combobox.locator("..").locator("label").click();
         await expect(combobox).toBeFocused();
-        await expect(combobox).toHaveAttribute("aria-expanded", "true");
-        await page.getByRole("option", { name: "编辑", exact: true }).click();
-        await expect(combobox).toHaveValue("编辑");
-        await expect(combobox).toHaveAttribute("aria-expanded", "false");
+        assert.equal(await combobox.evaluate(element => element.tagName), "SELECT");
+        await combobox.selectOption({ label: "编辑" });
+        await expect(combobox).toHaveValue("write");
       }
+      await expect(page.getByText("编辑", { exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "刷新视图", exact: true }).click();
       await expect(page.locator("#refresh-count")).toHaveText("1");
       assert.deepEqual(await comboboxes.evaluateAll(elements => elements.map(element => element.id)), ids);
       const status = page.getByLabel("状态", { exact: true });
       await expect(status).toHaveCount(1);
-      await status.click();
-      await page.getByRole("option", { name: "只读", exact: true }).click();
-      await expect(page.getByRole("combobox", { name: "状态", exact: true })).toHaveValue("只读");
+      await status.selectOption({ label: "只读" });
+      await expect(page.getByRole("combobox", { name: "状态", exact: true })).toHaveValue("read");
       await expect(page.getByLabel("权限", { exact: true })).toHaveAttribute("id", "explicit-choice");
       await expect(page.getByLabel("角色", { exact: true })).toHaveCount(2);
     });
@@ -58,6 +68,7 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
       await trigger.click();
       const dialog = page.getByRole("dialog", { name: "编辑项目", exact: true });
       await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveClass(/\bdialog\b/);
       await expect(dialog.getByRole("button", { name: "关闭编辑器", exact: true })).toBeFocused();
       await trigger.evaluate(element => element.focus());
       assert.equal(await dialog.evaluate(element => element.contains(document.activeElement)), true);

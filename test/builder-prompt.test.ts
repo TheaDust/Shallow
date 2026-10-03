@@ -36,6 +36,7 @@ test("Repository entry guidance reaches implementation and repair while spreadsh
         assert.match(body, /已登录身份与本页规定的具名对象入口一起就绪/);
         assert.match(body, /同时保留需求规定的账户菜单、列表和搜索路径/);
         assert.match(body, /身份或权限变化后重新核对列表/);
+        assert.match(body, /先通过项目路由工具完成导航，再关闭菜单/);
         assert.match(body, /在正式构建的应用中从首页登录，逐段检查/);
       }
     }
@@ -97,6 +98,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /Profile name \| Save/);
   assert.match(compiled.taskPrompt, /引号原词（须按原文区分界面名称、数据值与示例）/);
   assert.match(compiled.taskPrompt, /输入控件使用符合用途的原生类型/);
+  assert.match(compiled.taskPrompt, /优先使用脚手架原生 select Combobox/);
   assert.match(compiled.taskPrompt, /不只依赖浏览器原生校验气泡/);
   assert.match(compiled.taskPrompt, /同名操作可以重复/);
   assert.match(compiled.taskPrompt, /打开对象的方式依需求/);

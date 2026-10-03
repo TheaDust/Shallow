@@ -31,7 +31,7 @@ export function Dialog({ open, title, children, actions, closeLabel = "Close", d
   return (
     <dialog
       ref={dialogRef}
-      className="ui-dialog"
+      className="dialog ui-dialog"
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       onCancel={(event) => {
