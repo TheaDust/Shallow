@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { auditPacket } from "../src/judge/audit.js";
-import { assertCoverageAccountedFor, probeCoverageGaps, scenarioOutcomes } from "../src/judge/probe-coverage.js";
+import { assertCoverageAccountedFor, probeCoverageGaps, scenarioOutcomes, validateOutcomeChecks } from "../src/judge/probe-coverage.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
 import { auditPackets } from "../src/scheduler.js";
 import { PlanCache } from "../src/judge/plan-cache.js";
@@ -66,6 +66,30 @@ test("Passing a weak plan with an omitted THEN cannot grant verified; a sampled 
     const guard = await auditPacket(packet(), incomplete, f.options, f.deps, state, () => 60_000, { refineLocators: false, checkCoverage: false });
     assert.equal(guard.status, "verified");
   });
+});
+
+test("Invalid outcome indexes report the exact field, preparation offset and terminal assertion index", () => {
+  const input = packet();
+  for (const indexes of [[0], [3], []]) {
+    const invalid = plan();
+    invalid.cases[0].outcomeChecks![0].assertionIndexes = indexes;
+    for (const validate of [
+      () => parseProbePlan(toWireProbePlan(invalid), input),
+      () => validateOutcomeChecks(invalid.cases[0], input.requirements),
+    ]) {
+      assert.throws(validate, error => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /outcomeChecks\[0\]\.assertionIndexes/);
+        assert.ok(error.message.includes(`[${indexes.join(", ")}]`));
+        assert.match(error.message, /setupStepCount=2/);
+        assert.match(error.message, /zero-based relative to the business suffix, including the terminal assertion/);
+        assert.match(error.message, /Valid assertion indexes: \[1:expectText, 2:expectText\]/);
+        return true;
+      });
+    }
+    assert.deepEqual(invalid.cases[0].outcomeChecks![0].assertionIndexes, indexes);
+  }
+  assert.doesNotThrow(() => parseProbePlan(toWireProbePlan(plan()), input));
 });
 
 test("Compound THEN results retain source fragments and preserve quoted alternatives", () => {

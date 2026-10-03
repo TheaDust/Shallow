@@ -26,6 +26,10 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 ## 测试设计原则
 
+角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
+
+填写 outcomeChecks 前，将 steps 与终末 assertion 按顺序拼接，去掉 setupStepCount 前缀，按剩余序列中 expect 操作的位置填写 assertionIndexes。校验反馈列出合法位置时，按实际对应的结果重算映射。
+
 每个 case 按准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖核心结果；逐项覆盖场景明示的校验边界、唯一性、权限、反向操作、持久化与跨视图联动。边界输入只用有依据的空值、超长值、非法格式或重复值。创建后核对新对象，删除前确认存在、删除后确认消失；第一次操作后立即核对状态，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须核对已登录状态。需求枚举的控件逐项检查；关键 UI 文案逐字纳入 locator 或结果断言。
 
 场景明示的连续操作及中间结果必须在同一 case 完整还原：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 核对新结果与仍应保留的先前状态，必要时 reload 或按原文切换账号。除此之外，每份计划至多额外构造一条有原文依据的跨功能回归链，替代重复单步成功路径；该限制不适用于场景本身要求的操作链。额外链的功能及状态须有当前需求或 prerequisites 原文依据，保留独立行为维度和 planLimits，仅引用当前 requirements 的 ID。

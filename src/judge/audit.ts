@@ -289,11 +289,11 @@ function groundedPreparationTarget(packet: WorkPacket, plan: ProbePlan, failure:
   const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
   return locators.length > 0 && locators.every(locator => groundedLocatorNames(locator, packet).length > 0 &&
     (!locator.scope || (locator.scope.by === "role" && !locator.scope.name) ||
-      groundedLocatorNames(locator.scope, packet).length > 0) && groundedControlRole(locator, packet, failure));
+      groundedLocatorNames(locator.scope, packet).length > 0) && groundedControlRole(locator, packet, failure, step.op));
 }
 
-function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure: ShadowReport["failures"][number]): boolean {
-  const declared = declaredLocatorRoles(locator, packet);
+function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure: ShadowReport["failures"][number], operation: ProbeStep["op"]): boolean {
+  const declared = declaredLocatorRoles(locator, packet, operation);
   if (declared.length) return locatorCandidates(locator).every(candidate => matchesDeclaredLocatorRole(candidate, declared));
   const observed = equivalentSnapshotControls(failure, locator);
   // An existing same-named control does not justify changing its role to a
@@ -313,7 +313,7 @@ function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowR
     // an absent initial page locator alone is not evidence against the app.
     return step && ["click", "fill", "select", "doubleClick"].includes(step.op) && "locator" in step &&
       groundedLocatorNames(step.locator, packet).length > 0 &&
-      groundedControlRole(step.locator, packet, failure) &&
+      groundedControlRole(step.locator, packet, failure, step.op) &&
       steps!.slice(0, failure.stepIndex).some(item => ["click", "fill", "select"].includes(item.op));
   });
 }

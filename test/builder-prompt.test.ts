@@ -20,6 +20,28 @@ import type {
 import { FakeBuilder } from "./fakes/fake-builder.js";
 import { loadPrompt } from "../src/prompt-assets.js";
 
+test("Repository entry guidance reaches implementation and repair while spreadsheet retains its own fragments", () => {
+  for (const kind of ["repository_collaboration", "spreadsheet"] as const) {
+    for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
+      assert.ok("packet" in request);
+      request.packet.requirements[0].product.kind = kind;
+      if (request.projectContext) request.projectContext.product.kind = kind;
+      const compiled = compileBuilderPrompt(request);
+      const body = compiled.systemPrompt + "\n" + compiled.taskPrompt;
+      const repositoryFragment = loadPrompt("fragments", "repository-collaboration");
+      assert.equal(body.includes(repositoryFragment), kind === "repository_collaboration");
+      if (kind === "repository_collaboration") {
+        assert.match(body, /工作台提供当前身份可见的组织和可读仓库的具名入口/);
+        assert.match(body, /本包实现组织或仓库功能且提供登录工作台时/);
+        assert.match(body, /已登录身份与本页规定的具名对象入口一起就绪/);
+        assert.match(body, /同时保留需求规定的账户菜单、列表和搜索路径/);
+        assert.match(body, /身份或权限变化后重新核对列表/);
+        assert.match(body, /在正式构建的应用中从首页登录，逐段检查/);
+      }
+    }
+  }
+});
+
 test("Builder prompt compiles a Chinese system contract and dynamic task prompt", () => {
   const compiled = compileBuilderPrompt(implementRequest());
 

@@ -86,6 +86,83 @@ test("Explicit form roles preserve label queries when refinement adds a field sc
   assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*textbox/);
 });
 
+test("Composite role phrases bind navigation links and menu items without changing quoted names", () => {
+  for (const [name, role, text] of [
+    ["Code", "link", 'The overview has a “Code” navigation link.'],
+    ["Code", "link", 'Use a navigation link named "Code".'],
+    ["Rename", "menuitem", 'The "Rename" menu item opens the editor.'],
+    ["Rename", "menuitem", 'Use a menu item named "Rename".'],
+    ["navigation link", "button", 'Click the button named "navigation link".'],
+  ]) {
+    const input = packet(text);
+    input.requirements[0].exactUiStrings = [name];
+    const target: ProbeLocator = { by: "role", role, name, exact: true };
+    assert.deepEqual(declaredLocatorRoles(target, input), [role]);
+    const original = plan();
+    original.cases[0].expectationBasis = [text];
+    original.cases[0].steps[1] = { op: "click", locator: target };
+    assert.doesNotThrow(() => parseProbePlan(original, input));
+    const changed = structuredClone(original);
+    changed.cases[0].steps[1] = { op: "click", locator: { ...target, role: role === "button" ? "link" : "button" } };
+    assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role/);
+  }
+});
+
+test("A named popup and its untyped menu trigger keep separate role contracts", () => {
+  const input = packet('Click "Data validation" in the "Data" menu. A dialog named "Data validation" provides the rule editor.');
+  input.requirements[0].exactUiStrings = ["Data validation", "Data"];
+  const trigger: ProbeLocator = { by: "role", role: "menuitem", name: "Data validation", exact: true };
+  const popup: ProbeLocator = { by: "role", role: "dialog", name: "Data validation", exact: true };
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps = [{ op: "goto", path: "/" }, { op: "expectVisible", locator: trigger },
+    { op: "click", locator: trigger }, { op: "expectVisible", locator: popup }];
+  assert.deepEqual(declaredLocatorRoles(trigger, input, "click"), []);
+  assert.deepEqual(declaredLocatorRoles(popup, input, "expectVisible"), ["dialog"]);
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const changed = structuredClone(original);
+  changed.cases[0].steps[3] = { op: "expectVisible", locator: { by: "text", text: "Data validation", exact: true } };
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*dialog/);
+  const popupFallback = structuredClone(original);
+  popupFallback.cases[0].steps[2] = { op: "click", locator: { ...trigger, fallbacks: [popup] } };
+  assert.throws(() => parseProbePlan(popupFallback, input), /trigger control.*same-named popup/);
+  const switchedTarget = structuredClone(original);
+  switchedTarget.cases[0].steps[2] = { op: "click", locator: popup };
+  assert.throws(() => assertLocatorOnlyRefinement(original, switchedTarget, [], input), /interactive control role/);
+  const containerOnly = packet('The dialog named "Publish" is visible.');
+  assert.throws(() => parseProbePlan(plan(), containerOnly), /requirement-declared role.*dialog/);
+});
+
+test("An explicit trigger role remains mandatory when a popup has the same name", () => {
+  const input = packet('Click the button named "Publish". A dialog named "Publish" opens after the visitor clicks "Publish".');
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "dialog", name: "Publish", exact: true } });
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "button", name: "Publish", exact: true }, input, "click"), ["button"]);
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "link", name: "Publish", exact: true,
+    fallbacks: [{ by: "role", role: "button", name: "Publish", exact: true }] } };
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*button/);
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*button/);
+});
+
+test("A control's role does not define its same-named scope and explicit container roles remain enforced", () => {
+  const input = packet('Click the button named "Publish".');
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Publish", exact: true,
+    scope: { by: "role", role: "form", name: "Publish", exact: true } } };
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  input.requirements[0].text += ' The form named "Publish" contains the submit control.';
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const changed = structuredClone(original);
+  changed.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Publish", exact: true,
+    scope: { by: "role", role: "region", name: "Publish", exact: true } } };
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*form/);
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*form/);
+});
+
 test("First-match selection requires an explicit instruction for the same named control", () => {
   const quote = 'Click the first "Publish" button.';
   const input = packet(quote);

@@ -74,9 +74,23 @@ export function validateOutcomeChecks(probeCase: ProbeCase, requirements: readon
     }
     if (seen.has(key)) throw new Error(`Case ${probeCase.id} repeats a scenario outcome: ${key}`);
     seen.add(key);
-    const business = probeCase.steps.slice(probeCase.setupStepCount ?? 0);
-    if (!check.assertionIndexes.length || check.assertionIndexes.some(index => !business[index]?.op.startsWith("expect"))) {
-      throw new Error(`Case ${probeCase.id} scenario outcome ${key} must reference executed result assertions after preparation`);
+  }
+  validateResultAssertionIndexes(probeCase, `Case ${probeCase.id}`);
+}
+
+/** Describe the actual index space so an existing feedback retry can correct the mapping. */
+export function validateResultAssertionIndexes(
+  probeCase: Pick<ProbeCase, "steps" | "setupStepCount" | "outcomeChecks">,
+  location: string,
+): void {
+  const setupStepCount = probeCase.setupStepCount ?? 0;
+  const business = probeCase.steps.slice(setupStepCount);
+  const allowed = business.flatMap((step, index) => step.op.startsWith("expect") ? [`${index}:${step.op}`] : []);
+  for (const [index, check] of (probeCase.outcomeChecks ?? []).entries()) {
+    if (!check.assertionIndexes.length || check.assertionIndexes.some(value => !business[value]?.op.startsWith("expect"))) {
+      throw new Error(`${location}.outcomeChecks[${index}].assertionIndexes [${check.assertionIndexes.join(", ")}] must reference result assertions after preparation; ` +
+        `setupStepCount=${setupStepCount}. Indexes are zero-based relative to the business suffix, including the terminal assertion. ` +
+        `Valid assertion indexes: [${allowed.join(", ")}].`);
     }
   }
 }
