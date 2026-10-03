@@ -1,0 +1,157 @@
+{
+  "accounts": [
+    {
+      "id": "account-alice-dev",
+      "username": "alice-dev",
+      "email": "alice.dev@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:05a38bf6bc4885a4651f30955def5171:5980cbfc26de3c5ceb4edda26d523e5acccd1c27881fb4a10dd2487e2c1cae0f84a4805598b222ae8909b18f41612580ce54c1e6f6febdb9743abda4d1331c4c",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-recovery-visibility",
+      "username": "recovery-visibility",
+      "email": "recovery-visibility@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:c24be783f0a53460df2867e7e6c69411:49df2e0c819aabddad060330625c91a223688b9bfdd1fade74d5c821f957ca54c92d2b079a7b3792b758b07e146d583d42ab0fc828b87f04d63d0717b9b258ee",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-recovery-invalid-code",
+      "username": "recovery-invalid-code",
+      "email": "recovery-invalid-code@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:33807141306b9d05e845da8dbf44392c:ae5236423bedbb81b9bebca5fe5e371bc32908306a5f777dfe5e21ee318ef082e943214cf0a99a41e36fa93727f013ad6680d0e0dd503c89126dae5c433192e2",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-recovery-success",
+      "username": "recovery-success",
+      "email": "recovery-success@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:16302af4854e82ad6e52f6212e7134c5:985b982cd3f3ac0fe96176074e6be671cd9add105f698cdc82e2cd1a78883148c1d7d93881a8c7a7aefae148fd486c62ce0b4d1dc84c7d76c0695a1e017bf18d",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-password-change-success",
+      "username": "password-change-success",
+      "email": "password-change-success@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:f6c4b6c5afa1c16e5424b5e867e48763:0bda8daf3ba14211e24da04b3e79fceb71caeba8ce2d2038b5a0d1a3e4a857820b8887447b3a46cfa8b981f122b51b69002f32bbc0b4489d576aac41511cace1",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-password-change-invalid",
+      "username": "password-change-invalid",
+      "email": "password-change-invalid@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:b5abbd0d85c1c3a716c43a912bc37bf0:7c23170545fbad5eb32602638174733717cad319adf45cb19974d2e56e4df05ced9bc822652144c329555c2d39245012b6d63f470ef0f9b48f248688db295a1e",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-password-change-required",
+      "username": "password-change-required",
+      "email": "password-change-required@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:7ad0a60c3d71b48edec39fe6acbc54a1:f690ba73b1ddb1b2060e18b71c7a2835b307f377d5e43cff689e4e771436004b3ff6a4ed56429f9ed75fa28edf1d77bb562944bd745a24a5b0b1e487d65bf1c6",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-org-owner",
+      "username": "org-owner",
+      "email": "org-owner@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:71bab92412634752a157824a99c616d4:ea4936b7c5b42ddd1835a9f81fa11ab24047cf82eda5fbb9d06323f77b7a078d4366e23f991f3103cf4256894e4c71a6a8c212a884393fce8ea52cb35afaa238",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-team-maintainer",
+      "username": "team-maintainer",
+      "email": "team-maintainer@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:96894cefcfbe22b05ed094f1fea6ba79:c62f6fb788bdcdd21c294f3fee04292b3d280257edea7524250c8d8a228247e6d7b1813bc89ec35f2c7569a384c205ca5d58f75093b40beb1be769a1d89d18e8",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-bob-reviewer",
+      "username": "bob-reviewer",
+      "email": "bob-reviewer@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:e9334f7c48fe77ef3c12c3d4581be58b:5c75762de441be3f5f0fc1bd3fc628182c429e840ddb067b8c144d075b6dbe38900714890ae2cb227922f84af266e5ba9fb382029ac1ecea375938a2d7ff4f21",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-new-member",
+      "username": "new-member",
+      "email": "new-member@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:2b89047b029b1d06cb29b7fadf15ef57:c6c96bc7505fda200cb1c92224d64c8a900f3a8218bb45bb26b48b660ab19a2ba9c185ed1aca2e95332ee3d854b29d637108334bee5d6751dcec88a0e7b228e3",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-existing-member",
+      "username": "existing-member",
+      "email": "existing-member@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:9496608ac10249408c2299567cd568ea:d5cdaaa63ef1ee8219e9392d8753900ae97aad08f5b73fea8d4cdc2597630d10898d5c55c092f196af9627edc242abeb85372661ccae078fda3822a936b6b3ae",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-org-member",
+      "username": "org-member",
+      "email": "org-member@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:be5435301c77468705ab11c2803f392f:5a6fbfe1d76512b59a650e337e55bbc7f55d35531c88345f1494f54a8644a17fc52de88f3667eba12e0189284eea9c06e9e4d2245547fccaaa4d2701ad72c2eb",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-protected-member",
+      "username": "protected-member",
+      "email": "protected-member@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:d7f9a3a0d2a5372514cc33aa75c3b896:899f9c89ab2e4209c7e82d7f654e325ea5a9119e0a17d55799fabce71cf018d53d0912575b69878f4eb97ff1c72c7f3251f70ad03a1389c8a512d59691ab9667",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-repo-admin",
+      "username": "repo-admin",
+      "email": "repo-admin@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:61eb2dc4d7e7c969c7856cc1c2b99dd7:2e94391c5b220fbd9341c2b33a3e6f0cc7bdcb8bbf20cb1168c9e9824749946a4fe51e10a6c5619dae6c9ec3f1a976d8dde7f650bbeae4bc7f5b9329a1080112",
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "account-30988b5a-eba4-4c0a-8a64-f57b6adcd32a",
+      "username": "nora-demo",
+      "email": "nora.demo@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:3129ca6e130928125758fa2c5b341801:bce4f441e99e5eb9f8725361ef217803fd931c7c18410060489362c0afb2ee919735465e640923d2cbf3b2e68dcc85384e4c6c8619c1ba7a4e12c5dbe5c6bf7d",
+      "createdAt": "2026-10-03T05:39:47.070Z"
+    },
+    {
+      "id": "account-3ce9ac0a-9829-4f7f-b357-15d181d600ca",
+      "username": "duplicate-demo",
+      "email": "duplicate.demo@example.test",
+      "emailVerified": true,
+      "status": "available",
+      "password": "scrypt:bd166a8a8ee2f055c489fa849ecd734a:c43b3d28bd8fbfc54ae08b5d0fb5f27d3b112fbbbad47e3e762aa159cc2ce0c7706b67cccb59c920e874c494cca276410ad1118e04e4940add5768fab59a1f36",
+      "createdAt": "2026-10-03T05:39:47.768Z"
+    }
+  ]
+}

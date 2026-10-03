@@ -1,0 +1,1355 @@
+{
+  "config": {
+    "configFile": "/workspace/tests/playwright.config.ts",
+    "rootDir": "/workspace/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "/workspace/template/.arc/playwright-report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/workspace/tests/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 10000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "REQ-1-1-1-sign-up.spec.ts",
+      "file": "REQ-1-1-1-sign-up.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-1-1: Register a New GitHub Account - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 902,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:46.172Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0e045a623ca2f5d9112e-6ac03850be409a07f087",
+          "file": "REQ-1-1-1-sign-up.spec.ts",
+          "line": 28,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-1: Register a New GitHub Account - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 758,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:47.344Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0e045a623ca2f5d9112e-02b8936da12aa9b358b9",
+          "file": "REQ-1-1-1-sign-up.spec.ts",
+          "line": 44,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-1: Register a New GitHub Account - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 337,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:48.111Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "0e045a623ca2f5d9112e-cfdc6f575b094e78494a",
+          "file": "REQ-1-1-1-sign-up.spec.ts",
+          "line": 63,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-1-1-2-sign-in.spec.ts",
+      "file": "REQ-1-1-2-sign-in.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-1-2: Sign In with an Existing Account - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 468,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:48.461Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5d1a10349906f719ca2a-877e428d6b6382a7b4bc",
+          "file": "REQ-1-1-2-sign-in.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-2: Sign In with an Existing Account - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 402,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:48.937Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5d1a10349906f719ca2a-fd526dd862ec4b9caf66",
+          "file": "REQ-1-1-2-sign-in.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-2: Sign In with an Existing Account - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 437,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:49.346Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5d1a10349906f719ca2a-392c1408469d1c24e383",
+          "file": "REQ-1-1-2-sign-in.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-2: Sign In with an Existing Account - Scenario 4",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 587,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:49.792Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "5d1a10349906f719ca2a-9726a9a89bf6df83c4a3",
+          "file": "REQ-1-1-2-sign-in.spec.ts",
+          "line": 36,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-1-1-3-password-recovery.spec.ts",
+      "file": "REQ-1-1-3-password-recovery.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-1-3: Recover Account Access Through a Verified Email - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 622,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:50.395Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "82f9671cca1d0ba976df-d0b8bff32ac87fe3a3f8",
+          "file": "REQ-1-1-3-password-recovery.spec.ts",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-3: Recover Account Access Through a Verified Email - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 722,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:51.025Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "82f9671cca1d0ba976df-0ca65c3e5ce8a75c1d79",
+          "file": "REQ-1-1-3-password-recovery.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-1-3: Recover Account Access Through a Verified Email - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 785,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:51.755Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "82f9671cca1d0ba976df-3596a8fa0ed4ea686b1d",
+          "file": "REQ-1-1-3-password-recovery.spec.ts",
+          "line": 43,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-1-2-sign-out.spec.ts",
+      "file": "REQ-1-2-sign-out.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-2: Sign Out and End the Current Web Session - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 608,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:52.559Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "439731d4339d1a78ef13-ee19049f4ebf72e73cf7",
+          "file": "REQ-1-2-sign-out.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-2: Sign Out and End the Current Web Session - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 652,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:53.175Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "439731d4339d1a78ef13-4b0aa819b43245862420",
+          "file": "REQ-1-2-sign-out.spec.ts",
+          "line": 19,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-1-3-change-password.spec.ts",
+      "file": "REQ-1-3-change-password.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-3: Change Account Password - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 939,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:53.842Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b38d57eecbf424c076e9-6e46ab768ac1ca3c862f",
+          "file": "REQ-1-3-change-password.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-3: Change Account Password - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 878,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:54.788Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b38d57eecbf424c076e9-bdf170b4899d0685f210",
+          "file": "REQ-1-3-change-password.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-3: Change Account Password - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 864,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:55.674Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b38d57eecbf424c076e9-6eb79ba08df124b4b2c7",
+          "file": "REQ-1-3-change-password.spec.ts",
+          "line": 43,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-1-1-browse-organization-repositories.spec.ts",
+      "file": "REQ-2-1-1-browse-organization-repositories.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-1-1: Browse Organization Repositories - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 474,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"acme-docs\"",
+                    "stack": "Error: Could not find a visible navigation target named \"acme-docs\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleTarget (/workspace/tests/support/e2e.ts:229:3)\n    at /workspace/tests/REQ-2-1-1-browse-organization-repositories.spec.ts:16:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 212
+                    },
+                    "snippet": "   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 212
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"acme-docs\"\n\n   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleTarget (/workspace/tests/support/e2e.ts:229:3)\n    at /workspace/tests/REQ-2-1-1-browse-organization-repositories.spec.ts:16:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:56.557Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-1-1-browse-organizat-c9b8b-n-Repositories---Scenario-1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 212
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "9cc5b45b79c4a6c36be3-bd744fb827b2dc45aff5",
+          "file": "REQ-2-1-1-browse-organization-repositories.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-1-1: Browse Organization Repositories - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 530,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:57.673Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "9cc5b45b79c4a6c36be3-812169fd2dc62e998cc6",
+          "file": "REQ-2-1-1-browse-organization-repositories.spec.ts",
+          "line": 24,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-1-2-create-organization.spec.ts",
+      "file": "REQ-2-1-2-create-organization.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-1-2: Create an Organization After Authentication - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 734,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:58.540Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "745f4c6f46750dea5404-8648ee51187cad37c1f7",
+          "file": "REQ-2-1-2-create-organization.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-1-2: Create an Organization After Authentication - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 665,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:39:59.284Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "745f4c6f46750dea5404-9ee05cd2bf55a775d12c",
+          "file": "REQ-2-1-2-create-organization.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-1-2: Create an Organization After Authentication - Scenario 3",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 620,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:00.007Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "745f4c6f46750dea5404-3375c62008a3f2f530f7",
+          "file": "REQ-2-1-2-create-organization.spec.ts",
+          "line": 43,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-2-1-create-team.spec.ts",
+      "file": "REQ-2-2-1-create-team.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-2-1: Create an Organization Team - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 835,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:00.640Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "744c4d0beb019bdfc87a-03bdfcf2e89280bf1b6f",
+          "file": "REQ-2-2-1-create-team.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-2-1: Create an Organization Team - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 798,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:01.485Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "744c4d0beb019bdfc87a-b144c9f91e79418c82d8",
+          "file": "REQ-2-2-1-create-team.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-2-2-manage-team-membership.spec.ts",
+      "file": "REQ-2-2-2-manage-team-membership.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-2-2: Manage Organization Team Members and Hierarchy - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 784,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"frontend-team\"",
+                    "stack": "Error: Could not find a visible navigation target named \"frontend-team\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at /workspace/tests/REQ-2-2-2-manage-team-membership.spec.ts:18:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 212
+                    },
+                    "snippet": "   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 212
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"frontend-team\"\n\n   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at /workspace/tests/REQ-2-2-2-manage-team-membership.spec.ts:18:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:02.341Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-2-2-manage-team-memb-55693--and-Hierarchy---Scenario-1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 212
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c0c0f2342a863c227f8f-98a0e0dd6cbbfc7a1a05",
+          "file": "REQ-2-2-2-manage-team-membership.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-2-2: Manage Organization Team Members and Hierarchy - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1016,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"frontend-team\"",
+                    "stack": "Error: Could not find a visible navigation target named \"frontend-team\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at /workspace/tests/REQ-2-2-2-manage-team-membership.spec.ts:41:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 212
+                    },
+                    "snippet": "   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 212
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"frontend-team\"\n\n   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at /workspace/tests/REQ-2-2-2-manage-team-membership.spec.ts:41:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:03.777Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-2-2-manage-team-memb-06158--and-Hierarchy---Scenario-2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 212
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c0c0f2342a863c227f8f-f78d2afb8f06c51c19f9",
+          "file": "REQ-2-2-2-manage-team-membership.spec.ts",
+          "line": 31,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-2-3-add-organization-member.spec.ts",
+      "file": "REQ-2-2-3-add-organization-member.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-2-3: Directly Add a User as an Organization Member - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10018,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/REQ-2-2-3-add-organization-member.spec.ts",
+                        "column": 67,
+                        "line": 27
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('option', { name: 'Member', exact: true })\u001b[22m\n\n\n  25 |   const role = page.getByRole('combobox', { name: 'Role', exact: true });\n  26 |   await role.click();\n> 27 |   await page.getByRole('option', { name: 'Member', exact: true }).click();\n     |                                                                   ^\n  28 |   await page.getByRole('button', { name: 'Add member', exact: true }).last().click();\n  29 |\n  30 |   await expect(page.getByText(newMember.username, { exact: true })).toBeVisible();\n    at /workspace/tests/REQ-2-2-3-add-organization-member.spec.ts:27:67"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:05.741Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-2-3-add-organization-7c557-ization-Member---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "8483ca13e95df4397a03-e2604952a18c59d5b03f",
+          "file": "REQ-2-2-3-add-organization-member.spec.ts",
+          "line": 14,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-2-3: Directly Add a User as an Organization Member - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1297,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:16.695Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "8483ca13e95df4397a03-cf97e2010d8c94fd7284",
+          "file": "REQ-2-2-3-add-organization-member.spec.ts",
+          "line": 48,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-2-4-remove-organization-member.spec.ts",
+      "file": "REQ-2-2-4-remove-organization-member.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-2-4: Remove a Member from an Organization - Scenario 1",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1012,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:18.218Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d499ab2948b4e801b595-5dec98b5321697f15a82",
+          "file": "REQ-2-2-4-remove-organization-member.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-2-4: Remove a Member from an Organization - Scenario 2",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 812,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:19.240Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "d499ab2948b4e801b595-a4cfeadc0468598c4950",
+          "file": "REQ-2-2-4-remove-organization-member.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-3-grant-repository-access.spec.ts",
+      "file": "REQ-2-3-grant-repository-access.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-3: Grant Repository Access to People and Teams - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 567,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"acme-docs\"",
+                    "stack": "Error: Could not find a visible navigation target named \"acme-docs\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleRepository (/workspace/tests/support/e2e.ts:174:3)\n    at /workspace/tests/REQ-2-3-grant-repository-access.spec.ts:15:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 212
+                    },
+                    "snippet": "   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 212
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"acme-docs\"\n\n   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleRepository (/workspace/tests/support/e2e.ts:174:3)\n    at /workspace/tests/REQ-2-3-grant-repository-access.spec.ts:15:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:20.065Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-3-grant-repository-a-da005-ople-and-Teams---Scenario-1/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 212
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc69387190d954ed20c4-53da93bbf1bc23f2c077",
+          "file": "REQ-2-3-grant-repository-access.spec.ts",
+          "line": 9,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-3: Grant Repository Access to People and Teams - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 709,
+                  "error": {
+                    "message": "Error: Could not find a visible navigation target named \"acme-docs\"",
+                    "stack": "Error: Could not find a visible navigation target named \"acme-docs\"\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleRepository (/workspace/tests/support/e2e.ts:174:3)\n    at /workspace/tests/REQ-2-3-grant-repository-access.spec.ts:37:3",
+                    "location": {
+                      "file": "/workspace/tests/support/e2e.ts",
+                      "column": 9,
+                      "line": 212
+                    },
+                    "snippet": "   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 9,
+                        "line": 212
+                      },
+                      "message": "Error: Could not find a visible navigation target named \"acme-docs\"\n\n   at support/e2e.ts:212\n\n  210 |   }\n  211 |\n> 212 |   throw new Error(`Could not find a visible navigation target named \"${name}\"`);\n      |         ^\n  213 | }\n  214 |\n  215 | /** Resolve both semantic dialogs and legacy `.dialog` containers. */\n    at clickVisibleTarget (/workspace/tests/support/e2e.ts:212:9)\n    at openVisibleRepository (/workspace/tests/support/e2e.ts:174:3)\n    at /workspace/tests/REQ-2-3-grant-repository-access.spec.ts:37:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-03T05:40:21.355Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-3-grant-repository-a-52073-ople-and-Teams---Scenario-2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/tests/support/e2e.ts",
+                    "column": 9,
+                    "line": 212
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "cc69387190d954ed20c4-fcdf176743be163e5f1d",
+          "file": "REQ-2-3-grant-repository-access.spec.ts",
+          "line": 31,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-03T05:39:45.547Z",
+    "duration": 36922.276,
+    "expected": 24,
+    "skipped": 0,
+    "unexpected": 6,
+    "flaky": 0
+  }
+}

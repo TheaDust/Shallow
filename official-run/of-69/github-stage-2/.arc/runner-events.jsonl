@@ -1,0 +1,233 @@
+{"type":"runner_state","state":"running","timestamp":"2026-10-03 05:42:17","message":"feature-group pipeline started"}
+{"type":"signal","reason":"requirement_tree_stored","timestamp":"2026-10-03 05:42:17","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-1","phase":"design","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-1","phase":"design","status":"completed","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-1","phase":"implement","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-3","phase":"design","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-3","phase":"design","status":"completed","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-3","phase":"implement","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-4","phase":"design","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-4","phase":"design","status":"completed","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-4","phase":"implement","status":"running","timestamp":"2026-10-03 05:42:49","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:42:49","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"signal","reason":"git_commit","timestamp":"2026-10-03 05:55:10","refresh":{"submission":false,"logs":false,"commit_history":true,"traceability_selected":false,"traceability_all":false,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-1","phase":"implement","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-3","phase":"implement","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-4","phase":"implement","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-1","phase":"design","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-1","phase":"design","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-1","phase":"implement","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-2","phase":"design","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-2","phase":"design","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-2","phase":"implement","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-3","phase":"design","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-3","phase":"design","status":"completed","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-3","phase":"implement","status":"running","timestamp":"2026-10-03 05:55:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 05:55:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"signal","reason":"git_commit","timestamp":"2026-10-03 06:09:29","refresh":{"submission":false,"logs":false,"commit_history":true,"traceability_selected":false,"traceability_all":false,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-1","phase":"implement","status":"completed","timestamp":"2026-10-03 06:09:29","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:09:29","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-2","phase":"implement","status":"completed","timestamp":"2026-10-03 06:09:29","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:09:29","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-3","phase":"implement","status":"completed","timestamp":"2026-10-03 06:09:29","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:09:29","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"signal","reason":"git_commit","timestamp":"2026-10-03 06:30:15","refresh":{"submission":false,"logs":false,"commit_history":true,"traceability_selected":false,"traceability_all":false,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-1","phase":"design","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-1","phase":"design","status":"completed","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-1","phase":"implement","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-1","phase":"design","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-1","phase":"design","status":"completed","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-1","phase":"implement","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-2","phase":"design","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-2","phase":"design","status":"completed","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-2","phase":"implement","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-3","phase":"design","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-3","phase":"design","status":"completed","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-3","phase":"implement","status":"running","timestamp":"2026-10-03 06:30:15","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:30:15","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"signal","reason":"git_commit","timestamp":"2026-10-03 06:52:59","refresh":{"submission":false,"logs":false,"commit_history":true,"traceability_selected":false,"traceability_all":false,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-1","phase":"implement","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-1","phase":"implement","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-2","phase":"implement","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-3","phase":"implement","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-4","phase":"design","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-4","phase":"design","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-4","phase":"implement","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-1","phase":"design","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-1","phase":"design","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-1","phase":"implement","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-2","phase":"design","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-2","phase":"design","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-2","phase":"implement","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-3","phase":"design","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-3","phase":"design","status":"completed","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-3","phase":"implement","status":"running","timestamp":"2026-10-03 06:52:59","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 06:52:59","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"signal","reason":"git_commit","timestamp":"2026-10-03 07:11:10","refresh":{"submission":false,"logs":false,"commit_history":true,"traceability_selected":false,"traceability_all":false,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-4","phase":"implement","status":"completed","timestamp":"2026-10-03 07:11:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:11:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-1","phase":"implement","status":"completed","timestamp":"2026-10-03 07:11:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:11:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-2","phase":"implement","status":"completed","timestamp":"2026-10-03 07:11:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:11:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-3","phase":"implement","status":"completed","timestamp":"2026-10-03 07:11:10","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:11:10","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-1","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-1","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-2","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2-3","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-3","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-4","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-1","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-1","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-2","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2-3","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-1","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-2","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3-3","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-4","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:32","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:32","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3-2","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-2","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4-3","phase":"test","status":"passed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-3","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"REQ-4","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"ROOT","phase":"design","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"ROOT","phase":"design","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"ROOT","phase":"implement","status":"running","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"ROOT","phase":"implement","status":"completed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"requirement_state","node_id":"ROOT","phase":"test","status":"failed","timestamp":"2026-10-03 07:50:45","message":null}
+{"type":"signal","reason":"node_state_updated","timestamp":"2026-10-03 07:50:45","refresh":{"submission":true,"logs":false,"commit_history":false,"traceability_selected":true,"traceability_all":true,"preview":false}}
+{"type":"runner_state","state":"completed","timestamp":"2026-10-03 07:50:45","message":"summary partial"}
+{"event_id": "1f74d9d765af4b8f935ae03cf0c27a78", "timestamp": "2026-10-03 07:50:50", "step_key": "start_agent", "stage": "Running agent", "status": "success", "message": "Generation agent finished successfully", "summary": "Generation agent finished successfully", "heartbeat": false, "artifact_reference": null}
+{"event_id": "2c54c71446dd488980458b155f3b17f6", "timestamp": "2026-10-03 07:50:50", "step_key": "start_agent", "stage": "Running agent", "status": "success", "message": "Uploaded agent finished; traceability artifacts are expected to be written directly by the SDK", "summary": "Uploaded agent finished; traceability artifacts are expected to be written directly by the SDK", "heartbeat": false, "artifact_reference": null}
+{"event_id": "518b3942b2e84c3b8c58d85bf1597a45", "timestamp": "2026-10-03 07:50:50", "step_key": "run_tests", "stage": "Evaluating result", "status": "waiting", "message": "Waiting for evaluator tests", "summary": "Waiting for evaluator tests", "heartbeat": false, "artifact_reference": null}
+{"event_id": "2d09cc23464b4c8386f23305fb4b69f4", "timestamp": "2026-10-03 07:50:52", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Installing dependencies for frontend", "summary": "Installing dependencies for frontend", "heartbeat": false, "artifact_reference": null}
+{"event_id": "3eec9f60666e43d8a2c70a53af84c9b8", "timestamp": "2026-10-03 07:50:54", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Dependencies installed for frontend", "summary": "Dependencies installed for frontend", "heartbeat": false, "artifact_reference": null}
+{"event_id": "6594d99e995f4d9396f5616019bc8d5d", "timestamp": "2026-10-03 07:50:54", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Building template frontend", "summary": "Building template frontend", "heartbeat": false, "artifact_reference": null}
+{"event_id": "90d8e27595b044feaf5b0df0514d18ec", "timestamp": "2026-10-03 07:51:02", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Template frontend built", "summary": "Template frontend built", "heartbeat": false, "artifact_reference": null}
+{"event_id": "e89f26098b6e4be38526a6ecc79cb648", "timestamp": "2026-10-03 07:51:02", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Installing dependencies for backend", "summary": "Installing dependencies for backend", "heartbeat": false, "artifact_reference": null}
+{"event_id": "097de9bf962f4bc5a1e5fdfe3098981c", "timestamp": "2026-10-03 07:51:02", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Dependencies installed for backend", "summary": "Dependencies installed for backend", "heartbeat": false, "artifact_reference": null}
+{"event_id": "d7c99df3cf654d67b1185b29ce42bf7c", "timestamp": "2026-10-03 07:51:02", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Starting template application server", "summary": "Starting template application server", "heartbeat": false, "artifact_reference": null}
+{"event_id": "75e65c1328764b899f16aa23d1edf6b7", "timestamp": "2026-10-03 07:51:02", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Template application server started (pid=18281)", "summary": "Template application server started (pid=18281)", "heartbeat": false, "artifact_reference": null}
+{"event_id": "fb88cfcd05c54f9dbfc16fada3675eda", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Template application is reachable on http://127.0.0.1:3000", "summary": "Template application is reachable on http://127.0.0.1:3000", "heartbeat": false, "artifact_reference": null}
+{"event_id": "666762dc57d64653bad7e80c97d13616", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Using preinstalled Playwright package from runner image", "summary": "Using preinstalled Playwright package from runner image", "heartbeat": false, "artifact_reference": null}
+{"event_id": "b0c51f8fa05b476b93fc1a2fcfee8b95", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Deploying generated application", "summary": "Deploying generated application", "heartbeat": false, "artifact_reference": null}
+{"event_id": "9841e164bfeb4aa69d5a2bcab1aa30c8", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Generated application is reachable on http://127.0.0.1:3000", "summary": "Generated application is reachable on http://127.0.0.1:3000", "heartbeat": false, "artifact_reference": null}
+{"event_id": "8fa33094d0f84ea39bd707b76c57f7a0", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Deploying test environment", "summary": "Deploying test environment", "heartbeat": false, "artifact_reference": null}
+{"event_id": "77b4701e98f54918a4848e466793a654", "timestamp": "2026-10-03 07:51:03", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Test environment ready with 1 workers", "summary": "Test environment ready with 1 workers", "heartbeat": false, "artifact_reference": null}
+{"event_id": "93c2788cdb594792818ee65a80a5c983", "timestamp": "2026-10-03 07:51:04", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Still working: Test environment ready with 1 workers", "summary": "Still working: Test environment ready with 1 workers", "heartbeat": true, "artifact_reference": null}
+{"event_id": "0e2b28fa8f5e45568814977a4e564d69", "timestamp": "2026-10-03 07:51:34", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Still working: Test environment ready with 1 workers", "summary": "Still working: Test environment ready with 1 workers", "heartbeat": true, "artifact_reference": null}
+{"event_id": "f8f7c045294f45a2affe046245dfae25", "timestamp": "2026-10-03 07:52:04", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Still working: Test environment ready with 1 workers", "summary": "Still working: Test environment ready with 1 workers", "heartbeat": true, "artifact_reference": null}
+{"event_id": "15516025d6404abda20e0ec283eb037a", "timestamp": "2026-10-03 07:52:17", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Playwright results parsed: passed=22, failed=7, score=75.9", "summary": "Playwright results parsed: passed=22, failed=7, score=75.9", "heartbeat": false, "artifact_reference": null}
+{"event_id": "7a5074cc2e9e4694bc6aaf77305f2ee0", "timestamp": "2026-10-03 07:52:23", "step_key": "run_tests", "stage": "Evaluating result", "status": "info", "message": "Collecting test artifacts", "summary": "Collecting test artifacts", "heartbeat": false, "artifact_reference": null}
+{"event_id": "ee9fc43d545b47538fa342c890db1372", "timestamp": "2026-10-03 07:52:23", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Test artifacts collected", "summary": "Test artifacts collected", "heartbeat": false, "artifact_reference": null}
+{"event_id": "0f9ed99b04994f879ca427bb81d07504", "timestamp": "2026-10-03 07:52:23", "step_key": "run_tests", "stage": "Evaluating result", "status": "success", "message": "Test results parsed: passed=22, failed=7, score=75.9", "summary": "Test results parsed: passed=22, failed=7, score=75.9", "heartbeat": false, "artifact_reference": null}
+{"event_id": "15ee25151e85422a9d544d4486450cec", "timestamp": "2026-10-03 07:52:23", "step_key": "run_tests", "stage": "Evaluating result", "status": "error", "message": "Runner exited with test failures or runtime errors", "summary": "Runner exited with test failures or runtime errors", "heartbeat": false, "artifact_reference": null}

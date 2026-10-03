@@ -1,0 +1,134 @@
+{
+  "organizations": [
+    {
+      "id": "org-acme-demo",
+      "name": "acme-demo",
+      "displayName": "Acme Demo",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "org-84092328-933f-462f-bca1-8081b486bd63",
+      "name": "mobile-guild",
+      "displayName": "Mobile Guild",
+      "createdAt": "2026-10-03T05:39:59.141Z"
+    }
+  ],
+  "memberships": [
+    {
+      "id": "membership-acme-demo-org-owner",
+      "organizationId": "org-acme-demo",
+      "accountId": "account-org-owner",
+      "role": "owner",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "membership-acme-demo-team-maintainer",
+      "organizationId": "org-acme-demo",
+      "accountId": "account-team-maintainer",
+      "role": "owner",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "membership-acme-demo-bob-reviewer",
+      "organizationId": "org-acme-demo",
+      "accountId": "account-bob-reviewer",
+      "role": "member",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "membership-acme-demo-org-member",
+      "organizationId": "org-acme-demo",
+      "accountId": "account-org-member",
+      "role": "member",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "membership-acme-demo-protected-member",
+      "organizationId": "org-acme-demo",
+      "accountId": "account-protected-member",
+      "role": "member",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "membership-35580a48-e936-422e-bfa0-b20683babc50",
+      "organizationId": "org-84092328-933f-462f-bca1-8081b486bd63",
+      "accountId": "account-org-owner",
+      "role": "owner",
+      "createdAt": "2026-10-03T05:39:59.141Z"
+    }
+  ],
+  "teams": [
+    {
+      "id": "team-acme-demo-platform-team",
+      "organizationId": "org-acme-demo",
+      "name": "platform-team",
+      "parentTeamId": null,
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "team-acme-demo-frontend-team",
+      "organizationId": "org-acme-demo",
+      "name": "frontend-team",
+      "parentTeamId": "team-acme-demo-platform-team",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "team-acme-demo-frontend-child",
+      "organizationId": "org-acme-demo",
+      "name": "frontend-child",
+      "parentTeamId": "team-acme-demo-frontend-team",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "team-acme-demo-access-role-team",
+      "organizationId": "org-acme-demo",
+      "name": "access-role-team",
+      "parentTeamId": null,
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "team-6174bdac-de90-4a82-84ee-19d9d73774ba",
+      "organizationId": "org-acme-demo",
+      "name": "mobile-team",
+      "parentTeamId": null,
+      "createdAt": "2026-10-03T05:40:01.342Z"
+    }
+  ],
+  "teamMemberships": [],
+  "repositoryGrants": [
+    {
+      "id": "grant-acme-docs-repo-admin",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "accountId": "account-repo-admin",
+      "role": "admin",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    },
+    {
+      "id": "grant-acme-docs-access-role-team",
+      "repositoryId": "repo-acme-demo-acme-docs",
+      "teamId": "team-acme-demo-access-role-team",
+      "role": "write",
+      "createdAt": "2024-01-02T00:00:00.000Z"
+    }
+  ],
+  "repositories": [
+    {
+      "id": "repo-acme-demo-acme-docs",
+      "organizationId": "org-acme-demo",
+      "name": "acme-docs",
+      "description": "Public documentation for Acme products",
+      "visibility": "public",
+      "createdAt": "2024-01-02T00:00:00.000Z",
+      "updatedAt": "2024-03-01T10:00:00.000Z"
+    },
+    {
+      "id": "repo-acme-demo-secret-research",
+      "organizationId": "org-acme-demo",
+      "name": "secret-research",
+      "description": "Confidential research notes for the Acme team",
+      "visibility": "private",
+      "createdAt": "2024-01-02T00:00:00.000Z",
+      "updatedAt": "2024-03-02T10:00:00.000Z"
+    }
+  ]
+}
