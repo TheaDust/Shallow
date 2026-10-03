@@ -52,6 +52,9 @@ test("starter scaffold installs the generic platform shell into metadata-only ou
     assert.match(dialog, /className="dialog ui-dialog"/);
     assert.match(combobox, /<select/);
     assert.doesNotMatch(combobox, /<input/);
+    assert.match(combobox, /role="listbox"/);
+    assert.match(combobox, /role="option"/);
+    assert.match(combobox, /aria-hidden="true"/);
     assert.match(combobox, /\\u2060/);
     assert.doesNotMatch(`${frontend}\n${primitives}\n${backend}\n${store}`, /github|spreadsheet|repository|workbook/i);
     assert.match(backend, /\/api\/health/);
