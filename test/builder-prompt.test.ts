@@ -98,7 +98,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /Profile name \| Save/);
   assert.match(compiled.taskPrompt, /引号原词（须按原文区分界面名称、数据值与示例）/);
   assert.match(compiled.taskPrompt, /输入控件使用符合用途的原生类型/);
-  assert.match(compiled.taskPrompt, /优先使用脚手架原生 select Combobox/);
+  assert.match(compiled.taskPrompt, /优先使用脚手架混合 Combobox/);
   assert.match(compiled.taskPrompt, /不只依赖浏览器原生校验气泡/);
   assert.match(compiled.taskPrompt, /同名操作可以重复/);
   assert.match(compiled.taskPrompt, /打开对象的方式依需求/);

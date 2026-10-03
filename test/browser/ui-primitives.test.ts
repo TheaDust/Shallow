@@ -33,7 +33,7 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
     return page;
   }
   try {
-    await t.test("repeated labels identify native comboboxes compatible with selectOption across renders", async sub => {
+    await t.test("hybrid comboboxes support selectOption and one visible clickable option set", async sub => {
       const page = await mount();
       sub.after(() => page.close());
       const comboboxes = page.getByRole("combobox");
@@ -41,6 +41,7 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
       const ids = await comboboxes.evaluateAll(elements => elements.map(element => element.id));
       assert.equal(new Set(ids).size, 4);
       assert.equal(ids[3], "explicit-choice");
+      await expect(page.getByRole("option", { name: "编辑", exact: true })).toHaveCount(0);
       for (let index = 0; index < 4; index++) {
         const combobox = comboboxes.nth(index);
         await combobox.locator("..").locator("label").click();
@@ -57,6 +58,12 @@ test("controller UI primitives work in Chromium", { timeout: 60_000 }, async t =
       await expect(status).toHaveCount(1);
       await status.selectOption({ label: "只读" });
       await expect(page.getByRole("combobox", { name: "状态", exact: true })).toHaveValue("read");
+      await status.click();
+      await expect(page.getByRole("option", { name: "编辑", exact: true })).toHaveCount(1);
+      await page.getByRole("option", { name: "编辑", exact: true }).click();
+      await expect(status).toHaveValue("write");
+      await expect(page.getByRole("option", { name: "编辑", exact: true })).toHaveCount(0);
+      await expect(page.getByText("编辑", { exact: true })).toHaveCount(0);
       await expect(page.getByLabel("权限", { exact: true })).toHaveAttribute("id", "explicit-choice");
       await expect(page.getByLabel("角色", { exact: true })).toHaveCount(2);
     });
