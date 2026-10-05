@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { WorkPacket } from "../types.js";
 import { planValidationFeedback, type ProbePlanner } from "./llm-probe-planner.js";
-import { parseProbePlan, type ProbePlan } from "./probe-schema.js";
+import { parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 import { assertCoverageAccountedFor } from "./probe-coverage.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
@@ -63,6 +63,16 @@ export class PlanCache {
 
 function sanitise(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 96);
+}
+
+/**
+ * Cache metadata such as a pending completeness review is not part of the
+ * behavior hash, but it still belongs in the persisted plan state.
+ */
+export function shouldWritePlanCache(previous: ProbePlan | undefined, next: ProbePlan): boolean {
+  return previous === undefined ||
+    previous.coverageReview !== next.coverageReview ||
+    probePlanSha256(previous) !== probePlanSha256(next);
 }
 
 /**

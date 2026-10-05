@@ -613,23 +613,34 @@ async function retryCoverageReview(
   if (remaining() <= 0) return undefined;
   await state.record({ at: now(), type: "probe_review_started", packetId: packet.id,
     detail: { cases: plan.cases.length, failed: 0 } });
-  try {
-    const review = await deps.planner.reviewPlan(packet, plan, [], undefined, {
-      timeoutMs: Math.max(1, remaining()), coverageReview: true,
-    });
-    const reviewed = review.status === "corrected" ? review.plan : plan;
-    await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
-      detail: { verdict: review.status, rationale: review.rationale,
-        beforePlanSha256: probePlanSha256(plan),
-        ...(review.status === "corrected" ? { planSha256: probePlanSha256(reviewed), corrections: review.corrections } : {}) } });
-    return { ...reviewed, coverageReview: "verified" };
-  } catch (error) {
-    if (error instanceof GatewayRequestError ||
-      (error as { gatewayFailure?: unknown } | null)?.gatewayFailure !== undefined) throw error;
-    await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
-      detail: { ...plannerFailureDetail(error), planSha256: probePlanSha256(plan) } });
-    return undefined;
+  let feedback: ProbePlannerFeedback | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const review = await deps.planner.reviewPlan(packet, plan, [], feedback, {
+        timeoutMs: Math.max(1, remaining()), coverageReview: true,
+      });
+      const reviewed = review.status === "corrected" ? review.plan : plan;
+      await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
+        detail: { verdict: review.status, rationale: review.rationale,
+          beforePlanSha256: probePlanSha256(plan),
+          ...(review.status === "corrected" ? { planSha256: probePlanSha256(reviewed), corrections: review.corrections } : {}) } });
+      return { ...reviewed, coverageReview: "verified" };
+    } catch (error) {
+      if (error instanceof GatewayRequestError ||
+        (error as { gatewayFailure?: unknown } | null)?.gatewayFailure !== undefined) throw error;
+      const retryFeedback = planValidationFeedback(error);
+      if (retryFeedback && attempt === 0 && remaining() > 0) {
+        feedback = retryFeedback;
+        await state.record({ at: now(), type: "probe_planner_retry", packetId: packet.id,
+          detail: { ...plannerFailureDetail(error), attempt: attempt + 1, retryCount: attempt } });
+        continue;
+      }
+      await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
+        detail: { ...plannerFailureDetail(error), planSha256: probePlanSha256(plan) } });
+      return undefined;
+    }
   }
+  return undefined;
 }
 
 function plannerFailureDetail(error: unknown): Record<string, unknown> {

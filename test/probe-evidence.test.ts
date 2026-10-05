@@ -92,6 +92,30 @@ test("A cached pending plan retries only completeness review before verification
   });
 });
 
+test("A pending completeness review retries the review with validation feedback", async () => {
+  await withModulePipeline(async f => {
+    let reviewCalls = 0;
+    f.deps.planner.reviewPlan = async (_packet, _original, _failures, feedback, options) => {
+      reviewCalls += 1;
+      assert.equal(options?.coverageReview, true);
+      if (reviewCalls === 1) {
+        assert.equal(feedback, undefined);
+        throw new ProbePlannerError("review", "review contract failed", {
+          cause: new Error("corrections must identify an affected case"), content: "invalid review" });
+      }
+      assert.equal(feedback?.validationError, "corrections must identify an affected case");
+      assert.equal(feedback?.contentPreview, "invalid review");
+      return { status: "sound", rationale: "the cached plan remains complete" };
+    };
+    const state = new RunStateStore({ statusByRequirementId: { r: "todo" }, acceptedSha: "baseline", startedAtMs: 0, totalBudgetMs: 60_000 });
+    const result = await auditPacket(packet(), { ...plan(), coverageReview: "pending" }, f.options, f.deps, state,
+      () => 60_000, { refineLocators: true });
+    assert.equal(result.status, "verified");
+    assert.equal(result.plan?.coverageReview, "verified");
+    assert.equal(reviewCalls, 2);
+  });
+});
+
 test("Detection-only audit leaves a pending completeness review inconclusive", async () => {
   await withModulePipeline(async f => {
     let reviewCalls = 0;

@@ -52,10 +52,10 @@ export interface ProbePlannerFeedback {
   contentPreview?: string;
 }
 
-/** One feedback retry for a malformed plan; transport recovery stays with the gateway. */
+/** One feedback retry for malformed planning or review output; transport recovery stays with the gateway. */
 export function planValidationFeedback(error: unknown): ProbePlannerFeedback | undefined {
   if (!(error instanceof ProbePlannerError) ||
-    (error.category !== "json" && error.category !== "schema" && !isModelLengthCutoff(error))) return undefined;
+    (error.category !== "json" && error.category !== "schema" && error.category !== "review" && !isModelLengthCutoff(error))) return undefined;
   return {
     validationError: error.diagnostics.validationError ?? error.diagnostics.message,
     ...(error.diagnostics.contentPreview ? { contentPreview: error.diagnostics.contentPreview } : {}),

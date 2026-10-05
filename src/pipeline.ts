@@ -31,7 +31,7 @@ import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.js";
 import { groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
-import { PlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
+import { PlanCache, shouldWritePlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
 import { progressPlansDirectory } from "./progress-journal.js";
 import { memorySnapshot } from "./memory-snapshot.js";
 import { ExecutionFault } from "./execution-fault.js";
@@ -357,7 +357,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
         if (checked.plan) {
           const recovered = mergeCheckedPlan(plan, checked.plan, packetToCheck);
-          if (probePlanSha256(recovered) !== probePlanSha256(plan)) recoveredPlans.set(packetToCheck.id, recovered);
+          if (shouldWritePlanCache(plan, recovered)) recoveredPlans.set(packetToCheck.id, recovered);
         }
       }
       preserved = true;
@@ -388,7 +388,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
       // Detection-only audits never refine; persist a freshly planned result so
       // future audits skip the LLM call.
-      if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
+      if (result.plan && shouldWritePlanCache(cached, result.plan)) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
       audited.set(packet.id, result);
@@ -449,7 +449,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       else if (checked.plan) {
         check.plan = checked.plan;
         const recovered = mergeCheckedPlan(previous.plan, checked.plan, packet);
-        if (probePlanSha256(recovered) !== probePlanSha256(previous.plan)) {
+        if (shouldWritePlanCache(previous.plan, recovered)) {
           results.set(packet.id, { ...previous, plan: recovered });
           await planCache.write(packet.id, recovered).catch(() => {});
         }
@@ -477,7 +477,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"),
         { ...recoveryAuditPolicy, retryPlan: pendingPlans.get(packet.id)?.failed !== true });
-      if (result.plan && (!cached || probePlanSha256(result.plan) !== probePlanSha256(cached))) {
+      if (result.plan && shouldWritePlanCache(cached, result.plan)) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
       boundaryResults.set(packet.id, result);
@@ -641,7 +641,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           // demote these verified packets with the pre-repair plans.
           for (const [id, recheck] of rechecked) {
             const previousPlan = results.get(id)?.plan;
-            if (recheck.plan && (!previousPlan || probePlanSha256(recheck.plan) !== probePlanSha256(previousPlan))) {
+            if (recheck.plan && shouldWritePlanCache(previousPlan, recheck.plan)) {
               await planCache.write(id, recheck.plan).catch(() => {});
             }
             nextResults = new Map(nextResults);

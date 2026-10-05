@@ -3,7 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { PlanCache, spawnPlanGeneration } from "../src/judge/plan-cache.js";
+import { PlanCache, shouldWritePlanCache, spawnPlanGeneration } from "../src/judge/plan-cache.js";
 import { ProbePlannerError } from "../src/judge/llm-probe-planner.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
@@ -35,6 +35,13 @@ test("A pending completeness review survives the plan cache", async () => {
     await cache.write("packet-a", { ...plan("packet-a", ["A"]), coverageReview: "pending" });
     assert.equal((await cache.read({ id: "packet-a", requirementIds: ["A"] }))?.coverageReview, "pending");
   });
+});
+
+test("Cache persistence notices completeness-review state changes separately from behavior", () => {
+  const pending = { ...plan("packet-a", ["A"]), coverageReview: "pending" as const };
+  const verified = { ...pending, coverageReview: "verified" as const };
+  assert.equal(shouldWritePlanCache(pending, verified), true);
+  assert.equal(shouldWritePlanCache(verified, { ...verified }), false);
 });
 
 test("Cache files stay separate for packet ids that sanitise identically", async () => {
