@@ -125,27 +125,34 @@ export class LlmProbePlanner implements ProbePlanner {
     const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage, options?.signal);
     const plan = this.parse(content, packet);
     const hasOmissions = !!plan.uncoveredOutcomes?.length;
-    if (!hasOmissions && !scenarioOutcomes(packet.requirements).some(item => item.clauseIndex !== undefined)) return plan;
+    if (!hasOmissions && !scenarioOutcomes(packet.requirements).some(item => item.clauseIndex !== undefined)) {
+      return { ...plan, coverageReview: "verified" };
+    }
     // Clause accounting cannot establish that an assertion actually checks its
-    // claimed result. Review compound or incomplete plans once, within the same call
-    // window; cached audits do not repeat this planning review.
+    // claimed result. Review compound or incomplete plans once within the same
+    // call window; a failed review keeps the valid plan and marks it pending so
+    // the audit can retry only this review from cache.
     try {
       const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs;
       const remainingMs = timeoutMs === 0 ? 0 : timeoutMs - (Date.now() - startedAt);
-      if (hasOmissions && timeoutMs > 0 && remainingMs <= 0) return plan;
+      if (hasOmissions && timeoutMs > 0 && remainingMs <= 0) return { ...plan, coverageReview: "pending" };
       const review = await this.reviewPlan(packet, plan, [], undefined, { ...options, coverageReview: true,
         onUsage: options?.onReviewUsage ?? options?.onUsage,
         timeoutMs: timeoutMs === 0 ? 0 : Math.max(1, remainingMs) });
       const reviewed = review.status === "corrected" ? review.plan : plan;
       assertCoverageAccountedFor(reviewed, packet.requirements);
-      return reviewed;
+      return { ...reviewed, coverageReview: "verified" };
     } catch (error) {
-      // A failed optional omission review must not discard an already valid
-      // partial plan or amplify retries. Its uncovered outcomes still block verified.
-      if (hasOmissions && !options?.signal?.aborted) return plan;
-      if (error instanceof ProbePlannerError && error.category !== "review") throw error;
-      const cause = error instanceof ProbePlannerError ? new Error(error.diagnostics.validationError ?? error.message) : error;
-      throw new ProbePlannerError("schema", "Compound plan completeness review failed", { cause, content, apiKey: this.config.apiKey });
+      // The plan already passed the structural contract. Keep it for the
+      // audit/cache, but make the missing semantic review explicit so the
+      // controller can retry only this review rather than regenerating the
+      // complete plan. Gateway failures still propagate to shared recovery.
+      if (options?.signal?.aborted) throw error;
+      // Preserve the historical partial-plan behavior for explicit DSL
+      // omissions. The plan remains pending and cannot verify, while a later
+      // audit can retry just the missing review from cache.
+      if (error instanceof ProbePlannerError && error.gatewayFailure && !hasOmissions) throw error;
+      return { ...plan, coverageReview: "pending" };
     }
   }
 
@@ -319,6 +326,9 @@ export class LlmProbePlanner implements ProbePlanner {
     try {
       if (value && typeof value === "object" && Object.hasOwn(value, "navigationRecovered")) {
         throw new Error("Planner cannot supply controller navigation recovery evidence");
+      }
+      if (value && typeof value === "object" && Object.hasOwn(value, "coverageReview")) {
+        throw new Error("Planner cannot supply controller coverage review state");
       }
       const plan = parseProbePlan(value, packet);
       if (packet.requirements) assertCoverageAccountedFor(plan, packet.requirements);

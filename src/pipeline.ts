@@ -226,6 +226,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const remaining = plannerWindow();
       return gateway.run("planner", packet.id, remaining,
         () => planner.reviewPlan(packet, original, failures, feedback, { timeoutMs: Math.max(1, Math.min(callOptions?.timeoutMs ?? Infinity, remaining())),
+          coverageReview: callOptions?.coverageReview,
           preparationOnlyCaseIds: callOptions?.preparationOnlyCaseIds,
           onUsage: plannerUsage(packet.id, "review"), signal: callOptions?.signal }), callOptions?.signal);
     },
@@ -1119,7 +1120,9 @@ async function runFinalVerifier(
 /** A successful sampled check may recover locators, but cannot replace untested cases. */
 function mergeCheckedPlan(original: ProbePlan, checked: ProbePlan, packet: WorkPacket): ProbePlan {
   const cases = new Map(checked.cases.map(item => [item.id, item]));
-  return parseProbePlan({ ...original, ...(checked.navigationRecovered ? { navigationRecovered: true } : {}),
+  return parseProbePlan({ ...original,
+    ...(checked.navigationRecovered ? { navigationRecovered: true } : {}),
+    ...(checked.coverageReview ? { coverageReview: checked.coverageReview } : {}),
     cases: original.cases.map(item => cases.get(item.id) ?? item) }, packet);
 }
 

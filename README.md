@@ -147,7 +147,7 @@ Judge 区分准备目标的名字与角色依据：页面已有同名可操作�
 
 种子摘录兼容 `Seed data`、`Seed values`、`evaluation seed`、`pre-provisions/pre-provisioned` 及 GIVEN 中明确的既有记录和关系，保留原文、凭证与场景作用域。尚未使用的创建目标不播种；Builder 和 Planner 仍需结合完整原文区分已有、缺失和待变更状态。
 
-Planner 接收按句子、分号及 and/but 并列结果分出的 `scenarioOutcomes`，用 `scenarioId/stepIndex/clauseIndex` 逐项映射实际断言。缺少结果映射或明确无法表达的结果均不能授予 verified；旧的复合结果缓存须重新规划。声称完整覆盖的复合计划在首次生成时再做一次独立需求复核，检查断言是否实际对应全部结果，共用原规划截止时间和反馈重试额度；缓存后的验收复用计划。规划与复核用量分别记账。
+Planner 接收按句子、分号及 and/but 并列结果分出的 `scenarioOutcomes`，用 `scenarioId/stepIndex/clauseIndex` 逐项映射实际断言。缺少结果映射或明确无法表达的结果均不能授予 verified；旧的复合结果缓存须重新规划。声称完整覆盖的复合计划在首次生成时再做一次独立需求复核，检查断言是否实际对应全部结果，共用原规划截止时间和反馈重试额度；复核失败会缓存结构有效但 `coverageReview: pending` 的计划，模块边界验收只重试这次复核，不重新生成整份计划，最终只检测验收仍将其记为 inconclusive。规划与复核用量分别记账。
 
 原文明示第一个具名控件时可使用 locator 的 `firstMatch` 原文引用，选择 scope 内第一个可见匹配；第一条代码行等容器指令还须有该控件与容器的明示关系及同一操作依据。普通同名控件继续要求严格唯一，数据文字和其他场景不能授权选择第一个；精化保留该选择，count 和不存在断言保持完整范围。
 

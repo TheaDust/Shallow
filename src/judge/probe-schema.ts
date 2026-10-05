@@ -83,6 +83,8 @@ export interface ProbePlan {
   uncoveredOutcomes?: UncoveredOutcome[];
   /** Controller evidence, persisted with the recovered plan. */
   navigationRecovered?: boolean;
+  /** Controller-owned completeness review state; never sent to the planner. */
+  coverageReview?: "verified" | "pending";
 }
 
 const MAX_CASES = 12;
@@ -325,7 +327,7 @@ export function parseProbePlan(
   const plan = received.id === received.packetId && typeof received.packetId === "string"
     ? Object.fromEntries(Object.entries(received).filter(([key]) => key !== "id"))
     : received;
-  keys(plan, ["packetId", "cases", "uncoveredOutcomes", "navigationRecovered"], "ProbePlan");
+  keys(plan, ["packetId", "cases", "uncoveredOutcomes", "navigationRecovered", "coverageReview"], "ProbePlan");
   const packetId = text(plan.packetId, "ProbePlan.packetId");
   if (packet && packetId !== packet.id) {
     throw new Error(`ProbePlan packetId ${packetId} does not match ${packet.id}`);
@@ -397,8 +399,13 @@ export function parseProbePlan(
         ...(item.clauseIndex == null ? {} : { clauseIndex: nonnegativeInteger(item.clauseIndex, location) }), reason: text(item.reason, location) };
     });
   if (uncoveredOutcomes && uncoveredOutcomes.length > 200) throw new Error("ProbePlan has too many uncovered outcomes");
+  const coverageReview = plan.coverageReview == null ? undefined : text(plan.coverageReview, "ProbePlan.coverageReview");
+  if (coverageReview !== undefined && coverageReview !== "verified" && coverageReview !== "pending") {
+    throw new Error("ProbePlan.coverageReview must be verified or pending");
+  }
   return { packetId, cases, ...(uncoveredOutcomes ? { uncoveredOutcomes } : {}),
-    ...(plan.navigationRecovered == null ? {} : { navigationRecovered: boolean(plan.navigationRecovered, "ProbePlan.navigationRecovered") }) };
+    ...(plan.navigationRecovered == null ? {} : { navigationRecovered: boolean(plan.navigationRecovered, "ProbePlan.navigationRecovered") }),
+    ...(coverageReview === undefined ? {} : { coverageReview }) };
 }
 
 function nonnegativeInteger(value: unknown, location: string): number {
@@ -408,7 +415,7 @@ function nonnegativeInteger(value: unknown, location: string): number {
 
 /** Wire cases require a final assertion; internal execution keeps a single ordered step list. */
 export function toWireProbePlan(plan: ProbePlan): unknown {
-  const { navigationRecovered: _navigationRecovered, ...wire } = plan;
+  const { navigationRecovered: _navigationRecovered, coverageReview: _coverageReview, ...wire } = plan;
   return { ...wire, cases: plan.cases.map(item => {
     const last = item.steps.at(-1);
     if (!last?.op.startsWith("expect")) throw new Error("Wire cases must end in an assertion");
@@ -417,7 +424,8 @@ export function toWireProbePlan(plan: ProbePlan): unknown {
 }
 
 export function probePlanSha256(plan: ProbePlan): string {
-  return createHash("sha256").update(JSON.stringify(parseProbePlan(plan))).digest("hex");
+  const { coverageReview: _coverageReview, ...behavior } = plan;
+  return createHash("sha256").update(JSON.stringify(parseProbePlan(behavior))).digest("hex");
 }
 
 export function locatorCandidates(locator: ProbeLocator): ProbeLocator[] {

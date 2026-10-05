@@ -68,6 +68,46 @@ test("Passing a weak plan with an omitted THEN cannot grant verified; a sampled 
   });
 });
 
+test("A cached pending plan retries only completeness review before verification", async () => {
+  await withModulePipeline(async f => {
+    let planCalls = 0;
+    let reviewCalls = 0;
+    f.deps.planner.plan = async () => {
+      planCalls += 1;
+      return plan();
+    };
+    f.deps.planner.reviewPlan = async (_packet, original, failures, _feedback, options) => {
+      reviewCalls += 1;
+      assert.deepEqual(failures, []);
+      assert.equal(options?.coverageReview, true);
+      return { status: "sound", rationale: "cached completeness is grounded" };
+    };
+    const state = new RunStateStore({ statusByRequirementId: { r: "todo" }, acceptedSha: "baseline", startedAtMs: 0, totalBudgetMs: 60_000 });
+    const result = await auditPacket(packet(), { ...plan(), coverageReview: "pending" }, f.options, f.deps, state,
+      () => 60_000, { refineLocators: true });
+    assert.equal(result.status, "verified");
+    assert.equal(result.plan?.coverageReview, "verified");
+    assert.equal(planCalls, 0);
+    assert.equal(reviewCalls, 1);
+  });
+});
+
+test("Detection-only audit leaves a pending completeness review inconclusive", async () => {
+  await withModulePipeline(async f => {
+    let reviewCalls = 0;
+    f.deps.planner.reviewPlan = async () => {
+      reviewCalls += 1;
+      throw new Error("detection-only audit must not review");
+    };
+    const state = new RunStateStore({ statusByRequirementId: { r: "todo" }, acceptedSha: "baseline", startedAtMs: 0, totalBudgetMs: 60_000 });
+    const result = await auditPacket(packet(), { ...plan(), coverageReview: "pending" }, f.options, f.deps, state,
+      () => 60_000, { refineLocators: false });
+    assert.equal(result.status, "inconclusive");
+    assert.equal(result.failureKind, "review");
+    assert.equal(reviewCalls, 0);
+  });
+});
+
 test("Invalid outcome indexes report the exact field, preparation offset and terminal assertion index", () => {
   const input = packet();
   for (const indexes of [[0], [3], []]) {
@@ -223,7 +263,7 @@ test("Simple plans skip completeness review and partial plans retain omissions w
   }
 });
 
-test("Invalid complete compound reviews still use the existing feedback retry", async () => {
+test("Invalid complete compound reviews keep the valid plan pending without a full-plan retry", async () => {
   const input = packet();
   input.requirements[0].scenarioContracts![0].steps = [{ keyword: "THEN", content: "The title is saved and the description is saved." }];
   const original = plan();
@@ -234,9 +274,10 @@ test("Invalid complete compound reviews still use the existing feedback retry", 
     const content = ++requests === 1 ? original : { verdict: "corrected", rationale: "Missing checks", corrections: [] };
     return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { headers: { "Content-Type": "application/json" } });
   });
-  await assert.rejects(planner.plan(input), (error: unknown) => error instanceof ProbePlannerError && error.category === "schema" &&
-    error.diagnostics.validationError?.includes("differ") === true);
+  const checked = await planner.plan(input);
   assert.equal(requests, 2);
+  assert.equal(checked.coverageReview, "pending");
+  assert.equal(checked.cases.length, original.cases.length);
 });
 
 test("An omission review adds a real result assertion before removing the coverage gap", async () => {
@@ -347,7 +388,7 @@ test("Omission review outages preserve a valid partial plan and expired windows 
     });
     const checked = await planner.plan(input);
     assert.equal(requests, expired ? 1 : 2);
-    assert.deepEqual(checked, partial);
+    assert.deepEqual(checked, { ...partial, coverageReview: "pending" });
     assert.equal(probeCoverageGaps(checked, input.requirements).length, 1);
     clock.mock.restore();
   }

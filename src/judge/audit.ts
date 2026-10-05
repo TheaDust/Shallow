@@ -69,6 +69,18 @@ async function performAudit(packet: WorkPacket, cached: ProbePlan | undefined,
     if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, reason: "audit budget exhausted" };
     plan ??= await planProbe(packet, options, deps, state, remaining, policy.retryPlan !== false);
     if (!plan) return { status: "inconclusive", failureKind: "planning", reason: "probe planner failed" };
+    if (plan.coverageReview === "pending") {
+      if (!policy.refineLocators) {
+        return { status: "inconclusive", failureKind: "review", plan,
+          reason: "probe plan completeness review is unresolved" };
+      }
+      const reviewedPlan = await retryCoverageReview(packet, plan, deps, state, remaining);
+      if (!reviewedPlan) {
+        return { status: "inconclusive", failureKind: "review", plan,
+          reason: "probe plan completeness review is unresolved" };
+      }
+      plan = reviewedPlan;
+    }
     await state.record({ at: now(), type: "probe_planned", packetId: packet.id, detail: { cases: plan.cases.length } });
     const recovery = { browserRetries: 0, locatorRefinements: 0 };
     let first = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, policy);
@@ -101,6 +113,10 @@ async function performAudit(packet: WorkPacket, cached: ProbePlan | undefined,
       }
     }
     if (first.report.verdict === "pass") {
+      if (plan.coverageReview === "pending") {
+        return { status: "inconclusive", failureKind: "review", plan, report: first.report,
+          reason: "probe plan completeness review is unresolved" };
+      }
       if (!first.navigationRecovered) return { status: "verified", plan, report: first.report };
       if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, report: first.report, reason: "navigation recovery confirmation budget exhausted" };
       const confirmed = await runShadowProbes(packet, plan, options, deps, state, recovery, remaining, { refineLocators: false });
@@ -582,6 +598,36 @@ async function planProbe(
     });
     if (error instanceof ProbePlannerError && error.fatal) throw error;
     if (error instanceof GatewayRequestError) throw error;
+    return undefined;
+  }
+}
+
+/** Retry only a cached plan's missing completeness review; never regenerate its cases. */
+async function retryCoverageReview(
+  packet: WorkPacket,
+  plan: ProbePlan,
+  deps: PipelineDeps,
+  state: RunStateStore,
+  remaining: () => number,
+): Promise<ProbePlan | undefined> {
+  if (remaining() <= 0) return undefined;
+  await state.record({ at: now(), type: "probe_review_started", packetId: packet.id,
+    detail: { cases: plan.cases.length, failed: 0 } });
+  try {
+    const review = await deps.planner.reviewPlan(packet, plan, [], undefined, {
+      timeoutMs: Math.max(1, remaining()), coverageReview: true,
+    });
+    const reviewed = review.status === "corrected" ? review.plan : plan;
+    await state.record({ at: now(), type: "probe_reviewed", packetId: packet.id,
+      detail: { verdict: review.status, rationale: review.rationale,
+        beforePlanSha256: probePlanSha256(plan),
+        ...(review.status === "corrected" ? { planSha256: probePlanSha256(reviewed), corrections: review.corrections } : {}) } });
+    return { ...reviewed, coverageReview: "verified" };
+  } catch (error) {
+    if (error instanceof GatewayRequestError ||
+      (error as { gatewayFailure?: unknown } | null)?.gatewayFailure !== undefined) throw error;
+    await state.record({ at: now(), type: "probe_review_failed", packetId: packet.id,
+      detail: { ...plannerFailureDetail(error), planSha256: probePlanSha256(plan) } });
     return undefined;
   }
 }

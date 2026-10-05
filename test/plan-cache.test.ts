@@ -29,6 +29,14 @@ test("A cached plan is reused only when it still validates against its packet", 
   });
 });
 
+test("A pending completeness review survives the plan cache", async () => {
+  await withTempDir("shallow-plan-cache-", async directory => {
+    const cache = new PlanCache(directory);
+    await cache.write("packet-a", { ...plan("packet-a", ["A"]), coverageReview: "pending" });
+    assert.equal((await cache.read({ id: "packet-a", requirementIds: ["A"] }))?.coverageReview, "pending");
+  });
+});
+
 test("Cache files stay separate for packet ids that sanitise identically", async () => {
   await withTempDir("shallow-plan-cache-", async directory => {
     const cache = new PlanCache(directory);

@@ -11,6 +11,7 @@ import {
   assertLocatorOnlyRefinement,
   NoLocatorProgressError,
   parseProbePlan,
+  probePlanSha256,
   toWireProbePlan,
   PROBE_PLAN_JSON_SCHEMA,
   PROBE_REFINEMENT_JSON_SCHEMA,
@@ -701,6 +702,36 @@ test("Probe Planner extracts JSON from fenced and annotated responses", async ()
     assert.equal(result.packetId, "packet-profile");
     assert.equal(result.cases.length, 2);
   }
+});
+
+test("A completeness-review failure keeps the valid plan pending without regenerating it", async () => {
+  const reviewedPacket = packet();
+  reviewedPacket.requirements[0].scenarioContracts = [{ id: "save-profile", name: "Save the profile",
+    steps: [
+      { keyword: "GIVEN", content: "the profile form is open" },
+      { keyword: "WHEN", content: "the user saves the profile" },
+      { keyword: "THEN", content: "the profile is saved and remains after refresh" },
+    ] }];
+  const wire = validPlan();
+  (wire.cases[0] as Record<string, unknown>).outcomeChecks = [
+    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 0, assertionIndexes: [3] },
+    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 1, assertionIndexes: [3] },
+  ];
+  let calls = 0;
+  const planner = new LlmProbePlanner(config(), async (_input, init) => {
+    calls += 1;
+    return calls === 1
+      ? jsonResponse({ choices: [{ message: { content: JSON.stringify(wire) } }] })
+      : jsonResponse({ choices: [{ message: { content: "not json" } }] });
+  });
+
+  const result = await planner.plan(reviewedPacket);
+
+  assert.equal(calls, 2, "the failed review must not trigger a second full plan");
+  assert.equal(result.coverageReview, "pending");
+  assert.equal(result.cases.length, wire.cases.length);
+  assert.equal(Object.hasOwn(toWireProbePlan(result) as object, "coverageReview"), false);
+  assert.equal(probePlanSha256(result), probePlanSha256({ ...result, coverageReview: "verified" }));
 });
 
 test("Probe Planner reports stable transport, JSON, and schema categories", async () => {
