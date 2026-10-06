@@ -300,7 +300,10 @@ async function discardPreviousRunResidue(root: string, evolutionTemplate = false
     }
     return;
   }
-  if (dirt.length > 0) {
+  // Delivered files are the platform's new baseline, including staged edits,
+  // deletions and untracked source. Old Shallow history does not authorize
+  // resetting them to the previous run's HEAD.
+  if (dirt.length > 0 && !evolutionTemplate) {
     await requireGit(root, ["reset", "--hard", "HEAD"]);
     await requireGit(root, ["clean", "-fd", "-e", ".arc/", "-e", `${PROGRESS_DIR_NAME}/`]);
   }

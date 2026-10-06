@@ -14,7 +14,7 @@ import type { PlatformContract } from "./types.js";
 const LOOPBACK_URL_PORT = /https?:\/\/(?:127\.0\.0\.1|localhost):(\d{2,5})(?!\d)/g;
 /** Where the runner mounts the acceptance spec bundle. */
 export const DEFAULT_ACCEPTANCE_TESTS_DIR = "/workspace/tests";
-/** Used only when no spec bundle is present (local runs), never a global assumption. */
+/** Published compatibility port used by main without inspecting test files. */
 export const FALLBACK_EXTRA_PORTS = [3301];
 
 export interface GatewayConfig {
@@ -112,8 +112,7 @@ export function createArcPlatformContract(
       cwd: "backend",
     },
     healthPath: "/health",
-    // Ports the acceptance specs hard-code (discovered per task); the grader
-    // sets only PORT, so a graded start must also bind these.
+    // The grader sets only PORT; bind the configured compatibility ports too.
     extraPorts: extraPorts ? [...extraPorts] : [...FALLBACK_EXTRA_PORTS],
     buildTimeoutMs: 180_000,
     startTimeoutMs: 30_000,

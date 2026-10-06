@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { GatewayRequestError, httpGatewayFailure } from "../src/gateway-failure.js";
 import { LlmFeatureGrouper } from "../src/llm-feature-grouper.js";
-import { withModulePipeline } from "./helpers/module-pipeline.js";
+import { withModulePipeline, pass, testPlan } from "./helpers/module-pipeline.js";
+import { loadRequirementCatalog } from "../src/catalog.js";
+import { auditPackets } from "../src/scheduler.js";
+import { PlanCache } from "../src/judge/plan-cache.js";
 
 const proposal = { groups: [
   { requirementIds: ["A"], purpose: "模型说明不能修改原文" },
@@ -50,11 +54,13 @@ test("Progressive stages schedule current requirements while treating prior-stag
   });
 });
 
-test("Evolution increments schedule and audit only current requirements with inherited context", async () => {
-  for (const stageIndex of [undefined, 2]) {
+test("Tagged and untagged inherited increments schedule and audit only current requirements", async () => {
+  for (const [rootName, stageIndex] of [
+    ["GitHub", undefined], ["GitHub - Evolution", undefined], ["GitHub - Evolution - Stage 2", 2],
+  ] as const) {
     await withModulePipeline(async f => {
       await writeFile(f.options.requirementsFile, JSON.stringify({
-        id: "ROOT", name: stageIndex === undefined ? "GitHub - Evolution" : "GitHub - Evolution - Stage 2",
+        id: "ROOT", name: rootName,
         type: "FOLDER", description: "Extend the existing repository workspace.",
         children: [{ id: "REQ-3", name: "Repositories", type: "FOLDER", dependencies: ["REQ-1"], children: [
           { id: "REQ-3-1", name: "Browse repositories", type: "ATOMIC", description: "Display the repository workspace." },
@@ -93,6 +99,50 @@ test("Evolution increments schedule and audit only current requirements with inh
       });
     });
   }
+});
+
+test("Inherited plans cannot substitute for fresh audits of updated and new requirements", async () => {
+  await withModulePipeline(async f => {
+    await writeFile(f.options.requirementsFile, JSON.stringify({
+      id: "ROOT", name: "GitHub", type: "FOLDER", children: [
+        { id: "AREA", name: "Current area", type: "FOLDER", children: [
+          { id: "OLD", name: "Updated feature", type: "ATOMIC", description: "Display the updated workspace." },
+          { id: "NEW", name: "New feature", type: "ATOMIC", description: "Display the new feature." },
+        ] },
+      ],
+    }));
+    f.options.stageStartingPoint = "inherited_application";
+    f.options.progressDir = join(f.options.outputDir, "shallow-progress");
+    const mirror = join(f.options.progressDir, "plans");
+    const catalog = await loadRequirementCatalog(f.options.requirementsFile, { inheritedApplication: true });
+    const [oldPacket] = auditPackets(catalog);
+    const previous = new PlanCache(join(dirname(f.options.outputDir), "previous-run"), mirror);
+    const inherited = testPlan(oldPacket);
+    inherited.cases[0].id = "inherited-case";
+    inherited.coverageReview = "verified";
+    await previous.write(oldPacket.id, inherited);
+    const [oldFile] = await readdir(mirror);
+
+    const planned: string[] = [];
+    const executed: string[] = [];
+    f.deps.planner.plan = async packet => {
+      planned.push(...packet.requirementIds);
+      const fresh = testPlan(packet);
+      fresh.cases[0].id = `current-${packet.requirementIds[0]}`;
+      return fresh;
+    };
+    f.deps.runner.run = async plan => {
+      executed.push(...plan.cases.map(item => item.id));
+      return pass(plan);
+    };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(planned.sort(), ["NEW", "OLD"]);
+    assert.deepEqual(result.verifiedRequirementIds.sort(), ["NEW", "OLD"]);
+    assert.ok(executed.includes("current-OLD") && executed.includes("current-NEW"));
+    assert.ok(!executed.includes("inherited-case"));
+    assert.equal(JSON.parse(await readFile(join(mirror, oldFile), "utf8")).cases[0].id, "current-OLD");
+  });
 });
 
 test("The main pipeline uses the runtime proposal once while auditing every original atomic", async () => {

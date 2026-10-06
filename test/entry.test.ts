@@ -329,7 +329,7 @@ test("Agent entry resolves the opt-in SSE capture directory next to the run log"
   });
 });
 
-test("Agent entry derives extra platform ports from the acceptance test bundle", async () => {
+test("Agent entry uses the public port contract without reading an acceptance test bundle", async () => {
   await withTempDir("shallow-entry-", async (directory) => {
     const requirementsDir = join(directory, "requirements");
     const testsDir = join(directory, "tests");
@@ -362,12 +362,12 @@ test("Agent entry derives extra platform ports from the acceptance test bundle",
     );
 
     const contract = received?.pipelineOptions.platformContract;
-    assert.deepEqual(contract?.extraPorts, [3301, 4400]);
+    assert.deepEqual(contract?.extraPorts, [3301]);
     assert.ok(!contract?.extraPorts?.includes(contract.port));
   });
 });
 
-test("Agent entry rejects a probe port that collides with a discovered extra port", async () => {
+test("Agent entry rejects a probe port that collides with a public compatibility port", async () => {
   await withTempDir("shallow-entry-", async (directory) => {
     const requirementsDir = join(directory, "requirements");
     const testsDir = join(directory, "tests");

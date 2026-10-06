@@ -25,7 +25,8 @@ export class PlanCache {
 
   constructor(
     runDirectory: string,
-    /** Optional product-visible mirror so a delivered run exposes its plans. */
+    /** Write-only product mirror. Inherited plans lack requirement provenance
+     * and must never bootstrap this run's private cache. */
     private readonly mirrorDirectory?: string,
   ) {
     this.directory = join(runDirectory, "plans");

@@ -67,6 +67,17 @@ test("Plan cache mirrors writes into the product-visible directory", async () =>
   });
 });
 
+test("An inherited plan mirror cannot bootstrap a new run even for the same packet ID", async () => {
+  await withTempDir("shallow-plan-inherited-", async directory => {
+    const mirror = join(directory, "shallow-progress", "plans");
+    const previous = new PlanCache(join(directory, "previous-run"), mirror);
+    await previous.write("packet-a", { ...plan("packet-a", ["A"]), coverageReview: "verified" });
+    const current = new PlanCache(join(directory, "current-run"), mirror);
+    assert.equal(await current.read({ id: "packet-a", requirementIds: ["A"] }), undefined);
+    assert.equal((await readdir(mirror)).length, 1, "historical diagnostic plans remain intact");
+  });
+});
+
 test("Background planning retries a model-length cutoff and caches the complete plan", async () => {
   await withTempDir("shallow-plan-cache-", async directory => {
     const packet = { id: "packet-a", requirementIds: ["A"] } as WorkPacket;

@@ -52,7 +52,7 @@ Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网
 
 `delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
-增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮新增需求。根名称中用连字符/破折号/冒号分隔的完整 `Evolution` 段或括号标签会启用增量上下文，如 `GitHub - Evolution`、`Evolution - GitHub`、`GitHub (Evolution)`（大小写不敏感，支持标签后的数字编号）；`dependencies` 可引用本轮 YAML 未包含的前序 ID，需求编号可以继续递增。已有的 `Stage N`、`Phase N` 和 `第 N 阶段` 入口继续生效，两种标记并存时使用 Evolution 上下文并保留阶段元数据。两种入口共用三态起点动作。实现、验收及 `delivered` 判定均以当前 YAML 为范围；旧功能通过既有代码和开发检查维护。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
+增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮需求。决赛由平台自动注入基线，主线直接在该目录修改并保留当前文件，原始根名称也能启用继承应用上下文。显式 `Evolution` 标签、`Evolution Requirements for ...` 和阶段后缀继续支持。原功能按当前合同局部修改，新增功能沿既有结构实现；当前 YAML 中的全部需求独立验收。继承的 `shallow-progress/plans` 仅作历史镜像，不进入本轮私有缓存或 Builder 输入。主线不读取测试目录，继续使用公共端口合同。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
 
 ## Raw Pi baseline
 
@@ -358,7 +358,7 @@ src/
   final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke→grader-like 额外端口复验）与 CommandAppLifecycle
   arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
   diagnostics.ts              自由文本凭证脱敏、控制字符清理及长度限制
-  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口、按验收 spec 发现额外端口
+  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口；主线端口取公共合同
   process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
   human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
   prompt-assets.ts             prompts/ 资产加载与 {{占位符}} 模板填充

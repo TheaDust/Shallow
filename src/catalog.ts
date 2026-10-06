@@ -32,6 +32,7 @@ interface ParsedScenario {
 
 export async function loadRequirementCatalog(
   requirementsFile: string,
+  options: { inheritedApplication?: boolean } = {},
 ): Promise<RequirementCatalog & { tree: RequirementNode }> {
   const source = await readFile(requirementsFile, "utf8");
   const record = requireRecord(parse(source), "root");
@@ -39,9 +40,12 @@ export async function loadRequirementCatalog(
   const nodes = new Map<string, ParsedNode>();
   collectNodes(root, nodes);
   const evolutionProductName = stripEvolutionMarker(root.name);
-  const evolution = evolutionProductName !== undefined;
   const productName = evolutionProductName ?? root.name;
   const stage = parseProgressiveStage(productName);
+  // An injected application establishes an incremental starting point even
+  // when the new requirement tree retains the original product title.
+  const evolution = evolutionProductName !== undefined
+    || (options.inheritedApplication === true && stage === undefined);
   validateDependencies(nodes, evolution || (stage?.index ?? 0) > 1);
 
   const requirements: AtomicRequirement[] = [];
@@ -94,7 +98,8 @@ function classifyProduct(
   if (productName === "GitHub" || productName === "GitHub Collaboration Platform Core Requirements") {
     return "repository_collaboration";
   }
-  if (productName === "Core Requirements for an Online Spreadsheet Data Workspace") {
+  if (productName === "Core Requirements for an Online Spreadsheet Data Workspace"
+    || productName === "Requirements for an Online Spreadsheet Data Workspace") {
     return "spreadsheet";
   }
   return "generic_web";
@@ -119,7 +124,9 @@ function stripProgressiveStageSuffix(rootName: string): string {
 }
 
 function stripEvolutionMarker(rootName: string): string | undefined {
-  const productName = rootName.replace(/\(\s*evolution(?:\s+\d+)?\s*\)|\[\s*evolution(?:\s+\d+)?\s*\]|(?:^|[-–—:：])\s*evolution(?:\s+\d+)?(?=\s*(?:$|[-–—:：]))/gi, "");
+  const productName = rootName
+    .replace(/\(\s*evolution(?:\s+\d+)?\s*\)|\[\s*evolution(?:\s+\d+)?\s*\]|(?:^|[-–—:：])\s*evolution(?:\s+\d+)?(?=\s*(?:$|[-–—:：]))/gi, "")
+    .replace(/^evolution\s+(?=requirements\s+for\b)/i, "");
   if (productName === rootName) return undefined;
   return productName
     .replace(/^[\s\-–—:：()\[\]]+|[\s\-–—:：()\[\]]+$/g, "")

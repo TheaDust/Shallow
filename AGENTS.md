@@ -48,8 +48,8 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/implementation-*.md    条件追加段：continuation 为安装/构建/启动检查失败后的同会话续接（{{FAILURE}} 填脱敏错误）；
                                 resume 为中断后新会话续做
   system/self-test.md           Builder 开发检查流程（传统测试、昂贵 browser 工具约定）、清理责任与结果报告
-  system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口、额外端口段由发现结果决定）
-  system/platform-extra-ports.md 额外端口合同段：由验收 spec 发现的端口（{{EXTRA_PORTS}}）双重监听要求
+  system/platform-contract.md   平台命令与端口合同模板（评测缺省 3000、生成期注入探针端口、额外端口按公共合同提供）
+  system/platform-extra-ports.md 额外端口合同段：公共兼容端口（{{EXTRA_PORTS}}）双重监听要求
   system/seed-data.md           顶层 data 的种子数据段模板
   system/progressive-stage-context.md  分阶段任务起点、前序外部依赖与增量/空模板实施边界
   system/evolution-context.md    Evolution 增量任务起点、前序外部依赖与当前需求树的实现/验收边界
@@ -65,7 +65,7 @@ src/
   types.ts                      领域类型：AtomicRequirement、WorkPacket、PlatformContract、ShadowReport、RunEvent
   cli.ts                        parseCliArgs：严格解析 --requirements-dir/--budget-ms；--output-dir 可选（缺省 shallowcode-local/<entry>）
   catalog.ts                    requirements.yaml → 需求树、ProductContext.seedData 与原子级 seedDeclarations
-                                （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖；识别 Evolution 标记及通用阶段后缀，
+                                （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖；识别 Evolution 标记、继承应用上下文及通用阶段后缀，
                                 当前树外的前序依赖单列为 externalDependencyIds（Evolution/Stage 2 以后允许；其余仍严格拒绝未知依赖）
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及当前树内前置需求文字上下文，前序阶段外部依赖只作上下文、不阻塞或进入当前阶段覆盖
   feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
@@ -86,7 +86,7 @@ src/
   progress-journal.ts           产物可见的进度日志与 probe plan 镜像（shallow-progress/）：保持 untracked、排除 digest 与回滚、对 Builder 屏蔽
   diagnostics.ts               sanitizeDiagnosticText：已知密钥及常见凭证脱敏、控制字符清理、截断
   runtime-config.ts             readGatewayConfig、readEnvFile（.env）、createArcPlatformContract、
-                                resolvePlatformExtraPorts（按 ARCBENCH_TESTS_DIR 的验收 spec 发现端口，缺省回退 [3301]）、
+                                主线按公共合同使用 [3301]；resolvePlatformExtraPorts 仅供旧 baseline 端口发现使用，
                                 deriveModelTimeouts（预算→Builder/Planner 超时）、SHALLOW_PROBE_PORT、pickFreePort
   process-spawn.ts              spawnProcess：Windows .cmd/bat 经 cmd.exe 启动并拒绝 shell 元字符；其余直接 spawn
   gateway-failure.ts           网关 HTTP/连接错误元数据，Worker 只观测配置的模型端点
@@ -171,7 +171,7 @@ data/official-competition/    初赛题目的需求树（原文、结构化 YAML
 - `SHALLOW_CAPTURE_SSE`：诊断用，仅在排查网关 SSE 坏块时打开。取值为真值（`1`/`true`/`yes`/`on`）时把 Pi Worker 收到的每个 `text/event-stream` 响应体原样落到 `<SHALLOW_RUN_DIR>/<运行 ID>/sse-capture/`（`<label>-<pid>-<n>.sse` 原文 + `.meta.json` 元数据/坏事件），其他取值按目录路径解析，缺省/`0` 关闭。抓包只读克隆分支、不改请求路径，也不影响超时或结果判定。抓到的内容可能包含被测应用代码与模型输出，属临时诊断产物，不要入库。抓捕开关独立于容错：`src/builder/sse-resilience.ts` 始终启用，先于客户端丢弃截断事件并补 `[DONE]`；抓包在容错内层，仍记录网关原始字节。
 - `SHALLOW_REFERENCE_IMAGES`：参考图片是否进入模型上下文，**缺省关闭**。取真值（`1`/`true`/`yes`/`on`）时开启，`PromptBuilder` 在第一次附带前用 `VisionCapability`（`src/builder/vision-probe.ts`）向网关发一个 1×1 PNG 探测请求，单次预探测受 Builder 剩余时间约束：成功响应表示支持，明确图片输入拒绝才关闭附件；429、5xx、超时等不确定结果继续携图，由既有网关恢复与 `imageUnsupported` 回退处理。关闭时 `pi-worker.ts` 连磁盘都不读图。`builder_reference_images` 事件的 `mode` 区分 `disabled`/`unsupported`/`text_fallback`/`attached`/`unavailable`。
 - `RUN_CREDENTIAL_SMOKE=1`：三个网关变量齐全时才运行真实 Pi/LLM/Playwright 冒烟测试，默认 skip——不要为了"通过"而伪造成功。
-- `ARCBENCH_TESTS_DIR`（评测由 runner 注入；本地可无）：验收 spec 目录。入口只用于按 `http://127.0.0.1:<port>`/`localhost:<port>` 字面量发现额外端口（排除评测端口），spec 内容不进入 Builder/Judge。缺省再尝试 `/workspace/tests`，都没有则回退 `[3301]`。
+- `ARCBENCH_TESTS_DIR`：主线按决赛规则不读取此目录或 `/workspace/tests`，端口来自公共运行合同；旧 baseline 的端口发现流程独立保留，不用于本次主线决赛入口。
 - `SHALLOW_BUDGET_MS` / `ARCBENCH_TASK_DIR` / `ARCBENCH_TEMPLATE_DIR`：主线和 baseline 的 Python 适配入口读取真实环境。
 
 ## CLI 与运行契约
@@ -180,7 +180,7 @@ data/official-competition/    初赛题目的需求树（原文、结构化 YAML
 
 ARC-Bench 评测走适配包入口 `python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]`（契约见 `octos-org/arc-adapter`）。`main.py` 只做参数解析、Node 运行时准备与驱动 TS 管线，不写业务逻辑。
 
-本地运行缺省把产物写到**项目外**的系统临时目录：主线 `%TEMP%\shallowcode-local\main`、baseline `%TEMP%\shallowcode-local\baseline`（两个入口各用各的，绝不共用 output-dir，否则 `.arc` 会混写）。目录在仓库外，`GitCliOps.open` 会自动 `git init`，无需任何预置；重跑同一目录时残留清理会复位到上次接受状态（保留已接受提交），想全新开始就整个删掉目录（含 `.git` 也可直接删）。评测/固定目录用显式 `--output-dir` 或 `ARCBENCH_TEMPLATE_DIR`。完整命令（在仓库根执行）：
+本地运行缺省把产物写到**项目外**的系统临时目录：主线 `%TEMP%\shallowcode-local\main`、baseline `%TEMP%\shallowcode-local\baseline`（两个入口各用各的，绝不共用 output-dir，否则 `.arc` 会混写）。目录在仓库外，`GitCliOps.open` 会自动 `git init`，无需任何预置；已有完整应用时采纳当前文件为本轮基线。评测/固定目录用显式 `--output-dir` 或 `ARCBENCH_TEMPLATE_DIR`，决赛由平台自动注入产物，直接在注入目录增量修改。完整命令（在仓库根执行）：
 
 ```powershell
 # 主线（ShallowCode 管线）：以 sheet 题目为例，产物缺省到 %TEMP%\shallowcode-local\main
@@ -197,12 +197,12 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 题目换成 `data/official-competition/hackathon--github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
-- 增量任务按根名称中用连字符/破折号/冒号分隔的完整 `Evolution` 段或括号标签识别（大小写不敏感，标签可带数字编号），如 `GitHub - Evolution`、`Evolution - GitHub`、`GitHub (Evolution)`；阶段任务按末尾的 `Stage N`、`Phase N`、`第 N 阶段` 识别。Evolution 及 Stage 2 以后允许引用当前树外的前序 ID，只作上下文，本轮调度、ARC 覆盖和 Judge requirementIds 均取当前 YAML。两种入口共用三态起点动作；已有应用上增量修改，空模板只补当前场景需要的最小支撑。两种标记并存时使用 Evolution 上下文，保留阶段元数据。详见 `docs/2026-10-02-progressive-stage-support.md`。
-- 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
+- 增量任务支持根名称中的完整 `Evolution` 分隔段/括号标签，以及 `Evolution Requirements for ...` 前缀。主线继承完整应用且没有阶段后缀时，也启用 Evolution 上下文，因此决赛原始根名不必改写；显式阶段入口保持阶段语义。Evolution 及 Stage 2 以后允许树外前序 ID，只作上下文，本轮调度、ARC 覆盖和 Judge requirementIds 均取当前 YAML。起点动作与两种标记并存规则见 `docs/2026-10-02-progressive-stage-support.md`。
+- 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并额外监听公共兼容端口 3301（若已是评测端口则不重复绑定），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针避开评测及兼容端口，探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口。交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 复验额外端口、未知路径及进程存活，完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听和静态文件服务；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或视觉组件。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。
 - 首次打开输出仓库时若无 `.gitignore` 则写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并立即提交（回滚 `clean -fd` 后仍生效）；已有 `.gitignore` 不动。**不要**把 `.arc/` 加进忽略规则。
-- `GitCliOps.open` 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置脚手架 `.arc/`、`requirements/`；其他残留会被拒绝。目录同时含 `frontend/` 与 `backend/` 时视为 evolution 模板（上一轮产物），整目录被接受：跳过空目录校验，脏的第三方仓库也直接采纳为基线，并用仓库本地的 `.git/info/exclude` 排除 `node_modules/`、`dist/` 等（不改模板自身的 `.gitignore`）。既有仓库按根提交标题识别为 ShallowCode 仓库时，会硬重置并清理应用的未提交改动、删除旧 `runner-events.jsonl`；其他脏仓库会被拒绝。复用输出目录前先备份人工修改和历史记录，根提交标题并不证明未提交改动的来源。
+- `GitCliOps.open` 首次初始化接受空目录或平台元数据；完整 `frontend/` + `backend/` 应用直接采纳为本轮基线，包括已暂存、未暂存、新增和删除文件。即使有旧 Shallow Git 历史也不重置或清理应用文件，并保留原 `.gitignore`，仅以 `.git/info/exclude` 排除依赖及构建产物。没有完整应用的旧 Shallow 仓库仍按历史残留规则清理，其他非应用脏仓库仍拒绝；仅旧的自有 runner 事件流按原协议重置。
 - 运行产物四件套：stderr 脱敏 JSON 事件流、`%TMP%/shallowcode-runs/<pid>-<ts>/run-ledger.jsonl`（机读台账）、同目录 `run-log.txt`（中文人类可读，`HumanRunFormatter` 生成）、`<output-dir>/.arc/`（平台事件流 + 溯源表）。
 - 产物可见诊断 `shallow-progress/`：进度日志 `progress.log`（与 run-log 同源的中文行）+ `plans/<packetId>.json`（完整 ProbePlan）。平台会按 `.gitignore` 过滤交付包且专门隐藏 `.arc`，所以它**故意不 ignore**——靠它是"未 ignore 的 untracked"来同时被平台打包、又不进 git 历史：`captureAccepted` 用 `:(top,exclude)shallow-progress` 排除、`restorableInputDigest` 按路径跳过、回滚 `restore`/`clean` 排除（与 `.arc` 同等待遇）。它含隐藏计划，`pi-tools.ts` 对该目录与 `.arc` 一并屏蔽。
 - 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。Planner 每次 LLM 调用的 token 用量以 `probe_planner_usage` 事件记录（操作类型与入/出/缓存读/缓存写/总计，由 `llm-probe-planner.ts` 解析流式 usage 尾包或非流式 `usage`；只含数量，不含响应内容。缓存写非零时中文日志才输出该项，保证打印的各项与总计自洽；Builder 汇总与该行共用 `human-log.ts` 的 `tokenUsageParts`）。
@@ -214,7 +214,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
-1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。隐藏计划与 Planner 推理仅留在 Judge；官方测试和结果不进入任何运行模块。入口仅按字面量从验收 spec 提取 `http://127.0.0.1:<port>`/`localhost:<port>` 端口用于交付验证，spec 内容不进入任何 prompt 或判词。
+1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。主线不探测或读取官方测试目录，端口只取公共合同。继承的 `shallow-progress` 计划对 Builder 屏蔽，仅为历史镜像；Judge 读取本轮私有缓存，按当前需求重新规划和执行，不将旧计划或旧通过结果提升为本轮 verified。
 2. **功能组实现**：主线在实现前正常调用一次 LLM 从本次 Catalog 生成有序功能组。分组输入保留完整需求描述、公共产品/祖先合同、目录、显式依赖、原始场景数和字符数，省略场景正文；Builder/Judge 仍接收完整场景。程序校验全部 ID 唯一覆盖、依赖序、单 ROOT 模块和 4 条/12 场景/20,000 字符上限，单条超限完整独立保留；分组目的只作诊断。JSON、响应或分组无效时携带具体原因重试一次；模型输出截断时扩大输出额度。两次失败或鉴权/请求拒绝后才使用确定性分组（同父目录优先、依赖亲和与声明序 tie-break），记录底层原因与尝试次数。网关恢复使用共享 Planner 并发池；无总预算时持续等待在途响应，正预算计入实现阶段。组不跨模块合并，允许按依赖离开后再回来补齐。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；其他依赖已有可运行检查点时放行，尚未 verified 则记录 `dependency_gate_provisional`，最终交付仍须完整验收。依赖尚无已完成的可运行实现时阻塞下游 Builder 和探针预规划。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时或终态不完整时，以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；中断代码须通过可运行检查和已有通过路径复验才保存为空需求检查点。复合包首次调用若因上下文 `overflow` 耗尽截止时间，且该次 overflow 压缩之后没有任何新的工具调用，在保留检查点后直接按原顺序拆为原子包；压缩后仍在推进的包属于墙钟耗尽，仍走整包续做。其他复合包续做后仍未完成时再拆分。拆出的原子包按首次实现对待：原调用上限加一次新会话续做（至多 45min），原子仍失败才标 blocked，不记 implemented。混合依赖包同样拆开执行依赖已就绪的成员，两类成员调度待遇一致，`implementation_split.kind` 区分 recovery 与 dependency。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收。实现阶段后台生成探针计划，Builder 完成后先保存可运行检查点；模块边界验收前收敛该模块的预规划任务，再读取有效缓存（见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或经需求复核确认合理的准备/控件缺口在两次新应用实例中于同一步重现时触发模块边界修复（后者仍记 inconclusive，`repairableProbeFailure` 只授予诊断机会；控件缺口还须有成功交互与需求明示名称，strict 歧义不触发修复）。每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。模块边界同时复查当前需求的已 verified 传递前置需求，复用缓存计划。其他已 verified 模块各抽查一条缓存的种子成功入口；抽查不授予整条需求通过，未通过则完整复核该需求并纳入当前边界修复，修复后也保护这些入口；修复轮数不增加。修复优先保护既有 verified 和失败需求中已通过的 case；新增通过 case 须在新应用实例中确认，合理且重复的准备/控件缺口推进到后续已复现失败也可作为局部改善保留并继续下一轮。待测行为、输入与结果须保持一致。确认回归或无独立改善时恢复原检查点并停止；守卫无法判定时先用新实例重试并继续目标复验，普通守卫仍无法判定则降级 inconclusive，共享种子身份或前置路径守卫必须确认后才接受候选；局部改善仍保留原子级 failed/inconclusive。修复统一在模块边界就地发生，没有末尾集中修复。

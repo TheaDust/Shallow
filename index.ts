@@ -29,6 +29,7 @@ import { sanitizeDiagnosticText } from "./src/diagnostics.js";
 import { PROBE_PLAN_JSON_SCHEMA } from "./src/judge/probe-schema.js";
 import {
   createArcPlatformContract,
+  FALLBACK_EXTRA_PORTS,
   deriveModelTimeouts,
   parseBuilderContextWindow,
   parseEvaluationPort,
@@ -36,7 +37,6 @@ import {
   parseRunDirOverride,
   pickFreePort,
   readEnvFile,
-  resolvePlatformExtraPorts,
   resolveSseCaptureDir,
   readGatewayConfig,
   referenceImagesEnabled,
@@ -80,7 +80,8 @@ export async function main(
   await mkdir(cli.outputDir, { recursive: true });
   const runId = `${process.pid}-${Date.now()}`;
   const evaluationPort = parseEvaluationPort(mergedEnv) ?? 3000;
-  const extraPorts = await resolvePlatformExtraPorts(mergedEnv, evaluationPort);
+  // Finals prohibit inspecting unpublished tests, including port discovery.
+  const extraPorts = FALLBACK_EXTRA_PORTS.filter(port => port !== evaluationPort);
   const probePortOverride = parseProbePortOverride(mergedEnv);
   if (probePortOverride !== null && (probePortOverride === evaluationPort || extraPorts.includes(probePortOverride))) {
     throw new Error(
@@ -133,7 +134,7 @@ async function executeProduction(
   const runLogFile = join(dirname(pipelineOptions.ledgerFile), "run-log.txt");
   await assertPrivateRunDirectory(pipelineOptions.outputDir, dirname(runLogFile));
   process.stderr.write(`[ShallowCode] 运行日志文件：${runLogFile}\n`);
-  process.stderr.write(`[ShallowCode] 平台额外端口（由验收 spec 发现）：${pipelineOptions.platformContract.extraPorts?.join(", ") || "无"}\n`);
+  process.stderr.write(`[ShallowCode] 平台额外端口（公共运行合同）：${pipelineOptions.platformContract.extraPorts?.join(", ") || "无"}\n`);
   if (sseCaptureDir) process.stderr.write(`[ShallowCode] SSE 抓包已启用（仅诊断用途）：${sseCaptureDir}\n`);
   process.stderr.write(`[ShallowCode] 参考图片：${referenceImages ? "已开启（首次附带前预探测模型视觉能力）" : "已关闭"}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,

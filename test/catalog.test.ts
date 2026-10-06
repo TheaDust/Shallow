@@ -157,6 +157,8 @@ test("Catalog recognises Evolution increments and preserves product classificati
     ["GitHub：Evolution", "repository_collaboration", undefined],
     ["GitHub Collaboration Platform Core Requirements - Evolution", "repository_collaboration", undefined],
     ["Core Requirements for an Online Spreadsheet Data Workspace - Evolution", "spreadsheet", undefined],
+    ["Evolution Requirements for an Online Spreadsheet Data Workspace", "spreadsheet", undefined],
+    ["Evolution Requirements for Inventory Workspace", "generic_web", undefined],
     ["Inventory Workspace - Evolution", "generic_web", undefined],
     ["GitHub - Evolution - Stage 2", "repository_collaboration", 2],
     ["GitHub - Stage 2 - Evolution", "repository_collaboration", 2],
@@ -183,9 +185,9 @@ test("Catalog recognises Evolution increments and preserves product classificati
   }
 });
 
-test("Catalog requires an explicit root Evolution marker to accept prior-increment IDs", async () => {
+test("Catalog requires a mode marker or inherited application context to accept prior-increment IDs", async () => {
   for (const name of ["Inventory Workspace", "Evolutionary Workspace", "Pet Evolution Tracker", "Evolution CRM",
-    "GitHub Evolution", "Pet - Evolution Tracker", "GitHub (Evolution CRM)"]) {
+    "GitHub Evolution", "Pet - Evolution Tracker", "GitHub (Evolution CRM)", "Evolution Requirements Tracker"]) {
     await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
       { id: "REQ-99", name: "Evolution controls", type: "ATOMIC", description: "Display records." },
     ] }), async file => {
@@ -198,6 +200,41 @@ test("Catalog requires an explicit root Evolution marker to accept prior-increme
     ] }), async file => {
       await assert.rejects(loadRequirementCatalog(file), /Unknown dependency REQ-1/);
     });
+  }
+});
+
+test("An inherited application establishes Evolution context without changing the requirement title", async () => {
+  await withYaml(JSON.stringify({ id: "ROOT", name: "GitHub", type: "FOLDER", children: [
+    { id: "REQ-NEW", name: "New feature", type: "ATOMIC", dependencies: ["REQ-OLD"], description: "Extend existing records." },
+  ] }), async file => {
+    await assert.rejects(loadRequirementCatalog(file), /Unknown dependency REQ-OLD/);
+    const catalog = await loadRequirementCatalog(file, { inheritedApplication: true });
+    const [requirement] = catalog.requirements;
+    assert.equal(catalog.tree.name, "GitHub");
+    assert.equal(requirement.product.rootName, "GitHub");
+    assert.equal(requirement.product.kind, "repository_collaboration");
+    assert.equal(requirement.product.evolution, true);
+    assert.deepEqual(requirement.externalDependencyIds, ["REQ-OLD"]);
+    assert.deepEqual(requirement.dependencyIds, []);
+    assert.deepEqual(catalog.statusById, { "REQ-NEW": "todo" });
+  });
+});
+
+test("Final requirement trees preserve their full current scope and inherited dependencies", async () => {
+  for (const [product, kind, requirementCount, scenarioCount, expectedExternal] of [
+    ["github", "repository_collaboration", 52, 114, []],
+    ["sheet", "spreadsheet", 10, 30, ["REQ-1-1-1", "REQ-1-3-2", "REQ-3-1-3", "REQ-4-1-1"]],
+  ] as const) {
+    const file = resolve(`data/final/hackathon-evolution--${product}/requirements.yaml`);
+    const catalog = await loadRequirementCatalog(file, { inheritedApplication: true });
+    assert.equal(catalog.requirements.length, requirementCount);
+    assert.equal(catalog.requirements.reduce((sum, item) => sum + item.scenarios.length, 0), scenarioCount);
+    assert.equal(catalog.requirements[0].product.kind, kind);
+    assert.equal(catalog.requirements[0].product.evolution, true);
+    assert.deepEqual([...new Set(catalog.requirements.flatMap(item => item.externalDependencyIds ?? []))].sort(), expectedExternal);
+    assert.deepEqual(Object.keys(catalog.statusById), catalog.requirements.map(item => item.id));
+    const plain = await loadRequirementCatalog(file);
+    assert.equal(plain.requirements[0].product.evolution, product === "sheet" ? true : undefined);
   }
 });
 

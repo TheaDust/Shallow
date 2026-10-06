@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -399,4 +399,44 @@ test("GitOps open adopts a dirty foreign repository that holds a delivered app",
     assert.match(tracked.stdout, /scratch\.txt/);
     assert.match(tracked.stdout, /frontend\/package\.json/);
   });
+});
+
+test("GitOps adopts injected files from old Shallow history and rollback preserves that baseline", async () => {
+  for (const rootMessage of ["shallow: initial state", "chore: add ShallowCode ignore rules"]) {
+    await withTempDir("shallow-git-inherited-", async directory => {
+      await initRepoWithRootCommit(directory, rootMessage);
+      await execFileAsync("git", ["config", "core.autocrlf", "false"], { cwd: directory });
+      await writeDeliveredApp(directory);
+      const frontendFile = join(directory, "frontend", "app.ts");
+      const backendFile = join(directory, "backend", "new.ts");
+      await writeFile(frontendFile, "original application\n");
+      await execFileAsync("git", ["add", "-A"], { cwd: directory });
+      await execFileAsync("git", ["-c", "user.name=setup", "-c", "user.email=setup@local.invalid",
+        "commit", "-m", "preliminary application"], { cwd: directory });
+      const previousHead = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim();
+
+      await writeFile(frontendFile, "staged injection\n");
+      await execFileAsync("git", ["add", "frontend/app.ts"], { cwd: directory });
+      await writeFile(frontendFile, "injected baseline\n");
+      await writeFile(backendFile, "injected untracked source\n");
+      await rm(join(directory, "app.txt"));
+
+      const git = await GitCliOps.open(directory);
+      assert.equal((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: directory })).stdout.trim(), previousHead);
+      assert.equal(await readFile(frontendFile, "utf8"), "injected baseline\n");
+      assert.equal(await readFile(backendFile, "utf8"), "injected untracked source\n");
+      await assert.rejects(access(join(directory, "app.txt")));
+      const baseline = await git.captureAccepted("shallow: initial state");
+
+      await writeFile(frontendFile, "rejected modification\n");
+      const attemptedFile = join(directory, "backend", "attempt.ts");
+      await writeFile(attemptedFile, "new rejected source\n");
+      await git.captureAccepted("shallow: rejected attempt");
+      await git.restoreAccepted(baseline);
+      assert.equal(await readFile(frontendFile, "utf8"), "injected baseline\n");
+      assert.equal(await readFile(backendFile, "utf8"), "injected untracked source\n");
+      await assert.rejects(access(join(directory, "app.txt")));
+      await assert.rejects(access(attemptedFile));
+    });
+  }
 });

@@ -134,7 +134,9 @@ export interface RunSummary {
 }
 
 export async function runPipeline(options: PipelineOptions, deps: PipelineDeps): Promise<RunSummary> {
-  const catalog = await loadRequirementCatalog(options.requirementsFile);
+  const catalog = await loadRequirementCatalog(options.requirementsFile, {
+    inheritedApplication: options.stageStartingPoint === "inherited_application",
+  });
   const startedAt = deps.clock.nowMs();
   const budget = new RunBudget(options.totalBudgetMs, startedAt, () => deps.clock.nowMs());
   const state = new RunStateStore({ statusByRequirementId: catalog.statusById,

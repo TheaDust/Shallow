@@ -225,6 +225,10 @@ test("Evolution context reaches implementation and repair modes for each startin
       assert.match(prompt, /前序能力 ID：REQ-1、REQ-2/);
       assert.match(prompt, /本工作包及当前需求树是本轮实现和验收范围/);
       assert.match(prompt, /不是本轮单独验收的需求/);
+      assert.match(prompt, /改动的原始需求与新增需求/);
+      assert.match(prompt, /原功能复用符合当前合同的部分，局部修改变化/);
+      assert.match(prompt, /新增功能沿用既有模型和接口补齐完整业务链路/);
+      assert.match(prompt, /不能凭旧需求 ID 或前次通过结果跳过核对/);
       assert.ok(compiled.systemPrompt.includes(loadPrompt("system", "self-test")));
       assert.equal(prompt.includes(loadPrompt("system", "action-implement")), request.mode === "implement");
       if (startingPoint === "inherited_application") assert.match(prompt, /沿用现有技术栈、模型和接口/);
