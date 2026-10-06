@@ -11,6 +11,7 @@ import {
   extractBasePorts,
   parseBuilderContextWindow,
   parseEvaluationPort,
+  parseEvolutionAuditInherited,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -20,6 +21,17 @@ import {
   resolveSseCaptureDir,
 } from "../src/runtime-config.js";
 import { withTempDir } from "./helpers/temp-dir.js";
+
+test("Evolution inherited audits default off and can be explicitly restored", () => {
+  assert.equal(parseEvolutionAuditInherited({}), false);
+  for (const value of ["1", "true", " YES ", "ON"]) {
+    assert.equal(parseEvolutionAuditInherited({ SHALLOW_EVOLUTION_AUDIT_INHERITED: value }), true);
+  }
+  for (const value of ["", "0", "false", " NO ", "OFF"]) {
+    assert.equal(parseEvolutionAuditInherited({ SHALLOW_EVOLUTION_AUDIT_INHERITED: value }), false);
+  }
+  assert.throws(() => parseEvolutionAuditInherited({ SHALLOW_EVOLUTION_AUDIT_INHERITED: "fales" }), /SHALLOW_EVOLUTION_AUDIT_INHERITED/);
+});
 
 test("Runtime config requires the three explicit gateway variables", () => {
   const complete = {

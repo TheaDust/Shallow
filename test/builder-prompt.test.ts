@@ -223,7 +223,8 @@ test("Evolution context reaches implementation and repair modes for each startin
       assert.match(prompt, /当前任务：Evolution\n/);
       assert.ok(prompt.includes(`本轮起点：${expected}`));
       assert.match(prompt, /前序能力 ID：REQ-1、REQ-2/);
-      assert.match(prompt, /本工作包及当前需求树是本轮实现和验收范围/);
+      assert.match(prompt, /本工作包是本轮实现范围，验收范围见下方声明/);
+      assert.match(prompt, /本轮模块边界验收和最终交付覆盖当前需求树，包括沿用项/);
       assert.match(prompt, /不是本轮单独验收的需求/);
       assert.match(prompt, /改动的原始需求与新增需求/);
       assert.match(prompt, /原功能复用符合当前合同的部分，局部修改变化/);

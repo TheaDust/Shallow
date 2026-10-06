@@ -119,6 +119,8 @@ export interface PipelineOptions {
   progressDir?: string;
   /** Whether this stage starts from a selected prior-stage application or the blank scaffold. */
   stageStartingPoint?: "inherited_application" | "blank_template" | "unknown";
+  /** Evolution only: true includes inherited atomics in audits and delivery coverage. Default false. */
+  auditInheritedRequirements?: boolean;
 }
 
 export interface RunSummary {
@@ -132,6 +134,8 @@ export interface RunSummary {
   pendingRequirementIds?: string[];
   missingPlanRequirementIds?: string[];
   inconclusiveByKind?: Partial<Record<InconclusiveKind, string[]>>;
+  auditRequirementIds?: string[];
+  skippedRequirementIds?: string[];
 }
 
 export async function runPipeline(options: PipelineOptions, deps: PipelineDeps): Promise<RunSummary> {
@@ -143,6 +147,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     ? await readHistoricalPlanIds(progressPlansDirectory(options.progressDir ?? join(options.outputDir, PROGRESS_DIR_NAME)))
     : undefined;
   const evolutionScope = historicalPlans ? selectEvolutionScope(catalog, historicalPlans.requirementIds) : undefined;
+  const auditInheritedRequirements = options.auditInheritedRequirements ?? false;
   const startedAt = deps.clock.nowMs();
   const budget = new RunBudget(options.totalBudgetMs, startedAt, () => deps.clock.nowMs());
   const state = new RunStateStore({ statusByRequirementId: catalog.statusById,
@@ -150,8 +155,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     totalBudgetMs: options.totalBudgetMs }, options.ledgerFile, deps.logSink ?? null, deps.diagnosticSecrets);
   const implemented = new Set<string>();
   const inherited = new Set<string>();
+  const skipped = new Set<string>();
   let implementationCatalog: RequirementCatalog = catalog;
-  const packets = auditPackets(catalog);
+  let packets = auditPackets(catalog);
   let featureGrouping = featureGroupPackets(catalog);
   const requirementById = new Map(catalog.requirements.map(item => [item.id, item]));
   const auditPacketByRequirementId = new Map(packets.flatMap(packet =>
@@ -209,7 +215,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const auditEligible = (packet: WorkPacket): boolean =>
     packet.requirementIds.every(id => implemented.has(id)) && [...dependencyClosure(packet.requirementIds)].every(id => implemented.has(id));
   const builderProjectContext = (packet: WorkPacket): BuilderProjectContext =>
-    buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint, inherited);
+    buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint, inherited, skipped.size > 0);
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
   const plannerWindow = (): (() => number) => {
@@ -684,6 +690,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const externalDependencyIds = [...new Set(catalog.requirements.flatMap(item => item.externalDependencyIds ?? []))];
   await state.record({ at: now(), type: "pipeline_started", detail: {
     requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port,
+    auditInheritedRequirements,
     ...(product?.evolution ? { evolution: {
       ...(product.stage ? { stageIndex: product.stage.index } : {}),
       startingPoint: options.stageStartingPoint ?? "unknown",
@@ -704,7 +711,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const emitFolderRollup = async (): Promise<void> => {
     const statuses = state.snapshot.statusByRequirementId;
     const folders = [...folderMap].sort(([, left], [, right]) => left.length - right.length);
-    for (const [folderId, leaves] of folders) {
+    for (const [folderId, allLeaves] of folders) {
+      const leaves = allLeaves.filter(id => !skipped.has(id));
       if (!leaves.length) continue;
       const implementedLeaves = leaves.filter(id => implemented.has(id));
       await emitArc(deps, state, arc => arc.requirementState(folderId, "design", "running"));
@@ -712,7 +720,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", "running"));
       await emitArc(deps, state, arc => arc.requirementState(folderId, "implement", implementedLeaves.length === leaves.length ? "completed" : "failed"));
       const allVerified = leaves.every(id => statuses[id] === "verified");
-      await emitArc(deps, state, arc => arc.requirementState(folderId, "test", allVerified ? "passed" : "failed"));
+      // The full source tree is still projected. A mixed folder must not imply its skipped leaves passed.
+      if (leaves.length === allLeaves.length) {
+        await emitArc(deps, state, arc => arc.requirementState(folderId, "test", allVerified ? "passed" : "failed"));
+      }
     }
   };
   try {
@@ -744,10 +755,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       implementationCatalog = evolutionImplementationCatalog(catalog, inherited);
       featureGrouping = featureGroupPackets(implementationCatalog);
+      if (!auditInheritedRequirements) {
+        for (const id of evolutionScope.inheritedRequirementIds) skipped.add(id);
+        // Keep original prerequisite evidence for the selected cases; exclude legacy audit targets.
+        packets = packets.filter(packet => packet.requirementIds.every(id => !skipped.has(id)));
+      }
       await state.record({ at: now(), type: "evolution_scope_selected", detail: {
         historicalPlans: historicalPlans.plans, ignoredPlans: historicalPlans.ignoredPlans,
         addedRequirementIds: evolutionScope.addedRequirementIds, changedRequirementIds: evolutionScope.changedRequirementIds,
         inheritedRequirementIds: [...inherited], implementationRequirementIds: implementationCatalog.requirements.map(item => item.id), reason,
+        auditRequirementIds: packets.flatMap(packet => packet.requirementIds), skippedRequirementIds: [...skipped],
       } });
     }
     if (deps.grouper && implementationCatalog.requirements.length > 0) {
@@ -1077,7 +1094,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     if (finalReport.ok && finalReport.candidate) await deps.candidate?.assertCurrent(finalReport.candidate);
     await state.record({ at: now(), type: "delivery_finished", detail: finalReport });
     const statuses = state.snapshot.statusByRequirementId;
-    const ids = (status: typeof statuses[string]) => catalog.requirements.filter(item => statuses[item.id] === status).map(item => item.id);
+    const auditedRequirements = catalog.requirements.filter(item => !skipped.has(item.id));
+    const ids = (status: typeof statuses[string]) => auditedRequirements.filter(item => statuses[item.id] === status).map(item => item.id);
     const verifiedRequirementIds = ids("verified");
     const missingPlanRequirementIds = packets.filter(packet => packet.requirementIds.every(id => implemented.has(id)) && !results.get(packet.id)?.plan)
       .flatMap(packet => packet.requirementIds);
@@ -1087,10 +1105,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (result?.status !== "inconclusive") continue;
       (inconclusiveByKind[result.failureKind ?? "unreproduced"] ??= []).push(...packet.requirementIds);
     }
-    const summary: RunSummary = { status: !finalReport.ok ? "failed" : verifiedRequirementIds.length === catalog.requirements.length ? "delivered" : "partial",
-      acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented], verifiedRequirementIds,
+    const summary: RunSummary = { status: !finalReport.ok ? "failed" : verifiedRequirementIds.length === auditedRequirements.length ? "delivered" : "partial",
+      acceptedSha: state.snapshot.acceptedSha, implementedRequirementIds: [...implemented].filter(id => !skipped.has(id)), verifiedRequirementIds,
       blockedRequirementIds: ids("blocked"), failedRequirementIds: ids("failed"), inconclusiveRequirementIds: ids("inconclusive"), pendingRequirementIds: ids("todo"),
-      missingPlanRequirementIds, inconclusiveByKind };
+      missingPlanRequirementIds, inconclusiveByKind,
+      ...(skipped.size > 0 ? { auditRequirementIds: auditedRequirements.map(item => item.id), skippedRequirementIds: [...skipped] } : {}) };
     await state.record({ at: now(), type: "pipeline_finished", detail: { ...summary, pendingRequirementIds: ids("todo"), memory: await memorySnapshot() } });
     await emitFolderRollup();
     await emitArc(deps, state, arc => arc.runnerState(finalReport.ok ? "completed" : "failed", `summary ${summary.status}`));
@@ -1115,6 +1134,7 @@ function buildBuilderProjectContext(
   implemented: ReadonlySet<string>,
   startingPoint: PipelineOptions["stageStartingPoint"] = "unknown",
   inherited: ReadonlySet<string> = new Set(),
+  skipInheritedAudit = false,
 ): BuilderProjectContext {
   const first = packet.requirements[0];
   if (!first) throw new Error(`Packet ${packet.id} has no requirements`);
@@ -1138,6 +1158,7 @@ function buildBuilderProjectContext(
       ...incrementalContext,
       ...(stage ? { stageIndex: stage.index } : {}),
       ...(inherited.size > 0 ? { changesOnly: true as const } : {}),
+      ...(skipInheritedAudit ? { auditInheritedRequirements: false as const } : {}),
     } } : stage ? { progressiveStage: {
       ...stage,
       ...incrementalContext,

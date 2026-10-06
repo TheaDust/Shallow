@@ -132,7 +132,8 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
 
 interface RunEventDetails {
   evolution_scope_selected: { historicalPlans: number; ignoredPlans: number; addedRequirementIds: string[];
-    changedRequirementIds: string[]; inheritedRequirementIds: string[]; implementationRequirementIds: string[]; reason?: string };
+    changedRequirementIds: string[]; inheritedRequirementIds: string[]; implementationRequirementIds: string[]; reason?: string;
+    auditRequirementIds?: string[]; skippedRequirementIds?: string[] };
   gateway_wait: { source: "builder" | "planner"; retry: number; delayMs: number; failure: import("./gateway-failure.js").GatewayFailure; reason?: string };
   builder_work_preserved: { preserved: boolean; requirementIds: string[]; reason?: string };
   implementation_retry: { requirementIds: string[]; timeoutMs: number; reason?: "timeout" | import("./builder/port.js").BuilderResult["terminationReason"] };
@@ -152,6 +153,7 @@ interface RunEventDetails {
   repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };
 
   pipeline_started: { requirements?: number; totalBudgetMs?: number; port?: number; model?: string;
+    auditInheritedRequirements?: boolean;
     builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
     promptSha256?: string; probeSchemaSha256?: string;
     progressiveStage?: { index: number; currentStageTestsOnly: boolean;
@@ -213,7 +215,8 @@ interface RunEventDetails {
   verification_finished: { ok: boolean; stage: string; message: string; durationMs: number; retryCount: number; candidate?: CandidateEvidence };
   pipeline_finished: { status: "delivered" | "partial" | "failed"; verifiedRequirementIds: string[];
     blockedRequirementIds: string[]; implementedRequirementIds?: string[]; failedRequirementIds?: string[]; inconclusiveRequirementIds?: string[]; pendingRequirementIds: string[]; acceptedSha: string; memory?: Record<string, unknown>;
-    missingPlanRequirementIds?: string[]; inconclusiveByKind?: Partial<Record<InconclusiveKind, string[]>> };
+    missingPlanRequirementIds?: string[]; inconclusiveByKind?: Partial<Record<InconclusiveKind, string[]>>;
+    auditRequirementIds?: string[]; skippedRequirementIds?: string[] };
   pipeline_failed: DiagnosticDetail;
   arc_projection_failed: DiagnosticDetail;
   evidence_write_failed: Record<string, never>;

@@ -181,6 +181,7 @@ function evolutionSection(context: NonNullable<BuilderProjectContext["evolution"
     EXTERNAL_PREREQUISITES: context.externalPrerequisiteIds.join("、") || "无",
     STARTING_POINT_ACTION: incrementalStartingPointAction(context.startingPoint),
     IMPLEMENTATION_SCOPE: context.changesOnly ? loadPrompt("system", "evolution-changes-only") : "",
+    AUDIT_SCOPE: loadPrompt("system", context.auditInheritedRequirements === false ? "evolution-audit-changes" : "evolution-audit-all"),
   });
 }
 

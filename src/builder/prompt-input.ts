@@ -20,6 +20,7 @@ export interface BuilderProjectContext {
     startingPoint: "inherited_application" | "blank_template" | "unknown";
     externalPrerequisiteIds: string[];
     changesOnly?: true;
+    auditInheritedRequirements?: false;
   };
   progressiveStage?: {
     index: number;

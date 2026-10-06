@@ -52,6 +52,26 @@ test("Agent entry validates paths and passes bounded production context", async 
     assert.equal(received?.pipelineOptions.totalBudgetMs, 600_000);
     assert.equal(received?.pipelineOptions.platformContract.port, 3100);
     assert.equal(received?.builderContextWindow, 400_000);
+    assert.equal(received?.pipelineOptions.auditInheritedRequirements, false);
+  });
+});
+
+test("Agent entry loads the Evolution audit switch from env files with real env winning", async () => {
+  await withTempDir("shallow-entry-evolution-audit-", async directory => {
+    const requirementsDir = join(directory, "requirements");
+    await mkdir(requirementsDir);
+    await writeFile(join(requirementsDir, "requirements.yaml"), "id: ROOT\nname: Root\ntype: FOLDER\nchildren: []\n");
+    const envFile = join(directory, "gateway.env");
+    await writeFile(envFile, "SHALLOW_EVOLUTION_AUDIT_INHERITED=0\n");
+    const argv = ["--requirements-dir", requirementsDir, "--output-dir", join(directory, "output")];
+    const received: boolean[] = [];
+    const execute: AgentExecution = async context => {
+      received.push(context.pipelineOptions.auditInheritedRequirements!);
+      return { status: "delivered", verifiedRequirementIds: [], blockedRequirementIds: [], acceptedSha: "sha" };
+    };
+    await main(argv, gatewayEnv(), execute, envFile);
+    await main(argv, { ...gatewayEnv(), SHALLOW_EVOLUTION_AUDIT_INHERITED: "1" }, execute, envFile);
+    assert.deepEqual(received, [false, true]);
   });
 });
 

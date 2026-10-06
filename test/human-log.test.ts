@@ -22,6 +22,21 @@ test("Evolution scope logs separate inherited IDs from current independent verif
   assert.doesNotMatch(line, /已通过/);
 });
 
+test("Evolution competition logs expose skipped requirements without saying they were verified", () => {
+  const scope = formatLine(new HumanRunFormatter(), eventLine("2026-10-06T00:00:00Z", "evolution_scope_selected", {
+    detail: { historicalPlans: 2, ignoredPlans: 0, addedRequirementIds: ["NEW"], changedRequirementIds: [],
+      inheritedRequirementIds: ["OLD"], implementationRequirementIds: ["NEW"], auditRequirementIds: ["NEW"], skippedRequirementIds: ["OLD"] },
+  }));
+  assert.match(scope, /本轮验收 1 条；跳过旧需求验收 1 条/);
+  assert.doesNotMatch(scope, /沿用 1 条并独立验收/);
+  const summary = formatLine(new HumanRunFormatter(), eventLine("2026-10-06T00:00:00Z", "pipeline_finished", {
+    detail: { status: "delivered", implementedRequirementIds: ["NEW"], verifiedRequirementIds: ["NEW"],
+      auditRequirementIds: ["NEW"], skippedRequirementIds: ["OLD"], acceptedSha: "sha" },
+  }));
+  assert.match(summary, /已实现 1，已验证 1/);
+  assert.match(summary, /本轮验收范围 1 条；跳过旧需求验收 1 条/);
+});
+
 test("Module boundary logs distinguish sampled seed entries from full atomic verification", () => {
   const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-01T00:00:00Z", "module_boundary_audit_finished", {
     detail: { moduleId: "SECOND", packetIds: ["packet-c"], regressionPacketIds: ["packet-a"], results: { "packet-c": "verified" } },

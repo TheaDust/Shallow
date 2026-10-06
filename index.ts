@@ -33,6 +33,7 @@ import {
   deriveModelTimeouts,
   parseBuilderContextWindow,
   parseEvaluationPort,
+  parseEvolutionAuditInherited,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -99,6 +100,7 @@ export async function main(
     totalBudgetMs: cli.budgetMs,
     platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort, extraPorts),
     progressDir: join(cli.outputDir, PROGRESS_DIR_NAME),
+    auditInheritedRequirements: parseEvolutionAuditInherited(mergedEnv),
   };
   const summary = await execute({
     gateway,

@@ -106,7 +106,10 @@ test("fixed system assets keep their Chinese anchors", () => {
   for (const key of ["STAGE_CONTEXT", "STARTING_POINT", "EXTERNAL_PREREQUISITES", "STARTING_POINT_ACTION"]) {
     assert.ok(evolution.includes(`{{${key}}}`));
   }
-  assert.match(evolution, /本工作包及当前需求树是本轮实现和验收范围/);
+  assert.match(evolution, /本工作包是本轮实现范围，验收范围见下方声明/);
+  assert.ok(evolution.includes("{{AUDIT_SCOPE}}"));
+  assert.match(loadPrompt("system", "evolution-audit-all"), /覆盖当前需求树，包括沿用项/);
+  assert.match(loadPrompt("system", "evolution-audit-changes"), /只覆盖新增、历史记录缺失或明确修改项/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /<main>/);

@@ -95,8 +95,12 @@ function describe(type: string, event: RunEvent): string | null {
     }
     case "packet_selected":
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
-    case "evolution_scope_selected":
-      return `增量实现范围已确定；有效历史计划 ${pickNumber(detail, "historicalPlans") ?? 0}；忽略损坏计划 ${pickNumber(detail, "ignoredPlans") ?? 0}；新增或历史缺失 ${strings(detail?.addedRequirementIds).length} 条；明确修改 ${strings(detail?.changedRequirementIds).length} 条；初次实现 ${strings(detail?.implementationRequirementIds).length} 条；沿用 ${strings(detail?.inheritedRequirementIds).length} 条并独立验收${reason ? `；${reason}` : ""}`;
+    case "evolution_scope_selected": {
+      const skipped = strings(detail?.skippedRequirementIds).length;
+      const auditScope = Array.isArray(detail?.auditRequirementIds)
+        ? `；本轮验收 ${strings(detail.auditRequirementIds).length} 条；跳过旧需求验收 ${skipped} 条` : "";
+      return `增量实现范围已确定；有效历史计划 ${pickNumber(detail, "historicalPlans") ?? 0}；忽略损坏计划 ${pickNumber(detail, "ignoredPlans") ?? 0}；新增或历史缺失 ${strings(detail?.addedRequirementIds).length} 条；明确修改 ${strings(detail?.changedRequirementIds).length} 条；初次实现 ${strings(detail?.implementationRequirementIds).length} 条；沿用 ${strings(detail?.inheritedRequirementIds).length} 条${skipped ? "" : "并独立验收"}${auditScope}${reason ? `；${reason}` : ""}`;
+    }
     case "feature_grouping_started":
       return `开始运行时语义分组；原子需求 ${pickNumber(detail, "requirements") ?? 0}`;
     case "feature_grouping_usage": {
@@ -244,7 +248,9 @@ function describe(type: string, event: RunEvent): string | null {
     case "pipeline_finished": {
       const breakdown = asRecord(detail?.inconclusiveByKind);
       const categories = breakdown ? Object.entries(breakdown).map(([kind, ids]) => `${inconclusiveKindText(kind)} ${strings(ids).length}`).join("、") : "";
-      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}${categories ? `；无法判断分类：${categories}` : ""}${strings(detail.missingPlanRequirementIds).length ? `；缺计划 ID：${strings(detail.missingPlanRequirementIds).join("、")}` : ""}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
+      const auditScope = Array.isArray(detail?.auditRequirementIds)
+        ? `；本轮验收范围 ${strings(detail.auditRequirementIds).length} 条；跳过旧需求验收 ${strings(detail.skippedRequirementIds).length} 条` : "";
+      return `流水线结束${detail ? `；结果 ${pickString(detail, "status")}；已实现 ${strings(detail.implementedRequirementIds).length}，已验证 ${strings(detail.verifiedRequirementIds).length}，业务失败 ${strings(detail.failedRequirementIds).length}，无法判断 ${strings(detail.inconclusiveRequirementIds).length}，阻塞 ${strings(detail.blockedRequirementIds).length}，待处理 ${strings(detail.pendingRequirementIds).length}；阻塞 ID：${strings(detail.blockedRequirementIds).join("、") || "无"}；待处理 ID：${strings(detail.pendingRequirementIds).join("、") || "无"}${categories ? `；无法判断分类：${categories}` : ""}${strings(detail.missingPlanRequirementIds).length ? `；缺计划 ID：${strings(detail.missingPlanRequirementIds).join("、")}` : ""}${auditScope}；接受 SHA ${pickString(detail, "acceptedSha")}` : ""}`;
     }
     default:
       return null;

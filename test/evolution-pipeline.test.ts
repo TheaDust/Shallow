@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { compileBuilderPrompt } from "../src/builder/prompt.js";
+import { ArcEventSink } from "../src/arc-protocol.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
 import { PlanCache } from "../src/judge/plan-cache.js";
 import { auditPackets } from "../src/scheduler.js";
@@ -308,6 +309,176 @@ test("Historical plans do not filter blank, unknown or ordinary progressive-stag
       assert.equal(result.status, "delivered");
       assert.deepEqual(f.builder.requests.flatMap(request => "packet" in request ? request.packet.requirementIds : []), ["A", "B", "C"]);
       assert.ok(!(await f.events()).some(event => event.type === "evolution_scope_selected"));
+    });
+  }
+});
+
+test("Competition mode audits only changed and new targets, preserving full prerequisite evidence and truthful ARC states", async () => {
+  await withModulePipeline(async f => {
+    const source = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    source.children[0].children[0].description = modified;
+    await writeFile(f.options.requirementsFile, JSON.stringify(source));
+    await writeHistory(f, ["A", "B"]);
+    delete f.options.auditInheritedRequirements;
+    const arc = new ArcEventSink(f.options.outputDir);
+    await arc.init();
+    f.deps.arcEvents = arc;
+    const planned: string[] = [];
+    const executed: string[] = [];
+    f.deps.planner.plan = async packet => {
+      planned.push(...packet.requirementIds);
+      assert.ok(!packet.requirementIds.includes("B"));
+      if (packet.requirementIds[0] === "C") {
+        assert.deepEqual(packet.prerequisites?.map(item => item.id), ["A", "B"]);
+        assert.equal(packet.prerequisites?.find(item => item.id === "B")?.text, source.children[0].children[1].description);
+      }
+      return testPlan(packet);
+    };
+    f.deps.runner.run = async plan => {
+      executed.push(...plan.cases.flatMap(item => item.requirementIds));
+      assert.ok(plan.cases.every(item => !item.requirementIds.includes("B")));
+      return pass(plan);
+    };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(result.auditRequirementIds, ["A", "C"]);
+    assert.deepEqual(result.skippedRequirementIds, ["B"]);
+    assert.deepEqual(result.implementedRequirementIds, ["A", "C"]);
+    assert.deepEqual(result.verifiedRequirementIds, ["A", "C"]);
+    assert.deepEqual(result.pendingRequirementIds, []);
+    assert.deepEqual(planned.sort(), ["A", "C"]);
+    assert.ok(executed.includes("A") && executed.includes("C"));
+    for (const request of f.builder.requests) {
+      assert.ok(request.mode === "implement");
+      const prompt = compileBuilderPrompt(request).taskPrompt;
+      assert.match(prompt, /本轮模块边界验收和最终交付只覆盖新增/);
+      assert.doesNotMatch(prompt, /本轮模块边界验收和最终交付覆盖当前需求树，包括沿用项/);
+    }
+    const requirements = JSON.parse(await readFile(join(f.options.outputDir, ".arc", "traceability", "requirements.json"), "utf8"));
+    assert.equal(requirements.B.description, source.children[0].children[1].description);
+    const arcEvents = (await readFile(join(f.options.outputDir, ".arc", "runner-events.jsonl"), "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    assert.ok(!arcEvents.some(event => event.type === "requirement_state" && event.node_id === "B" && event.phase === "test"));
+    assert.ok(!arcEvents.some(event => event.type === "requirement_state" && ["FIRST", "ROOT"].includes(event.node_id) && event.phase === "test"));
+    assert.ok(arcEvents.some(event => event.type === "requirement_state" && event.node_id === "SECOND" && event.phase === "test" && event.status === "passed"));
+    const finished = (await f.events()).find(event => event.type === "pipeline_finished");
+    assert.deepEqual(finished?.detail?.skippedRequirementIds, ["B"]);
+    assert.deepEqual(finished?.detail?.pendingRequirementIds, []);
+  });
+});
+
+test("Competition mode creates no audit or repair for a purely inherited application", async () => {
+  await withModulePipeline(async f => {
+    await writeHistory(f, ["A", "B", "C"]);
+    f.options.auditInheritedRequirements = false;
+    f.deps.planner.plan = async () => { throw new Error("No inherited target may be planned"); };
+    f.deps.runner.run = async () => { throw new Error("No inherited target may be executed"); };
+    let verifiedRuntime = false;
+    f.deps.finalVerifier.verify = async () => { verifiedRuntime = true; return { ok: true, stage: "complete", message: "Runtime still checked" }; };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.equal(verifiedRuntime, true);
+    assert.equal(f.builder.requests.length, 0);
+    assert.deepEqual(result.auditRequirementIds, []);
+    assert.deepEqual(result.verifiedRequirementIds, []);
+    assert.deepEqual(result.implementedRequirementIds, []);
+    assert.deepEqual(result.skippedRequirementIds, ["A", "B", "C"]);
+    assert.deepEqual(result.pendingRequirementIds, []);
+    const events = await f.events();
+    assert.ok(!events.some(event => event.type === "module_boundary_audit_finished" || event.type === "probe_planning" || event.type === "repair_batch_started"));
+  });
+});
+
+test("Competition mode cannot deliver a failed current requirement by excluding inherited targets", async () => {
+  await withModulePipeline(async f => {
+    await writeHistory(f, ["A", "B"]);
+    f.options.auditInheritedRequirements = false;
+    f.deps.runner.run = async plan => { assert.deepEqual(plan.cases[0].requirementIds, ["C"]); return fail(plan); };
+    const result = await f.run();
+    assert.equal(result.status, "partial");
+    assert.deepEqual(result.failedRequirementIds, ["C"]);
+    assert.deepEqual(result.verifiedRequirementIds, []);
+    assert.deepEqual(result.skippedRequirementIds, ["A", "B"]);
+    assert.ok(f.builder.requests.every(request => "packet" in request && request.packet.requirementIds.every(id => id === "C")));
+  });
+});
+
+test("Competition mode revalidates only the selected requirements after a delivery repair", async () => {
+  await withModulePipeline(async f => {
+    await writeHistory(f, ["A", "B"]);
+    f.options.auditInheritedRequirements = false;
+    let runtimeChecks = 0;
+    f.deps.finalVerifier.verify = async () => ++runtimeChecks === 1
+      ? { ok: false, stage: "build", message: "Runtime needs repair" }
+      : { ok: true, stage: "complete", message: "Runtime repaired" };
+    let planned = 0;
+    let executions = 0;
+    f.deps.planner.plan = async packet => { assert.deepEqual(packet.requirementIds, ["C"]); planned++; return testPlan(packet); };
+    f.deps.runner.run = async plan => { assert.deepEqual(plan.cases[0].requirementIds, ["C"]); executions++; return pass(plan); };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.equal(planned, 1);
+    assert.equal(executions, 3);
+    assert.deepEqual(f.builder.requests.map(request => request.mode), ["implement", "delivery_repair"]);
+    assert.deepEqual(result.verifiedRequirementIds, ["C"]);
+    assert.deepEqual(result.skippedRequirementIds, ["A", "B"]);
+  });
+});
+
+test("Competition mode without historical identity still develops and audits the whole selected tree", async () => {
+  await withModulePipeline(async f => {
+    f.options.stageStartingPoint = "inherited_application";
+    f.options.auditInheritedRequirements = false;
+    const planned: string[] = [];
+    f.deps.planner.plan = async packet => { planned.push(...packet.requirementIds); return testPlan(packet); };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(planned.sort(), ["A", "B", "C"]);
+    assert.deepEqual(result.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.equal(result.skippedRequirementIds, undefined);
+  });
+});
+
+test("The competition audit scope stays selective when an unrunnable baseline requires full implementation", async () => {
+  await withModulePipeline(async f => {
+    await writeHistory(f, ["A", "B"]);
+    f.options.auditInheritedRequirements = false;
+    let starts = 0;
+    f.deps.appLifecycle.start = async () => {
+      if (++starts === 1) throw new Error("Injected build needs repair");
+      return { baseUrl: f.options.platformContract.baseUrl, stop: async () => {} };
+    };
+    const planned: string[] = [];
+    f.deps.planner.plan = async packet => { planned.push(...packet.requirementIds); return testPlan(packet); };
+    const result = await f.run();
+    assert.equal(result.status, "delivered");
+    assert.deepEqual(planned, ["C"]);
+    assert.deepEqual(result.verifiedRequirementIds, ["C"]);
+    assert.deepEqual(result.auditRequirementIds, ["C"]);
+    assert.deepEqual(result.skippedRequirementIds, ["A", "B"]);
+    assert.deepEqual(result.implementedRequirementIds, ["C"]);
+  });
+});
+
+test("Both real final trees reduce Planner targets to ten atomics in competition mode", async () => {
+  for (const product of ["github", "sheet"] as const) {
+    await withModulePipeline(async f => {
+      const previous = await loadRequirementCatalog(`data/official-competition/hackathon--${product}/requirements.yaml`);
+      f.options.requirementsFile = `data/final/hackathon-evolution--${product}/requirements.yaml`;
+      await writeHistory(f, previous.requirements.map(item => item.id));
+      f.options.auditInheritedRequirements = false;
+      const planned = new Set<string>();
+      f.deps.planner.plan = async packet => { packet.requirementIds.forEach(id => planned.add(id)); throw new Error("Offline scope check"); };
+      const result = await f.run();
+      assert.equal(planned.size, 10);
+      assert.equal(result.implementedRequirementIds?.length, 10);
+      assert.equal(result.verifiedRequirementIds.length, 0);
+      assert.equal(result.inconclusiveRequirementIds?.length, 10);
+      assert.equal(result.missingPlanRequirementIds?.length, 10);
+      assert.equal(result.status, "partial");
+      if (product === "github") {
+        assert.equal(result.skippedRequirementIds?.length, 42);
+        assert.equal(result.auditRequirementIds?.length, 10);
+      }
     });
   }
 });
