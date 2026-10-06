@@ -1,6 +1,37 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { progressPlansDirectory } from "./progress-journal.js";
 import type { RequirementCatalog } from "./types.js";
+
+/** Freeze historical identity only; checkpoints never supply a current SHA or verdict. */
+export async function readHistoricalRequirementIds(progressDirectory: string) {
+  const [plans, log] = await Promise.all([
+    readHistoricalPlanIds(progressPlansDirectory(progressDirectory)),
+    readFile(join(progressDirectory, "progress.log"), "utf8").catch(() => ""),
+  ]);
+  const checkpointIds = historicalCheckpointIds(log);
+  const requirementIds = new Set([...plans.requirementIds, ...checkpointIds]);
+  return {
+    requirementIds, plans: plans.plans, ignoredPlans: plans.ignoredPlans,
+    planRequirementCount: plans.requirementIds.size, checkpointRequirementCount: checkpointIds.size,
+    checkpointSupplementCount: [...checkpointIds].filter(id => !plans.requirementIds.has(id)).length,
+  };
+}
+
+function historicalCheckpointIds(log: string): Set<string> {
+  const ids = new Set<string>();
+  // Match a complete HumanRunFormatter checkpoint event, not embedded receipt text.
+  const checkpoint = /^\[(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d \+(?:\d+s|\d+m[0-5]?\ds)\] 保存可运行检查点；[^；\r\n]+；需求 ([^；\r\n]*)；SHA [a-f0-9]{40}（功能验收状态单独记录） \[#[1-9]\d*\]$/;
+  for (const line of log.split(/\r?\n/)) {
+    const field = checkpoint.exec(line)?.[1];
+    if (!field) continue;
+    const checkpointIds = field.split("、");
+    // Reject the whole field on empty IDs, whitespace or competing separators.
+    if (checkpointIds.some(id => !id || /[\s,，;↵\u0000-\u001f\u007f]/u.test(id))) continue;
+    for (const id of checkpointIds) ids.add(id);
+  }
+  return ids;
+}
 
 /** Historical plans establish ID provenance only, never a current plan or verdict. */
 export async function readHistoricalPlanIds(directory: string): Promise<{

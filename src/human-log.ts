@@ -97,9 +97,11 @@ function describe(type: string, event: RunEvent): string | null {
       return `选定需求包 ${packetId}${strings(detail?.names).length ? `：${strings(detail?.names).join("、")}` : ""}`;
     case "evolution_scope_selected": {
       const skipped = strings(detail?.skippedRequirementIds).length;
+      const history = pickNumber(detail, "historicalRequirementCount") === null ? ""
+        : `；历史计划需求 ID ${pickNumber(detail, "historicalPlanRequirementCount") ?? 0}；历史检查点需求 ID ${pickNumber(detail, "historicalCheckpointRequirementCount") ?? 0}；检查点补充 ID ${pickNumber(detail, "historicalCheckpointSupplementCount") ?? 0}；合并历史 ID ${pickNumber(detail, "historicalRequirementCount")}`;
       const auditScope = Array.isArray(detail?.auditRequirementIds)
         ? `；本轮验收 ${strings(detail.auditRequirementIds).length} 条；跳过旧需求验收 ${skipped} 条` : "";
-      return `增量实现范围已确定；有效历史计划 ${pickNumber(detail, "historicalPlans") ?? 0}；忽略损坏计划 ${pickNumber(detail, "ignoredPlans") ?? 0}；新增或历史缺失 ${strings(detail?.addedRequirementIds).length} 条；明确修改 ${strings(detail?.changedRequirementIds).length} 条；初次实现 ${strings(detail?.implementationRequirementIds).length} 条；沿用 ${strings(detail?.inheritedRequirementIds).length} 条${skipped ? "" : "并独立验收"}${auditScope}${reason ? `；${reason}` : ""}`;
+      return `增量实现范围已确定；有效历史计划 ${pickNumber(detail, "historicalPlans") ?? 0}；忽略损坏计划 ${pickNumber(detail, "ignoredPlans") ?? 0}${history}；新增或历史缺失 ${strings(detail?.addedRequirementIds).length} 条；明确修改 ${strings(detail?.changedRequirementIds).length} 条；初次实现 ${strings(detail?.implementationRequirementIds).length} 条；沿用 ${strings(detail?.inheritedRequirementIds).length} 条${skipped ? "" : "并独立验收"}${auditScope}${reason ? `；${reason}` : ""}`;
     }
     case "feature_grouping_started":
       return `开始运行时语义分组；原子需求 ${pickNumber(detail, "requirements") ?? 0}`;

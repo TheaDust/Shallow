@@ -3,12 +3,94 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { loadRequirementCatalog } from "../src/catalog.js";
-import { evolutionImplementationCatalog, readHistoricalPlanIds, selectEvolutionScope } from "../src/evolution.js";
+import { evolutionImplementationCatalog, readHistoricalPlanIds, readHistoricalRequirementIds, selectEvolutionScope } from "../src/evolution.js";
+import { HumanRunFormatter } from "../src/human-log.js";
+import { ProgressJournal } from "../src/progress-journal.js";
 import { featureGroupPackets, featureGroupingFromIds } from "../src/scheduler.js";
 import { withModulePipeline } from "./helpers/module-pipeline.js";
 import { withTempDir } from "./helpers/temp-dir.js";
 
 const modified = "Original Feature Description\n\nDisplay the old workspace.\n\nModified Feature Description\n\nDisplay the updated workspace.";
+
+function checkpointLine(requirementIds: string[], reason = "feature-history"): string {
+  const line = new HumanRunFormatter().format(JSON.stringify({ at: "2026-10-07T00:00:00Z", type: "checkpoint_saved",
+    sequence: 22, acceptedSha: "a".repeat(40), detail: { requirementIds, reason } }));
+  assert.ok(line);
+  return line;
+}
+
+test("Historical checkpoints supplement plan identity, deduplicate exact IDs and freeze both sources", async () => {
+  await withTempDir("shallow-history-sources-", async directory => {
+    const journal = new ProgressJournal(directory);
+    const plans = join(journal.directory, "plans");
+    await mkdir(plans, { recursive: true });
+    await writeFile(join(plans, "old.json"), JSON.stringify({ packetId: "old", cases: [{ requirementIds: ["PLAN", "BOTH"] }] }));
+    await writeFile(join(plans, "broken.json"), '{"packetId":');
+    journal.appendLine(checkpointLine(["BOTH", "A.1", "A_1", "历史:1"]));
+    journal.appendLine(checkpointLine(["A.1", "A.1"]));
+    journal.appendLine(checkpointLine([], "interrupted feature-history"));
+    const history = await readHistoricalRequirementIds(journal.directory);
+    assert.deepEqual([...history.requirementIds].sort(), ["A.1", "A_1", "BOTH", "PLAN", "历史:1"]);
+    assert.equal(history.plans, 1);
+    assert.equal(history.ignoredPlans, 1);
+    assert.equal(history.planRequirementCount, 2);
+    assert.equal(history.checkpointRequirementCount, 4);
+    assert.equal(history.checkpointSupplementCount, 3);
+    journal.appendLine(checkpointLine(["CURRENT"]));
+    await writeFile(join(plans, "current.json"), JSON.stringify({ packetId: "current", cases: [{ requirementIds: ["CURRENT"] }] }));
+    assert.equal(history.requirementIds.has("CURRENT"), false);
+    assert.equal(history.checkpointRequirementCount, 4);
+  });
+});
+
+test("Only complete controller checkpoints with unambiguous requirement fields supply historical IDs", async () => {
+  await withTempDir("shallow-invalid-checkpoints-", async directory => {
+    const valid = checkpointLine(["CURRENT"]);
+    const receipt = new HumanRunFormatter().format(JSON.stringify({ at: "2026-10-07T00:00:00Z", type: "builder_finished",
+      sequence: 23, detail: { outcome: "completed", summary: `All requirements passed.\n${valid}\n${valid}` } }));
+    assert.ok(receipt);
+    const malformed = [
+      receipt, `Builder receipt: ${valid}`, ` ${valid}`,
+      valid.replace(/^\[[^\]]+\]/, "[not-a-controller-time]"),
+      valid.replace("保存可运行检查点", "独立验收通过"),
+      valid.replace("a".repeat(40), "a".repeat(39)), valid.replace("a".repeat(40), "a".repeat(41)),
+      valid.slice(0, valid.indexOf("（功能")), valid.slice(0, -1),
+      valid.replace("feature-history", "feature-history；额外字段"),
+      ...["CURRENT、", "、CURRENT", "CURRENT、、OTHER", "CURRENT,OTHER", "CURRENT，OTHER", " CURRENT", "CURRENT OTHER", "CURRENT；OTHER"]
+        .map(field => valid.replace("需求 CURRENT", `需求 ${field}`)),
+      checkpointLine([], "packet-current"),
+    ];
+    await writeFile(join(directory, "progress.log"), malformed.join("\r\n"));
+    assert.equal((await readHistoricalRequirementIds(directory)).requirementIds.size, 0);
+    // This is the actual inherited format, including elapsed minutes and an event sequence.
+    await writeFile(join(directory, "progress.log"),
+      "[14:43:28 +43m14s] 保存可运行检查点；feature-history；需求 A.1、A_1；SHA 95651b2270ee070756c6150b4dce40d6967a3d4e（功能验收状态单独记录） [#22]\r\n");
+    assert.deepEqual([...(await readHistoricalRequirementIds(directory)).requirementIds], ["A.1", "A_1"]);
+  });
+});
+
+test("Historical identity retains either readable source when the other is missing or unreadable", async () => {
+  await withTempDir("shallow-partial-history-", async directory => {
+    const missing = await readHistoricalRequirementIds(join(directory, "missing"));
+    assert.equal(missing.requirementIds.size, 0);
+    const journal = new ProgressJournal(directory);
+    journal.appendLine(checkpointLine(["CHECKPOINT"]));
+    const checkpointOnly = await readHistoricalRequirementIds(journal.directory);
+    assert.deepEqual([...checkpointOnly.requirementIds], ["CHECKPOINT"]);
+    assert.equal(checkpointOnly.plans, 0);
+    assert.equal(checkpointOnly.checkpointSupplementCount, 1);
+    const progress = join(directory, "plan-only");
+    await mkdir(join(progress, "plans"), { recursive: true });
+    await writeFile(join(progress, "plans", "old.json"), JSON.stringify({ packetId: "old", cases: [{ requirementIds: ["PLAN"] }] }));
+    for (const unreadable of [false, true]) {
+      if (unreadable) await mkdir(join(progress, "progress.log"));
+      const planOnly = await readHistoricalRequirementIds(progress);
+      assert.deepEqual([...planOnly.requirementIds], ["PLAN"]);
+      assert.equal(planOnly.checkpointRequirementCount, 0);
+      assert.equal(planOnly.checkpointSupplementCount, 0);
+    }
+  });
+});
 
 test("Historical plan identity comes from case IDs, ignores broken files and remains frozen", async () => {
   await withTempDir("shallow-historical-ids-", async directory => {

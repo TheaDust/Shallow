@@ -5,7 +5,9 @@ import { test } from "node:test";
 import { compileBuilderPrompt } from "../src/builder/prompt.js";
 import { ArcEventSink } from "../src/arc-protocol.js";
 import { loadRequirementCatalog } from "../src/catalog.js";
+import { HumanRunFormatter } from "../src/human-log.js";
 import { PlanCache } from "../src/judge/plan-cache.js";
+import { ProgressJournal } from "../src/progress-journal.js";
 import { auditPackets } from "../src/scheduler.js";
 import { fail, pass, testPlan, withModulePipeline, type PipelineFixture } from "./helpers/module-pipeline.js";
 
@@ -24,6 +26,59 @@ async function writeHistory(f: PipelineFixture, ids: string[]): Promise<PlanCach
   }
   return cache;
 }
+
+function appendCheckpoint(journal: ProgressJournal, requirementIds: string[]): void {
+  const line = new HumanRunFormatter().format(JSON.stringify({ at: "2026-10-07T00:00:00Z", type: "checkpoint_saved",
+    sequence: 22, acceptedSha: "a".repeat(40), detail: { requirementIds, reason: "feature-history" } }));
+  assert.ok(line);
+  journal.appendLine(line);
+}
+
+test("Checkpoint-only inherited IDs respect the audit switch and startup freeze while explicit changes remain targets", async () => {
+  for (const auditInheritedRequirements of [false, true]) {
+    await withModulePipeline(async f => {
+      const source = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      source.children[0].children[0].description = modified;
+      await writeFile(f.options.requirementsFile, JSON.stringify(source));
+      const historical = await writeHistory(f, ["A"]);
+      const journal = new ProgressJournal(f.options.outputDir);
+      appendCheckpoint(journal, ["A", "B", "REMOVED"]);
+      f.options.auditInheritedRequirements = auditInheritedRequirements;
+      let appendedCurrent = false;
+      const formatter = new HumanRunFormatter();
+      f.deps.logSink = { write: chunk => {
+        // Even the first current event must happen after both historical sources are frozen.
+        if (!appendedCurrent) { appendCheckpoint(journal, ["C"]); appendedCurrent = true; }
+        const line = formatter.format(chunk);
+        if (line) journal.appendLine(line);
+      } };
+      f.deps.grouper = { group: async catalog => {
+        assert.deepEqual(catalog.requirements.map(item => item.id), ["A", "C"]);
+        const current = await loadRequirementCatalog(f.options.requirementsFile);
+        const packet = auditPackets(current).find(item => item.requirementIds[0] === "C")!;
+        await historical.write(packet.id, testPlan(packet));
+        return { groups: [{ requirementIds: ["A"], purpose: "Update workspace" }, { requirementIds: ["C"], purpose: "New workspace" }] };
+      } };
+      const planned = new Set<string>();
+      f.deps.planner.plan = async packet => { packet.requirementIds.forEach(id => planned.add(id)); return testPlan(packet); };
+      const result = await f.run();
+      assert.equal(result.status, "delivered");
+      assert.deepEqual(f.builder.requests.flatMap(request => "packet" in request ? request.packet.requirementIds : []), ["A", "C"]);
+      assert.deepEqual([...planned].sort(), auditInheritedRequirements ? ["A", "B", "C"] : ["A", "C"]);
+      assert.deepEqual(result.verifiedRequirementIds.sort(), [...planned].sort());
+      assert.deepEqual(result.skippedRequirementIds ?? [], auditInheritedRequirements ? [] : ["B"]);
+      const scope = (await f.events()).find(event => event.type === "evolution_scope_selected")!;
+      assert.equal(scope.detail?.historicalPlans, 1);
+      assert.equal(scope.detail?.historicalPlanRequirementCount, 1);
+      assert.equal(scope.detail?.historicalCheckpointRequirementCount, 3);
+      assert.equal(scope.detail?.historicalCheckpointSupplementCount, 2);
+      assert.equal(scope.detail?.historicalRequirementCount, 3);
+      assert.deepEqual(scope.detail?.changedRequirementIds, ["A"]);
+      assert.deepEqual(scope.detail?.addedRequirementIds, ["C"]);
+      assert.deepEqual(scope.detail?.inheritedRequirementIds, ["B"]);
+    });
+  }
+});
 
 test("Only the new atomic reaches initial Builder; both inherited atomics are freshly audited", async () => {
   await withModulePipeline(async f => {
@@ -300,6 +355,7 @@ test("Historical plans do not filter blank, unknown or ordinary progressive-stag
   for (const mode of ["blank_template", "unknown", "progressive"] as const) {
     await withModulePipeline(async f => {
       await writeHistory(f, ["A", "B", "C"]);
+      appendCheckpoint(new ProgressJournal(f.options.outputDir), ["A", "B", "C"]);
       if (mode === "progressive") {
         const source = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
         source.name = "Product — Stage 2";

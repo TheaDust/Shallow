@@ -17,7 +17,7 @@ import {
   type ArcScenarioRow,
 } from "./arc-protocol.js";
 import { loadRequirementCatalog } from "./catalog.js";
-import { evolutionImplementationCatalog, readHistoricalPlanIds, selectEvolutionScope } from "./evolution.js";
+import { evolutionImplementationCatalog, readHistoricalRequirementIds, selectEvolutionScope } from "./evolution.js";
 import type { GitOps } from "./git-ops.js";
 import type {
   FinalVerificationReport,
@@ -142,11 +142,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const catalog = await loadRequirementCatalog(options.requirementsFile, {
     inheritedApplication: options.stageStartingPoint === "inherited_application",
   });
-  // Freeze provenance before any current plan can overwrite the product mirror.
-  const historicalPlans = options.stageStartingPoint === "inherited_application" && catalog.requirements[0]?.product.evolution
-    ? await readHistoricalPlanIds(progressPlansDirectory(options.progressDir ?? join(options.outputDir, PROGRESS_DIR_NAME)))
+  // Freeze provenance before any current progress event or plan mirror write.
+  const history = options.stageStartingPoint === "inherited_application" && catalog.requirements[0]?.product.evolution
+    ? await readHistoricalRequirementIds(options.progressDir ?? join(options.outputDir, PROGRESS_DIR_NAME))
     : undefined;
-  const evolutionScope = historicalPlans ? selectEvolutionScope(catalog, historicalPlans.requirementIds) : undefined;
+  const evolutionScope = history ? selectEvolutionScope(catalog, history.requirementIds) : undefined;
   const auditInheritedRequirements = options.auditInheritedRequirements ?? false;
   const startedAt = deps.clock.nowMs();
   const budget = new RunBudget(options.totalBudgetMs, startedAt, () => deps.clock.nowMs());
@@ -728,7 +728,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   try {
     await phase("implementation");
-    if (evolutionScope && historicalPlans) {
+    if (evolutionScope && history) {
       let reason: string | undefined;
       let ready = false;
       let candidate: CandidateEvidence | undefined;
@@ -761,7 +761,11 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         packets = packets.filter(packet => packet.requirementIds.every(id => !skipped.has(id)));
       }
       await state.record({ at: now(), type: "evolution_scope_selected", detail: {
-        historicalPlans: historicalPlans.plans, ignoredPlans: historicalPlans.ignoredPlans,
+        historicalPlans: history.plans, ignoredPlans: history.ignoredPlans,
+        historicalPlanRequirementCount: history.planRequirementCount,
+        historicalCheckpointRequirementCount: history.checkpointRequirementCount,
+        historicalCheckpointSupplementCount: history.checkpointSupplementCount,
+        historicalRequirementCount: history.requirementIds.size,
         addedRequirementIds: evolutionScope.addedRequirementIds, changedRequirementIds: evolutionScope.changedRequirementIds,
         inheritedRequirementIds: [...inherited], implementationRequirementIds: implementationCatalog.requirements.map(item => item.id), reason,
         auditRequirementIds: packets.flatMap(packet => packet.requirementIds), skippedRequirementIds: [...skipped],

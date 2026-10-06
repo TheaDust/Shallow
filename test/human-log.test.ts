@@ -16,9 +16,12 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
 test("Evolution scope logs separate inherited IDs from current independent verification", () => {
   const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-06T00:00:00Z", "evolution_scope_selected", {
     detail: { historicalPlans: 2, ignoredPlans: 1, addedRequirementIds: ["NEW"], changedRequirementIds: ["CHANGED"],
+      historicalPlanRequirementCount: 3, historicalCheckpointRequirementCount: 4,
+      historicalCheckpointSupplementCount: 2, historicalRequirementCount: 5,
       inheritedRequirementIds: ["OLD"], implementationRequirementIds: ["CHANGED", "NEW"] },
   }));
   assert.match(line, /有效历史计划 2.*忽略损坏计划 1.*初次实现 2.*沿用 1 条并独立验收/);
+  assert.match(line, /历史计划需求 ID 3；历史检查点需求 ID 4；检查点补充 ID 2；合并历史 ID 5/);
   assert.doesNotMatch(line, /已通过/);
 });
 

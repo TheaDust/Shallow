@@ -131,7 +131,9 @@ type DiagnosticDetail = { message?: string; source?: string; category?: string; 
   httpStatus?: number; attempt?: number; retryCount?: number; retry?: boolean };
 
 interface RunEventDetails {
-  evolution_scope_selected: { historicalPlans: number; ignoredPlans: number; addedRequirementIds: string[];
+  evolution_scope_selected: { historicalPlans: number; ignoredPlans: number;
+    historicalPlanRequirementCount: number; historicalCheckpointRequirementCount: number;
+    historicalCheckpointSupplementCount: number; historicalRequirementCount: number; addedRequirementIds: string[];
     changedRequirementIds: string[]; inheritedRequirementIds: string[]; implementationRequirementIds: string[]; reason?: string;
     auditRequirementIds?: string[]; skippedRequirementIds?: string[] };
   gateway_wait: { source: "builder" | "planner"; retry: number; delayMs: number; failure: import("./gateway-failure.js").GatewayFailure; reason?: string };
