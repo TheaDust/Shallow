@@ -50,6 +50,49 @@ test("Progressive stages schedule current requirements while treating prior-stag
   });
 });
 
+test("Evolution increments schedule and audit only current requirements with inherited context", async () => {
+  for (const stageIndex of [undefined, 2]) {
+    await withModulePipeline(async f => {
+      await writeFile(f.options.requirementsFile, JSON.stringify({
+        id: "ROOT", name: stageIndex === undefined ? "GitHub - Evolution" : "GitHub - Evolution - Stage 2",
+        type: "FOLDER", description: "Extend the existing repository workspace.",
+        children: [{ id: "REQ-3", name: "Repositories", type: "FOLDER", dependencies: ["REQ-1"], children: [
+          { id: "REQ-3-1", name: "Browse repositories", type: "ATOMIC", description: "Display the repository workspace." },
+        ] }],
+      }));
+      f.options.stageStartingPoint = "inherited_application";
+      const plannedIds: string[][] = [];
+      f.deps.planner.plan = async packet => {
+        plannedIds.push(packet.requirementIds);
+        assert.deepEqual(packet.externalPrerequisiteIds, ["REQ-1"]);
+        assert.equal(packet.requirements[0].product.kind, "repository_collaboration");
+        return { packetId: packet.id, cases: [{ id: "case-evolution", requirementIds: packet.requirementIds,
+          purpose: "happy_path", expectationBasis: [packet.requirements[0].text],
+          steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "role", role: "main" } }] }] };
+      };
+
+      const result = await f.run();
+      assert.equal(result.status, "delivered");
+      assert.deepEqual(result.implementedRequirementIds, ["REQ-3-1"]);
+      assert.deepEqual(result.verifiedRequirementIds, ["REQ-3-1"]);
+      assert.deepEqual(plannedIds, [["REQ-3-1"]]);
+      assert.equal(f.builder.requests.length, 1);
+      const request = f.builder.requests[0];
+      if (request.mode !== "implement") throw new Error("expected implement request");
+      assert.deepEqual(request.projectContext.evolution, {
+        startingPoint: "inherited_application", externalPrerequisiteIds: ["REQ-1"],
+        ...(stageIndex === undefined ? {} : { stageIndex }),
+      });
+      assert.equal(request.projectContext.progressiveStage, undefined);
+      const started = (await f.events()).find(event => event.type === "pipeline_started");
+      assert.deepEqual(started?.detail?.evolution, {
+        startingPoint: "inherited_application", externalDependencyIds: ["REQ-1"],
+        ...(stageIndex === undefined ? {} : { stageIndex }),
+      });
+    });
+  }
+});
+
 test("The main pipeline uses the runtime proposal once while auditing every original atomic", async () => {
   await withModulePipeline(async f => {
     let calls = 0;

@@ -38,16 +38,19 @@ export async function loadRequirementCatalog(
   const root = parseNode(record, "root");
   const nodes = new Map<string, ParsedNode>();
   collectNodes(root, nodes);
-  const stage = parseProgressiveStage(root.name);
-  validateDependencies(nodes, (stage?.index ?? 0) > 1);
+  const evolution = /\bevolution\b/i.test(root.name);
+  const productName = evolution ? stripEvolutionMarker(root.name) : root.name;
+  const stage = parseProgressiveStage(productName);
+  validateDependencies(nodes, evolution || (stage?.index ?? 0) > 1);
 
   const requirements: AtomicRequirement[] = [];
   const product: ProductContext = {
-    kind: classifyProduct(root.name),
+    kind: classifyProduct(productName),
     rootId: root.id,
     rootName: root.name,
     description: root.description,
     seedData: parseSeedData(record.data),
+    ...(evolution ? { evolution: true as const } : {}),
     ...(stage ? { stage } : {}),
   };
   collectAtomics(root, [], [], product, requirements);
@@ -112,6 +115,12 @@ function parseProgressiveStage(rootName: string): ProductContext["stage"] | unde
 function stripProgressiveStageSuffix(rootName: string): string {
   const match = progressiveStageMatch(rootName);
   return match ? rootName.slice(0, match.index).trim() : rootName.trim();
+}
+
+function stripEvolutionMarker(rootName: string): string {
+  return rootName.replace(/\bevolution\b(?:\s+\d+)?/gi, "")
+    .replace(/^[\s\-–—:：()\[\]]+|[\s\-–—:：()\[\]]+$/g, "")
+    .replace(/\s+/g, " ");
 }
 
 function progressiveStageMatch(rootName: string): RegExpExecArray | null {

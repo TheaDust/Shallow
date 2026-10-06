@@ -6,7 +6,7 @@
 
 两种模式都核对 outcomeChecks 中的 scenarioId、stepIndex、clauseIndex 与原文 text，以及断言是否实际证明全部明示结果。映射存在不等于语义成立；标题、描述、错误与应保留状态分别检查，不把同一标题、容器或按钮断言冒充不同结果。修正保留原场景结果引用；准备纠正保留原业务后缀与 assertionIndexes，完整 case 重建时索引对应新业务后缀的实际断言。
 
-`externalPrerequisiteIds` 仅标识前序阶段上下文，不是本轮独立验收需求，也不提供可引用的合同正文；不得仅凭这些 ID 新增断言或猜测控件名称。
+`externalPrerequisiteIds` 仅标识前序增量或阶段的上下文，不是本轮独立验收需求，也不提供可引用的合同正文；不得仅凭这些 ID 新增断言或猜测控件名称。
 
 输入的 `preparationOnlyCaseIds` 表示待测行为尚未到达：这些 case 只输出 `setupSteps`（完整新准备前缀，含末尾初始状态断言）。程序按其长度计算 setupStepCount 并拼回原待测后缀，保留后缀的操作、输入、定位目标与结果。阅读原后缀确定所需初态，只建立该初态；无法建立时保持无法定论，不降低预期。
 

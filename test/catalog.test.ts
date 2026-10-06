@@ -146,6 +146,58 @@ children:
   );
 });
 
+test("Catalog recognises Evolution increments and preserves product classification and optional stages", async () => {
+  for (const [name, kind, stageIndex] of [
+    ["GitHub - Evolution", "repository_collaboration", undefined],
+    ["Evolution - GitHub", "repository_collaboration", undefined],
+    ["GitHub - eVoLuTiOn 2", "repository_collaboration", undefined],
+    ["GitHub (Evolution)", "repository_collaboration", undefined],
+    ["GitHub Collaboration Platform Core Requirements - Evolution", "repository_collaboration", undefined],
+    ["Core Requirements for an Online Spreadsheet Data Workspace - Evolution", "spreadsheet", undefined],
+    ["Inventory Workspace - Evolution", "generic_web", undefined],
+    ["GitHub - Evolution - Stage 2", "repository_collaboration", 2],
+    ["GitHub - Stage 2 - Evolution", "repository_collaboration", 2],
+  ] as const) {
+    await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
+      { id: "REQ-3", name: "New area", type: "FOLDER", dependencies: ["REQ-1"], children: [
+        { id: "REQ-3-1", name: "Browse", type: "ATOMIC", dependencies: ["REQ-2"], description: "Browse existing records." },
+        { id: "REQ-3-2", name: "Edit", type: "ATOMIC", dependencies: ["REQ-3-1"], description: "Edit existing records." },
+      ] },
+    ] }), async file => {
+      const catalog = await loadRequirementCatalog(file);
+      const [first, second] = catalog.requirements;
+      assert.equal(first.product.rootName, name);
+      assert.equal(first.product.evolution, true);
+      assert.equal(first.product.kind, kind);
+      assert.equal(first.product.stage?.index, stageIndex);
+      assert.deepEqual(first.dependencyIds, []);
+      assert.deepEqual(first.externalDependencyIds, ["REQ-1", "REQ-2"]);
+      assert.deepEqual(second.dependencyIds, ["REQ-3-1"]);
+      assert.deepEqual(second.externalDependencyIds, ["REQ-1"]);
+      assert.deepEqual(catalog.statusById, { "REQ-3-1": "todo", "REQ-3-2": "todo" });
+    });
+  }
+});
+
+test("Catalog requires an explicit root Evolution marker to accept prior-increment IDs", async () => {
+  for (const name of ["Inventory Workspace", "Evolutionary Workspace"]) {
+    await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
+      { id: "REQ-99", name: "Evolution controls", type: "ATOMIC", dependencies: ["REQ-1"], description: "Display records." },
+    ] }), async file => {
+      await assert.rejects(loadRequirementCatalog(file), /Unknown dependency REQ-1/);
+    });
+  }
+});
+
+test("Evolution increments still reject cycles between current requirements", async () => {
+  await withYaml(JSON.stringify({ id: "ROOT", name: "Inventory - Evolution", type: "FOLDER", children: [
+    { id: "REQ-3", name: "A", type: "ATOMIC", dependencies: ["REQ-1", "REQ-4"], description: "A." },
+    { id: "REQ-4", name: "B", type: "ATOMIC", dependencies: ["REQ-3"], description: "B." },
+  ] }), async file => {
+    await assert.rejects(loadRequirementCatalog(file), /Dependency cycle/);
+  });
+});
+
 test("Catalog rejects duplicate identifiers", async () => {
   await withYaml(
     `id: ROOT\nname: Root\ntype: FOLDER\ndependencies: []\nchildren:\n  - id: X\n    name: One\n    type: ATOMIC\n    dependencies: []\n    description: One\n  - id: X\n    name: Two\n    type: ATOMIC\n    dependencies: []\n    description: Two\n`,

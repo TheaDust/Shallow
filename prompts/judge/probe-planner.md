@@ -10,7 +10,7 @@
 
 顶层使用 packetId、cases、uncoveredOutcomes；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。输入 `scenarioOutcomes` 按原文的句子、分号及 and/but 并列结果提供逐项 text、scenarioId、stepIndex 和 clauseIndex；一个 THEN 包含多个结果时，每项 clauseIndex 都须单独记账。outcomeChecks 将这些原始标识逐项映射到 assertionIndexes：索引从准备结束后的业务后缀起按 0 计数，包含终末 assertion；单一结果的 clauseIndex 填 null。每项 text 中的全部明示结果均须有实际断言，限定词结合原 THEN 理解；一个结果可引用多个断言，真正由同一断言证明的等价结果可复用位置。修改标题和描述时，分别映射到实际核对新标题、新描述的断言，不能把标题断言同时冒充描述检查。合并等价场景时保留各自映射。无法表达或容量不足的结果在 uncoveredOutcomes 给出 scenarioId、stepIndex、clauseIndex、reason；空数组表示没有遗漏。映射只说明检查位置，语义和运行通过仍须成立。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
 
-输入中的 `externalPrerequisiteIds` 是前序阶段能力标识：它们只说明当前需求可能复用的登录、导航、对象或数据上下文，不是本计划要单独覆盖的需求。不得把这些 ID 放入 case.requirementIds，也不得凭 ID 猜测前序合同；准备步骤和断言仍须由当前 requirements、具备正文的 prerequisites 或产品合同支撑。
+输入中的 `externalPrerequisiteIds` 是前序增量或阶段的能力标识：它们只说明当前需求可能复用的登录、导航、对象或数据上下文，不是本计划要单独覆盖的需求。不得把这些 ID 放入 case.requirementIds，也不得凭 ID 猜测前序合同；准备步骤和断言仍须由当前 requirements、具备正文的 prerequisites 或产品合同支撑。
 
 ## 需求依据与状态
 

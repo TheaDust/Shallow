@@ -666,12 +666,18 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
   };
 
+  const product = catalog.requirements[0]?.product;
+  const externalDependencyIds = [...new Set(catalog.requirements.flatMap(item => item.externalDependencyIds ?? []))];
   await state.record({ at: now(), type: "pipeline_started", detail: {
     requirements: catalog.requirements.length, totalBudgetMs: options.totalBudgetMs, port: options.platformContract.port,
-    ...(catalog.requirements[0]?.product.stage ? { progressiveStage: {
-      ...catalog.requirements[0].product.stage,
+    ...(product?.evolution ? { evolution: {
+      ...(product.stage ? { stageIndex: product.stage.index } : {}),
       startingPoint: options.stageStartingPoint ?? "unknown",
-      externalDependencyIds: [...new Set(catalog.requirements.flatMap(item => item.externalDependencyIds ?? []))],
+      externalDependencyIds,
+    } } : product?.stage ? { progressiveStage: {
+      ...product.stage,
+      startingPoint: options.stageStartingPoint ?? "unknown",
+      externalDependencyIds,
     } } : {}),
     ...(deps.grouper && catalog.requirements.length > 0 ? { groupingSource: "pending_llm" as const }
       : { grouping: featureGrouping.stats }), ...deps.runMetadata } });
@@ -1035,6 +1041,10 @@ function buildBuilderProjectContext(
     packet.requirements.flatMap((item) => item.dependencyIds),
   );
   const stage = first.product.stage;
+  const incrementalContext = {
+    startingPoint: startingPoint ?? "unknown",
+    externalPrerequisiteIds: [...new Set(packet.requirements.flatMap(item => item.externalDependencyIds ?? []))],
+  };
   return {
     product: first.product,
     ancestors: dedupeAncestors(
@@ -1043,10 +1053,12 @@ function buildBuilderProjectContext(
     satisfiedDependencies: catalog.requirements
       .filter((item) => dependencyIds.has(item.id) && implemented.has(item.id))
       .map((item) => ({ id: item.id, name: item.name, contract: item.text })),
-    ...(stage ? { progressiveStage: {
+    ...(first.product.evolution ? { evolution: {
+      ...incrementalContext,
+      ...(stage ? { stageIndex: stage.index } : {}),
+    } } : stage ? { progressiveStage: {
       ...stage,
-      startingPoint: startingPoint ?? "unknown",
-      externalPrerequisiteIds: [...new Set(packet.requirements.flatMap(item => item.externalDependencyIds ?? []))],
+      ...incrementalContext,
     } } : {}),
   };
 }

@@ -19,6 +19,8 @@ export interface ProductContext {
   rootName: string;
   description: string;
   seedData: SeedDataCategory[];
+  /** The selected requirement tree is an Evolution increment over an existing application. */
+  evolution?: true;
   /** Present when the selected requirement file is one increment of a progressive task. */
   stage?: {
     index: number;
@@ -39,7 +41,7 @@ export interface AtomicRequirement {
   name: string;
   text: string;
   dependencyIds: string[];
-  /** Dependencies supplied by an earlier stage and intentionally absent from this stage's tree. */
+  /** Earlier-increment dependencies intentionally absent from the selected requirement tree. */
   externalDependencyIds?: string[];
   scenarios: string[];
   /** Source scenario IDs and steps for outcome coverage; text remains available unchanged. */
@@ -81,7 +83,7 @@ export interface RequirementNode {
 
 export interface WorkPacket {
   prerequisites?: AtomicRequirement[];
-  /** Earlier-stage capabilities are context, not requirements audited in this packet. */
+  /** Earlier-increment capabilities are context, not requirements audited in this packet. */
   externalPrerequisiteIds?: string[];
   id: string;
   requirementIds: string[];
@@ -151,6 +153,8 @@ interface RunEventDetails {
     builderTimeoutMs?: number; plannerTimeoutMs?: number; builderContextWindow?: number;
     promptSha256?: string; probeSchemaSha256?: string;
     progressiveStage?: { index: number; currentStageTestsOnly: boolean;
+      startingPoint: "inherited_application" | "blank_template" | "unknown"; externalDependencyIds: string[] };
+    evolution?: { stageIndex?: number;
       startingPoint: "inherited_application" | "blank_template" | "unknown"; externalDependencyIds: string[] };
     starterScaffold?: { status: import("./starter-scaffold.js").StarterScaffoldStatus; reason: string; files: string[] };
     grouping?: GroupingStats; groupingSource?: "pending_llm" };

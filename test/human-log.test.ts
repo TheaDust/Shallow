@@ -122,6 +122,22 @@ test("HumanRunFormatter identifies progressive stage starting points", () => {
   assert.match(line, /分阶段任务 Stage 2（继承前序应用）/);
 });
 
+test("HumanRunFormatter identifies Evolution starting points and optional stages", () => {
+  for (const [startingPoint, expected] of [
+    ["inherited_application", "（继承已有应用）"],
+    ["blank_template", "（空白模板）"],
+    ["unknown", ""],
+  ]) {
+    for (const stageIndex of [undefined, 2]) {
+      const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-06T00:00:00Z", "pipeline_started", {
+        detail: { evolution: { startingPoint, externalDependencyIds: ["REQ-1"],
+          ...(stageIndex === undefined ? {} : { stageIndex }) } },
+      }));
+      assert.ok(line.endsWith(`增量开发 Evolution${stageIndex === undefined ? "" : " Stage 2"}${expected}`));
+    }
+  }
+});
+
 test("HumanRunFormatter reports candidate reuse, installation and preparation failures", () => {
   const formatter = new HumanRunFormatter();
   const built = formatLine(formatter, eventLine("2026-09-08T00:00:00Z", "candidate_prepared", {

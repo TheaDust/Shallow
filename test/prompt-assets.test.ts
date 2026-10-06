@@ -102,6 +102,11 @@ test("fixed system assets keep their Chinese anchors", () => {
     assert.ok(progressiveStage.includes(`{{${key}}}`));
   }
   assert.match(progressiveStage, /不是本轮单独验收的需求/);
+  const evolution = loadPrompt("system", "evolution-context");
+  for (const key of ["STAGE_CONTEXT", "STARTING_POINT", "EXTERNAL_PREREQUISITES"]) {
+    assert.ok(evolution.includes(`{{${key}}}`));
+  }
+  assert.match(evolution, /本工作包及当前需求树是本轮实现和验收范围/);
   const platform = loadPrompt("system", "platform-contract");
   assert.match(platform, /未设置时使用 3000/);
   assert.match(platform, /<main>/);

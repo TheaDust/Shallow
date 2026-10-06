@@ -196,6 +196,37 @@ test("Builder receives progressive-stage rules for inherited and blank starting 
   }
 });
 
+test("Evolution context reaches implementation and repair modes for each starting point", () => {
+  for (const [startingPoint, expected] of [
+    ["inherited_application", "已有应用"],
+    ["blank_template", "空白通用模板"],
+    ["unknown", "未明确；先检查项目目录判断是否已有应用"],
+  ] as const) {
+    for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
+      if (request.mode === "delivery_repair") throw new Error("unexpected mode");
+      request.projectContext.product.evolution = true;
+      request.projectContext.evolution = { startingPoint, externalPrerequisiteIds: ["REQ-1", "REQ-2"] };
+      const prompt = compileBuilderPrompt(request).taskPrompt;
+      assert.match(prompt, /## 增量开发上下文/);
+      assert.match(prompt, /当前任务：Evolution\n/);
+      assert.ok(prompt.includes(`本轮起点：${expected}`));
+      assert.match(prompt, /前序能力 ID：REQ-1、REQ-2/);
+      assert.match(prompt, /本工作包及当前需求树是本轮实现和验收范围/);
+      assert.match(prompt, /不是本轮单独验收的需求/);
+      if (startingPoint === "inherited_application") assert.match(prompt, /沿用现有技术栈、模型和接口/);
+      else if (startingPoint === "blank_template") assert.match(prompt, /最小必要的前序支撑能力/);
+      else assert.match(prompt, /先检查 frontend、backend、ARCHITECTURE\.md/);
+    }
+  }
+});
+
+test("Evolution context includes a declared stage as optional metadata", () => {
+  const request = implementRequest();
+  if (request.mode !== "implement") throw new Error("unexpected mode");
+  request.projectContext.evolution = { stageIndex: 2, startingPoint: "inherited_application", externalPrerequisiteIds: [] };
+  assert.match(compileBuilderPrompt(request).taskPrompt, /当前任务：Evolution；Stage 2/);
+});
+
 test("Every Builder mode includes the shared architecture handoff contract once", () => {
   const architectureNotes = loadPrompt("system", "architecture-notes");
   for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {

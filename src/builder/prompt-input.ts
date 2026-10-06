@@ -15,6 +15,11 @@ export interface BuilderProjectContext {
   product: ProductContext;
   ancestors: RequirementAncestor[];
   satisfiedDependencies: Array<{ id: string; name: string; contract: string }>;
+  evolution?: {
+    stageIndex?: number;
+    startingPoint: "inherited_application" | "blank_template" | "unknown";
+    externalPrerequisiteIds: string[];
+  };
   progressiveStage?: {
     index: number;
     currentStageTestsOnly: boolean;

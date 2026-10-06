@@ -146,7 +146,8 @@ function productContextSection(product: ProductContext): string {
 
 function projectContextSection(context: BuilderProjectContext): string {
   return [
-    ...(context.progressiveStage ? [progressiveStageSection(context.progressiveStage), ""] : []),
+    ...(context.evolution ? [evolutionSection(context.evolution), ""]
+      : context.progressiveStage ? [progressiveStageSection(context.progressiveStage), ""] : []),
     "当前功能路径：",
     context.ancestors.length > 0
       ? context.ancestors
@@ -169,6 +170,16 @@ function projectContextSection(context: BuilderProjectContext): string {
     "",
     "这些依赖已有可运行实现，功能仍以独立验收为准。复用现有代码；若阻碍本包需求，可按需求原文修正并在回执说明。",
   ].join("\n");
+}
+
+function evolutionSection(context: NonNullable<BuilderProjectContext["evolution"]>): string {
+  const inherited = context.startingPoint === "inherited_application";
+  return fillTemplate(loadPrompt("system", "evolution-context"), {
+    STAGE_CONTEXT: context.stageIndex === undefined ? "" : `；Stage ${context.stageIndex}`,
+    STARTING_POINT: inherited ? "已有应用"
+      : context.startingPoint === "blank_template" ? "空白通用模板" : "未明确；先检查项目目录判断是否已有应用",
+    EXTERNAL_PREREQUISITES: context.externalPrerequisiteIds.join("、") || "无",
+  });
 }
 
 function progressiveStageSection(stage: NonNullable<BuilderProjectContext["progressiveStage"]>): string {
