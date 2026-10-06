@@ -120,6 +120,11 @@ test("baseline system prompt mirrors the shared platform contract wording", asyn
     "身份或对象变化后重新校验",
     "后台继续校验每次读取和写入的权限",
     "用可控的未完成 Promise 延迟正文或列表响应",
+    "在本次实施计划中列出每个新场景实际依赖的既有前置",
+    "实施前用相关既有测试或最小公开交互逐项检查现状",
+    "断言目标对象、所需权限与初态，再执行新行为和全部结果",
+    "前置检查可以复用",
+    "未确认的前置在完成总结中说明",
   ]) {
     assert.ok(prompt.includes(anchor), anchor);
   }

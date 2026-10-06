@@ -103,7 +103,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   }
   assert.match(progressiveStage, /不是本轮单独验收的需求/);
   const evolution = loadPrompt("system", "evolution-context");
-  for (const key of ["STAGE_CONTEXT", "STARTING_POINT", "EXTERNAL_PREREQUISITES"]) {
+  for (const key of ["STAGE_CONTEXT", "STARTING_POINT", "EXTERNAL_PREREQUISITES", "STARTING_POINT_ACTION"]) {
     assert.ok(evolution.includes(`{{${key}}}`));
   }
   assert.match(evolution, /本工作包及当前需求树是本轮实现和验收范围/);
@@ -153,6 +153,10 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(selfTest, /先完成同一改动面的实现与测试/);
   assert.match(selfTest, /同一源码状态不重复全量测试、类型检查或构建/);
   assert.match(selfTest, /状态与集成检查按当前输入实际执行/);
+  assert.match(selfTest, /将实施计划中的既有前置纳入本包相关测试/);
+  assert.match(selfTest, /断言目标对象、所需权限与初态，再执行新行为和全部结果/);
+  assert.match(selfTest, /同一源码状态下.*前置检查可以复用/);
+  assert.match(selfTest, /未确认的前置在回执说明/);
   for (const anchor of ["传统测试", "独立浏览器检查", "不替代独立 Judge 验收", "保留种子数据", "SHALLOW_DATA_DIR", "白名单失败观测", "可访问名", "昂贵操作", "browser", "复杂或边界逻辑", "run_tests", "不要把每条场景原文机械复制"]) {
     assert.ok(selfTest.includes(anchor), anchor);
   }
@@ -161,6 +165,9 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /ARCHITECTURE\.md/);
   assert.match(implement, /先写计划，再写代码/);
   assert.match(implement, /实施计划/);
+  assert.match(implement, /每个新场景实际依赖的既有前置/);
+  assert.match(implement, /身份与权限、完整对象身份与初态、公开入口链路及所用接口/);
+  assert.match(implement, /缺口随本包局部补齐/);
   assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
   assert.match(implement, /遵守单文件规模与职责拆分约定/);
   assert.match(implement, /集中完成同一改动面的实现与测试/);

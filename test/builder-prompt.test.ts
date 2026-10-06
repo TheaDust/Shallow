@@ -97,6 +97,8 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /严格符合需求文档/);
   assert.match(compiled.taskPrompt, /覆盖本包每条需求和场景新增的具体约束/);
   assert.match(compiled.taskPrompt, /按需求 ID 和场景名或序号/);
+  assert.match(compiled.taskPrompt, /在同一实施计划中列出每个新场景实际依赖的既有前置/);
+  assert.match(compiled.taskPrompt, /实施前用相关既有测试或最小公开交互逐项检查现状/);
   assert.match(compiled.taskPrompt, /尚未实现或尚未验证的场景约束/);
   assert.match(compiled.taskPrompt, /完整业务链路/);
   assert.match(compiled.taskPrompt, /不要为某个示例数据/);
@@ -185,12 +187,15 @@ test("Builder receives progressive-stage rules for inherited and blank starting 
       startingPoint,
       externalPrerequisiteIds: ["REQ-1-1-2", "REQ-3-3"],
     };
-    const prompt = compileBuilderPrompt(request).taskPrompt;
+    const compiled = compileBuilderPrompt(request);
+    const prompt = compiled.taskPrompt;
     assert.match(prompt, /## 分阶段增量上下文/);
     assert.match(prompt, /当前阶段：Stage 3/);
     assert.ok(prompt.includes(`本轮起点：${expected}`));
     assert.match(prompt, /REQ-1-1-2、REQ-3-3/);
     assert.match(prompt, /不是本轮单独验收的需求/);
+    assert.ok(prompt.includes(loadPrompt("system", "action-implement")));
+    assert.ok(compiled.systemPrompt.includes(loadPrompt("system", "self-test")));
     if (startingPoint === "inherited_application") assert.match(prompt, /不换栈、不推倒重写/);
     else assert.match(prompt, /最小必要的前序支撑能力/);
   }
@@ -206,16 +211,46 @@ test("Evolution context reaches implementation and repair modes for each startin
       if (request.mode === "delivery_repair") throw new Error("unexpected mode");
       request.projectContext.product.evolution = true;
       request.projectContext.evolution = { startingPoint, externalPrerequisiteIds: ["REQ-1", "REQ-2"] };
-      const prompt = compileBuilderPrompt(request).taskPrompt;
+      const compiled = compileBuilderPrompt(request);
+      const prompt = compiled.taskPrompt;
       assert.match(prompt, /## 增量开发上下文/);
       assert.match(prompt, /当前任务：Evolution\n/);
       assert.ok(prompt.includes(`本轮起点：${expected}`));
       assert.match(prompt, /前序能力 ID：REQ-1、REQ-2/);
       assert.match(prompt, /本工作包及当前需求树是本轮实现和验收范围/);
       assert.match(prompt, /不是本轮单独验收的需求/);
+      assert.ok(compiled.systemPrompt.includes(loadPrompt("system", "self-test")));
+      assert.equal(prompt.includes(loadPrompt("system", "action-implement")), request.mode === "implement");
       if (startingPoint === "inherited_application") assert.match(prompt, /沿用现有技术栈、模型和接口/);
       else if (startingPoint === "blank_template") assert.match(prompt, /最小必要的前序支撑能力/);
       else assert.match(prompt, /先检查 frontend、backend、ARCHITECTURE\.md/);
+    }
+  }
+});
+
+test("Evolution and progressive stages share starting-point actions across implementation and repair", () => {
+  for (const [startingPoint, assetName] of [
+    ["inherited_application", "incremental-start-inherited"],
+    ["blank_template", "incremental-start-blank"],
+    ["unknown", "incremental-start-unknown"],
+  ] as const) {
+    for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
+      if (request.mode === "delivery_repair") throw new Error("unexpected mode");
+      request.projectContext.progressiveStage = { index: 2, currentStageTestsOnly: true, startingPoint, externalPrerequisiteIds: [] };
+      const stagePrompt = compileBuilderPrompt(request).taskPrompt;
+      request.projectContext.evolution = { stageIndex: 2, startingPoint, externalPrerequisiteIds: [] };
+      const evolutionPrompt = compileBuilderPrompt(request).taskPrompt;
+      const action = loadPrompt("system", assetName);
+      assert.equal(stagePrompt.split(action).length, 2);
+      assert.equal(evolutionPrompt.split(action).length, 2);
+      assert.match(evolutionPrompt, /当前任务：Evolution；Stage 2/);
+      assert.doesNotMatch(evolutionPrompt, /## 分阶段增量上下文/);
+      for (const other of ["incremental-start-inherited", "incremental-start-blank", "incremental-start-unknown"]) {
+        if (other !== assetName) {
+          assert.ok(!stagePrompt.includes(loadPrompt("system", other)));
+          assert.ok(!evolutionPrompt.includes(loadPrompt("system", other)));
+        }
+      }
     }
   }
 });

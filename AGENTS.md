@@ -53,6 +53,7 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/seed-data.md           顶层 data 的种子数据段模板
   system/progressive-stage-context.md  分阶段任务起点、前序外部依赖与增量/空模板实施边界
   system/evolution-context.md    Evolution 增量任务起点、前序外部依赖与当前需求树的实现/验收边界
+  system/incremental-start-*.md  Evolution 与分阶段任务共用的 inherited/blank/unknown 三态起点动作
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
   judge/probe-planner.md        Judge Planner 计划生成系统提示词（中文）
@@ -196,7 +197,7 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 题目换成 `data/official-competition/hackathon--github` 即跑另一道题。网关三变量在 `.env`；`ARCBENCH_*` 环境变量不读 `.env`（Python 层只看真实环境），但本地缺省目录已内置，无需显式传 `--output-dir`。
 
 - requirements 文件固定为 `<requirements-dir>/requirements.yaml`，缺失即报错。
-- 增量任务按根名称中的独立 `Evolution` 标记（大小写不敏感）或末尾的 `Stage N`、`Phase N`、`第 N 阶段` 识别。Evolution 及 Stage 2 以后允许引用当前树外的前序需求 ID；它们只作上下文，本轮调度、ARC 覆盖和 Judge requirementIds 均取当前 YAML。已有应用上增量修改；空模板只补当前场景需要的最小前序支撑。阶段编号独立保留，产品分类先移除增量标记。详见 `docs/2026-10-02-progressive-stage-support.md`。
+- 增量任务按根名称中用连字符/破折号/冒号分隔的完整 `Evolution` 段或括号标签识别（大小写不敏感，标签可带数字编号），如 `GitHub - Evolution`、`Evolution - GitHub`、`GitHub (Evolution)`；阶段任务按末尾的 `Stage N`、`Phase N`、`第 N 阶段` 识别。Evolution 及 Stage 2 以后允许引用当前树外的前序 ID，只作上下文，本轮调度、ARC 覆盖和 Judge requirementIds 均取当前 YAML。两种入口共用三态起点动作；已有应用上增量修改，空模板只补当前场景需要的最小支撑。两种标记并存时使用 Evolution 上下文，保留阶段元数据。详见 `docs/2026-10-02-progressive-stage-support.md`。
 - 平台合同（ARC-Bench）：目标应用 `frontend/` + `backend/` 目录（npm install/build/start），backend 必须读 `PORT` 环境变量（缺省 3000）并在监听 PORT 的同时额外监听 `PlatformContract.extraPorts`（由 `ARCBENCH_TESTS_DIR` 的验收 spec 发现，排除评测端口；无 spec 时回退 `[3301]`；部分题目验收测试把目标地址硬编码为 `http://127.0.0.1:3301`），暴露 `/health` 与 `/api/health`；Windows 上自动用 `npm.cmd`（经 `src/process-spawn.ts`）。探针端口会避开评测端口与发现到的额外端口；探针/候选启动传 `ARC_EXTRA_PORTS=0` 跳过额外端口；交付验证额外执行 `verifyGraderLikeStart`，只设 `PORT` 以复现评测条件（额外端口必须绑定，未知路径必须响应且进程不退出），完成后释放端口并复查候选摘要。
 - 输出目录必须是 git 仓库根（`GitCliOps.open` 会 init 或校验）；仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
 - 主线在 `GitCliOps.open` 之后、第一次 accepted 基线提交之前，仅对没有应用代码的输出仓库安装 `scaffold/minimal-web/`。脚手架只含 React/Vite/TypeScript 空入口、锁定依赖、测试环境、通用 Hash URL/JSON 请求/原子文件存储工具、零依赖后端、健康检查、多端口监听和静态文件服务；工具默认不接入空白应用，不含题目名称、业务菜单、API 路由、数据模型或视觉组件。已有 `frontend/` + `backend/` 或其他项目文件时不得覆盖。baseline 不安装该脚手架。

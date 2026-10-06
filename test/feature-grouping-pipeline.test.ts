@@ -84,6 +84,8 @@ test("Evolution increments schedule and audit only current requirements with inh
         ...(stageIndex === undefined ? {} : { stageIndex }),
       });
       assert.equal(request.projectContext.progressiveStage, undefined);
+      assert.deepEqual(request.projectContext.product.stage,
+        stageIndex === undefined ? undefined : { index: stageIndex, currentStageTestsOnly: true });
       const started = (await f.events()).find(event => event.type === "pipeline_started");
       assert.deepEqual(started?.detail?.evolution, {
         startingPoint: "inherited_application", externalDependencyIds: ["REQ-1"],

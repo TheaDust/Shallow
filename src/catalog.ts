@@ -38,8 +38,9 @@ export async function loadRequirementCatalog(
   const root = parseNode(record, "root");
   const nodes = new Map<string, ParsedNode>();
   collectNodes(root, nodes);
-  const evolution = /\bevolution\b/i.test(root.name);
-  const productName = evolution ? stripEvolutionMarker(root.name) : root.name;
+  const evolutionProductName = stripEvolutionMarker(root.name);
+  const evolution = evolutionProductName !== undefined;
+  const productName = evolutionProductName ?? root.name;
   const stage = parseProgressiveStage(productName);
   validateDependencies(nodes, evolution || (stage?.index ?? 0) > 1);
 
@@ -117,8 +118,10 @@ function stripProgressiveStageSuffix(rootName: string): string {
   return match ? rootName.slice(0, match.index).trim() : rootName.trim();
 }
 
-function stripEvolutionMarker(rootName: string): string {
-  return rootName.replace(/\bevolution\b(?:\s+\d+)?/gi, "")
+function stripEvolutionMarker(rootName: string): string | undefined {
+  const productName = rootName.replace(/\(\s*evolution(?:\s+\d+)?\s*\)|\[\s*evolution(?:\s+\d+)?\s*\]|(?:^|[-–—:：])\s*evolution(?:\s+\d+)?(?=\s*(?:$|[-–—:：]))/gi, "");
+  if (productName === rootName) return undefined;
+  return productName
     .replace(/^[\s\-–—:：()\[\]]+|[\s\-–—:：()\[\]]+$/g, "")
     .replace(/\s+/g, " ");
 }

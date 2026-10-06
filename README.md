@@ -52,7 +52,7 @@ Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网
 
 `delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
-增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮新增需求。根名称中的独立 `Evolution` 标记（大小写不敏感，例如 `GitHub - Evolution`）会启用增量上下文，并允许 `dependencies` 引用本轮 YAML 未包含的前序 ID；编号可以继续递增。已有的 `Stage N`、`Phase N` 和 `第 N 阶段` 入口继续生效，阶段编号也可与 Evolution 并存。实现、验收及 `delivered` 判定均以当前 YAML 为范围；旧功能通过既有代码和开发检查维护。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
+增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮新增需求。根名称中用连字符/破折号/冒号分隔的完整 `Evolution` 段或括号标签会启用增量上下文，如 `GitHub - Evolution`、`Evolution - GitHub`、`GitHub (Evolution)`（大小写不敏感，支持标签后的数字编号）；`dependencies` 可引用本轮 YAML 未包含的前序 ID，需求编号可以继续递增。已有的 `Stage N`、`Phase N` 和 `第 N 阶段` 入口继续生效，两种标记并存时使用 Evolution 上下文并保留阶段元数据。两种入口共用三态起点动作。实现、验收及 `delivered` 判定均以当前 YAML 为范围；旧功能通过既有代码和开发检查维护。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
 
 ## Raw Pi baseline
 

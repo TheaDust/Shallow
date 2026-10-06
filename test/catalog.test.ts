@@ -152,11 +152,15 @@ test("Catalog recognises Evolution increments and preserves product classificati
     ["Evolution - GitHub", "repository_collaboration", undefined],
     ["GitHub - eVoLuTiOn 2", "repository_collaboration", undefined],
     ["GitHub (Evolution)", "repository_collaboration", undefined],
+    ["GitHub [Evolution]", "repository_collaboration", undefined],
+    ["Evolution 2 - GitHub", "repository_collaboration", undefined],
+    ["GitHub：Evolution", "repository_collaboration", undefined],
     ["GitHub Collaboration Platform Core Requirements - Evolution", "repository_collaboration", undefined],
     ["Core Requirements for an Online Spreadsheet Data Workspace - Evolution", "spreadsheet", undefined],
     ["Inventory Workspace - Evolution", "generic_web", undefined],
     ["GitHub - Evolution - Stage 2", "repository_collaboration", 2],
     ["GitHub - Stage 2 - Evolution", "repository_collaboration", 2],
+    ["GitHub (Evolution) - Phase 3", "repository_collaboration", 3],
   ] as const) {
     await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
       { id: "REQ-3", name: "New area", type: "FOLDER", dependencies: ["REQ-1"], children: [
@@ -180,13 +184,29 @@ test("Catalog recognises Evolution increments and preserves product classificati
 });
 
 test("Catalog requires an explicit root Evolution marker to accept prior-increment IDs", async () => {
-  for (const name of ["Inventory Workspace", "Evolutionary Workspace"]) {
+  for (const name of ["Inventory Workspace", "Evolutionary Workspace", "Pet Evolution Tracker", "Evolution CRM",
+    "GitHub Evolution", "Pet - Evolution Tracker", "GitHub (Evolution CRM)"]) {
+    await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
+      { id: "REQ-99", name: "Evolution controls", type: "ATOMIC", description: "Display records." },
+    ] }), async file => {
+      const { requirements: [requirement] } = await loadRequirementCatalog(file);
+      assert.equal(requirement.product.evolution, undefined);
+      assert.equal(requirement.product.rootName, name);
+    });
     await withYaml(JSON.stringify({ id: "ROOT", name, type: "FOLDER", children: [
       { id: "REQ-99", name: "Evolution controls", type: "ATOMIC", dependencies: ["REQ-1"], description: "Display records." },
     ] }), async file => {
       await assert.rejects(loadRequirementCatalog(file), /Unknown dependency REQ-1/);
     });
   }
+});
+
+test("Ordinary Evolution product names keep Stage 1 unknown-dependency validation", async () => {
+  await withYaml(JSON.stringify({ id: "ROOT", name: "Pet Evolution Tracker - Stage 1", type: "FOLDER", children: [
+    { id: "REQ-99", name: "Current feature", type: "ATOMIC", dependencies: ["TYPO-OLD-ID"], description: "Display records." },
+  ] }), async file => {
+    await assert.rejects(loadRequirementCatalog(file), /Unknown dependency TYPO-OLD-ID/);
+  });
 });
 
 test("Evolution increments still reject cycles between current requirements", async () => {
