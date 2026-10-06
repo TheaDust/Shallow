@@ -106,7 +106,7 @@ test("Inherited plans cannot substitute for fresh audits of updated and new requ
     await writeFile(f.options.requirementsFile, JSON.stringify({
       id: "ROOT", name: "GitHub", type: "FOLDER", children: [
         { id: "AREA", name: "Current area", type: "FOLDER", children: [
-          { id: "OLD", name: "Updated feature", type: "ATOMIC", description: "Display the updated workspace." },
+          { id: "OLD", name: "Updated feature", type: "ATOMIC", description: "Original Feature Description\n\nDisplay the old workspace.\n\nModified Feature Description\n\nDisplay the updated workspace." },
           { id: "NEW", name: "New feature", type: "ATOMIC", description: "Display the new feature." },
         ] },
       ],

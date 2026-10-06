@@ -52,7 +52,7 @@ prompts/                        Prompt 资产（system/、fragments/ 为 Builder
   system/platform-extra-ports.md 额外端口合同段：公共兼容端口（{{EXTRA_PORTS}}）双重监听要求
   system/seed-data.md           顶层 data 的种子数据段模板
   system/progressive-stage-context.md  分阶段任务起点、前序外部依赖与增量/空模板实施边界
-  system/evolution-context.md    Evolution 增量任务起点、前序外部依赖与当前需求树的实现/验收边界
+  system/evolution-*.md          Evolution 增量起点、筛选后的初次实现范围与当前需求树的验收边界
   system/incremental-start-*.md  Evolution 与分阶段任务共用的 inherited/blank/unknown 三态起点动作
   system/reference-images*.md   图片附件说明与模型拒图后的纯文本说明
   fragments/*.md                产品域实现规则碎片；由词典选择（见 prompt-fragments.ts）
@@ -68,6 +68,7 @@ src/
                                 （保留 Seed data、Seed values、evaluation seed 来源的摘录）；校验 ID 和依赖；识别 Evolution 标记、继承应用上下文及通用阶段后缀，
                                 当前树外的前序依赖单列为 externalDependencyIds（Evolution/Stage 2 以后允许；其余仍严格拒绝未知依赖）
   scheduler.ts                  featureGroupPackets：确定性有界功能组（同父目录→同 ROOT 子树扩展、依赖亲和 tie-break、4 条/12 场景/20k 字符阈值封口、单条超限独立成组、内置唯一覆盖与依赖序验证、GroupingStats 落账）；auditPackets：逐原子验收及当前树内前置需求文字上下文，前序阶段外部依赖只作上下文、不阻塞或进入当前阶段覆盖
+  evolution.ts                  冻结历史 plan 的 case.requirementIds；按明确修改段筛选初次实现范围，分组视图保留穿过沿用项的待实现依赖
   feature-grouper.ts            FeatureGrouper port、响应 schema 与 parseFeatureGrouping；复用 scheduler 校验并恢复原始 Catalog 对象
   llm-feature-grouper.ts         启动语义分组及一次错误反馈重试：模块→原子 ID 归属表、完整描述/依赖/容量数据，省略场景正文；首次 64k 输出、
                                 截断重试 128k；解释不作为行为合同
@@ -207,15 +208,15 @@ npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon
 - 产物可见诊断 `shallow-progress/`：进度日志 `progress.log`（与 run-log 同源的中文行）+ `plans/<packetId>.json`（完整 ProbePlan）。平台会按 `.gitignore` 过滤交付包且专门隐藏 `.arc`，所以它**故意不 ignore**——靠它是"未 ignore 的 untracked"来同时被平台打包、又不进 git 历史：`captureAccepted` 用 `:(top,exclude)shallow-progress` 排除、`restorableInputDigest` 按路径跳过、回滚 `restore`/`clean` 排除（与 `.arc` 同等待遇）。它含隐藏计划，`pi-tools.ts` 对该目录与 `.arc` 一并屏蔽。
 - 运行事件经 `RunStateStore.record` 统一发射并注入运行/事件 ID、序号、耗时和接受基线；新增事件同步 `types.ts` 的判别联合与 `human-log.ts` 中文文案。Planner `contentPreview` 仅写私有 ledger；Builder 回执属于内部自述诊断。Planner 每次 LLM 调用的 token 用量以 `probe_planner_usage` 事件记录（操作类型与入/出/缓存读/缓存写/总计，由 `llm-probe-planner.ts` 解析流式 usage 尾包或非流式 `usage`；只含数量，不含响应内容。缓存写非零时中文日志才输出该项，保证打印的各项与总计自洽；Builder 汇总与该行共用 `human-log.ts` 的 `tokenUsageParts`）。
 - 修改脱敏、证据或 ARC 投影时，先读 `docs/2026-09-07-observability-arc-projection.md`：官方固定提交与字段、投影重建范围和安全限制均在此。验证 `test/observability.test.ts`、`test/arc-protocol.test.ts`、`test/human-log.test.ts`、`test/pipeline.e2e.test.ts`；目录链接检查不代表 OS 隔离。
-- `RunSummary.delivered` 要求当前交付版本全部原子需求 verified 且最终验证通过；todo/blocked/failed/inconclusive 均为 partial。implementedRequirementIds 表示模块完成且构建/启动检查通过，不代表功能正确。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
+- `RunSummary.delivered` 要求当前交付版本全部原子需求 verified 且最终验证通过；todo/blocked/failed/inconclusive 均为 partial。implementedRequirementIds 表示需求已完成实现，或从继承应用采纳，且通过构建/启动检查，不代表功能正确。未接受的交付修复与异常退出都回滚；`pipeline_finished` 记录汇总及待处理 ID。
 - 回滚不再移动 HEAD：`restore --source <acceptedSha> --staged --worktree -- . :(top,exclude).arc :(top,exclude)shallow-progress` 同步索引与工作区（会删除被拒尝试引入的源码文件），`clean -fd -e .arc/ -e shallow-progress/` 清掉未跟踪残留，然后以 `--allow-empty` 提交一个恢复提交。失败尝试保留在历史中永远可达，`.arc` 保留包括失败在内的完整审计记录。
 
 ## 架构不变量
 
 管线：`catalog → 功能组实现 → 可运行检查点 → 模块边界验收与就地修复 → 最终全量验收（只检测） → 最终交付`；`src/arc-protocol.ts` 并行维护平台 `.arc/` 事件流与溯源表。
 
-1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。主线不探测或读取官方测试目录，端口只取公共合同。继承的 `shallow-progress` 计划对 Builder 屏蔽，仅为历史镜像；Judge 读取本轮私有缓存，按当前需求重新规划和执行，不将旧计划或旧通过结果提升为本轮 verified。
-2. **功能组实现**：主线在实现前正常调用一次 LLM 从本次 Catalog 生成有序功能组。分组输入保留完整需求描述、公共产品/祖先合同、目录、显式依赖、原始场景数和字符数，省略场景正文；Builder/Judge 仍接收完整场景。程序校验全部 ID 唯一覆盖、依赖序、单 ROOT 模块和 4 条/12 场景/20,000 字符上限，单条超限完整独立保留；分组目的只作诊断。JSON、响应或分组无效时携带具体原因重试一次；模型输出截断时扩大输出额度。两次失败或鉴权/请求拒绝后才使用确定性分组（同父目录优先、依赖亲和与声明序 tie-break），记录底层原因与尝试次数。网关恢复使用共享 Planner 并发池；无总预算时持续等待在途响应，正预算计入实现阶段。组不跨模块合并，允许按依赖离开后再回来补齐。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；其他依赖已有可运行检查点时放行，尚未 verified 则记录 `dependency_gate_provisional`，最终交付仍须完整验收。依赖尚无已完成的可运行实现时阻塞下游 Builder 和探针预规划。
+1. **信息防火墙**：Planner/Runner 不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子数据、图片及白名单失败观测。主线不探测或读取官方测试目录，端口只取公共合同。继承的 `shallow-progress` 计划对 Builder 屏蔽；控制器启动时仅读取其中需求 ID 作增量调度，Judge 读取本轮私有缓存，按当前需求重新规划和执行，不将旧计划或旧通过结果提升为本轮 verified。
+2. **功能组实现**：主线在实现前正常调用一次 LLM 从非空的待实现 Catalog 视图生成有序功能组。Evolution 继承应用通过可运行检查后，仅初次实现新增/历史记录缺失项及带 Original/Modified Feature Description 段的修改项；沿用项仍进入模块边界和最终验收，分类与安全边界见 `docs/2026-10-02-progressive-stage-support.md`。分组输入保留完整需求描述、公共产品/祖先合同、目录、待实现依赖、原始场景数和字符数，省略场景正文；Builder/Judge 仍接收完整场景。程序校验待实现 ID 唯一覆盖、依赖序、单 ROOT 模块和 4 条/12 场景/20,000 字符上限，单条超限完整独立保留；分组目的只作诊断。JSON、响应或分组无效时携带具体原因重试一次；模型输出截断时扩大输出额度。两次失败或鉴权/请求拒绝后才使用确定性分组（同父目录优先、依赖亲和与声明序 tie-break），记录底层原因与尝试次数。网关恢复使用共享 Planner 并发池；无总预算时持续等待在途响应，正预算计入实现阶段。组不跨模块合并，允许按依赖离开后再回来补齐。实现阶段每个工作包从全新会话开始；正常回执后安装/构建/启动检查失败时，同包最多续接一次，共用原调用截止时间；跨包交接只经项目文件（代码、测试、ARCHITECTURE.md）。组内及当前尚未验收模块内的依赖不阻塞实现；其他依赖已有可运行检查点时放行，尚未 verified 则记录 `dependency_gate_provisional`，最终交付仍须完整验收。依赖尚无已完成的可运行实现时阻塞下游 Builder 和探针预规划。
 3. **检查点与验收分离**：`captureAccepted` 现在保存通过安装、构建、启动及候选一致性检查的可运行版本。只有独立探针通过才记 `verified`。Planner/定位/浏览器故障记 `inconclusive`，保留代码。Builder 普通失败先保存尝试再实测：仅在相对接受基线有实际应用改动且代码可运行时 rescue；没有改动或无法运行则恢复并标 blocked。实现超时或终态不完整时，以新会话续做同包一次（至多 45min，受实现阶段剩余预算限制）；中断代码须通过可运行检查和已有通过路径复验才保存为空需求检查点。复合包首次调用若因上下文 `overflow` 耗尽截止时间，且该次 overflow 压缩之后没有任何新的工具调用，在保留检查点后直接按原顺序拆为原子包；压缩后仍在推进的包属于墙钟耗尽，仍走整包续做。其他复合包续做后仍未完成时再拆分。拆出的原子包按首次实现对待：原调用上限加一次新会话续做（至多 45min），原子仍失败才标 blocked，不记 implemented。混合依赖包同样拆开执行依赖已就绪的成员，两类成员调度待遇一致，`implementation_split.kind` 区分 recovery 与 dependency。网关失败单独恢复：中断代码可保存为检查点，控制器持续重试直到网关恢复或阶段预算耗尽。被拒尝试保留在历史中。
 4. **模块边界验收与修复**：每个模块（ROOT 子树）实现完毕后执行模块边界验收。实现阶段后台生成探针计划，Builder 完成后先保存可运行检查点；模块边界验收前收敛该模块的预规划任务，再读取有效缓存（见 `src/judge/plan-cache.ts`）。发现可复现业务失败，或经需求复核确认合理的准备/控件缺口在两次新应用实例中于同一步重现时触发模块边界修复（后者仍记 inconclusive，`repairableProbeFailure` 只授予诊断机会；控件缺口还须有成功交互与需求明示名称，strict 歧义不触发修复）。每个模块独立拥有至多两轮修复配额（`boundaryRepairCount` 在切换模块时重置）。模块边界同时复查当前需求的已 verified 传递前置需求，复用缓存计划。其他已 verified 模块各抽查一条缓存的种子成功入口；抽查不授予整条需求通过，未通过则完整复核该需求并纳入当前边界修复，修复后也保护这些入口；修复轮数不增加。修复优先保护既有 verified 和失败需求中已通过的 case；新增通过 case 须在新应用实例中确认，合理且重复的准备/控件缺口推进到后续已复现失败也可作为局部改善保留并继续下一轮。待测行为、输入与结果须保持一致。确认回归或无独立改善时恢复原检查点并停止；守卫无法判定时先用新实例重试并继续目标复验，普通守卫仍无法判定则降级 inconclusive，共享种子身份或前置路径守卫必须确认后才接受候选；局部改善仍保留原子级 failed/inconclusive。修复统一在模块边界就地发生，没有末尾集中修复。
 5. **最终验收（只检测）**：所有模块实现完毕后执行最终全量验收，重跑缓存计划、优先复查已通过路径，只发布结果不发起修复——late consolidated repair 的巨型包与全量重审代价高于收益，failed 直接计入交付状态。纯业务失败仍须在新应用实例中复现才可记 failed。只检测的最终审计与交付修复后的重审都跳过定位精化（仍完整执行探针），精化只在会触发修复的模块边界审计里进行。

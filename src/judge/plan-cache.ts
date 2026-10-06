@@ -25,7 +25,7 @@ export class PlanCache {
 
   constructor(
     runDirectory: string,
-    /** Write-only product mirror. Inherited plans lack requirement provenance
+    /** Write-only product mirror. Inherited plans lack current contract versions
      * and must never bootstrap this run's private cache. */
     private readonly mirrorDirectory?: string,
   ) {

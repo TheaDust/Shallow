@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -17,6 +17,7 @@ import {
   type ArcScenarioRow,
 } from "./arc-protocol.js";
 import { loadRequirementCatalog } from "./catalog.js";
+import { evolutionImplementationCatalog, readHistoricalPlanIds, selectEvolutionScope } from "./evolution.js";
 import type { GitOps } from "./git-ops.js";
 import type {
   FinalVerificationReport,
@@ -32,7 +33,7 @@ import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.j
 import { groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, shouldWritePlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
-import { progressPlansDirectory } from "./progress-journal.js";
+import { PROGRESS_DIR_NAME, progressPlansDirectory } from "./progress-journal.js";
 import { memorySnapshot } from "./memory-snapshot.js";
 import { ExecutionFault } from "./execution-fault.js";
 import { GatewayRequestError } from "./gateway-failure.js";
@@ -137,12 +138,19 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   const catalog = await loadRequirementCatalog(options.requirementsFile, {
     inheritedApplication: options.stageStartingPoint === "inherited_application",
   });
+  // Freeze provenance before any current plan can overwrite the product mirror.
+  const historicalPlans = options.stageStartingPoint === "inherited_application" && catalog.requirements[0]?.product.evolution
+    ? await readHistoricalPlanIds(progressPlansDirectory(options.progressDir ?? join(options.outputDir, PROGRESS_DIR_NAME)))
+    : undefined;
+  const evolutionScope = historicalPlans ? selectEvolutionScope(catalog, historicalPlans.requirementIds) : undefined;
   const startedAt = deps.clock.nowMs();
   const budget = new RunBudget(options.totalBudgetMs, startedAt, () => deps.clock.nowMs());
   const state = new RunStateStore({ statusByRequirementId: catalog.statusById,
     acceptedSha: await deps.git.captureAccepted("shallow: initial state"), startedAtMs: startedAt,
     totalBudgetMs: options.totalBudgetMs }, options.ledgerFile, deps.logSink ?? null, deps.diagnosticSecrets);
   const implemented = new Set<string>();
+  const inherited = new Set<string>();
+  let implementationCatalog: RequirementCatalog = catalog;
   const packets = auditPackets(catalog);
   let featureGrouping = featureGroupPackets(catalog);
   const requirementById = new Map(catalog.requirements.map(item => [item.id, item]));
@@ -198,6 +206,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     return { unmet: decided.filter(item => !implemented.has(item.id)),
       provisional: decided.filter(item => implemented.has(item.id) && item.status !== "verified").map(item => item.id) };
   };
+  const auditEligible = (packet: WorkPacket): boolean =>
+    packet.requirementIds.every(id => implemented.has(id)) && [...dependencyClosure(packet.requirementIds)].every(id => implemented.has(id));
+  const builderProjectContext = (packet: WorkPacket): BuilderProjectContext =>
+    buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint, inherited);
   gateway.setRecorder(({ packetId, ...detail }) => state.record({ at: now(), type: "gateway_wait", packetId, detail }));
   const planner = deps.planner;
   const plannerWindow = (): (() => number) => {
@@ -383,7 +395,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       (name === "audit" ? Number(!previous.get(b.id)?.plan) - Number(!previous.get(a.id)?.plan) : 0) ||
       Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
     for (const packet of ordered) {
-      if (!packet.requirementIds.every(id => implemented.has(id))) continue;
+      if (!auditEligible(packet)) continue;
       const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
       const result = budget.remaining(name) <= 0
         ? { status: "inconclusive" as const, failureKind: "budget" as const, plan: cached, reason: "audit phase budget exhausted" }
@@ -458,7 +470,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
     }
     const ordered = [...targetPackets]
-      .filter(packet => packet.requirementIds.every(id => implemented.has(id)))
+      .filter(auditEligible)
       .sort((a, b) => Number(results.get(b.id)?.status === "verified") - Number(results.get(a.id)?.status === "verified"));
     const boundaryResults = new Map<string, AuditResult>();
     while (ordered.length > 0) {
@@ -510,7 +522,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
       const repairTimeoutMs = Math.max(1, Math.floor(Math.min(BOUNDARY_REPAIR_CALL_CEILING_MS, budget.remaining("repair") / 2)));
-      let repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented, options.stageStartingPoint),
+      let repairResult = await build({ mode: "repair", packet: repairPacket, projectContext: builderProjectContext(repairPacket),
         outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs });
       // Same recovery rule as implementation: an outage postpones the repair
@@ -518,7 +530,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       repairResult = await resumeGatewayWork(repairResult,
         failure => state.record({ at: now(), type: "repair_paused", packetId: repairPacket.id,
           detail: { requirementIds: repairPacket.requirementIds, failure } }),
-        () => build({ mode: "repair", packet: repairPacket, projectContext: buildBuilderProjectContext(repairPacket, catalog, implemented, options.stageStartingPoint),
+        () => build({ mode: "repair", packet: repairPacket, projectContext: builderProjectContext(repairPacket),
           outputDir: options.outputDir, platformContract: options.platformContract, shadowObservation: observation },
         "repair", { timeoutMs: repairTimeoutMs }));
       let reason = repairResult.outcome === "completed" ? "" : repairResult.summary || repairResult.outcome;
@@ -705,10 +717,43 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   try {
     await phase("implementation");
-    if (deps.grouper && catalog.requirements.length > 0) {
+    if (evolutionScope && historicalPlans) {
+      let reason: string | undefined;
+      let ready = false;
+      let candidate: CandidateEvidence | undefined;
+      if (evolutionScope.inheritedRequirementIds.length > 0) {
+        if (budget.remaining("implementation") <= 0) reason = "继承应用尚未通过可运行检查：实现阶段预算耗尽";
+        else {
+          try { candidate = await runnable(); ready = true; }
+          catch (error) {
+            if (error instanceof ExecutionFault) throw error;
+            reason = sanitizeDiagnosticText(`继承应用无法运行，恢复全量实现：${errorMessage(error)}`, deps.diagnosticSecrets);
+          }
+        }
+      }
+      if (ready) {
+        await checkpoint(evolutionScope.inheritedRequirementIds, "inherited application", candidate);
+        for (const id of evolutionScope.inheritedRequirementIds) {
+          inherited.add(id);
+          implemented.add(id);
+          await emitArc(deps, state, arc => arc.requirementState(id, "design", "running"));
+          await emitArc(deps, state, arc => arc.requirementState(id, "design", "completed"));
+          await emitArc(deps, state, arc => arc.requirementState(id, "implement", "running"));
+          await emitArc(deps, state, arc => arc.requirementState(id, "implement", "completed"));
+        }
+      }
+      implementationCatalog = evolutionImplementationCatalog(catalog, inherited);
+      featureGrouping = featureGroupPackets(implementationCatalog);
+      await state.record({ at: now(), type: "evolution_scope_selected", detail: {
+        historicalPlans: historicalPlans.plans, ignoredPlans: historicalPlans.ignoredPlans,
+        addedRequirementIds: evolutionScope.addedRequirementIds, changedRequirementIds: evolutionScope.changedRequirementIds,
+        inheritedRequirementIds: [...inherited], implementationRequirementIds: implementationCatalog.requirements.map(item => item.id), reason,
+      } });
+    }
+    if (deps.grouper && implementationCatalog.requirements.length > 0) {
       const groupingStarted = deps.clock.nowMs();
       await state.record({ at: now(), type: "feature_grouping_started", detail: {
-        requirements: catalog.requirements.length, limits: DEFAULT_FEATURE_GROUP_THRESHOLDS } });
+        requirements: implementationCatalog.requirements.length, limits: DEFAULT_FEATURE_GROUP_THRESHOLDS } });
       let source: "llm" | "deterministic" = "deterministic";
       let reason: string | undefined;
       let feedback: { validationError: string; cutOffByModel: boolean } | undefined;
@@ -720,10 +765,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         try {
           // Pending responses wait within the run budget; transport recovery is shared.
           const proposal = await gateway.run("planner", "feature-grouping", remaining,
-            () => deps.grouper!.group(catalog, { timeoutMs: Math.max(1, remaining()), signal: preplanAbort.signal,
+            () => deps.grouper!.group(implementationCatalog, { timeoutMs: Math.max(1, remaining()), signal: preplanAbort.signal,
               feedback, onUsage: usage => state.record({ at: now(), type: "feature_grouping_usage", detail: { ...usage, attempt } }) }),
             preplanAbort.signal);
-          featureGrouping = parseFeatureGrouping(proposal, catalog);
+          featureGrouping = parseFeatureGrouping(proposal, implementationCatalog);
           source = "llm"; reason = undefined;
           break;
         } catch (error) {
@@ -745,7 +790,21 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     }
     let previousModuleId: string | undefined;
     const pendingModuleAudit: { packetIds: string[]; moduleId: string } = { packetIds: [], moduleId: "" };
-    const implementationQueue = [...featureGrouping.packets];
+    const collectInheritedAudits = (): Map<string, string[]> => {
+      const modules = new Map<string, string[]>();
+      for (const packet of packets) {
+        if (!packet.requirementIds.every(id => inherited.has(id)) || results.has(packet.id)) continue;
+        const moduleId = packet.requirements[0].folderPath[1] ?? packet.requirements[0].id;
+        const ids = modules.get(moduleId) ?? [];
+        ids.push(packet.id);
+        modules.set(moduleId, ids);
+      }
+      return modules;
+    };
+    const inheritedAuditsByModule = collectInheritedAudits();
+    // Scheduling may bypass inherited nodes; restore the original contracts for Builder.
+    const implementationQueue = featureGrouping.packets.map(packet =>
+      makePacket(packet.id, packet.requirementIds.map(id => requirementById.get(id)!), packet.attempt));
     // A split-out atom is a first implementation of its own requirement: the
     // unfinished package it came from never delivered it, so the atom keeps the
     // first-attempt window plus one bounded continuation. Only "dependency"
@@ -768,11 +827,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (budget.remaining("implementation") <= 0 || gateway.exhausted) break;
       const currentModuleId = packet.requirements[0]?.folderPath[1] ?? packet.requirements[0]?.id;
       // Module boundary: run full audit on the previous module before starting the next one.
-      if (previousModuleId !== undefined && currentModuleId !== previousModuleId && pendingModuleAudit.packetIds.length > 0) {
+      if (currentModuleId !== pendingModuleAudit.moduleId && pendingModuleAudit.packetIds.length > 0) {
         await runModuleBoundaryAudit(pendingModuleAudit.packetIds, pendingModuleAudit.moduleId, previousModuleId);
         pendingModuleAudit.packetIds = [];
       }
       pendingModuleAudit.moduleId = currentModuleId;
+      const inheritedAuditIds = inheritedAuditsByModule.get(currentModuleId);
+      if (inheritedAuditIds) {
+        pendingModuleAudit.packetIds.push(...inheritedAuditIds);
+        inheritedAuditsByModule.delete(currentModuleId);
+      }
       gatewayPhase = "implementation";
       await state.record({ at: now(), type: "packet_selected", packetId: packet.id,
         detail: { requirementIds: packet.requirementIds, names: packet.requirements.map(item => item.name) } });
@@ -832,7 +896,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const sessionKey = randomUUID();
       let mayContinue = true;
       result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-        platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) }, "implementation", { sessionKey, timeoutMs: implementationTimeoutMs });
+        platformContract: options.platformContract, projectContext: builderProjectContext(packet) }, "implementation", { sessionKey, timeoutMs: implementationTimeoutMs });
       // A gateway outage must not end the run: keep retrying the same packet
       // with a fresh call window while the failure is retryable; a
       // non-retryable rejection stops dispatch at the check below.
@@ -840,7 +904,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
           detail: { requirementIds: packet.requirementIds, failure } }),
         () => build({ mode: "implement", packet, outputDir: options.outputDir,
-          platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
+          platformContract: options.platformContract, projectContext: builderProjectContext(packet) },
         "implementation", { sessionKey, timeoutMs: implementationTimeoutMs }));
       if (needsImplementationRetry(result)) {
         mayContinue = false;
@@ -863,13 +927,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             detail: { requirementIds: packet.requirementIds, timeoutMs: retryTimeoutMs,
               reason: result.terminationReason ?? "timeout" } });
           result = await build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
-            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
+            platformContract: options.platformContract, projectContext: builderProjectContext(packet) },
             "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true });
           result = await resumeGatewayWork(result,
             failure => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
               detail: { requirementIds: packet.requirementIds, failure } }),
             () => build({ mode: "implement", packet: retryPacket, outputDir: options.outputDir,
-              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
+              platformContract: options.platformContract, projectContext: builderProjectContext(packet) },
               "implementation", { timeoutMs: retryTimeoutMs, resumeInterrupted: true }));
           if (needsImplementationRetry(result)) await preserveInterruptedWork(retryPacket);
         }
@@ -897,13 +961,13 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           await state.record({ at: now(), type: "implementation_continued", packetId: packet.id,
             detail: { reason: failure, timeoutMs: remainingMs } });
           result = await build({ mode: "implement", packet, outputDir: options.outputDir,
-            platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
+            platformContract: options.platformContract, projectContext: builderProjectContext(packet) },
           "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure });
           result = await resumeGatewayWork(result,
             pause => state.record({ at: now(), type: "implementation_paused", packetId: packet.id,
               detail: { requirementIds: packet.requirementIds, failure: pause } }),
             () => build({ mode: "implement", packet, outputDir: options.outputDir,
-              platformContract: options.platformContract, projectContext: buildBuilderProjectContext(packet, catalog, implemented, options.stageStartingPoint) },
+              platformContract: options.platformContract, projectContext: builderProjectContext(packet) },
             "implementation", { sessionKey, timeoutMs: remainingMs, continuationFeedback: failure }));
           if (result.gatewayFailure && result.outcome !== "completed") {
             await stopImplementation(packet, result.gatewayFailure);
@@ -955,6 +1019,20 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     // Final module boundary audit for the last module.
     if (pendingModuleAudit.packetIds.length > 0) {
       await runModuleBoundaryAudit(pendingModuleAudit.packetIds, pendingModuleAudit.moduleId, previousModuleId);
+    }
+    // Include pure inherited modules and audits deferred until their changed prerequisites are runnable.
+    for (const moduleId of collectInheritedAudits().keys()) {
+      // Full module coverage keeps all previously verified sibling cases in the repair guards.
+      const packetIds = packets.filter(packet => (packet.requirements[0].folderPath[1] ?? packet.requirements[0].id) === moduleId)
+        .map(packet => packet.id);
+      await runModuleBoundaryAudit(packetIds, moduleId, moduleId);
+    }
+    for (const packet of packets.filter(item => item.requirementIds.every(id => inherited.has(id)) && !auditEligible(item))) {
+      const unmetDependencyIds = [...dependencyClosure(packet.requirementIds)].filter(id => !implemented.has(id));
+      state.markRequirements(packet.requirementIds, "blocked");
+      await state.record({ at: now(), type: "dependency_gate_blocked", packetId: packet.id,
+        detail: { requirementIds: packet.requirementIds, unmetDependencyIds,
+          dependencyStatuses: Object.fromEntries(unmetDependencyIds.map(id => [id, verificationStatus(id)])) } });
     }
 
     // Final audit is detection-only: failures are published as-is instead of
@@ -1036,6 +1114,7 @@ function buildBuilderProjectContext(
   catalog: RequirementCatalog,
   implemented: ReadonlySet<string>,
   startingPoint: PipelineOptions["stageStartingPoint"] = "unknown",
+  inherited: ReadonlySet<string> = new Set(),
 ): BuilderProjectContext {
   const first = packet.requirements[0];
   if (!first) throw new Error(`Packet ${packet.id} has no requirements`);
@@ -1054,10 +1133,11 @@ function buildBuilderProjectContext(
     ),
     satisfiedDependencies: catalog.requirements
       .filter((item) => dependencyIds.has(item.id) && implemented.has(item.id))
-      .map((item) => ({ id: item.id, name: item.name, contract: item.text })),
+      .map((item) => ({ id: item.id, name: item.name, ...(!inherited.has(item.id) ? { contract: item.text } : {}) })),
     ...(first.product.evolution ? { evolution: {
       ...incrementalContext,
       ...(stage ? { stageIndex: stage.index } : {}),
+      ...(inherited.size > 0 ? { changesOnly: true as const } : {}),
     } } : stage ? { progressiveStage: {
       ...stage,
       ...incrementalContext,

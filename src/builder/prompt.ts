@@ -163,7 +163,7 @@ function projectContextSection(context: BuilderProjectContext): string {
       ? context.satisfiedDependencies
           .map(
             (dependency) =>
-              `${dependency.id} ${dependency.name}：${dependency.contract}`,
+              `${dependency.id} ${dependency.name}${dependency.contract === undefined ? "" : `：${dependency.contract}`}`,
           )
           .join("\n")
       : "无",
@@ -180,6 +180,7 @@ function evolutionSection(context: NonNullable<BuilderProjectContext["evolution"
       : context.startingPoint === "blank_template" ? "空白通用模板" : "未明确；先检查项目目录判断是否已有应用",
     EXTERNAL_PREREQUISITES: context.externalPrerequisiteIds.join("、") || "无",
     STARTING_POINT_ACTION: incrementalStartingPointAction(context.startingPoint),
+    IMPLEMENTATION_SCOPE: context.changesOnly ? loadPrompt("system", "evolution-changes-only") : "",
   });
 }
 

@@ -13,6 +13,15 @@ function formatLine(formatter: HumanRunFormatter, raw: string): string {
   return formatted;
 }
 
+test("Evolution scope logs separate inherited IDs from current independent verification", () => {
+  const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-06T00:00:00Z", "evolution_scope_selected", {
+    detail: { historicalPlans: 2, ignoredPlans: 1, addedRequirementIds: ["NEW"], changedRequirementIds: ["CHANGED"],
+      inheritedRequirementIds: ["OLD"], implementationRequirementIds: ["CHANGED", "NEW"] },
+  }));
+  assert.match(line, /有效历史计划 2.*忽略损坏计划 1.*初次实现 2.*沿用 1 条并独立验收/);
+  assert.doesNotMatch(line, /已通过/);
+});
+
 test("Module boundary logs distinguish sampled seed entries from full atomic verification", () => {
   const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-01T00:00:00Z", "module_boundary_audit_finished", {
     detail: { moduleId: "SECOND", packetIds: ["packet-c"], regressionPacketIds: ["packet-a"], results: { "packet-c": "verified" } },

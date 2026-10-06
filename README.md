@@ -52,7 +52,7 @@ Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网
 
 `delivered` 要求最终验证通过且所有原子需求均已 verified；仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID。
 
-增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮需求。决赛由平台自动注入基线，主线直接在该目录修改并保留当前文件，原始根名称也能启用继承应用上下文。显式 `Evolution` 标签、`Evolution Requirements for ...` 和阶段后缀继续支持。原功能按当前合同局部修改，新增功能沿既有结构实现；当前 YAML 中的全部需求独立验收。继承的 `shallow-progress/plans` 仅作历史镜像，不进入本轮私有缓存或 Builder 输入。主线不读取测试目录，继续使用公共端口合同。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
+增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮需求。决赛由平台自动注入基线，主线直接在该目录修改并保留当前文件，原始根名称也能启用继承应用上下文。显式 `Evolution` 标签、`Evolution Requirements for ...` 和阶段后缀继续支持。Evolution 启动时从 `shallow-progress/plans` 冻结旧需求 ID，按 Original/Modified Feature Description 标记识别修改项；继承应用通过可运行检查后，初次 Builder 只收到新增、历史记录缺失或明确修改项，沿用项保留并接受独立验收与必要修复。当前 YAML 全部需求仍计入验收，历史计划不进入本轮私有缓存或 Builder 输入。主线不读取测试目录，继续使用公共端口合同。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
 
 ## Raw Pi baseline
 
