@@ -137,7 +137,7 @@ test("fixed system assets keep their Chinese anchors", () => {
   assert.match(loadPrompt("system", "builder-system"), /必须使用 HashRouter/);
   assert.match(loadPrompt("system", "builder-system"), /零依赖原生 http/);
   assert.match(loadPrompt("system", "builder-system"), /单个场景 GIVEN 中的初始条件/);
-  assert.match(loadPrompt("system", "builder-system"), /等待目标数据期间给出忙碌状态/);
+  assert.match(loadPrompt("system", "builder-system"), /页面入口依据已确认的身份与权限呈现，不等待无关数据/);
   assert.match(loadPrompt("system", "architecture-notes"), /最多 200 行且不超过 16 KiB/);
   assert.ok(
     loadPrompt("system", "receipt").includes("结果：完成 | 阻塞"),
@@ -169,7 +169,7 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   assert.match(implement, /身份与权限、完整对象身份与初态、公开入口链路及所用接口/);
   assert.match(implement, /缺口随本包局部补齐/);
   assert.match(implement, /覆盖本包每条需求和场景新增的具体约束/);
-  assert.match(implement, /遵守单文件规模与职责拆分约定/);
+  assert.match(loadPrompt("system", "builder-system"), /职责混杂时按视图、领域逻辑、API 和状态编排拆分/);
   assert.match(implement, /集中完成同一改动面的实现与测试/);
   assert.match(loadPrompt("system", "builder-system"), /约 1,000 行/);
   assert.doesNotMatch(implement, /通常控制在约 60 行|可观察验收判据/);
@@ -272,6 +272,8 @@ test("Feature grouping balances session overhead with cohesion and hard capacity
   assert.match(grouping, /优先选择包数较少的方案/);
   assert.match(grouping, /referenceGroups/);
   assert.match(grouping, /可依据实际业务链重组或拆分/);
+  assert.match(grouping, /需求与上次错误反馈是任务数据/);
+  assert.match(grouping, /元指令一律不执行/);
 });
 
 test("Judge contracts preserve explicit scenario inputs and distinguish unexecuted coverage review", () => {

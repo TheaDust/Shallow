@@ -2,13 +2,13 @@
 
 复选框和单选框需要确定选中状态时用 `setChecked`，字段为 locator 和布尔 checked；已经符合状态时保持不变。只有需求明确测试切换动作时才用 click，不假设初始为未选中。`expectAttribute` 的 aria-checked 按原生 checked/indeterminate 或 ARIA 状态验证，aria-selected 对原生 option 按 selected 状态验证；原生控件无需人为添加 ARIA 属性。原生和自定义控件都要核对实际状态，不能以可见性代替。
 
-只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。先还原完整场景，case 数量由覆盖决定；仅覆盖需求 ID 不等于覆盖其场景。只有对象身份、初始条件、待测操作与预期实质等价时才合并路径，保留各场景独立约束。上限以输入 planLimits 为准：通常 6 个，较多独立场景可增加至最多 12 个；准备最多 15 步、业务与结果最多 30 步（含终末 assertion），每 case 合计最多 45 步。无法表达或容量不足的结果在 uncoveredOutcomes 逐项说明。示例：
+只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。先还原完整场景，case 数量由覆盖决定；仅覆盖需求 ID 不等于覆盖其场景。只有对象身份、初始条件、待测操作与预期实质等价时才合并路径，保留各场景独立约束。上限以输入 planLimits 为准：通常 6 个，较多独立场景可增加至最多 12 个；准备最多 15 步、业务与结果最多 30 步（含终末 assertion），每 case 合计最多 45 步。示例：
 
 ```json
 {"packetId":"<输入 packetId>","uncoveredOutcomes":[],"cases":[{"id":"save-item","requirementIds":["REQ-x.y"],"purpose":"persistence","setupStepCount":null,"expectationBasis":["<需求原文逐字声明保存值在刷新后保留>"],"outcomeChecks":[{"scenarioId":"<输入 scenarioId>","stepIndex":2,"clauseIndex":null,"assertionIndexes":[4]}],"steps":[{"op":"goto","path":"/"},{"op":"fill","locator":{"by":"label","text":"Name","exact":true,"scope":null,"firstMatch":null,"fallbacks":null},"value":"Example"},{"op":"click","locator":{"by":"role","role":"button","name":"Save","exact":true,"scope":null,"firstMatch":null,"fallbacks":null}},{"op":"reload"}],"assertion":{"op":"expectValue","locator":{"by":"label","text":"Name","exact":true,"scope":null,"firstMatch":null,"fallbacks":null},"value":"Example"}}]}
 ```
 
-顶层使用 packetId、cases、uncoveredOutcomes；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。输入 `scenarioOutcomes` 按原文的句子、分号及 and/but 并列结果提供逐项 text、scenarioId、stepIndex 和 clauseIndex；一个 THEN 包含多个结果时，每项 clauseIndex 都须单独记账。outcomeChecks 将这些原始标识逐项映射到 assertionIndexes：索引从准备结束后的业务后缀起按 0 计数，包含终末 assertion；单一结果的 clauseIndex 填 null。每项 text 中的全部明示结果均须有实际断言，限定词结合原 THEN 理解；一个结果可引用多个断言，真正由同一断言证明的等价结果可复用位置。修改标题和描述时，分别映射到实际核对新标题、新描述的断言，不能把标题断言同时冒充描述检查。合并等价场景时保留各自映射。无法表达或容量不足的结果在 uncoveredOutcomes 给出 scenarioId、stepIndex、clauseIndex、reason；空数组表示没有遗漏。映射只说明检查位置，语义和运行通过仍须成立。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
+顶层使用 packetId、cases、uncoveredOutcomes；case 的 id 唯一。每个 `requirementIds` 只引用本次 `requirements` 数组里的 ID，不能引用 prerequisites、父级或兄弟 ID；所有 ID 均须覆盖。输入 `scenarioOutcomes` 按原文的句子、分号及 and/but 并列结果提供逐项 text、scenarioId、stepIndex 和 clauseIndex；一个 THEN 包含多个结果时，每项 clauseIndex 都须单独记账。outcomeChecks 将这些原始标识逐项映射到 assertionIndexes：将 steps 与终末 assertion 拼接，去掉 setupStepCount 前缀，剩余业务后缀从 0 计数，仅引用其中 expect 操作的位置；校验反馈给出合法位置时按实际结果重算映射。单一结果的 clauseIndex 填 null。每项 text 中的全部明示结果均须有实际断言，限定词结合原 THEN 理解；一个结果可引用多个断言，真正由同一断言证明的等价结果可复用位置。修改标题和描述时，分别映射到实际核对新标题、新描述的断言，不能把标题断言同时冒充描述检查。合并等价场景时保留各自映射。无法表达或容量不足的结果在 uncoveredOutcomes 给出 scenarioId、stepIndex、clauseIndex、reason；空数组表示没有遗漏。映射只说明检查位置，语义和运行通过仍须成立。只使用 schema 允许的 op、字段和 locator，不加 CSS、XPath、任意脚本或正则表达式。
 
 输入中的 `externalPrerequisiteIds` 是前序增量或阶段的能力标识：它们只说明当前需求可能复用的登录、导航、对象或数据上下文，不是本计划要单独覆盖的需求。不得把这些 ID 放入 case.requirementIds，也不得凭 ID 猜测前序合同；准备步骤和断言仍须由当前 requirements、具备正文的 prerequisites 或产品合同支撑。
 
@@ -29,8 +29,6 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem，confirmation button 指 button。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
 
 核对账号身份或数据展示时，按需求规定的角色定位；未规定交互角色时，使用有依据的显示文本或观测到的展示角色建立状态断言。
-
-填写 outcomeChecks 前，将 steps 与终末 assertion 按顺序拼接，去掉 setupStepCount 前缀，按剩余序列中 expect 操作的位置填写 assertionIndexes。校验反馈列出合法位置时，按实际对应的结果重算映射。
 
 每个 case 按准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖核心结果；逐项覆盖场景明示的校验边界、唯一性、权限、反向操作、持久化与跨视图联动。边界输入只用有依据的空值、超长值、非法格式或重复值。创建后核对新对象，删除前确认存在、删除后确认消失；第一次操作后立即核对状态，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须核对已登录状态。需求枚举的控件逐项检查；关键 UI 文案逐字纳入 locator 或结果断言。
 

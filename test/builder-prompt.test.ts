@@ -38,6 +38,12 @@ test("Authorized entry guidance reaches every product and repair mode without mi
       const body = compiled.systemPrompt + "\n" + compiled.taskPrompt;
       assert.ok(compiled.taskPrompt.includes(accessibleFragment));
       assert.ok(compiled.systemPrompt.includes(selfTest));
+      assert.match(compiled.systemPrompt, /页面入口依据已确认的身份与权限呈现，不等待无关数据/);
+      assert.match(compiled.systemPrompt, /依赖未就绪数据的操作保留控件并暂时禁用/);
+      assert.match(compiled.systemPrompt, /脚手架混合 Combobox 分别用浏览器原生 selectOption/);
+      assert.match(compiled.systemPrompt, /专用 ARIA combobox 按需求核对输入、可见 option 与选择结果/);
+      assert.match(compiled.systemPrompt, /传统测试分别检查原生 disabled、非原生 aria-disabled 及实际操作效果/);
+      assert.match(compiled.systemPrompt, /真实浏览器用 toBeDisabled\/toBeEnabled 检查禁用和恢复/);
       const repositoryFragment = loadPrompt("fragments", "repository-collaboration");
       assert.equal(body.includes(repositoryFragment), kind === "repository_collaboration");
       if (kind === "repository_collaboration") {
@@ -87,7 +93,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.systemPrompt, /共享种子及按场景区分的初始条件/);
   assert.match(compiled.systemPrompt, /明确列为预置或既有的实体/);
   assert.match(compiled.systemPrompt, /logo 等返回首页入口的角色和可访问名以需求明示为准/);
-  assert.match(compiled.systemPrompt, /用户可操作时，目标数据应已加载或能等待加载完成/);
+  assert.match(compiled.systemPrompt, /等待期间给出忙碌状态并防止重复操作/);
   assert.match(compiled.taskPrompt, /浏览器未执行/);
   assert.match(compiled.taskPrompt, /未执行/);
   assert.match(compiled.taskPrompt, /需求核对/);
@@ -101,7 +107,7 @@ test("Builder prompt compiles a Chinese system contract and dynamic task prompt"
   assert.match(compiled.taskPrompt, /实施前用相关既有测试或最小公开交互逐项检查现状/);
   assert.match(compiled.taskPrompt, /尚未实现或尚未验证的场景约束/);
   assert.match(compiled.taskPrompt, /完整业务链路/);
-  assert.match(compiled.taskPrompt, /不要为某个示例数据/);
+  assert.match(compiled.systemPrompt, /不能为示例输入、账号或断言硬编码结果/);
   assert.match(compiled.taskPrompt, /ARCHITECTURE\.md/);
   assert.match(compiled.taskPrompt, /REQ-PROFILE/);
   assert.match(compiled.taskPrompt, /Root description/);
@@ -395,6 +401,8 @@ test("Delivery repair renders the failure without any work packet context", () =
   assert.match(compiled.taskPrompt, /平台构建命令成功退出并生成生产构建产物/);
   assert.match(compiled.taskPrompt, /实际观察：\nproduction build failed/);
   assert.match(compiled.taskPrompt, /【交付合同】/);
+  assert.match(compiled.taskPrompt, /依次补齐安装、构建、探针端口启动、健康检查和根页面访问/);
+  assert.match(compiled.taskPrompt, /沿用本轮已成功且输入未变的安装、构建结果/);
   assert.doesNotMatch(compiled.taskPrompt, /当前工作包|delivery-repair/);
   assert.doesNotMatch(compiled.taskPrompt, /REQ-PROFILE/);
   assert.doesNotMatch(
@@ -446,6 +454,7 @@ test("Builder receives every discovered extra port and omits the clause when the
   const compiled = compileBuilderPrompt(request);
   assert.match(compiled.taskPrompt, /3301/);
   assert.match(compiled.taskPrompt, /4400/);
+  assert.match(compiled.taskPrompt, /所有端口服务同一个应用/);
   assert.match(compiled.taskPrompt, /ARC_EXTRA_PORTS=0/);
   assert.match(compiled.taskPrompt, /ERR_SERVER_ALREADY_LISTEN/);
 });

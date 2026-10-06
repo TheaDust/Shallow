@@ -32,7 +32,8 @@ test("Builder preserves the engine termination reason and asks a fresh session t
   const result = await f.builder.run(f.request, { resumeInterrupted: true });
   assert.equal(result.terminationReason, "missing_terminal_response");
   assert.match(f.calls[0].taskPrompt, /使用新会话.*当前文件/);
-  assert.match(f.calls[0].taskPrompt, /已完成的全量检查沿用结果/);
+  assert.match(f.calls[0].taskPrompt, /已成功且输入未变的确定性检查沿用结果/);
+  assert.match(f.calls[0].taskPrompt, /状态与集成检查按本次输入实际执行/);
 });
 
 test("Engine-neutral Builder preserves separate prompts, references, key and smaller timeout", async () => {
