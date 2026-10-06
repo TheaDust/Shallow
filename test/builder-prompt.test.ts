@@ -20,14 +20,24 @@ import type {
 import { FakeBuilder } from "./fakes/fake-builder.js";
 import { loadPrompt } from "../src/prompt-assets.js";
 
-test("Repository entry guidance reaches implementation and repair while spreadsheet retains its own fragments", () => {
-  for (const kind of ["repository_collaboration", "spreadsheet"] as const) {
+test("Authorized entry guidance reaches every product and repair mode without mixing domain fragments", () => {
+  const accessibleFragment = loadPrompt("fragments", "accessible-web-controls");
+  assert.match(accessibleFragment, /仅依赖已确认身份、路由和权限/);
+  assert.match(accessibleFragment, /权限未知时先确认/);
+  assert.match(accessibleFragment, /身份或对象变化后重新校验/);
+  const selfTest = loadPrompt("system", "self-test");
+  assert.match(selfTest, /每段点击后立即核对/);
+  assert.match(selfTest, /用可控的未完成 Promise 延迟正文或列表响应/);
+  assert.match(selfTest, /同步检查已授权入口/);
+  for (const kind of ["repository_collaboration", "spreadsheet", "generic_web"] as const) {
     for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
       assert.ok("packet" in request);
       request.packet.requirements[0].product.kind = kind;
       if (request.projectContext) request.projectContext.product.kind = kind;
       const compiled = compileBuilderPrompt(request);
       const body = compiled.systemPrompt + "\n" + compiled.taskPrompt;
+      assert.ok(compiled.taskPrompt.includes(accessibleFragment));
+      assert.ok(compiled.systemPrompt.includes(selfTest));
       const repositoryFragment = loadPrompt("fragments", "repository-collaboration");
       assert.equal(body.includes(repositoryFragment), kind === "repository_collaboration");
       if (kind === "repository_collaboration") {
@@ -36,6 +46,8 @@ test("Repository entry guidance reaches implementation and repair while spreadsh
         assert.match(body, /已登录身份与本页规定的具名对象入口一起就绪/);
         assert.match(body, /同时保留需求规定的账户菜单、列表和搜索路径/);
         assert.match(body, /身份或权限变化后重新核对列表/);
+        assert.match(body, /权限已确认且不依赖列表内容的创建入口也独立呈现/);
+        assert.match(body, /后台继续校验每次读取和写入的权限/);
         assert.match(body, /先通过项目路由工具完成导航，再关闭菜单/);
         assert.match(body, /在正式构建的应用中从首页登录，逐段检查/);
       }

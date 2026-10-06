@@ -115,6 +115,11 @@ test("baseline system prompt mirrors the shared platform contract wording", asyn
     "监听所有网卡",
     "仅当 ARC_EXTRA_PORTS=0 时跳过额外端口",
     "不得搜索或读取官方测试、评分或控制器内部状态",
+    "仅依赖已确认身份、路由和权限",
+    "权限未知时先确认",
+    "身份或对象变化后重新校验",
+    "后台继续校验每次读取和写入的权限",
+    "用可控的未完成 Promise 延迟正文或列表响应",
   ]) {
     assert.ok(prompt.includes(anchor), anchor);
   }
