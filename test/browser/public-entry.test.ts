@@ -16,8 +16,9 @@ const packet: WorkPacket = { id: "public-entry", requirementIds: ["A"], attempt:
   seedDeclarations: [], product: { kind: "generic_web", rootId: "ROOT", rootName: "Product", description: "", seedData: [] },
 }] };
 
-const search = { by: "role" as const, role: "searchbox", name: "Lookup", exact: true,
-  scope: { by: "role" as const, role: "banner" } };
+// Deliberately omit scope: the parser must deterministically project the
+// requirement's global landmark contract even when the planner forgets it.
+const search = { by: "role" as const, role: "searchbox", name: "Lookup", exact: true };
 const plan: ProbePlan = { packetId: packet.id, cases: [{ id: "search-and-menu", requirementIds: ["A"], purpose: "happy_path",
   expectationBasis: [description], setupStepCount: 7, steps: [
     { op: "goto", path: "/" }, { op: "expectVisible", locator: search },

@@ -36,7 +36,7 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 场景明示的连续操作及中间结果必须在同一 case 完整还原：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 核对新结果与仍应保留的先前状态，必要时 reload 或按原文切换账号。除此之外，每份计划至多额外构造一条有原文依据的跨功能回归链，替代重复单步成功路径；该限制不适用于场景本身要求的操作链。额外链的功能及状态须有当前需求或 prerequisites 原文依据，保留独立行为维度和 planLimits，仅引用当前 requirements 的 ID。
 
-每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。newContext 只新建匿名浏览器会话，actor 字段仅作说明，不会自动登录；切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。等待异步目标出现，不把短暂加载判为缺失。
+每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。初始 browser context 名为 `default`；`newContext` 携带 actor 时新建并保留该命名浏览器会话，`switchContext` 用 actor 切回此前命名的会话或 `default`。二者都不会自动登录，切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。场景要求一个浏览器撤销另一个浏览器的 session 时，必须切回被撤销的 context 并 reload 验证，不能列入 uncoveredOutcomes。等待异步目标出现，不把短暂加载判为缺失。
 
 ## Locator 与导航
 

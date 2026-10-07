@@ -63,7 +63,8 @@ export type ProbeStep =
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
   | { op: "reload" }
-  | { op: "newContext"; actor?: string };
+  | { op: "newContext"; actor?: string }
+  | { op: "switchContext"; actor: string };
 
 export interface ProbeCase {
   id: string;
@@ -206,6 +207,7 @@ const STEP_SCHEMA = {
     }),
     objectSchema({ op: literalSchema("reload") }),
     objectSchema({ op: literalSchema("newContext"), actor: { ...OPTIONAL_STRING_SCHEMA, minLength: 1 } }),
+    objectSchema({ op: literalSchema("switchContext"), actor: NONEMPTY_STRING_SCHEMA }),
   ],
 };
 
@@ -257,7 +259,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, reload, newContext. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, reload, newContext, switchContext. The initial browser context is named default. newContext with actor creates and selects a retained named context; switchContext selects a previously created actor or default without changing application data. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -361,8 +363,12 @@ export function parseProbePlan(
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
-        for (const locator of locators) assertDeclaredLocatorRole(locator, { requirements: scoped, prerequisites: packet.prerequisites },
-          step.op, false, `ProbePlan case ${probeCase.id} step ${stepIndex}`, isHomeEntryStep(probeCase, stepIndex));
+        for (const locator of locators) {
+          enforceGlobalSearchBannerScope(locator, { requirements: scoped, prerequisites: packet.prerequisites },
+            `ProbePlan case ${probeCase.id} step ${stepIndex}`);
+          assertDeclaredLocatorRole(locator, { requirements: scoped, prerequisites: packet.prerequisites },
+            step.op, false, `ProbePlan case ${probeCase.id} step ${stepIndex}`, isHomeEntryStep(probeCase, stepIndex));
+        }
         if (step.op === "goto" && step.path !== "/") {
           // A guessed server path cannot reach a hash-routed page. Only public
           // requirement text can authorize a deep link; never infer it from a name.
@@ -396,8 +402,13 @@ export function parseProbePlan(
       const location = `ProbePlan.uncoveredOutcomes[${index}]`;
       const item = record(value, location);
       keys(item, ["scenarioId", "stepIndex", "clauseIndex", "reason"], location);
+      const reason = text(item.reason, location);
+      if (/browser context/i.test(reason) &&
+        /(?:cannot switch back|can only operate on the current context|unable to (?:return|switch))/i.test(reason)) {
+        throw new Error(`${location}.reason cannot claim browser-context switching is unavailable; use named newContext and switchContext`);
+      }
       return { scenarioId: text(item.scenarioId, location), stepIndex: nonnegativeInteger(item.stepIndex, location),
-        ...(item.clauseIndex == null ? {} : { clauseIndex: nonnegativeInteger(item.clauseIndex, location) }), reason: text(item.reason, location) };
+        ...(item.clauseIndex == null ? {} : { clauseIndex: nonnegativeInteger(item.clauseIndex, location) }), reason };
     });
   if (uncoveredOutcomes && uncoveredOutcomes.length > 200) throw new Error("ProbePlan has too many uncovered outcomes");
   const coverageReview = plan.coverageReview == null ? undefined : text(plan.coverageReview, "ProbePlan.coverageReview");
@@ -578,6 +589,38 @@ function candidateTargetName(candidate: ProbeLocator): string | undefined {
   return candidate.by === "role" ? candidate.name : candidate.text;
 }
 
+/**
+ * A requirement-declared top global search is a page landmark contract, not just
+ * a conveniently named input. Keep this invariant deterministic because an
+ * unscoped searchbox still passes when a header is incorrectly nested in main,
+ * while grader entry helpers address the control through the banner landmark.
+ */
+function enforceGlobalSearchBannerScope(locator: ProbeLocator,
+  packet: Pick<WorkPacket, "requirements" | "prerequisites">, location: string): void {
+  for (const candidate of [locator, ...(locator.fallbacks ?? [])]) {
+    const name = candidateTargetName(candidate);
+    if (!name) continue;
+    const declaredRoles = declaredLocatorRoles(candidate, packet);
+    const isSearchControl = candidate.by === "role" && ["search", "searchbox"].includes(candidate.role) ||
+      declaredRoles.some(role => ["search", "searchbox"].includes(role));
+    if (!isSearchControl) continue;
+    const isDeclaredGlobalSearch = requirementEvidenceTexts(packet.requirements, packet.prerequisites).some(text =>
+      requirementSentences(text.replace(/\r?\n/g, " ")).some(sentence => {
+        if (!/\b(?:top(?:-level)?\s+)?global\s+search(?:\s+control)?\b/i.test(maskRequirementLiterals(sentence))) return false;
+        return [...sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)]
+          .some(match => normalizeName(match[1] ?? match[2] ?? match[3]) === normalizeName(name));
+      }));
+    if (!isDeclaredGlobalSearch) continue;
+    if (!candidate.scope) {
+      candidate.scope = { by: "role", role: "banner" };
+      continue;
+    }
+    if (candidate.scope.by !== "role" || candidate.scope.role !== "banner" || candidate.scope.name) {
+      throw new Error(`${location}: requirement-declared global search must be scoped to the banner landmark`);
+    }
+  }
+}
+
 /** Explicit requirement labels anchor both refinement and missing-control diagnostics. */
 export function groundedLocatorNames(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">): string[] {
   const declared = declaredRequirementNames(packet);
@@ -690,6 +733,7 @@ function parseCase(
   const steps = stepValues.map((step, stepIndex) =>
     parseStep(step, `${location}.steps[${stepIndex}]`),
   );
+  validateContextReferences(steps, location);
   if (!steps.some((step) => step.op.startsWith("expect"))) {
     throw new Error(`${location} requires at least one assertion`);
   }
@@ -734,8 +778,8 @@ function validateScenarioActions(probeCase: ProbeCase, evidence: readonly Atomic
   let clipboardReady = false;
   for (const [index, step] of probeCase.steps.entries()) {
     const location = `ProbePlan case ${probeCase.id} step ${index}`;
-    if (step.op === "goto" || step.op === "reload" || step.op === "newContext") contextMenuOpen = false;
-    if (step.op === "newContext") clipboardReady = false;
+    if (step.op === "goto" || step.op === "reload" || step.op === "newContext" || step.op === "switchContext") contextMenuOpen = false;
+    if (step.op === "newContext" || step.op === "switchContext") clipboardReady = false;
     if (step.op === "rightClick" || (step.op === "press" && step.key === "Shift+F10")) contextMenuOpen = true;
     if (step.op === "setClipboardText" || (step.op === "press" &&
       (step.key === "ControlOrMeta+C" || step.key === "ControlOrMeta+X"))) clipboardReady = true;
@@ -762,6 +806,20 @@ function validateScenarioActions(probeCase: ProbeCase, evidence: readonly Atomic
     }
     if (name === "Copy" || name === "Cut") clipboardReady = true;
     contextMenuOpen = false;
+  }
+}
+
+/** Context switches may only address the initial context or an earlier named context. */
+function validateContextReferences(steps: readonly ProbeStep[], location: string): void {
+  const actors = new Set(["default"]);
+  for (const [index, step] of steps.entries()) {
+    if (step.op === "newContext" && step.actor) {
+      if (actors.has(step.actor)) throw new Error(`${location}.steps[${index}] duplicates browser context actor ${step.actor}`);
+      actors.add(step.actor);
+    }
+    if (step.op === "switchContext" && !actors.has(step.actor)) {
+      throw new Error(`${location}.steps[${index}] references unknown browser context actor ${step.actor}`);
+    }
   }
 }
 
@@ -913,6 +971,9 @@ function parseStep(value: unknown, location: string): ProbeStep {
         op,
         ...(step.actor == null ? {} : { actor: text(step.actor, `${location}.actor`) }),
       };
+    case "switchContext":
+      keys(step, ["op", "actor"], location);
+      return { op, actor: text(step.actor, `${location}.actor`) };
     default:
       throw new Error(`${location} ProbePlan operation is not allowed: ${op}`);
   }

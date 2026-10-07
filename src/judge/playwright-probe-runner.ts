@@ -114,6 +114,7 @@ export class PlaywrightProbeRunner {
     options: ProbeRunOptions,
   ): Promise<ProbeFailure | undefined> {
     let session = await createSession(browser);
+    const namedSessions = new Map<string, BrowserSession>([["default", session]]);
     const deadline = Date.now() + options.caseTimeoutMs;
     try {
       for (let stepIndex = 0; stepIndex < probeCase.steps.length; stepIndex += 1) {
@@ -135,6 +136,7 @@ export class PlaywrightProbeRunner {
             probeCase.steps[stepIndex],
             options.baseUrl,
             timeoutMs,
+            namedSessions,
           );
         } catch (error) {
           if (session.crashed || !browser.isConnected()) {
@@ -161,7 +163,8 @@ export class PlaywrightProbeRunner {
       }
       return undefined;
     } finally {
-      await session.context.close().catch(() => undefined);
+      await Promise.all([...new Set([...namedSessions.values(), session])]
+        .map(item => item.context.close().catch(() => undefined)));
     }
   }
 }
@@ -180,10 +183,20 @@ async function executeStep(
   step: ProbeStep,
   baseUrl: string,
   timeoutMs: number,
+  namedSessions: Map<string, BrowserSession>,
 ): Promise<BrowserSession> {
   if (step.op === "newContext") {
-    await session.context.close();
-    return createSession(browser);
+    // Keep named sessions available for switchContext; an unnamed session that
+    // was itself replaced has no reachable handle and can be released now.
+    if (![...namedSessions.values()].includes(session)) await session.context.close();
+    const next = await createSession(browser);
+    if (step.actor) namedSessions.set(step.actor, next);
+    return next;
+  }
+  if (step.op === "switchContext") {
+    const selected = namedSessions.get(step.actor);
+    if (!selected) throw new ProbeExecutionError("runner", `Unknown browser context actor: ${step.actor}`);
+    return selected;
   }
   if (step.op === "goto") {
     const base = new URL(baseUrl);

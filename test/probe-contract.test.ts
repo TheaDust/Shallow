@@ -46,6 +46,45 @@ function plan(path = "/"): ProbePlan {
   ] }] };
 }
 
+test("Requirement-declared top global search is deterministically scoped to banner", () => {
+  const input = packet('The top global search control has searchbox role and accessible name "Publish".');
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps[1] = { op: "fill", locator: {
+    by: "role", role: "searchbox", name: "Publish", exact: true,
+    fallbacks: [{ by: "label", text: "Publish", exact: true }],
+  }, value: "query" };
+  const parsed = parseProbePlan(original, input);
+  const step = parsed.cases[0].steps[1];
+  assert.equal(step.op, "fill");
+  if (step.op !== "fill") assert.fail("missing search fill");
+  assert.deepEqual(step.locator.scope, { by: "role", role: "banner" });
+  assert.deepEqual(step.locator.fallbacks?.[0].scope, { by: "role", role: "banner" });
+
+  const conflicting = structuredClone(original);
+  const locator = conflicting.cases[0].steps[1];
+  if (locator.op !== "fill") assert.fail("missing search fill");
+  locator.locator.scope = { by: "role", role: "main" };
+  assert.throws(() => parseProbePlan(conflicting, input), /global search must be scoped to the banner/);
+});
+
+test("Named browser contexts can be revisited only after they are created", () => {
+  const valid = plan();
+  valid.cases[0].steps.splice(1, 0,
+    { op: "newContext", actor: "revoked-browser" },
+    { op: "switchContext", actor: "default" },
+    { op: "switchContext", actor: "revoked-browser" });
+  assert.doesNotThrow(() => parseProbePlan(valid));
+
+  const unknown = plan();
+  unknown.cases[0].steps.splice(1, 0, { op: "switchContext", actor: "missing" });
+  assert.throws(() => parseProbePlan(unknown), /unknown browser context actor missing/);
+
+  const obsoleteExcuse = { ...plan(), uncoveredOutcomes: [{ scenarioId: "A::0", stepIndex: 2,
+    reason: "The plan operations can only operate on the current browser context and cannot switch back." }] };
+  assert.throws(() => parseProbePlan(obsoleteExcuse), /use named newContext and switchContext/);
+});
+
 test("Explicit control roles survive refinement, including every fallback", () => {
   const input = packet('Click the button named "Publish".');
   const original = plan();
