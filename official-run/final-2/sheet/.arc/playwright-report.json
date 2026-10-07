@@ -1,0 +1,1827 @@
+{
+  "config": {
+    "configFile": "/workspace/tests/playwright.config.ts",
+    "rootDir": "/workspace/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "/workspace/template/.arc/playwright-report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/workspace/tests/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 10000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "REQ-1-2-2-workbook-name-evolution.spec.ts",
+      "file": "REQ-1-2-2-workbook-name-evolution.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-1-2-2: Rename a Workbook evolution - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10027,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M01-RENAME-OK', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-1-2-2-workbook-name-evolution.spec.ts:14:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:07:57.053Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-1-2-2-workbook-name-ev-e3e7f-book-evolution---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0c1c34fa18bbf2410094-afa3430b0a9a85b9ab9d",
+          "file": "REQ-1-2-2-workbook-name-evolution.spec.ts",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-2-2: Rename a Workbook evolution - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M01-RENAME-DUP', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-1-2-2-workbook-name-evolution.spec.ts:27:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:08:07.995Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-1-2-2-workbook-name-ev-3ac22-book-evolution---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0c1c34fa18bbf2410094-b153dc528be71611737e",
+          "file": "REQ-1-2-2-workbook-name-evolution.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "REQ-1-2-2: Rename a Workbook evolution - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10022,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M01-RENAME-LIMIT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-1-2-2-workbook-name-evolution.spec.ts:41:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:08:18.913Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-1-2-2-workbook-name-ev-7f638-book-evolution---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0c1c34fa18bbf2410094-0283a1a9c3f4e435db29",
+          "file": "REQ-1-2-2-workbook-name-evolution.spec.ts",
+          "line": 39,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-2-1-3-worksheet-name-evolution.spec.ts",
+      "file": "REQ-2-1-3-worksheet-name-evolution.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-2-1-3: Rename a Worksheet evolution - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M02-SHEET-OK', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-2-1-3-worksheet-name-evolution.spec.ts:13:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:08:29.900Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-1-3-worksheet-name-e-3d8fa-heet-evolution---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "86170893867dc7435950-fbbd9c4d2071a389e244",
+          "file": "REQ-2-1-3-worksheet-name-evolution.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-1-3: Rename a Worksheet evolution - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M02-SHEET-DUP', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-2-1-3-worksheet-name-evolution.spec.ts:25:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:08:40.894Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-1-3-worksheet-name-e-86194-heet-evolution---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "86170893867dc7435950-ec58d2449707e51c70c6",
+          "file": "REQ-2-1-3-worksheet-name-evolution.spec.ts",
+          "line": 24,
+          "column": 1
+        },
+        {
+          "title": "REQ-2-1-3: Rename a Worksheet evolution - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M02-SHEET-LIMIT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-2-1-3-worksheet-name-evolution.spec.ts:37:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:08:51.794Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-2-1-3-worksheet-name-e-eb260-heet-evolution---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "86170893867dc7435950-ca5cd05d08b3401d105c",
+          "file": "REQ-2-1-3-worksheet-name-evolution.spec.ts",
+          "line": 35,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-3-1-1-clear-cells-evolution.spec.ts",
+      "file": "REQ-3-1-1-clear-cells-evolution.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-3-1-1: Clear cells evolution - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10021,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M03-CLEAR-TEXT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-3-1-1-clear-cells-evolution.spec.ts:7:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:02.736Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-3-1-1-clear-cells-evol-de428-ells-evolution---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c4379d30d513cfa80d9f-2919fe72d5604b6a9b15",
+          "file": "REQ-3-1-1-clear-cells-evolution.spec.ts",
+          "line": 6,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-1-1: Clear cells evolution - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 7,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M03-CLEAR-FORMULA', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-3-1-1-clear-cells-evolution.spec.ts:18:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:13.693Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-3-1-1-clear-cells-evol-72080-ells-evolution---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c4379d30d513cfa80d9f-e47a8a9e931dfdc1ed89",
+          "file": "REQ-3-1-1-clear-cells-evolution.spec.ts",
+          "line": 17,
+          "column": 1
+        },
+        {
+          "title": "REQ-3-1-1: Clear cells evolution - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 8,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10023,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M03-CLEAR-RANGE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-3-1-1-clear-cells-evolution.spec.ts:30:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:24.592Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-3-1-1-clear-cells-evol-d52ea-ells-evolution---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c4379d30d513cfa80d9f-98a31341827feea000a4",
+          "file": "REQ-3-1-1-clear-cells-evolution.spec.ts",
+          "line": 29,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-5-1-2-filter-views-evolution.spec.ts",
+      "file": "REQ-5-1-2-filter-views-evolution.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-5-1-2: Filter views evolution - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 9,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M04-FILTER-SAVE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-1-2-filter-views-evolution.spec.ts:21:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:35.506Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-1-2-filter-views-evo-2c486-iews-evolution---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e5eafba25a7f99db802f-24754a3f38ac41c1c175",
+          "file": "REQ-5-1-2-filter-views-evolution.spec.ts",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "REQ-5-1-2: Filter views evolution - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 10,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M04-FILTER-APPLY', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-1-2-filter-views-evolution.spec.ts:42:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:46.502Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-1-2-filter-views-evo-b6048-iews-evolution---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e5eafba25a7f99db802f-7f1a5b8d3fd99c3d7a89",
+          "file": "REQ-5-1-2-filter-views-evolution.spec.ts",
+          "line": 41,
+          "column": 1
+        },
+        {
+          "title": "REQ-5-1-2: Filter views evolution - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 11,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M04-FILTER-DELETE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-1-2-filter-views-evolution.spec.ts:54:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:09:57.400Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-1-2-filter-views-evo-318ec-iews-evolution---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "e5eafba25a7f99db802f-a82067e2f5a7d8deb8ef",
+          "file": "REQ-5-1-2-filter-views-evolution.spec.ts",
+          "line": 53,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-5-2-1-validation-message-evolution.spec.ts",
+      "file": "REQ-5-2-1-validation-message-evolution.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-5-2-1: Custom validation message evolution - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 12,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M05-VALIDATION-FORMULA', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-2-1-validation-message-evolution.spec.ts:14:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:10:08.428Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-2-1-validation-messa-d7076-sage-evolution---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "fe1928ad25fc92933bc5-2cf4fb35417386e75165",
+          "file": "REQ-5-2-1-validation-message-evolution.spec.ts",
+          "line": 13,
+          "column": 1
+        },
+        {
+          "title": "REQ-5-2-1: Custom validation message evolution - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 13,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10023,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M05-VALIDATION-GRID', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-2-1-validation-message-evolution.spec.ts:28:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:10:19.451Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-2-1-validation-messa-633cb-sage-evolution---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "fe1928ad25fc92933bc5-a62833aa7cdc09eb1269",
+          "file": "REQ-5-2-1-validation-message-evolution.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "REQ-5-2-1: Custom validation message evolution - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 14,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10023,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-M05-VALIDATION-EDIT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-5-2-1-validation-message-evolution.spec.ts:43:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:10:30.403Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-5-2-1-validation-messa-45073-sage-evolution---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "fe1928ad25fc92933bc5-cfa76b026e68cb6b697f",
+          "file": "REQ-5-2-1-validation-message-evolution.spec.ts",
+          "line": 42,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-6-1-1-freeze-panes.spec.ts",
+      "file": "REQ-6-1-1-freeze-panes.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-6-1-1: Freeze panes - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 15,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10021,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N01-FREEZE-ROW', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-1-1-freeze-panes.spec.ts:13:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:10:41.400Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-1-1-freeze-panes-REQ-6-1-1-Freeze-panes---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "afb5f5f4631756154474-80235f2b624c2d3aecc0",
+          "file": "REQ-6-1-1-freeze-panes.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "REQ-6-1-1: Freeze panes - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 16,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10022,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N01-FREEZE-COLUMN', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-1-1-freeze-panes.spec.ts:21:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:10:52.398Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-1-1-freeze-panes-REQ-6-1-1-Freeze-panes---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "afb5f5f4631756154474-2227bcab9ab0446673c7",
+          "file": "REQ-6-1-1-freeze-panes.spec.ts",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "REQ-6-1-1: Freeze panes - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 17,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10029,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N01-FREEZE-BOTH', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-1-1-freeze-panes.spec.ts:29:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:03.303Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-1-1-freeze-panes-REQ-6-1-1-Freeze-panes---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "afb5f5f4631756154474-fe32b80b14b669eeddc0",
+          "file": "REQ-6-1-1-freeze-panes.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-6-2-1-find-replace.spec.ts",
+      "file": "REQ-6-2-1-find-replace.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-6-2-1: Find and replace - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 18,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10021,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N02-FIND-NEXT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-2-1-find-replace.spec.ts:13:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:14.299Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-2-1-find-replace-REQ-630e9-nd-and-replace---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5cda3264f6ccc015b494-892895408a0aff6df50c",
+          "file": "REQ-6-2-1-find-replace.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "REQ-6-2-1: Find and replace - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 19,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10023,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N02-REPLACE-ALL', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-2-1-find-replace.spec.ts:24:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:25.195Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-2-1-find-replace-REQ-bb49b-nd-and-replace---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5cda3264f6ccc015b494-516a8619d600bade9f2a",
+          "file": "REQ-6-2-1-find-replace.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "REQ-6-2-1: Find and replace - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 20,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10026,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N02-CASE-SENSITIVE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-6-2-1-find-replace.spec.ts:37:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:36.058Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-6-2-1-find-replace-REQ-4b895-nd-and-replace---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "5cda3264f6ccc015b494-4b9ab837eb85f759d1f9",
+          "file": "REQ-6-2-1-find-replace.spec.ts",
+          "line": 36,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-7-1-1-named-ranges.spec.ts",
+      "file": "REQ-7-1-1-named-ranges.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-7-1-1: Named ranges - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 21,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N03-NAMED-CREATE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-1-1-named-ranges.spec.ts:13:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:47.000Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-1-1-named-ranges-REQ-7-1-1-Named-ranges---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "81de9b0abc200f6f8ba4-0ff4c8f645f478f9d543",
+          "file": "REQ-7-1-1-named-ranges.spec.ts",
+          "line": 12,
+          "column": 1
+        },
+        {
+          "title": "REQ-7-1-1: Named ranges - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 22,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10022,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N03-NAMED-INVALID', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-1-1-named-ranges.spec.ts:35:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:11:57.993Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-1-1-named-ranges-REQ-7-1-1-Named-ranges---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "81de9b0abc200f6f8ba4-c7e6d21dabb952b44509",
+          "file": "REQ-7-1-1-named-ranges.spec.ts",
+          "line": 34,
+          "column": 1
+        },
+        {
+          "title": "REQ-7-1-1: Named ranges - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 23,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N03-NAMED-UPDATE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-1-1-named-ranges.spec.ts:48:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:12:08.858Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-1-1-named-ranges-REQ-7-1-1-Named-ranges---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "81de9b0abc200f6f8ba4-18d377152ecfd6b973f9",
+          "file": "REQ-7-1-1-named-ranges.spec.ts",
+          "line": 47,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-7-2-1-conditional-formatting.spec.ts",
+      "file": "REQ-7-2-1-conditional-formatting.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-7-2-1: Conditional formatting - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 24,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10027,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N04-FORMAT-NUMBER', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-2-1-conditional-formatting.spec.ts:22:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:12:19.802Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-2-1-conditional-form-c0a6f-nal-formatting---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "00c6a1e926a257089270-e589bb57d6b20ced7a1b",
+          "file": "REQ-7-2-1-conditional-formatting.spec.ts",
+          "line": 21,
+          "column": 1
+        },
+        {
+          "title": "REQ-7-2-1: Conditional formatting - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 25,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N04-FORMAT-TEXT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-2-1-conditional-formatting.spec.ts:34:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:12:30.693Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-2-1-conditional-form-1af2e-nal-formatting---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "00c6a1e926a257089270-fd9029659623fdbddb4c",
+          "file": "REQ-7-2-1-conditional-formatting.spec.ts",
+          "line": 33,
+          "column": 1
+        },
+        {
+          "title": "REQ-7-2-1: Conditional formatting - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 26,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10026,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N04-FORMAT-EDIT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-7-2-1-conditional-formatting.spec.ts:46:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:12:41.559Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-7-2-1-conditional-form-7bea7-nal-formatting---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "00c6a1e926a257089270-ff562413e41f4060f932",
+          "file": "REQ-7-2-1-conditional-formatting.spec.ts",
+          "line": 45,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "REQ-8-1-1-cell-notes.spec.ts",
+      "file": "REQ-8-1-1-cell-notes.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "REQ-8-1-1: Cell notes - Scenario 1",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 27,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10025,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N05-NOTE-CREATE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-8-1-1-cell-notes.spec.ts:17:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:12:52.505Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-8-1-1-cell-notes-REQ-8-1-1-Cell-notes---Scenario-1/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "553b104c1b95aaf488e1-b18bbad9891d89b122d0",
+          "file": "REQ-8-1-1-cell-notes.spec.ts",
+          "line": 15,
+          "column": 1
+        },
+        {
+          "title": "REQ-8-1-1: Cell notes - Scenario 2",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 28,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10023,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N05-NOTE-EDIT', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-8-1-1-cell-notes.spec.ts:28:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:13:03.414Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-8-1-1-cell-notes-REQ-8-1-1-Cell-notes---Scenario-2/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "553b104c1b95aaf488e1-714ce7187a8adee330ad",
+          "file": "REQ-8-1-1-cell-notes.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "REQ-8-1-1: Cell notes - Scenario 3",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 10000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 29,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 10024,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 10000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/tests/support/e2e.ts",
+                        "column": 69,
+                        "line": 9
+                      },
+                      "message": "Error: locator.click: Test timeout of 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('link', { name: 'EVO-N05-NOTE-DELETE', exact: true })\u001b[22m\n\n\n   at support/e2e.ts:9\n\n   7 | export async function openVisibleWorkbook(page: Page, workbookName: string): Promise<void> {\n   8 |   await page.goto(baseUrl());\n>  9 |   await page.getByRole('link', { name: workbookName, exact: true }).click();\n     |                                                                     ^\n  10 | }\n  11 |\n  12 | export function gridCell(page: Page, coordinate: string): Locator {\n    at openVisibleWorkbook (/workspace/tests/support/e2e.ts:9:69)\n    at /workspace/tests/REQ-8-1-1-cell-notes.spec.ts:45:3"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-07T04:13:14.425Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/tests/test-results/REQ-8-1-1-cell-notes-REQ-8-1-1-Cell-notes---Scenario-3/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "553b104c1b95aaf488e1-06b4673a349d8480dd65",
+          "file": "REQ-8-1-1-cell-notes.spec.ts",
+          "line": 44,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-07T04:07:56.425Z",
+    "duration": 328420.749,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 30,
+    "flaky": 0
+  }
+}
