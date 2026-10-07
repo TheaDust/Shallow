@@ -46,7 +46,7 @@ python main.py data/official-competition/hackathon--sheet --output-dir tmp/main 
 
 Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
 
-主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_BUILDER_CONTEXT_WINDOW` 指定主线 Builder 上下文窗口（默认 256000，范围 131072..1000000）；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）；`SHALLOW_REFERENCE_IMAGES` 开启参考图片进入模型上下文（**默认关闭**，取 `1`/`true`/`yes`/`on` 开启）。
+主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_BUILDER_CONTEXT_WINDOW` 指定主线 Builder 上下文窗口（默认 256000，范围 131072..1000000）；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）；`SHALLOW_REFERENCE_IMAGES` 开启参考图片进入模型上下文（**默认关闭**，取 `1`/`true`/`yes`/`on` 开启）；`SHALLOW_FINAL_AUDIT_GENERATE_PLAN` 控制最终验收在缺少已有 plan 时是否调用 Planner 补生成（**默认关闭**，关闭时仅复用已有 plan）。
 
 运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
 

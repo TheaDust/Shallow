@@ -12,6 +12,7 @@ import {
   parseBuilderContextWindow,
   parseEvaluationPort,
   parseEvolutionAuditInherited,
+  parseFinalAuditGeneratePlan,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -31,6 +32,18 @@ test("Evolution inherited audits default off and can be explicitly restored", ()
     assert.equal(parseEvolutionAuditInherited({ SHALLOW_EVOLUTION_AUDIT_INHERITED: value }), false);
   }
   assert.throws(() => parseEvolutionAuditInherited({ SHALLOW_EVOLUTION_AUDIT_INHERITED: "fales" }), /SHALLOW_EVOLUTION_AUDIT_INHERITED/);
+});
+
+test("Final audit plan generation defaults off and can be explicitly enabled", () => {
+  assert.equal(parseFinalAuditGeneratePlan({}), false);
+  for (const value of ["1", "true", " YES ", "ON"]) {
+    assert.equal(parseFinalAuditGeneratePlan({ SHALLOW_FINAL_AUDIT_GENERATE_PLAN: value }), true);
+  }
+  for (const value of ["", "0", "false", " NO ", "OFF"]) {
+    assert.equal(parseFinalAuditGeneratePlan({ SHALLOW_FINAL_AUDIT_GENERATE_PLAN: value }), false);
+  }
+  assert.throws(() => parseFinalAuditGeneratePlan({ SHALLOW_FINAL_AUDIT_GENERATE_PLAN: "enabled" }),
+    /SHALLOW_FINAL_AUDIT_GENERATE_PLAN/);
 });
 
 test("Runtime config requires the three explicit gateway variables", () => {
