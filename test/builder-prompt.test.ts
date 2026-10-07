@@ -29,6 +29,9 @@ test("Authorized entry guidance reaches every product and repair mode without mi
   assert.match(selfTest, /每段点击后立即核对/);
   assert.match(selfTest, /用可控的未完成 Promise 延迟正文或列表响应/);
   assert.match(selfTest, /同步检查已授权入口/);
+  assert.match(selfTest, /不能用直点替代需求明确规定的入口/);
+  assert.match(selfTest, /分别核对访客和登录用户/);
+  assert.match(selfTest, /检查全局控件位于 banner/);
   for (const kind of ["repository_collaboration", "spreadsheet", "generic_web"] as const) {
     for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair")]) {
       assert.ok("packet" in request);
@@ -38,6 +41,8 @@ test("Authorized entry guidance reaches every product and repair mode without mi
       const body = compiled.systemPrompt + "\n" + compiled.taskPrompt;
       assert.ok(compiled.taskPrompt.includes(accessibleFragment));
       assert.ok(compiled.systemPrompt.includes(selfTest));
+      assert.match(compiled.systemPrompt, /全局页头使用顶层 `<header>`（banner）/);
+      assert.match(compiled.systemPrompt, /与唯一的 `<main>` 主内容区并列/);
       assert.match(compiled.systemPrompt, /页面入口依据已确认的身份与权限呈现，不等待无关数据/);
       assert.match(compiled.systemPrompt, /依赖未就绪数据的操作保留控件并暂时禁用/);
       assert.match(compiled.systemPrompt, /脚手架混合 Combobox 分别用浏览器原生 selectOption/);
@@ -273,11 +278,13 @@ test("Evolution context includes a declared stage as optional metadata", () => {
   assert.match(compileBuilderPrompt(request).taskPrompt, /当前任务：Evolution；Stage 2/);
 });
 
-test("Every Builder mode includes the shared architecture handoff contract once", () => {
+test("Every Builder mode includes shared handoff and public-entry contracts", () => {
   const architectureNotes = loadPrompt("system", "architecture-notes");
   for (const request of [implementRequest(), repairRequest("repair"), repairRequest("root_cause_repair"), deliveryRequest()]) {
     const compiled = compileBuilderPrompt(request);
     assert.equal(compiled.systemPrompt.split(architectureNotes).length, 2);
+    assert.match(compiled.systemPrompt, /全局页头使用顶层 `<header>`（banner）/);
+    assert.match(compiled.systemPrompt, /检查全局控件位于 banner/);
     assert.match(compiled.systemPrompt, /选定本包实现入口、调用方和测试/);
     assert.match(compiled.systemPrompt, /已读且未变化的内容沿用上下文/);
     assert.match(compiled.systemPrompt, /修改后按需要重读受影响片段/);

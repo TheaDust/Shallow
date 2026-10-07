@@ -236,6 +236,57 @@ for (const losesSeed of [false, true]) {
   });
 }
 
+for (const entryRegresses of [false, true]) {
+  test(`Boundary sampling prefers a declared global entry without seed prose, regression=${entryRegresses}`, async () => {
+    await withModulePipeline(async f => {
+      const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      tree.children[0].children[0].description = 'Display the main workspace. Seed data: workspace `global navigation`.';
+      tree.children[0].children[1].description = 'Global repository search uses a searchbox named "Lookup" and displays its results.';
+      tree.children[1].children[0].dependencies = [];
+      await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+      const planned: string[] = [];
+      const checks: Array<{ packetId: string; cases: number; later: boolean; repaired: boolean }> = [];
+      f.deps.planner.plan = async packet => {
+        planned.push(packet.id);
+        const plan = testPlan(packet);
+        if (packet.id === "packet-b") {
+          plan.cases[0].steps.splice(1, 0,
+            { op: "fill", locator: { by: "role", role: "searchbox", name: "Lookup", exact: true,
+              scope: { by: "role", role: "banner" } }, value: "Shared area" },
+            { op: "press", locator: { by: "role", role: "searchbox", name: "Lookup", exact: true,
+              scope: { by: "role", role: "banner" } }, key: "Enter" });
+          plan.cases.push({ ...structuredClone(plan.cases[0]), id: "persisted-B", purpose: "persistence" });
+        }
+        return plan;
+      };
+      f.deps.runner.run = async plan => {
+        const later = f.builder.requests.some(request => request.mode === "implement" && request.packet.requirementIds.includes("C"));
+        const repaired = f.builder.requests.some(request => request.mode === "repair");
+        checks.push({ packetId: plan.packetId, cases: plan.cases.length, later, repaired });
+        return entryRegresses && plan.packetId === "packet-b" && later && !repaired ? {
+          packetId: plan.packetId, verdict: "fail", passedCases: [], failures: plan.cases.map(item => ({
+            caseId: item.id, stepIndex: 3, category: "assertion", message: "Global search results are missing",
+          })),
+        } : pass(plan);
+      };
+      const summary = await f.run();
+      const boundary = (await f.events()).find(event => event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "SECOND");
+      assert.ok(boundary?.type === "module_boundary_audit_finished");
+      assert.deepEqual(boundary.detail?.regressionPacketIds, ["packet-b"]);
+      assert.ok(checks.some(check => check.packetId === "packet-b" && check.later && !check.repaired && check.cases === 1));
+      assert.equal(checks.filter(check => check.packetId === "packet-b").at(-1)?.cases, 2);
+      assert.deepEqual(planned.sort(), ["packet-a", "packet-b", "packet-c"]);
+      const repairs = f.builder.requests.filter(request => request.mode === "repair");
+      assert.equal(repairs.length, entryRegresses ? 1 : 0);
+      if (entryRegresses) {
+        assert.ok(repairs[0].mode === "repair");
+        assert.deepEqual(repairs[0].packet.requirementIds, ["B"]);
+      }
+      assert.equal(summary.status, "delivered");
+    });
+  });
+}
+
 test("Boundary repairs also protect sampled seeded entries outside their dependency scope", async () => {
   await withModulePipeline(async f => {
     const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));

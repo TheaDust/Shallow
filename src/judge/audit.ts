@@ -8,7 +8,7 @@ import { GatewayRequestError } from "../gateway-failure.js";
 import { isModelLengthCutoff, planValidationFeedback, ProbePlannerError, type ProbePlannerFeedback } from "./llm-probe-planner.js";
 import { rootSearchNavigationPlan } from "./navigation-recovery.js";
 import { isPreparationOnlyCorrection } from "./semantic-review.js";
-import { assertLocatorOnlyRefinement, declaredLocatorRoles, groundedLocatorAnchors, groundedLocatorNames, locatorCandidates, matchesDeclaredLocatorRole, parseProbePlan, probePlanSha256, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
+import { assertLocatorOnlyRefinement, declaredLocatorRoles, groundedLocatorAnchors, groundedLocatorNames, isHomeEntryStep, locatorCandidates, matchesDeclaredLocatorRole, parseProbePlan, probePlanSha256, type ProbeLocator, type ProbePlan, type ProbeStep } from "./probe-schema.js";
 
 interface ProbeOutcome { source: "application" | "probe"; report: ShadowReport; plan: ProbePlan; navigationRecovered?: boolean }
 export interface AuditResult {
@@ -316,16 +316,18 @@ function isLocatorAmbiguity(failure: ShadowReport["failures"][number]): boolean 
 }
 
 function groundedPreparationTarget(packet: WorkPacket, plan: ProbePlan, failure: ShadowReport["failures"][number]): boolean {
-  const step = plan.cases.find(item => item.id === failure.caseId)?.steps[failure.stepIndex];
-  if (!step) return false;
+  const probeCase = plan.cases.find(item => item.id === failure.caseId);
+  const step = probeCase?.steps[failure.stepIndex];
+  if (!probeCase || !step) return false;
   const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
   return locators.length > 0 && locators.every(locator => groundedLocatorNames(locator, packet).length > 0 &&
     (!locator.scope || (locator.scope.by === "role" && !locator.scope.name) ||
-      groundedLocatorNames(locator.scope, packet).length > 0) && groundedControlRole(locator, packet, failure, step.op));
+      groundedLocatorNames(locator.scope, packet).length > 0) && groundedControlRole(locator, packet, failure, step.op,
+        isHomeEntryStep(probeCase, failure.stepIndex)));
 }
 
-function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure: ShadowReport["failures"][number], operation: ProbeStep["op"]): boolean {
-  const declared = declaredLocatorRoles(locator, packet, operation);
+function groundedControlRole(locator: ProbeLocator, packet: WorkPacket, failure: ShadowReport["failures"][number], operation: ProbeStep["op"], homeEntry: boolean): boolean {
+  const declared = declaredLocatorRoles(locator, packet, operation, false, homeEntry);
   if (declared.length) return locatorCandidates(locator).every(candidate => matchesDeclaredLocatorRole(candidate, declared));
   const observed = equivalentSnapshotControls(failure, locator);
   // An existing same-named control does not justify changing its role to a
@@ -343,14 +345,14 @@ function diagnosticFailures(packet: WorkPacket, plan: ProbePlan, report: ShadowR
     if (isLocatorAmbiguity(failure)) return false;
     if (failure.category === "precondition") return groundedPreparationTarget(packet, plan, failure);
     if (failure.category !== "locator" || !failure.locatorSnapshot) return false;
-    const steps = plan.cases.find(item => item.id === failure.caseId)?.steps;
-    const step = steps?.[failure.stepIndex];
+    const probeCase = plan.cases.find(item => item.id === failure.caseId);
+    const step = probeCase?.steps[failure.stepIndex];
     // A prior successful interaction establishes that we reached the flow;
     // an absent initial page locator alone is not evidence against the app.
-    return step && ["click", "fill", "select", "doubleClick"].includes(step.op) && "locator" in step &&
+    return probeCase && step && ["click", "fill", "select", "doubleClick"].includes(step.op) && "locator" in step &&
       groundedLocatorNames(step.locator, packet).length > 0 &&
-      groundedControlRole(step.locator, packet, failure, step.op) &&
-      steps!.slice(0, failure.stepIndex).some(item => ["click", "fill", "select"].includes(item.op));
+      groundedControlRole(step.locator, packet, failure, step.op, isHomeEntryStep(probeCase, failure.stepIndex)) &&
+      probeCase.steps.slice(0, failure.stepIndex).some(item => ["click", "fill", "select"].includes(item.op));
   });
 }
 

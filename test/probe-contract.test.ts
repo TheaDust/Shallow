@@ -176,6 +176,95 @@ test("An explicit trigger role remains mandatory when a popup has the same name"
   assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*button/);
 });
 
+test("Opening a named menu binds its trigger separately from the menu container", () => {
+  for (const name of ["Data", "View", "Edit"]) {
+    const description = `Users open the "${name}" menu and click "Run". A button named "Run" performs the action.`;
+    const input = packet(description);
+    input.requirements[0].exactUiStrings = [name, "Run"];
+    const original = plan();
+    original.cases[0].expectationBasis = [description];
+    original.cases[0].steps = [
+      { op: "goto", path: "/" },
+      { op: "click", locator: { by: "role", role: "button", name, exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "menu", name, exact: true } },
+      { op: "click", locator: { by: "role", role: "button", name: "Run", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "status" } },
+    ];
+    assert.deepEqual(declaredLocatorRoles({ by: "role", role: "button", name }, input, "click"), []);
+    assert.deepEqual(declaredLocatorRoles({ by: "role", role: "menu", name }, input, "expectVisible"), ["menu"]);
+    assert.doesNotThrow(() => parseProbePlan(original, input));
+    const containerClick = structuredClone(original);
+    containerClick.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "menu", name, exact: true } };
+    assert.throws(() => parseProbePlan(containerClick, input), /trigger control.*same-named popup/);
+    assert.throws(() => assertLocatorOnlyRefinement(original, containerClick, [], input), /interactive control role/);
+  }
+});
+
+test("A bare heading role is distinct from its same-named navigation link", () => {
+  const description = 'The overview exposes an "Activity log" link. The page displays the heading "Activity log".';
+  const input = packet(description);
+  input.requirements[0].exactUiStrings = ["Activity log"];
+  const heading: ProbeLocator = { by: "role", role: "heading", name: "Activity log", exact: true };
+  const original = plan();
+  original.cases[0].expectationBasis = [description];
+  original.cases[0].steps = [
+    { op: "goto", path: "/" },
+    { op: "click", locator: { by: "role", role: "link", name: "Activity log", exact: true } },
+    { op: "expectVisible", locator: heading },
+  ];
+  assert.deepEqual(declaredLocatorRoles(heading, input, "expectVisible"), ["heading"]);
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const wrongControl = structuredClone(original);
+  wrongControl.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Activity log", exact: true } };
+  assert.throws(() => parseProbePlan(wrongControl, input), /requirement-declared role.*link/);
+  const wrongHeading = structuredClone(original);
+  wrongHeading.cases[0].steps[2] = { op: "expectVisible", locator: { by: "role", role: "link", name: "Activity log", exact: true } };
+  assert.throws(() => assertLocatorOnlyRefinement(original, wrongHeading, [], input), /requirement-declared role.*heading/);
+});
+
+test("An untyped home-page entry does not inherit its same-named submit button role", () => {
+  const input = packet('The form contains a button named "Log in".');
+  input.requirements[0].ancestors = [{ id: "ROOT", name: "Access", description:
+    'Visitors enter the account-access page from "Register", "Log in", or "Recover account" on the home page.' }];
+  input.requirements[0].exactUiStrings = ["Log in"];
+  const link: ProbeLocator = { by: "role", role: "link", name: "Log in", exact: true };
+  const button: ProbeLocator = { by: "role", role: "button", name: "Log in", exact: true };
+  assert.deepEqual(declaredLocatorRoles(link, input, "click"), []);
+  assert.deepEqual(declaredLocatorRoles(button, input, "click"), ["button"]);
+  assert.deepEqual(declaredLocatorRoles({ ...link, scope: { by: "role", role: "form" } }, input, "click"), ["button"]);
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps = [{ op: "goto", path: "/" }, { op: "click", locator: link },
+    { op: "click", locator: button }, { op: "expectVisible", locator: { by: "role", role: "status" } }];
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+  const guessedEntry = structuredClone(original);
+  guessedEntry.cases[0].steps[1] = { op: "click", locator: button };
+  assert.doesNotThrow(() => parseProbePlan(guessedEntry, input));
+  assert.doesNotThrow(() => assertLocatorOnlyRefinement(guessedEntry, original, [], input));
+  const scopedEntry = structuredClone(original);
+  scopedEntry.cases[0].steps[1] = { op: "click", locator: { ...link, scope: { by: "role", role: "banner" } } };
+  assert.doesNotThrow(() => parseProbePlan(scopedEntry, input));
+  const changed = structuredClone(original);
+  changed.cases[0].steps[2] = { op: "click", locator: link };
+  assert.throws(() => parseProbePlan(changed, input), /requirement-declared role.*button/);
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed, [], input), /requirement-declared role.*button/);
+});
+
+test("Role validation reports the failed step and offending fallback", () => {
+  const input = packet('Click the button named "Publish".');
+  const original = plan();
+  original.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Publish", exact: true,
+    fallbacks: [{ by: "role", role: "link", name: "Publish", exact: true }] } };
+  assert.throws(() => parseProbePlan(original, input), error => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /case publish step 1/);
+    assert.match(error.message, /requirement-declared role: button/);
+    assert.match(error.message, /"role":"link"/);
+    assert.match(error.message, /"name":"Publish"/);
+    return true;
+  });
+});
+
 test("A control's role does not define its same-named scope and explicit container roles remain enforced", () => {
   const input = packet('Click the button named "Publish".');
   const original = plan();

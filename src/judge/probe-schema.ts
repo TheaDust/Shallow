@@ -361,7 +361,8 @@ export function parseProbePlan(
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
-        for (const locator of locators) assertDeclaredLocatorRole(locator, { requirements: scoped, prerequisites: packet.prerequisites }, step.op);
+        for (const locator of locators) assertDeclaredLocatorRole(locator, { requirements: scoped, prerequisites: packet.prerequisites },
+          step.op, false, `ProbePlan case ${probeCase.id} step ${stepIndex}`, isHomeEntryStep(probeCase, stepIndex));
         if (step.op === "goto" && step.path !== "/") {
           // A guessed server path cannot reach a hash-routed page. Only public
           // requirement text can authorize a deep link; never infer it from a name.
@@ -489,12 +490,14 @@ export function assertLocatorOnlyRefinement(
         assertRefinementKeepsStrength(before.locator, after.locator);
         if (packet) {
           const evidence = { ...packet, requirements: packet.requirements.filter(item => beforeCase.requirementIds.includes(item.id)) };
-          const roles = declaredLocatorRoles(before.locator, evidence, before.op);
-          if (roles.length && locatorCandidates(after.locator).some(candidate =>
-            !matchesDeclaredLocatorRole(candidate, roles))) {
-            throw new Error(`Refinement must preserve the requirement-declared role: ${roles.join(" or ")}`);
+          const homeEntry = isHomeEntryStep(beforeCase, stepIndex);
+          const roles = declaredLocatorRoles(before.locator, evidence, before.op, false, homeEntry);
+          const wrongRole = roles.length ? locatorCandidates(after.locator).find(candidate =>
+            !matchesDeclaredLocatorRole(candidate, roles)) : undefined;
+          if (wrongRole) {
+            throw new Error(`Refinement case ${beforeCase.id} step ${stepIndex}: Refinement must preserve the requirement-declared role: ${roles.join(" or ")}; locator=${JSON.stringify(wrongRole)}`);
           }
-          assertDeclaredLocatorRole(after.locator, evidence, after.op);
+          assertDeclaredLocatorRole(after.locator, evidence, after.op, false, `Refinement case ${beforeCase.id} step ${stepIndex}`, homeEntry);
         }
         if (anchors.length && before.locator.exact === true &&
           locatorCandidates(after.locator).some(candidate => candidate.exact !== true)) {
@@ -979,6 +982,16 @@ const CONTROL_OPERATIONS = new Set<ProbeStep["op"]>([
   "click", "rightClick", "doubleClick", "hover", "press", "fill", "select", "setChecked", "uploadFile", "drag", "expectDownload",
 ]);
 
+/** Identify the initial home-page entry, before navigation or form input. */
+export function isHomeEntryStep(probeCase: Pick<ProbeCase, "steps">, stepIndex: number): boolean {
+  for (let index = stepIndex - 1; index >= 0; index--) {
+    const step = probeCase.steps[index];
+    if (step.op === "goto") return step.path === "/";
+    if (!step.op.startsWith("expect") && step.op !== "reload") return false;
+  }
+  return false;
+}
+
 function canonicalRolePhrase(value: string): string {
   return value.replace(/\bnavigation\s+link\b/gi, "link").replace(/\bmenu\s+item\b/gi, "menuitem")
     .replace(/\bconfirmation\s+button\b/gi, "button");
@@ -986,17 +999,20 @@ function canonicalRolePhrase(value: string): string {
 
 /** Bind each role to its named referent; a popup's role does not define its same-named trigger. */
 export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">,
-  operation?: ProbeStep["op"], scopeRole = false): string[] {
+  operation?: ProbeStep["op"], scopeRole = false, homeEntry?: boolean): string[] {
   const name = candidateTargetName(locator);
   if (!name) return [];
   const role = `(?:${ARIA_ROLES.join("|")})`;
   const roleList = `${role}(?:\\s+or\\s+${role})*`;
-  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s*$`, "i");
+  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:(?:named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s+)?$`, "i");
   const after = new RegExp(`^\\s*(${roleList})\\b`, "i");
   const scoped = new RegExp(`\\b(?:in|within|inside)\\s+(?:the\\s+)?(?:${role}\\s+(?:named\\s+)?)?(?:\"([^\"\\n]+)\"|“([^”]+)”|\x60([^\x60]+)\x60)`, "gi");
   const scopeName = locator.scope && candidateTargetName(locator.scope as ProbeLocator);
+  const homeScope = !locator.scope || locator.scope.by === "role" && !locator.scope.name &&
+    ["main", "banner", "navigation"].includes(locator.scope.role);
   const roles = new Set<string>();
   let untypedTrigger = false;
+  let untypedHomeEntry = false;
   for (const text of requirementEvidenceTexts(packet.requirements, packet.prerequisites)) {
     for (const sentence of requirementSentences(text.replace(/\r?\n/g, " "))) {
       const containers = [...sentence.matchAll(scoped)].map(match => match[1] ?? match[2] ?? match[3]);
@@ -1006,19 +1022,28 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
         const prefix = canonicalRolePhrase(maskRequirementLiterals(sentence.slice(0, literal.index)));
         const suffix = canonicalRolePhrase(maskRequirementLiterals(sentence.slice(literal.index! + literal[0].length)));
         const binding = before.exec(prefix)?.[1] ?? after.exec(suffix)?.[1];
-        if (!binding && (!scopeName || matchesScope) && /\b(?:clicks?|chooses?|activates?|press(?:es)?)\s+(?:the\s+)?$/i.test(prefix)) {
+        const boundRoles = binding?.toLowerCase().split(/\s+or\s+/) ?? [];
+        const popup = boundRoles.length > 0 && boundRoles.every(role => ["menu", "dialog", "alertdialog", "listbox"].includes(role));
+        if ((!binding || popup) && (!scopeName || matchesScope) && /\b(?:clicks?|chooses?|activates?|press(?:es)?|opens?)\s+(?:(?:the|a|an)\s+)?$/i.test(prefix)) {
           untypedTrigger = true;
         }
-        if (binding && matchesScope) for (const value of binding.toLowerCase().split(/\s+or\s+/)) roles.add(value);
+        // An untyped home-page entry is separate from its same-named form submit.
+        // Keep explicitly scoped controls and button-role refinements strict.
+        if (!binding && homeScope &&
+          /\b(?:enter|enters|access|accesses|reach|reaches)\b[^;.!?]*\b(?:page|screen|view|workspace)\s+(?:from|via|through)\s+(?:[#\s,]|\band\b|\bor\b)*$/i.test(prefix) &&
+          /\bon\s+(?:the\s+)?(?:home page|homepage)\b/i.test(suffix)) untypedHomeEntry = true;
+        if (matchesScope) for (const value of boundRoles) roles.add(value);
       }
     }
   }
   const namedControl = locator.by !== "role" || INTERACTIVE_ROLES.has(locator.role);
   const containerRoles = [...roles].filter(role => !INTERACTIVE_ROLES.has(role));
   if (!namedControl && (scopeRole || operation?.startsWith("expect") && containerRoles.length)) return containerRoles;
-  const controlQuery = operation && CONTROL_OPERATIONS.has(operation) && namedControl ||
+  const controlQuery = operation && CONTROL_OPERATIONS.has(operation) ||
     operation?.startsWith("expect") && locator.by === "role" && INTERACTIVE_ROLES.has(locator.role);
   if (controlQuery) {
+    if (untypedHomeEntry && locator.by === "role" && ["link", "button"].includes(locator.role) &&
+      (homeEntry ?? locator.role === "link") && !roles.has("link")) return [];
     const controls = [...roles].filter(role => INTERACTIVE_ROLES.has(role));
     if (controls.length || untypedTrigger) return controls;
   }
@@ -1033,18 +1058,20 @@ export function matchesDeclaredLocatorRole(locator: ProbeLocator, roles: readonl
 }
 
 function assertDeclaredLocatorRole(locator: ProbeLocator, packet: Pick<WorkPacket, "requirements" | "prerequisites">,
-  operation?: ProbeStep["op"], scopeRole = false): void {
-  const roles = declaredLocatorRoles(locator, packet, operation, scopeRole);
+  operation?: ProbeStep["op"], scopeRole = false, location?: string, homeEntry?: boolean): void {
+  const roles = declaredLocatorRoles(locator, packet, operation, scopeRole, homeEntry);
   const candidates = locatorCandidates(locator);
-  if (roles.length && candidates.some(candidate => !matchesDeclaredLocatorRole(candidate, roles))) {
-    throw new Error(`Locator must preserve the requirement-declared role: ${roles.join(" or ")}`);
+  const wrongRole = roles.length ? candidates.find(candidate => !matchesDeclaredLocatorRole(candidate, roles)) : undefined;
+  if (wrongRole) {
+    throw new Error(`${location ? `${location}: ` : ""}Locator must preserve the requirement-declared role: ${roles.join(" or ")}; locator=${JSON.stringify(wrongRole)}`);
   }
   if (!roles.length && operation && candidates.some(candidate => candidate.by === "role" && !INTERACTIVE_ROLES.has(candidate.role)) &&
     declaredLocatorRoles(locator, packet).some(role => !INTERACTIVE_ROLES.has(role))) {
-    throw new Error("Locator fallbacks must refer to the trigger control, not its same-named popup");
+    throw new Error(`${location ? `${location}: ` : ""}Locator fallbacks must refer to the trigger control, not its same-named popup`);
   }
   for (const candidate of candidates) {
-    if (candidate.scope) assertDeclaredLocatorRole(candidate.scope as ProbeLocator, packet, undefined, true);
+    if (candidate.scope) assertDeclaredLocatorRole(candidate.scope as ProbeLocator, packet, undefined, true,
+      location ? `${location}.scope` : undefined);
   }
 }
 

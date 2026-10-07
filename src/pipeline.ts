@@ -17,6 +17,7 @@ import {
   type ArcScenarioRow,
 } from "./arc-protocol.js";
 import { loadRequirementCatalog } from "./catalog.js";
+import { maskRequirementLiterals } from "./requirement-text.js";
 import { evolutionImplementationCatalog, readHistoricalRequirementIds, selectEvolutionScope } from "./evolution.js";
 import type { GitOps } from "./git-ops.js";
 import type {
@@ -452,11 +453,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     const moduleOf = (packet: WorkPacket) => packet.requirements[0].folderPath[1] ?? packet.requirements[0].id;
     const coveredModules = new Set(targetPackets.map(moduleOf));
     const regressionChecks: Array<{ packet: WorkPacket; plan: ProbePlan }> = [];
-    for (const packet of packets) {
+    // Prefer a declared global entry over an object shortcut in the same module.
+    // Its contract matters even when it has no standalone seed declaration.
+    const publicEntry = (packet: WorkPacket) => packet.requirements.some(item =>
+      /\bglobal(?:\s+[\w-]+){0,2}\s+(?:search|navigation)\b/i.test(maskRequirementLiterals(item.text)));
+    const regressionPackets = [...packets].sort((a, b) => Number(publicEntry(b)) - Number(publicEntry(a)));
+    for (const packet of regressionPackets) {
       const previous = results.get(packet.id);
       const ownerModule = moduleOf(packet);
       if (coveredModules.has(ownerModule) || previous?.status !== "verified" || !previous.plan ||
-        !packet.requirements.some(item => item.seedDeclarations.length > 0 || item.product.seedData.length > 0)) continue;
+        (!publicEntry(packet) && !packet.requirements.some(item => item.seedDeclarations.length > 0 || item.product.seedData.length > 0))) continue;
       const entry = previous.plan.cases.find(item => item.purpose === "happy_path") ??
         previous.plan.cases.find(item => item.purpose === "persistence");
       if (!entry || budget.remaining("audit") <= 0) continue;

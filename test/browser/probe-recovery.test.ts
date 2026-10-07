@@ -71,6 +71,48 @@ test("Preparation ambiguity recovers through a scoped locator before any diagnos
   });
 });
 
+test("A guessed home entry role is refined without changing the same-named form submit role", async () => {
+  const description = 'Visitors enter the access page from "Register", "Log in", or "Recover account" on the home page. ' +
+    'The form named "Access" contains a textbox labeled "Identity" and a button named "Log in". ' +
+    'Submitting the form displays a heading "Workspace".';
+  const html = `<main><a href="#">Log in</a></main><script>
+    const main = document.querySelector('main');
+    main.querySelector('a').addEventListener('click', event => {
+      event.preventDefault();
+      main.innerHTML = '<form aria-label="Access"><label>Identity<input name="identity"></label><button>Log in</button></form>';
+      main.querySelector('form').addEventListener('submit', event => {
+        event.preventDefault();
+        if (main.querySelector('input').value) main.innerHTML = '<h1>Workspace</h1>';
+      });
+    });
+  </script>`;
+  await withRecoveryApp(description, html, async (f, packet, state) => {
+    const original: ProbePlan = { packetId: packet.id, cases: [{ id: "access", requirementIds: ["A"],
+      purpose: "happy_path", expectationBasis: [description], setupStepCount: 3, steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "button", name: "Log in", exact: true } },
+        { op: "expectVisible", locator: { by: "role", role: "form", name: "Access", exact: true } },
+        { op: "fill", locator: { by: "label", text: "Identity", exact: true }, value: "tester" },
+        { op: "click", locator: { by: "role", role: "button", name: "Log in", exact: true,
+          scope: { by: "role", role: "form", name: "Access", exact: true } } },
+        { op: "expectVisible", locator: { by: "role", role: "heading", name: "Workspace", exact: true } },
+      ] }] };
+    const refined = structuredClone(original);
+    const entry = refined.cases[0].steps[1];
+    assert.ok(entry.op === "click" && entry.locator.by === "role");
+    entry.locator.role = "link";
+    const planner = new FakeProbePlanner([refined]);
+    f.deps.planner = planner;
+    const result = await auditPacket(packet, original, f.options, f.deps, state, () => 60_000);
+    assert.equal(result.status, "verified");
+    assert.equal(result.repairableProbeFailure, undefined);
+    assert.equal(planner.refinements.length, 1);
+    assert.equal(planner.reviews.length, 0);
+    assert.deepEqual(result.plan?.cases[0].steps[4], original.cases[0].steps[4]);
+    assert.equal(f.builder.requests.length, 0);
+  });
+});
+
 test("A locator refinement after search recovery preserves navigation and is freshly confirmed", async () => {
   const description = 'Open repository `docs` from a search result. Seed data: repository `docs`, owner `alice`. ' +
     'Opening it shows "alice/docs"; click "Settings" to display a heading "Settings".';

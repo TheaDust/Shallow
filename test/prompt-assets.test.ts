@@ -186,6 +186,23 @@ test("Module action assets retain placeholders and bounded self-test responsibil
   }
 });
 
+test("Builder, baseline and Judge assets preserve global-entry and separate-role contracts", async () => {
+  const baseline = await readFile(new URL("../baseline/system.md", import.meta.url), "utf8");
+  const builder = loadPrompt("system", "builder-system");
+  for (const text of [baseline, builder]) {
+    assert.match(text, /全局页头使用顶层 `<header>`（banner）/);
+    assert.match(text, /与唯一的 `<main>` 主内容区并列/);
+    assert.match(text, /页面标题与同名导航链接/);
+  }
+  for (const asset of ["probe-planner", "probe-refinement", "probe-review"]) {
+    const text = loadPrompt("judge", asset);
+    assert.match(text, /首页入口与表单提交按钮/);
+    assert.match(text, /公共入口链/);
+  }
+  assert.match(loadPrompt("judge", "probe-planner"), /在 banner 内核对对应控件及进入目标的结果/);
+  assert.match(loadPrompt("judge", "probe-review"), /全局控件的 banner 与局部控件的明示作用域分别保留/);
+});
+
 test("task templates carry their placeholders", () => {
   const packetPlaceholders = [
     "{{PACKET_ID}}",
