@@ -28,15 +28,15 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem，confirmation button 指 button。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
 
-“打开某菜单”核对触发控件，再核对同名 menu 容器；页面 heading 与同名入口 link、首页入口与表单提交按钮分别定位，不能将一个对象的角色套到另一个对象。公共入口链按当前需求和前置合同规划；明确规定经搜索结果进入时，首页恰好存在对象链接也不替代该路径。需求声明顶部全局导航或全局搜索时，在 banner 内核对对应控件及进入目标的结果；局部搜索仍按其明示作用域定位，不新增猜测的菜单、容器名称或地址。
+“打开某菜单”核对触发控件，再核对同名 menu 容器；页面 heading 与同名入口 link、首页入口与表单提交按钮分别定位，不能将一个对象的角色套到另一个对象。公共入口链按当前需求和前置合同规划；明确规定经搜索结果进入时，首页恰好存在对象链接也不替代该路径。需求声明顶部全局导航或全局搜索时，在 banner 内核对对应控件及进入目标的结果；该 scope 是公共入口合同，初始 locator、所有 fallback 和后续精化均不得省略。局部搜索仍按其明示作用域定位，不新增猜测的菜单、容器名称或地址。
 
 核对账号身份或数据展示时，按需求规定的角色定位；未规定交互角色时，使用有依据的显示文本或观测到的展示角色建立状态断言。
 
-每个 case 按准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖核心结果；逐项覆盖场景明示的校验边界、唯一性、权限、反向操作、持久化与跨视图联动。边界输入只用有依据的空值、超长值、非法格式或重复值。创建后核对新对象，删除前确认存在、删除后确认消失；第一次操作后立即核对状态，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须核对已登录状态。需求枚举的控件逐项检查；关键 UI 文案逐字纳入 locator 或结果断言。
+每个 case 按准备 → 待测交互 → 结果断言排列，至少一条 happy path 覆盖核心结果；逐项覆盖场景明示的校验边界、唯一性、权限、反向操作、持久化与跨视图联动。边界输入只用有依据的空值、超长值、非法格式或重复值。创建后核对新对象，删除前确认存在、删除后确认消失；第一次操作后立即核对状态，再验证反向操作。登录表单可见或页面跳转不等于登录成功，须核对已登录状态。需求枚举的控件、标记、设备信息和状态文案逐项独立检查，不能用任意 row/listitem 的存在代替其中的当前标记或设备标签；关键 UI 文案逐字纳入 locator 或结果断言。
 
 场景明示的连续操作及中间结果必须在同一 case 完整还原：建立状态 → 第一次操作并核对结果 → 继续相关操作 → 核对新结果与仍应保留的先前状态，必要时 reload 或按原文切换账号。除此之外，每份计划至多额外构造一条有原文依据的跨功能回归链，替代重复单步成功路径；该限制不适用于场景本身要求的操作链。额外链的功能及状态须有当前需求或 prerequisites 原文依据，保留独立行为维度和 planLimits，仅引用当前 requirements 的 ID。
 
-每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。newContext 只新建匿名浏览器会话，actor 字段仅作说明，不会自动登录；切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。等待异步目标出现，不把短暂加载判为缺失。
+每个 case 在全新的 browser context 和应用数据中运行；同一 case 内的刷新、重开与账号切换共享该 case 的应用数据。准备步骤须自足；持久化 case 在本 case 内修改后 reload，不能借前一 case 的记录。初始 browser context 名为 `default`；`newContext` 携带 actor 时新建并保留该命名浏览器会话，`switchContext` 用 actor 切回此前命名的会话或 `default`。二者都不会自动登录，切换用户后须通过可见登录表单建立该用户会话并确认身份，凭证须有需求依据。场景要求一个浏览器撤销另一个浏览器的 session 时，必须切回被撤销的 context 并 reload 验证，不能列入 uncoveredOutcomes。等待异步目标出现，不把短暂加载判为缺失。
 
 ## Locator 与导航
 
@@ -46,7 +46,7 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 当前场景原文明确要求第一个具名控件时，locator 可附 firstMatch，值为逐字引用该选择指令的原文。例如 firstMatch 为 clicks the first `Add comment` button，同时保持 role:button、name:Add comment、exact:true。程序核对引用与目标名，并选择 scope 内第一个可见匹配。“在第一条 changed line 开始评论”这类指令还须由原文明确绑定具名控件与该容器，例如 Add comment 按钮位于 changed line；不能只凭 first 一词或位置猜测。所有 fallback 保持同一 firstMatch。没有明确指令时不使用 firstMatch；它不用于 count 或不存在断言，普通 locator 该字段填 null。
 
-入口未指定时以 goto `/` 开始，再按可见入口进入目标视图；需求或前置需求逐字声明完整页面路径时，可直接 goto 该路径，保留 hash/query，未声明的非根路径会被程序拒绝。种子实体存在不等于首页有链接；首页直点只在需求明确给出该入口时使用。若允许经搜索结果或列表进入，先使用该入口再点目标。账号菜单中的入口先打开账号菜单；页面名或区域名不能据此推断成需要再次点击的链接。用 click、hover、doubleClick、fill、select 按需求交互；select 同时支持原生 select 与激活后暴露 role=option 的 ARIA combobox，value 使用需求给出的选项可访问名。只有键盘提交时 press Enter。reload 验证状态在刷新后存活。需求或场景包含确认时，把明确命名的确认按钮纳入完整操作链，再断言提交结果；描述允许直接完成或经确认完成时，先按场景的确认链规划，后续依据实际页面在既有复核中核对该分支。
+入口未指定时以 goto `/` 开始，再按可见入口进入目标视图；需求或前置需求逐字声明完整页面路径时，可直接 goto 该路径，保留 hash/query，未声明的非根路径会被程序拒绝。种子实体存在不等于首页有链接；首页直点只在需求明确给出该入口时使用。若允许经搜索结果或列表进入，先使用该入口再点目标。场景逐字声明种子标识符且未声明另一个入口显示名时，以该标识符作为 exact 入口名，不用标题化、空格化或自行推断的 display name 替代。账号菜单中的入口先打开账号菜单；页面名或区域名不能据此推断成需要再次点击的链接。用 click、hover、doubleClick、fill、select 按需求交互；select 同时支持原生 select 与激活后暴露 role=option 的 ARIA combobox，value 使用需求给出的选项可访问名。只有键盘提交时 press Enter。reload 验证状态在刷新后存活。需求或场景包含确认时，把明确命名的确认按钮纳入完整操作链，再断言提交结果；描述允许直接完成或经确认完成时，先按场景的确认链规划，后续依据实际页面在既有复核中核对该分支。
 
 原生文件控件用 `uploadFile` 的 locator、纯文件名 fileName 和内联 UTF-8 content，不用 fill 或虚构 `fixtures/...` 路径。CSV 内容按需求格式和值构造，断言实际导入结果。网格上下文菜单先 rightClick 行号、列头或单元格，再 click menuitem；工具栏菜单按需求打开对应入口。矩形选区用 drag 的 from/to locator。外部粘贴先 setClipboardText，再点 Paste 或 press ControlOrMeta+V；内部复制/剪切先选源区、执行 Copy/Cut，再选目标粘贴。press 也支持 ControlOrMeta+C/X 和 Shift+F10。每个 case 自行建立菜单、剪贴板及选区前提。
 

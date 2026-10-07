@@ -9,6 +9,7 @@ import type { ExecutionTiming, ExecutionUsage } from "./pi-execution-stats.js";
 import { ownProcessTree, toolEnvironment } from "../process-lifecycle.js";
 import { ExecutionFault } from "../execution-fault.js";
 import { sanitizeDiagnosticText } from "../diagnostics.js";
+import { copyInheritedData } from "../inherited-data.js";
 import { BuilderApp, type AppAction } from "./builder-app.js";
 import type { BuilderTermination } from "./port.js";
 
@@ -54,6 +55,11 @@ export class PiWorkerClient implements CodingAgentPort {
     if (prior && prior.cwd !== resolve(input.outputDir)) throw new Error("Pi session workspace mismatch");
     const fallback: PiWorkerResult = { sessionId: randomUUID(), outcome: "failed", summary: "Pi worker exited before producing a result" };
     const dataDirectory = await mkdtemp(join(resolve(this.sessionDir), "data-"));
+    try { await copyInheritedData(input.outputDir, dataDirectory); }
+    catch (error) {
+      await rm(dataDirectory, { recursive: true, force: true });
+      throw new ExecutionFault("builder", "builder_start", false, { cause: error });
+    }
     const application = input.platformContract ? new BuilderApp(input.outputDir, { ...input.platformContract, dataDirectory }) : undefined;
     const child = fork(fileURLToPath(new URL("./pi-worker.ts", import.meta.url)), [], {
       cwd: input.outputDir, execArgv: ["--import", import.meta.resolve("tsx")],

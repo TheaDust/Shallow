@@ -173,6 +173,38 @@ test("Playwright Probe Runner creates a fresh browser context for newContext", a
   }
 });
 
+test("Playwright Probe Runner retains named contexts and switches back to the initial browser", async () => {
+  const server = createServer((request, response) => {
+    const identity = /(?:^|;\s*)identity=([^;]+)/.exec(request.headers.cookie ?? "")?.[1] ?? "none";
+    response.setHeader("content-type", "text/html");
+    response.end(`<button onclick="document.cookie='identity=first; path=/'; document.querySelector('[role=status]').textContent='first'">Set first</button>
+      <output role="status">${identity}</output>`);
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const plan: ProbePlan = { packetId: "named-contexts", cases: [{ id: "switch-back", requirementIds: ["A"],
+      purpose: "permission", expectationBasis: ["fixture"], steps: [
+        { op: "goto", path: "/" },
+        { op: "click", locator: { by: "role", role: "button", name: "Set first" } },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "first", exact: true },
+        { op: "newContext", actor: "other" },
+        { op: "goto", path: "/" },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "none", exact: true },
+        { op: "switchContext", actor: "default" },
+        { op: "reload" },
+        { op: "expectText", locator: { by: "role", role: "status" }, text: "first", exact: true },
+      ] }] };
+    const report = await new PlaywrightProbeRunner().run(plan, {
+      baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 2_000, caseTimeoutMs: 10_000,
+    });
+    assert.equal(report.verdict, "pass");
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
 test("Playwright Probe Runner classifies a wrong assertion as fail", async () => {
   const server = await startFixtureServer();
   try {
