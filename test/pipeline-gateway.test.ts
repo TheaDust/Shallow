@@ -12,6 +12,7 @@ import { withModulePipeline, testPlan, fail, pass } from "./helpers/module-pipel
 test("Final auditing replans a missing packet after its boundary gateway window expires", async () => {
   await withModulePipeline(async f => {
     f.options.totalBudgetMs = 0;
+    f.options.generateFinalAuditPlans = true;
     let elapsed = 0;
     let attempts = 0;
     let boundaryUnknown = false;
@@ -39,6 +40,30 @@ test("Final auditing replans a missing packet after its boundary gateway window 
     assert.equal(attempts, 4);
     assert.equal(summary.status, "delivered");
     assert.deepEqual(summary.missingPlanRequirementIds, []);
+  });
+});
+
+test("Final auditing does not generate a missing plan by default", async () => {
+  await withModulePipeline(async f => {
+    f.options.totalBudgetMs = 0;
+    let elapsed = 0;
+    let attempts = 0;
+    f.deps.clock = { nowMs: () => elapsed };
+    f.deps.gatewayRecovery = new GatewayRecovery({ now: () => elapsed, sleep: async ms => { elapsed += ms; } });
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-a") {
+        attempts++;
+        if (attempts <= 2) throw new ProbePlannerError("schema", "invalid initial plan", { cause: new Error("missing result") });
+        elapsed += 720_000;
+        throw new ProbePlannerError("transport", "headers timeout");
+      }
+      return testPlan(packet);
+    };
+    const summary = await f.run();
+    assert.equal(attempts, 3);
+    assert.equal(summary.status, "partial");
+    assert.deepEqual(summary.inconclusiveRequirementIds, ["A"]);
+    assert.deepEqual(summary.missingPlanRequirementIds, ["A"]);
   });
 });
 

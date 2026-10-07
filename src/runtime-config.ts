@@ -256,6 +256,14 @@ export function parseEvolutionAuditInherited(env: Record<string, string | undefi
   throw new Error("SHALLOW_EVOLUTION_AUDIT_INHERITED must be 1/true/yes/on or 0/false/no/off");
 }
 
+/** Final audits reuse cached plans by default instead of spending tokens to replace missing ones. */
+export function parseFinalAuditGeneratePlan(env: Record<string, string | undefined>): boolean {
+  const raw = env["SHALLOW_FINAL_AUDIT_GENERATE_PLAN"]?.trim();
+  if (!raw || /^(0|false|no|off)$/i.test(raw)) return false;
+  if (/^(1|true|yes|on)$/i.test(raw)) return true;
+  throw new Error("SHALLOW_FINAL_AUDIT_GENERATE_PLAN must be 1/true/yes/on or 0/false/no/off");
+}
+
 export async function pickFreePort(exclude: readonly number[] = []): Promise<number> {
   for (let attempt = 0; ; attempt += 1) {
     const port = await new Promise<number>((resolvePort, reject) => {

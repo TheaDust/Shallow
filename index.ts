@@ -34,6 +34,7 @@ import {
   parseBuilderContextWindow,
   parseEvaluationPort,
   parseEvolutionAuditInherited,
+  parseFinalAuditGeneratePlan,
   parseProbePortOverride,
   parseRunDirOverride,
   pickFreePort,
@@ -101,6 +102,7 @@ export async function main(
     platformContract: createArcPlatformContract(process.platform, probePort, evaluationPort, extraPorts),
     progressDir: join(cli.outputDir, PROGRESS_DIR_NAME),
     auditInheritedRequirements: parseEvolutionAuditInherited(mergedEnv),
+    generateFinalAuditPlans: parseFinalAuditGeneratePlan(mergedEnv),
   };
   const summary = await execute({
     gateway,
@@ -139,6 +141,7 @@ async function executeProduction(
   process.stderr.write(`[ShallowCode] 平台额外端口（公共运行合同）：${pipelineOptions.platformContract.extraPorts?.join(", ") || "无"}\n`);
   if (sseCaptureDir) process.stderr.write(`[ShallowCode] SSE 抓包已启用（仅诊断用途）：${sseCaptureDir}\n`);
   process.stderr.write(`[ShallowCode] 参考图片：${referenceImages ? "已开启（首次附带前预探测模型视觉能力）" : "已关闭"}\n`);
+  process.stderr.write(`[ShallowCode] 最终验收补生成 plan：${pipelineOptions.generateFinalAuditPlans ? "已开启" : "已关闭（仅复用已有 plan）"}\n`);
   const candidate = new CandidateRuntime(pipelineOptions.outputDir,
     join(dirname(runLogFile), "candidate"), pipelineOptions.platformContract);
   try {

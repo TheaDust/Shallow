@@ -122,6 +122,8 @@ export interface PipelineOptions {
   stageStartingPoint?: "inherited_application" | "blank_template" | "unknown";
   /** Evolution only: true includes inherited atomics in audits and delivery coverage. Default false. */
   auditInheritedRequirements?: boolean;
+  /** Whether final/delivery audits may ask the Planner to replace a missing plan. Default false. */
+  generateFinalAuditPlans?: boolean;
 }
 
 export interface RunSummary {
@@ -396,8 +398,9 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   };
   const audit = async (name: PipelinePhase, previous = results): Promise<Map<string, AuditResult>> => {
     const audited = new Map<string, AuditResult>();
-    // Complete missing plans before replaying cached final probes. Runtime edits
-    // still check previously passed paths first during delivery revalidation.
+    // Replay cached final probes. Missing plans are only generated when explicitly
+    // enabled; the default preserves tokens and reports the evidence gap instead.
+    // Runtime edits still check previously passed paths first during delivery revalidation.
     const ordered = [...packets].sort((a, b) =>
       (name === "audit" ? Number(!previous.get(b.id)?.plan) - Number(!previous.get(a.id)?.plan) : 0) ||
       Number(previous.get(b.id)?.status === "verified") - Number(previous.get(a.id)?.status === "verified"));
@@ -406,7 +409,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const cached = previous.get(packet.id)?.plan ?? await planCache.read(packet);
       const result = budget.remaining(name) <= 0
         ? { status: "inconclusive" as const, failureKind: "budget" as const, plan: cached, reason: "audit phase budget exhausted" }
-        : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
+        : !cached && !(options.generateFinalAuditPlans ?? false)
+          ? { status: "inconclusive" as const, failureKind: "planning" as const,
+            reason: "final audit plan generation is disabled and no cached plan is available" }
+          : await auditPacket(packet, cached, options, deps, state, () => budget.remaining(name), { refineLocators: false });
       // Detection-only audits never refine; persist a freshly planned result so
       // future audits skip the LLM call.
       if (result.plan && shouldWritePlanCache(cached, result.plan)) {
