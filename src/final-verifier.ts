@@ -10,6 +10,7 @@ import type { AppLifecycle } from "./pipeline.js";
 import { spawnProcess } from "./process-spawn.js";
 import { runtimeEnvironment } from "./process-lifecycle.js";
 import { PlaywrightProbeRunner } from "./judge/playwright-probe-runner.js";
+import { copyInheritedData } from "./inherited-data.js";
 import type { PlatformContract, ProcessCommand } from "./types.js";
 
 export interface FinalVerificationReport {
@@ -155,6 +156,13 @@ export async function verifyGraderLikeStart(
     return { ok: true, stage: "complete", message: "Grader-like extra ports not configured" };
   }
   const dataDirectory = contract.dataDirectory ?? await mkdtemp(join(tmpdir(), "shallow-grader-"));
+  if (!contract.dataDirectory) {
+    try { await copyInheritedData(outputDir, dataDirectory); }
+    catch (error) {
+      await rm(dataDirectory, { recursive: true, force: true });
+      return { ok: false, stage: "readiness", message: `Inherited data preparation failed: ${compactError(error)}` };
+    }
+  }
   const environment = runtimeEnvironment({ PORT: String(contract.port), SHALLOW_DATA_DIR: dataDirectory });
   // The grader never sets ARC_EXTRA_PORTS, so the extra listeners must bind.
   delete environment.ARC_EXTRA_PORTS;

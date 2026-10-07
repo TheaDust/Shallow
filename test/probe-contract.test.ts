@@ -60,6 +60,12 @@ test("Requirement-declared top global search is deterministically scoped to bann
   if (step.op !== "fill") assert.fail("missing search fill");
   assert.deepEqual(step.locator.scope, { by: "role", role: "banner" });
   assert.deepEqual(step.locator.fallbacks?.[0].scope, { by: "role", role: "banner" });
+  const weakened = structuredClone(parsed);
+  const weakenedStep = weakened.cases[0].steps[1];
+  if (weakenedStep.op !== "fill") assert.fail("missing search fill");
+  delete weakenedStep.locator.scope;
+  for (const fallback of weakenedStep.locator.fallbacks ?? []) delete fallback.scope;
+  assert.throws(() => assertLocatorOnlyRefinement(parsed, weakened), /preserve the banner scope/);
 
   const conflicting = structuredClone(original);
   const locator = conflicting.cases[0].steps[1];
@@ -111,6 +117,35 @@ test("Role evidence binds the quoted target, alternatives and explicit scope", (
   const scoped = packet('Use a button named "Publish" in dialog named "Editor". Use a link named "Publish" in region named "History".');
   assert.deepEqual(declaredLocatorRoles({ ...target, scope: { by: "role", role: "dialog", name: "Editor" } }, scoped), ["button"]);
   assert.deepEqual(declaredLocatorRoles(target, scoped), []);
+});
+
+test("An option named after a Style field does not turn the field into an option", () => {
+  const input = packet('Users choose a "Style" option named "Red fill", "Yellow fill", or "Green fill".');
+  input.requirements[0].exactUiStrings = ["Style", "Red fill", "Yellow fill", "Green fill"];
+  const field: ProbeLocator = { by: "role", role: "combobox", name: "Style", exact: true };
+  const option: ProbeLocator = { by: "role", role: "option", name: "Red fill", exact: true };
+  assert.deepEqual(declaredLocatorRoles(field, input, "select"), []);
+  assert.deepEqual(declaredLocatorRoles(option, input, "click"), ["option"]);
+  const original = plan();
+  original.cases[0].expectationBasis = [input.requirements[0].text];
+  original.cases[0].steps[1] = { op: "select", locator: field, value: "Red fill" };
+  assert.doesNotThrow(() => parseProbePlan(original, input));
+});
+
+test("A same-named list scope does not inherit the page heading role", () => {
+  const text = 'The page displays the heading "Active sessions". The page lists active sessions. ' +
+    'Each row provides a button named "Revoke session".';
+  const input = packet(text);
+  input.requirements[0].exactUiStrings = ["Active sessions", "Revoke session"];
+  const list: ProbeLocator = { by: "role", role: "list", name: "Active sessions", exact: true };
+  const heading: ProbeLocator = { by: "role", role: "heading", name: "Active sessions", exact: true };
+  assert.deepEqual(declaredLocatorRoles(list, input, undefined, true), []);
+  assert.deepEqual(declaredLocatorRoles(heading, input, "expectVisible"), ["heading"]);
+  const original = plan();
+  original.cases[0].expectationBasis = [text];
+  original.cases[0].steps[1] = { op: "click", locator: { by: "role", role: "button", name: "Revoke session", exact: true,
+    scope: { by: "role", role: "list", name: "Active sessions", exact: true } } };
+  assert.doesNotThrow(() => parseProbePlan(original, input));
 });
 
 test("Explicit form roles preserve label queries when refinement adds a field scope", () => {

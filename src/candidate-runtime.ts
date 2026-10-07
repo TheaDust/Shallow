@@ -6,6 +6,7 @@ import { CommandAppLifecycle, CandidatePreparationError, runCommand } from "./fi
 import { runGit } from "./git-ops.js";
 import { sharedMemoryGate, type MemoryGate } from "./memory-gate.js";
 import { PROGRESS_DIR_NAME, isProgressPath } from "./progress-journal.js";
+import { copyInheritedData } from "./inherited-data.js";
 import type { AppLifecycle } from "./pipeline.js";
 import type { CandidateEvidence, PlatformContract, RunEvent } from "./types.js";
 
@@ -205,7 +206,10 @@ export class CandidateRuntime {
     const dataDirectory = await mkdtemp(join(dataRoot, "execution-"));
     this.dataDirectory = dataDirectory;
     let application: RunningApp;
-    try { application = await this.lifecycle.start(this.directory, { ...this.contract, dataDirectory }); }
+    try {
+      await copyInheritedData(this.directory, dataDirectory);
+      application = await this.lifecycle.start(this.directory, { ...this.contract, dataDirectory });
+    }
     catch (error) { await this.stop(); throw error; }
     this.application = application;
     const candidate: CandidateEvidence = { ...this.publicBuild(build), runtimeId: randomUUID() };

@@ -549,6 +549,10 @@ const INTERACTIVE_ROLES = new Set([
 
 function assertRefinementKeepsStrength(before: ProbeLocator, after: ProbeLocator): void {
   const candidates = locatorCandidates(after);
+  if (locatorCandidates(before).some(candidate => candidate.scope?.by === "role" && candidate.scope.role === "banner") &&
+    candidates.some(candidate => candidate.scope?.by !== "role" || candidate.scope.role !== "banner" || candidate.scope.name)) {
+    throw new Error("Refinement must preserve the banner scope of a declared global control");
+  }
   if (candidates.some(candidate => candidate.firstMatch !== before.firstMatch)) {
     throw new Error("Refinement must preserve firstMatch selection; it cannot resolve ordinary ambiguity by selecting the first match");
   }
@@ -1081,8 +1085,12 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
       for (const literal of sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)) {
         if (normalizeName(literal[1] ?? literal[2] ?? literal[3]) !== normalizeName(name)) continue;
         const prefix = canonicalRolePhrase(maskRequirementLiterals(sentence.slice(0, literal.index)));
-        const suffix = canonicalRolePhrase(maskRequirementLiterals(sentence.slice(literal.index! + literal[0].length)));
-        const binding = before.exec(prefix)?.[1] ?? after.exec(suffix)?.[1];
+        const rawSuffix = sentence.slice(literal.index! + literal[0].length);
+        const suffix = canonicalRolePhrase(maskRequirementLiterals(rawSuffix));
+        // In `a "Style" option named "Red fill"`, option binds Red fill. It
+        // does not turn the separately named Style field into an option.
+        const roleNamesFollowingLiteral = /^\s*option\s+named\s+(?:`|"|“)/i.test(rawSuffix);
+        const binding = before.exec(prefix)?.[1] ?? (roleNamesFollowingLiteral ? undefined : after.exec(suffix)?.[1]);
         const boundRoles = binding?.toLowerCase().split(/\s+or\s+/) ?? [];
         const popup = boundRoles.length > 0 && boundRoles.every(role => ["menu", "dialog", "alertdialog", "listbox"].includes(role));
         if ((!binding || popup) && (!scopeName || matchesScope) && /\b(?:clicks?|chooses?|activates?|press(?:es)?|opens?)\s+(?:(?:the|a|an)\s+)?$/i.test(prefix)) {
@@ -1099,6 +1107,11 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
   }
   const namedControl = locator.by !== "role" || INTERACTIVE_ROLES.has(locator.role);
   const containerRoles = [...roles].filter(role => !INTERACTIVE_ROLES.has(role));
+  // A page heading and an observed same-named list/region are separate
+  // referents. Heading evidence must constrain a heading target, but must not
+  // be projected onto a container used only as a refinement scope.
+  if (scopeRole && locator.by === "role" && locator.role !== "heading" &&
+    containerRoles.length > 0 && containerRoles.every(role => role === "heading")) return [];
   if (!namedControl && (scopeRole || operation?.startsWith("expect") && containerRoles.length)) return containerRoles;
   const controlQuery = operation && CONTROL_OPERATIONS.has(operation) ||
     operation?.startsWith("expect") && locator.by === "role" && INTERACTIVE_ROLES.has(locator.role);

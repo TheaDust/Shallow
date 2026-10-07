@@ -105,6 +105,64 @@ test("output audit changes do not invalidate a build; runtime data stays outside
   });
 });
 
+test("candidate probes start from an isolated copy of inherited default storage", async () => {
+  await fixture(async ({ output, candidate, contract }) => {
+    await mkdir(join(output, "backend/data"), { recursive: true });
+    await writeFile(join(output, "backend/data/state.json"), '{"legacy":"kept"}');
+    await writeFile(join(output, "server.cjs"), `const fs = require('node:fs'); const path = require('node:path');
+require('node:http').createServer((req,res) => {res.setHeader('content-type','text/html');
+const file = path.join(process.env.SHALLOW_DATA_DIR, 'state.json'); const state = fs.readFileSync(file, 'utf8');
+fs.writeFileSync(file, '{"legacy":"kept","migrated":true}');
+res.end(req.url === '/health' ? 'ok' : '<main>' + state + '</main>');}).listen(Number(process.env.PORT),'127.0.0.1');`);
+    const app = await candidate.start(output, contract);
+    assert.match(await (await fetch(app.baseUrl)).text(), /legacy/);
+    await app.stop();
+    assert.equal(await readFile(join(output, "backend/data/state.json"), "utf8"), '{"legacy":"kept"}');
+    const freshCopy = await candidate.start(output, contract);
+    assert.match(await (await fetch(freshCopy.baseUrl)).text(), /legacy/);
+    await freshCopy.stop();
+  });
+});
+
+test("a real Sheet entry probe exposes a missing inherited seed until migration is implemented", async () => {
+  await fixture(async ({ output, candidate, contract }) => {
+    const workbookFile = join(output, "backend/data/workbooks.json");
+    await mkdir(dirname(workbookFile), { recursive: true });
+    await writeFile(workbookFile, JSON.stringify([{ name: "Legacy workbook", value: "keep me" }]));
+    await writeFile(join(output, "server.cjs"), `const fs = require('node:fs'); const path = require('node:path');
+const file = path.join(process.env.SHALLOW_DATA_DIR, 'workbooks.json');
+let workbooks = JSON.parse(fs.readFileSync(file, 'utf8'));
+if (fs.existsSync('migrate.flag') && !workbooks.some(item => item.name === 'EVO Revenue Model')) {
+  workbooks.push({name:'EVO Revenue Model', value:'seed'}); fs.writeFileSync(file, JSON.stringify(workbooks));
+}
+require('node:http').createServer((req,res) => {res.setHeader('content-type','text/html');
+res.end(req.url === '/health' ? 'ok' : '<main>' + workbooks.map(item => '<a href="#">' + item.name + '</a>').join('') + '</main>');
+}).listen(Number(process.env.PORT),'127.0.0.1');`);
+    const plan = { packetId: "sheet-inherited-seed", cases: [{ id: "open-workbook", requirementIds: ["REQ-SHEET"],
+      purpose: "happy_path" as const, expectationBasis: ["Open EVO Revenue Model from the workbook list."], steps: [
+        { op: "goto" as const, path: "/" },
+        { op: "click" as const, locator: { by: "role" as const, role: "link", name: "EVO Revenue Model", exact: true } },
+        { op: "expectVisible" as const, locator: { by: "role" as const, role: "main" } },
+      ] }] };
+    const browser = new PlaywrightProbeRunner();
+
+    const before = await candidate.start(output, contract);
+    const failed = await browser.run(plan, { baseUrl: before.baseUrl, stepTimeoutMs: 500, caseTimeoutMs: 3_000 });
+    await before.stop();
+    assert.notEqual(failed.verdict, "pass");
+    assert.equal(failed.failures[0]?.stepIndex, 1);
+
+    // Simulate the Builder adding an idempotent old-store migration. The next
+    // Judge run receives a fresh copy of the same inherited delivery data.
+    await writeFile(join(output, "migrate.flag"), "enabled\n");
+    const after = await candidate.start(output, contract);
+    const passed = await browser.run(plan, { baseUrl: after.baseUrl, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000 });
+    await after.stop();
+    assert.equal(passed.verdict, "pass", JSON.stringify(passed.failures));
+    assert.deepEqual(JSON.parse(await readFile(workbookFile, "utf8")), [{ name: "Legacy workbook", value: "keep me" }]);
+  });
+});
+
 for (const mutation of ["source", "artifact", "dependency", "new-file"] as const) {
   test(`verification rejects ${mutation} mutation after launch`, async () => {
     await fixture(async ({ output, candidate, contract }) => {
@@ -400,5 +458,3 @@ if (process.env.ARC_EXTRA_PORTS !== '0') require('node:http').createServer(handl
     } finally { await candidate.close(); }
   });
 });
-
-

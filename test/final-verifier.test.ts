@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, cp, readFile, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -197,6 +197,32 @@ test("Grader-like verification requires extra spec ports and survival of unknown
     assert.deepEqual(report, { ok: true, stage: "complete", message: "Grader-like startup verified" });
     await assert.rejects(fetch(`http://127.0.0.1:${port}/health`));
     await assert.rejects(fetch(`http://127.0.0.1:${extra}/health`));
+  });
+});
+
+test("Grader-like verification exposes an isolated copy of inherited default data", async () => {
+  await withTempDir("shallow-grader-data-", async outputDir => {
+    const port = await reservePort();
+    const extra = await reservePort();
+    const contract = contractFor(port, [], []);
+    contract.extraPorts = [extra];
+    await mkdir(join(outputDir, "backend/data"), { recursive: true });
+    await writeFile(join(outputDir, "backend/data/state.json"), '{"legacy":"kept"}');
+    await writeFile(join(outputDir, "grader-server.mjs"), `
+      import { createServer } from "node:http";
+      import { readFileSync, writeFileSync } from "node:fs";
+      import { join } from "node:path";
+      const state = join(process.env.SHALLOW_DATA_DIR, "state.json");
+      if (!readFileSync(state, "utf8").includes("legacy")) process.exit(7);
+      writeFileSync(state, '{"legacy":"kept","migrated":true}');
+      const handler = (req, res) => { res.writeHead(req.url === "/health" ? 200 : 404); res.end("ok"); };
+      createServer(handler).listen(Number(process.env.PORT), "127.0.0.1");
+      if (process.env.ARC_EXTRA_PORTS !== "0") createServer(handler).listen(${extra}, "127.0.0.1");
+    `);
+    contract.startCommand = { executable: process.execPath, args: ["grader-server.mjs"], cwd: "output" };
+    const report = await verifyGraderLikeStart(outputDir, contract);
+    assert.equal(report.ok, true, report.message);
+    assert.equal(await readFile(join(outputDir, "backend/data/state.json"), "utf8"), '{"legacy":"kept"}');
   });
 });
 
