@@ -1,5 +1,36 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { publicEntryPlan } from "../src/judge/public-entry.js";
+
+test("Computed background assertions are bounded and keep comparison targets frozen", () => {
+  const locator = { by: "role", role: "gridcell", name: "F4", exact: true } as const;
+  const other = { ...locator, name: "F5" };
+  const wire = (assertion: unknown) => ({ packetId: "styles", cases: [{ id: "fill", requirementIds: ["A"],
+    purpose: "happy_path", expectationBasis: ["fixture"], steps: [{ op: "goto", path: "/" }], assertion }] });
+  const step = { op: "expectCss", locator, property: "background-color", differentFrom: other };
+  const original = parseProbePlan(wire(step));
+  assert.deepEqual(original.cases[0].steps.at(-1), step);
+  assert.doesNotThrow(() => parseProbePlan(toWireProbePlan(original)));
+  assert.doesNotThrow(() => parseProbePlan(wire({ op: "expectCss", locator, property: "background-color", value: "rgb(255, 0, 0)" })));
+  assert.throws(() => parseProbePlan(wire({ ...step, property: "display" })), /only supports background-color/);
+  assert.throws(() => parseProbePlan(wire({ ...step, value: "red" })), /exactly one/);
+  assert.throws(() => parseProbePlan(wire({ ...step, differentFrom: null })), /exactly one/);
+  assert.throws(() => parseProbePlan(wire({ ...step, script: "document.body" })), /unsupported/);
+  assert.throws(() => parseProbePlan(wire({ ...step, immediate: "yes" })), /immediate must be a boolean/);
+  const immediate = parseProbePlan(wire({ ...step, immediate: true }));
+  assert.deepEqual(parseProbePlan(toWireProbePlan(immediate)), immediate);
+  const changed = structuredClone(original);
+  const assertion = changed.cases[0].steps.at(-1);
+  if (assertion?.op !== "expectCss" || !assertion.differentFrom) assert.fail("missing comparison");
+  assertion.differentFrom = { ...other, name: "G5" };
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed), /only locator/);
+  const input = packet('Use the gridcell named "F4".');
+  const ungrounded: ProbePlan = { packetId: input.id, cases: [{ id: "colors", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [input.requirements[0].text], steps: [{ op: "goto", path: "/" },
+      { op: "expectCss", locator, property: "background-color", differentFrom: { by: "text", text: "guessed comparison" } },
+    ] }] };
+  assert.throws(() => parseProbePlan(ungrounded, input), /unanchored text locator/);
+});
 
 test("setChecked accepts explicit state only on checkable controls", () => {
   const wire = (step: unknown) => ({ packetId: "checked", cases: [{ id: "case", requirementIds: ["A"], purpose: "happy_path",
@@ -72,6 +103,44 @@ test("Requirement-declared top global search is deterministically scoped to bann
   if (locator.op !== "fill") assert.fail("missing search fill");
   locator.locator.scope = { by: "role", role: "main" };
   assert.throws(() => parseProbePlan(conflicting, input), /global search must be scoped to the banner/);
+});
+
+test("Public entry samples need an explicit visitor home contract and stay separate from full coverage", () => {
+  const input = packet('The visitor starts at the home page. Visitors can search. The top global search uses a searchbox named "Lookup".');
+  const sample = publicEntryPlan(input);
+  assert.ok(sample);
+  assert.equal(sample.cases[0].steps[1].op, "expectCount");
+  assert.equal(sample.cases[0].outcomeChecks, undefined);
+  assert.equal(publicEntryPlan(packet('Only signed-in users see the global searchbox named "Lookup".')), undefined);
+  assert.equal(publicEntryPlan(packet('The visitor starts at the home page, then signs in before using the global searchbox named "Lookup".')), undefined);
+  assert.equal(publicEntryPlan(packet('The visitor starts at the home page. Local search uses a searchbox named "Lookup".')), undefined);
+  assert.equal(publicEntryPlan(packet('The visitor starts at the home page. The textbox named "global search" is data.')), undefined);
+});
+
+test("A result link and a heading containing the same data keep their own roles", () => {
+  const input = packet('The results show a link named "Shared area". Opening it displays a heading containing "Shared area".');
+  const result: ProbePlan = { packetId: input.id, cases: [{ id: "open-result", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [input.requirements[0].text], steps: [
+      { op: "goto", path: "/" },
+      { op: "click", locator: { by: "role", role: "link", name: "Shared area", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "heading", name: "Shared area", exact: false } },
+    ] }] };
+  assert.doesNotThrow(() => parseProbePlan(result, input));
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "heading", name: "Shared area" }, input, "expectVisible"), ["heading"]);
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "link", name: "Shared area" }, input, "click"), ["link"]);
+  const wrongResult = structuredClone(result);
+  const click = wrongResult.cases[0].steps[1];
+  if (click.op !== "click") assert.fail("missing link click");
+  click.locator = { by: "role", role: "button", name: "Shared area", exact: true };
+  assert.throws(() => parseProbePlan(wrongResult, input), /requirement-declared role.*link/);
+  const wrongHeading = structuredClone(result);
+  const heading = wrongHeading.cases[0].steps[2];
+  if (heading.op !== "expectVisible") assert.fail("missing heading");
+  heading.locator.fallbacks = [{ by: "role", role: "link", name: "Shared area" }];
+  assert.throws(() => parseProbePlan(wrongHeading, input), /requirement-declared role.*heading/);
+  const headingOnly = packet('The opened page displays a heading containing "Shared area".');
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "link", name: "Shared area" }, headingOnly, "click"), []);
+  assert.deepEqual(declaredLocatorRoles({ by: "role", role: "heading", name: "Shared area" }, headingOnly, "expectVisible"), ["heading"]);
 });
 
 test("Named browser contexts can be revisited only after they are created", () => {

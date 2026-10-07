@@ -32,8 +32,8 @@ export function Dialog({ open, title, children, actions, closeLabel = "Close", d
     <dialog
       ref={dialogRef}
       className="dialog ui-dialog"
-      aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
+      aria-labelledby={open ? titleId : undefined}
+      aria-describedby={open && description ? descriptionId : undefined}
       onCancel={(event) => {
         event.preventDefault();
         onOpenChange(false);
@@ -45,8 +45,8 @@ export function Dialog({ open, title, children, actions, closeLabel = "Close", d
         if (event.target === event.currentTarget) onOpenChange(false);
       }}
     >
-      <div className="ui-dialog__surface">
-        <header className="ui-dialog__header">
+      {open ? <div className="ui-dialog__surface">
+        <header className="ui-dialog__header" role="presentation">
           <h2 id={titleId}>{title}</h2>
           <Button variant="ghost" aria-label={closeLabel} onClick={() => onOpenChange(false)}>
             ×
@@ -55,7 +55,7 @@ export function Dialog({ open, title, children, actions, closeLabel = "Close", d
         {description ? <p id={descriptionId} className="ui-dialog__description">{description}</p> : null}
         <div className="ui-dialog__body">{children}</div>
         {actions ? <footer className="ui-dialog__actions">{actions}</footer> : null}
-      </div>
+      </div> : null}
     </dialog>
   );
 }

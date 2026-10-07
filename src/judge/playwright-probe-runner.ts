@@ -326,6 +326,34 @@ async function executeStep(
           await expect(locator).toHaveAttribute(step.attribute, step.value, { timeout: timeoutMs });
         }
         break;
+      case "expectCss":
+        if (step.differentFrom) {
+          const other = await resolveLocator(session, { op: "expectVisible", locator: step.differentFrom }, timeoutMs);
+          await expect(locator).toBeVisible({ timeout: timeoutMs });
+          const different = async () => {
+            const [color, otherColor] = await Promise.all([
+              locator.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property), step.property, { timeout: timeoutMs }),
+              other.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property), step.property, { timeout: timeoutMs }),
+            ]);
+            return color !== otherColor;
+          };
+          if (step.immediate) {
+            expect(await different(), `Expected different computed ${step.property} immediately`).toBe(true);
+          } else {
+            await expect.poll(different, { timeout: timeoutMs,
+              message: `Expected different computed ${step.property}` }).toBe(true);
+          }
+        } else {
+          await expect(locator).toBeVisible({ timeout: timeoutMs });
+          if (step.immediate) {
+            const actual = await locator.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property),
+              step.property, { timeout: timeoutMs });
+            expect(actual, `Expected computed ${step.property} immediately`).toBe(step.value);
+          } else {
+            await expect(locator).toHaveCSS(step.property, step.value, { timeout: timeoutMs });
+          }
+        }
+        break;
       case "expectText":
         await expectAnyText(locator, step, timeoutMs);
         break;
@@ -354,7 +382,9 @@ async function executeStep(
     }
   } catch (error) {
     const assertion = step.op.startsWith("expect");
-    const message = compactError(error);
+    const message = step.op === "expectCss"
+      ? `Computed ${step.property}${step.immediate ? " immediately" : ""}: ${compactError(error)}`
+      : compactError(error);
     const invalidProbeOperation = step.op === "fill" && /input of type ["']?file["']? cannot be filled/i.test(message);
     const ambiguousSelection = (step.op === "select" || step.op === "expectDownload") && message.includes("strict mode violation");
     throw new ProbeExecutionError(error instanceof ProbeExecutionError ? error.category

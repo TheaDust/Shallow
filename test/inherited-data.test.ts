@@ -36,8 +36,10 @@ test("Inherited storage rejects ambiguous roots and directory links", async () =
     const app = join(root, "app");
     const target = join(root, "execution");
     await mkdir(join(app, "backend/data"), { recursive: true });
-    await writeFile(join(root, "outside.json"), "{}");
-    await symlink(join(root, "outside.json"), join(app, "backend/data/state.json"));
+    const outside = join(root, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, "state.json"), "{}");
+    await symlink(outside, join(app, "backend/data/linked"), process.platform === "win32" ? "junction" : "dir");
     await assert.rejects(copyInheritedData(app, target), /Inherited data links are not supported/);
   });
 });

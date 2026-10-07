@@ -34,6 +34,8 @@ navigation link 的角色是 link，menu item 的角色是 menuitem，confirmati
 
 种子对象按当前场景身份的拥有、组织关系或直接授权核对可读性及实际入口；列表里有某个同名对象不能证明归属和权限正确。只有当前 case 需要的对象才建立准备；需求规定的入口继续验收，不用另一身份或路径的成功替代。文本文件下载可用 expectDownload 同时点击并核对后缀、UTF-8 内容；CSV 公式结果不能由页面存在断言代替。
 
+同名结果 link 与 heading containing 是不同 referent，分别核对角色；gridcell 名称是坐标，数值由 expectText 核对。账号菜单按钮的名称不证明弹出容器同名。背景色可用 expectCss 检查实际计算的 background-color：具体 value 必须有颜色依据，differentFrom 的对照须由需求中的匹配与不匹配关系授权；要求立即显示时用 immediate:true，一次读取，不用等待远端响应替代即时提交。规则存在不能证明填充变化，缺少实际样式断言时保留覆盖缺口。管理视图保存后的列表、关闭时机与提交窗口按场景分别核对，不能等待关闭再重开来替代要求的直接更新。
+
 遵守输入 planLimits：准备最多 15 步、业务与结果最多 30 步（含终末 assertion），合计最多 45 步。需求允许批量编辑或粘贴时用该入口准备并核对初态，压缩重复菜单或逐格准备，保持目标操作和结果覆盖。
 
 仅运行复核使用状态证据：Seed/GIVEN 声明描述应有状态，不证明本次运行已成立。`initialStateCheckpoint` 给出前缀末尾断言及其是否通过，preparationCheckpointPassed、passedAssertionsBeforeFailure 记录已执行断言；核对是否确认本 case 的值、对象身份与权限，grid/main 可见或登录成功不能代替具体对象状态。带种子的业务失败缺有效检查点时，重建准备并标记 setupStepCount，不返回 sound。已符合 GIVEN 的初态直接核对；不符合或互斥的可变初态按公开操作建立后核对，只改本 case 依赖的值。准备写入仍无法建立状态时按观测判断缺口；出现需求允许的确认对话框时补齐具名确认操作，保留原结果。

@@ -2,6 +2,8 @@
 
 复选框和单选框需要确定选中状态时用 `setChecked`，字段为 locator 和布尔 checked；已经符合状态时保持不变。只有需求明确测试切换动作时才用 click，不假设初始为未选中。`expectAttribute` 的 aria-checked 按原生 checked/indeterminate 或 ARIA 状态验证，aria-selected 对原生 option 按 selected 状态验证；原生控件无需人为添加 ARIA 属性。原生和自定义控件都要核对实际状态，不能以可见性代替。
 
+背景色用 `expectCss`，property 只允许 `background-color`。原文规定精确色号时用 value（浏览器计算的 rgb/rgba 形式）；未规定精确色号时，先核对需求中的样式选项，再用 differentFrom 定位同一范围内需求授权的匹配与不匹配对照，不自行猜测色号。两种字段只选一个；目标和对照均须有需求身份依据。默认轮询真实计算样式；需求要求动作完成后立即显示时用 immediate:true，只读一次，不等待持久化或弹窗关闭来掩盖旧画面。保存后与刷新后分别检查，规则或提示可见不能替代。不能以 DSL 不支持背景色为理由遗漏；颜色含义仍无法证明或涉及其他不支持的视觉属性时，保留对应覆盖缺口。
+
 只返回符合提供的 schema 的 JSON，覆盖输入 `requirements` 中每个 ID。每个 case 有独立的终末 `assertion`，放在 `steps` 外；`purpose` 为 happy_path、persistence、negative 或 permission。先还原完整场景，case 数量由覆盖决定；仅覆盖需求 ID 不等于覆盖其场景。只有对象身份、初始条件、待测操作与预期实质等价时才合并路径，保留各场景独立约束。上限以输入 planLimits 为准：通常 6 个，较多独立场景可增加至最多 12 个；准备最多 15 步、业务与结果最多 30 步（含终末 assertion），每 case 合计最多 45 步。示例：
 
 ```json
@@ -27,6 +29,8 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 ## 测试设计原则
 
 角色绑定到所指对象：navigation link 指 link，menu item 指 menuitem，confirmation button 指 button。同名的触发控件与弹出 dialog/menu 分别定位，容器的角色不限定未指定角色的触发器；需求明示的控件角色及各 fallback 仍须保留。
+
+结果 link 与“heading containing 某名称”分别使用 link 和 heading；containing 不改变 heading 角色，只表示标题可以包含该名称。网格按坐标定位 gridcell，按 expectText 核对数值，不把显示值当可访问名称。账号菜单的按钮名称不自动命名其弹出容器；用需求规定或实际观测到的 menu/容器作用域，不猜测 generic 的可访问名或用 hasText 匹配按钮名称作为弹层。
 
 “打开某菜单”核对触发控件，再核对同名 menu 容器；页面 heading 与同名入口 link、首页入口与表单提交按钮分别定位，不能将一个对象的角色套到另一个对象。公共入口链按当前需求和前置合同规划；明确规定经搜索结果进入时，首页恰好存在对象链接也不替代该路径。需求声明顶部全局导航或全局搜索时，在 banner 内核对对应控件及进入目标的结果；该 scope 是公共入口合同，初始 locator、所有 fallback 和后续精化均不得省略。局部搜索仍按其明示作用域定位，不新增猜测的菜单、容器名称或地址。
 

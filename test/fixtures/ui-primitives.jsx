@@ -22,7 +22,8 @@ function Fixture() {
     <Combobox label="状态" options={options} value={status} onChange={event => setStatus(event.target.value)} />
     <Combobox id="explicit-choice" label="权限" options={options} />
     <Button onClick={() => setOpen(true)}>打开编辑器</Button>
-    <Dialog open={open} title="编辑项目" closeLabel="关闭编辑器" onOpenChange={setOpen}>
+    <Dialog open={open} title="编辑项目" description="Current editor session" closeLabel="关闭编辑器" onOpenChange={setOpen}
+      actions={<Button onClick={() => setOpen(false)}>完成编辑</Button>}>
       <input aria-label="项目名称" />
     </Dialog>
     <Menu triggerLabel="项目操作" items={[

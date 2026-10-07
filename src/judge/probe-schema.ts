@@ -38,6 +38,7 @@ export const PRESS_KEYS = [
 ] as const;
 
 export const STATE_ATTRIBUTES = ["aria-expanded", "aria-pressed", "aria-selected", "aria-checked"] as const;
+export const CSS_PROPERTIES = ["background-color"] as const;
 
 export type ProbePressKey = (typeof PRESS_KEYS)[number];
 
@@ -58,6 +59,8 @@ export type ProbeStep =
   | { op: "expectHidden"; locator: ProbeLocator }
   | { op: "expectDisabled" | "expectEnabled"; locator: ProbeLocator }
   | { op: "expectAttribute"; locator: ProbeLocator; attribute: (typeof STATE_ATTRIBUTES)[number]; value: "true" | "false" | "mixed" }
+  | ({ op: "expectCss"; locator: ProbeLocator; property: (typeof CSS_PROPERTIES)[number]; immediate?: boolean } &
+    ({ value: string; differentFrom?: never } | { differentFrom: ProbeLocator; value?: never }))
   | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
   | { op: "expectDownload"; locator: ProbeLocator; fileNameSuffix: string; text: string }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
@@ -189,6 +192,10 @@ const STEP_SCHEMA = {
     objectSchema({ op: literalSchema("expectAttribute"), locator: LOCATOR_REF,
       attribute: { type: "string", enum: [...STATE_ATTRIBUTES] },
       value: { type: "string", enum: ["true", "false", "mixed"] } }),
+    objectSchema({ op: literalSchema("expectCss"), locator: LOCATOR_REF,
+      property: { type: "string", enum: [...CSS_PROPERTIES] }, value: NONEMPTY_STRING_SCHEMA, immediate: OPTIONAL_BOOLEAN_SCHEMA }),
+    objectSchema({ op: literalSchema("expectCss"), locator: LOCATOR_REF,
+      property: { type: "string", enum: [...CSS_PROPERTIES] }, differentFrom: LOCATOR_REF, immediate: OPTIONAL_BOOLEAN_SCHEMA }),
     ...["fill", "select", "expectValue"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF, value: STRING_SCHEMA,
     })),
@@ -362,7 +369,9 @@ export function parseProbePlan(
       validateHeadingContract(probeCase, scoped);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
-        const locators = "locator" in step ? [step.locator] : step.op === "drag" ? [step.from, step.to] : [];
+        const locators = "locator" in step ? [step.locator,
+          ...(step.op === "expectCss" && step.differentFrom ? [step.differentFrom] : [])]
+          : step.op === "drag" ? [step.from, step.to] : [];
         for (const locator of locators) {
           enforceGlobalSearchBannerScope(locator, { requirements: scoped, prerequisites: packet.prerequisites },
             `ProbePlan case ${probeCase.id} step ${stepIndex}`);
@@ -379,17 +388,21 @@ export function parseProbePlan(
             throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: undeclared goto path ${step.path}; start at / and use visible navigation`);
           }
         }
-        if (!("locator" in step) || step.locator.by !== "text") continue;
-        const literal = step.locator.text;
-        const declared = exactUiStrings.some((value) => value.toLowerCase() === literal.toLowerCase());
-        const entered = probeCase.steps.slice(0, stepIndex).some((previous) =>
-          previous.op === "fill" && previous.value === literal);
-        // Inline seed prose can describe state without declaring visible text; keep its role/label fallback.
-        const seeded = packet.requirements.some((requirement) => requirement.product.seedData
-          .some((category) => category.items.includes(literal)));
-        if (!declared && !entered && !seeded &&
-          !step.locator.fallbacks?.some((fallback) => fallback.by === "role" || fallback.by === "label")) {
-          throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: unanchored text locator requires a role or label fallback; prefer a structural role when no UI label is declared`);
+        const textTargets = "locator" in step ? [step.locator,
+          ...(step.op === "expectCss" && step.differentFrom ? [step.differentFrom] : [])] : [];
+        for (const target of textTargets) {
+          if (target.by !== "text") continue;
+          const literal = target.text;
+          const declared = exactUiStrings.some((value) => value.toLowerCase() === literal.toLowerCase());
+          const entered = probeCase.steps.slice(0, stepIndex).some((previous) =>
+            previous.op === "fill" && previous.value === literal);
+          // Inline seed prose can describe state without declaring visible text; keep its role/label fallback.
+          const seeded = packet.requirements.some((requirement) => requirement.product.seedData
+            .some((category) => category.items.includes(literal)));
+          if (!declared && !entered && !seeded &&
+            !target.fallbacks?.some((fallback) => fallback.by === "role" || fallback.by === "label")) {
+            throw new Error(`ProbePlan case ${probeCase.id} step ${stepIndex}: unanchored text locator requires a role or label fallback; prefer a structural role when no UI label is declared`);
+          }
         }
       }
       assertQuotesGrounded(probeCase.expectationBasis,
@@ -608,12 +621,8 @@ function enforceGlobalSearchBannerScope(locator: ProbeLocator,
     const isSearchControl = candidate.by === "role" && ["search", "searchbox"].includes(candidate.role) ||
       declaredRoles.some(role => ["search", "searchbox"].includes(role));
     if (!isSearchControl) continue;
-    const isDeclaredGlobalSearch = requirementEvidenceTexts(packet.requirements, packet.prerequisites).some(text =>
-      requirementSentences(text.replace(/\r?\n/g, " ")).some(sentence => {
-        if (!/\b(?:top(?:-level)?\s+)?global\s+search(?:\s+control)?\b/i.test(maskRequirementLiterals(sentence))) return false;
-        return [...sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)]
-          .some(match => normalizeName(match[1] ?? match[2] ?? match[3]) === normalizeName(name));
-      }));
+    const isDeclaredGlobalSearch = declaredGlobalSearchControls(packet).some(control =>
+      normalizeName(control.name) === normalizeName(name));
     if (!isDeclaredGlobalSearch) continue;
     if (!candidate.scope) {
       candidate.scope = { by: "role", role: "banner" };
@@ -623,6 +632,25 @@ function enforceGlobalSearchBannerScope(locator: ProbeLocator,
       throw new Error(`${location}: requirement-declared global search must be scoped to the banner landmark`);
     }
   }
+}
+
+/** Explicit names and roles only; quoted data cannot declare a global control. */
+export function declaredGlobalSearchControls(packet: Pick<WorkPacket, "requirements" | "prerequisites">):
+  Array<{ name: string; role: "searchbox"; evidence: string }> {
+  const controls = new Map<string, { name: string; role: "searchbox"; evidence: string }>();
+  for (const text of requirementEvidenceTexts(packet.requirements, packet.prerequisites)) {
+    for (const sentence of requirementSentences(text.replace(/\r?\n/g, " "))) {
+      if (!/\bglobal(?:\s+[\w-]+){0,2}\s+search\b/i.test(maskRequirementLiterals(sentence))) continue;
+      for (const literal of sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)) {
+        const name = literal[1] ?? literal[2] ?? literal[3];
+        const roles = declaredLocatorRoles({ by: "role", role: "searchbox", name }, packet, "fill");
+        if (roles.length === 1 && roles[0] === "searchbox") {
+          controls.set(normalizeName(name), { name, role: "searchbox", evidence: sentence });
+        }
+      }
+    }
+  }
+  return [...controls.values()];
 }
 
 /** Explicit requirement labels anchor both refinement and missing-control diagnostics. */
@@ -894,6 +922,20 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return { op, locator: parseLocator(step.locator, `${location}.locator`),
         attribute: attribute as (typeof STATE_ATTRIBUTES)[number], value };
     }
+    case "expectCss": {
+      keys(step, ["op", "locator", "property", "value", "differentFrom", "immediate"], location);
+      if (!CSS_PROPERTIES.includes(step.property as (typeof CSS_PROPERTIES)[number])) {
+        throw new Error(`${location}: expectCss only supports background-color`);
+      }
+      const base = { op, locator: parseLocator(step.locator, `${location}.locator`),
+        property: step.property as (typeof CSS_PROPERTIES)[number],
+        ...(step.immediate == null ? {} : { immediate: boolean(step.immediate, `${location}.immediate`) }) } as const;
+      if ((step.value != null) === (step.differentFrom != null)) {
+        throw new Error(`${location}: expectCss requires exactly one of value or differentFrom`);
+      }
+      return step.value != null ? { ...base, value: text(step.value, `${location}.value`) }
+        : { ...base, differentFrom: parseLocator(step.differentFrom, `${location}.differentFrom`) };
+    }
     case "setChecked": {
       keys(step, ["op", "locator", "checked"], location);
       if (typeof step.checked !== "boolean") throw new Error(`${location}.checked must be boolean`);
@@ -1069,7 +1111,7 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
   if (!name) return [];
   const role = `(?:${ARIA_ROLES.join("|")})`;
   const roleList = `${role}(?:\\s+or\\s+${role})*`;
-  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:(?:named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s+)?$`, "i");
+  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:(?:containing|named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s+)?$`, "i");
   const after = new RegExp(`^\\s*(${roleList})\\b`, "i");
   const scoped = new RegExp(`\\b(?:in|within|inside)\\s+(?:the\\s+)?(?:${role}\\s+(?:named\\s+)?)?(?:\"([^\"\\n]+)\"|“([^”]+)”|\x60([^\x60]+)\x60)`, "gi");
   const scopeName = locator.scope && candidateTargetName(locator.scope as ProbeLocator);
@@ -1107,11 +1149,11 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
   }
   const namedControl = locator.by !== "role" || INTERACTIVE_ROLES.has(locator.role);
   const containerRoles = [...roles].filter(role => !INTERACTIVE_ROLES.has(role));
+  const headingOnly = containerRoles.length > 0 && containerRoles.every(role => role === "heading");
   // A page heading and an observed same-named list/region are separate
   // referents. Heading evidence must constrain a heading target, but must not
   // be projected onto a container used only as a refinement scope.
-  if (scopeRole && locator.by === "role" && locator.role !== "heading" &&
-    containerRoles.length > 0 && containerRoles.every(role => role === "heading")) return [];
+  if (scopeRole && locator.by === "role" && locator.role !== "heading" && headingOnly) return [];
   if (!namedControl && (scopeRole || operation?.startsWith("expect") && containerRoles.length)) return containerRoles;
   const controlQuery = operation && CONTROL_OPERATIONS.has(operation) ||
     operation?.startsWith("expect") && locator.by === "role" && INTERACTIVE_ROLES.has(locator.role);
@@ -1119,7 +1161,9 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
     if (untypedHomeEntry && locator.by === "role" && ["link", "button"].includes(locator.role) &&
       (homeEntry ?? locator.role === "link") && !roles.has("link")) return [];
     const controls = [...roles].filter(role => INTERACTIVE_ROLES.has(role));
-    if (controls.length || untypedTrigger) return controls;
+    // A display-only heading does not declare the role of a same-named entry.
+    // Explicit interactive roles still constrain every candidate and fallback.
+    if (controls.length || untypedTrigger || namedControl && headingOnly) return controls;
   }
   return [...roles];
 }

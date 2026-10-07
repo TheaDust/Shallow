@@ -41,7 +41,7 @@ export const APPROVED_CAPABILITIES: readonly ApprovedCapability[] = [
     description: "Dependency-free React primitives for accessible buttons, native modal dialogs, menus, tabs, form fields, native comboboxes and live-region notifications.",
     targetDirectory: "frontend/src/ui",
     files: UI_FILES,
-    usage: "Import components from frontend/src/ui and import ./ui/primitives.css once from the frontend entry point or global stylesheet.",
+    usage: "Import components from frontend/src/ui and import ./ui/primitives.css once from the frontend entry point or global stylesheet. Dialog unmounts its content when closed; existing copies require an in-place Builder update. Consumers decide whether a successful save closes a dialog or returns to its updated management list.",
   },
 ] as const;
 

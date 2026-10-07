@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+test("Public entry samples report their evidence boundary", () => {
+  const formatter = new HumanRunFormatter();
+  const line = formatLine(formatter, eventLine("2026-10-07T00:00:00Z", "public_entry_checked", {
+    detail: { requirementIds: ["A"], status: "passed" },
+  }));
+  assert.match(line, /公共入口检查通过/);
+  assert.match(line, /完整场景验收另计/);
+});
+
 import { HumanRunFormatter } from "../src/human-log.js";
 
 function eventLine(at: string, type: string, rest: Record<string, unknown> = {}): string {

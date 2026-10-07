@@ -4,8 +4,11 @@ import { test } from "node:test";
 import { parseProbePlan, type ProbePlan } from "../../src/judge/probe-schema.js";
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
 import type { WorkPacket } from "../../src/types.js";
+import { publicEntryPlan } from "../../src/judge/public-entry.js";
 
 const description = 'The top global search uses a searchbox named "Lookup". ' +
+  'The visitor starts at the home page in a fresh unauthenticated session. ' +
+  'Visitors can search. ' +
   'Its results expose a link named "Shared area"; opening it displays a heading "Shared area". ' +
   'Users open the "Data" menu and choose the menuitem named "Activity log". ' +
   'The page displays a heading "Activity log".';
@@ -56,6 +59,16 @@ for (const nestedHeader of [false, true]) {
     try {
       const address = server.address();
       assert.ok(address && typeof address !== "string");
+      const entry = publicEntryPlan(packet);
+      assert.ok(entry);
+      const structural = await new PlaywrightProbeRunner().run(entry, {
+        baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 5_000,
+      });
+      assert.equal(structural.verdict, nestedHeader ? "fail" : "pass");
+      if (nestedHeader) {
+        assert.equal(structural.failures[0].stepIndex, 1);
+        assert.equal(structural.failures[0].category, "assertion");
+      }
       const report = await new PlaywrightProbeRunner().run(parseProbePlan(plan, packet), {
         baseUrl: `http://127.0.0.1:${address.port}`, stepTimeoutMs: 1_000, caseTimeoutMs: 10_000,
       });

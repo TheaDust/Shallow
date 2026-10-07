@@ -83,6 +83,100 @@ import { FakeBuilder } from "./fakes/fake-builder.js";
 import { startFixtureServer } from "./helpers/fixture-server.js";
 import { withModulePipeline, fail, pass, testPlan } from "./helpers/module-pipeline.js";
 
+for (const missing of [false, true]) {
+  test(`Public entry executes and repairs without a business plan, missing=${missing}`, async () => {
+    await withModulePipeline(async f => {
+      const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+      tree.children[0].children[1].description = 'The visitor starts at the home page. Visitors can search. The top global search uses a searchbox named "Lookup".';
+      await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+      let plans = 0;
+      let plansAtRepair = 0;
+      const build = f.builder.run.bind(f.builder);
+      f.builder.run = async (request, options) => {
+        if (request.mode === "repair") plansAtRepair = plans;
+        return build(request, options);
+      };
+      f.deps.planner.plan = async packet => {
+        if (packet.id === "packet-b") { plans++; throw new Error("business plan unavailable"); }
+        return testPlan(packet);
+      };
+      f.deps.planner.reviewPlan = async () => { assert.fail("entry must not call semantic review"); };
+      f.deps.planner.refineLocators = async () => { assert.fail("entry must not call refinement"); };
+      f.deps.runner.run = async plan => {
+        const entry = plan.cases[0].id === "public-entry-contract";
+        const repaired = f.builder.requests.some(request => request.mode === "repair");
+        return entry && missing && !repaired ? fail(plan) : pass(plan);
+      };
+      const summary = await f.run();
+      const repairs = f.builder.requests.filter(request => request.mode === "repair");
+      assert.equal(repairs.length, missing ? 1 : 0);
+      if (missing) {
+        assert.ok(repairs[0].mode === "repair");
+        assert.deepEqual(repairs[0].packet.requirementIds, ["B"]);
+        assert.equal(plans, plansAtRepair, "structural repair must not replan unavailable business cases");
+      }
+      assert.ok(plans <= 3, "retain the existing bounded planning attempts");
+      assert.equal(summary.status, "partial");
+      assert.ok(!summary.verifiedRequirementIds.includes("B"));
+      assert.ok(summary.missingPlanRequirementIds?.includes("B"));
+      assert.equal(f.git.restoredShas.length, 0);
+      const entries = (await f.events()).filter(event => event.type === "public_entry_checked");
+      assert.ok(entries.some(event => event.detail?.status === "passed"));
+      assert.equal(entries.some(event => event.detail?.status === "failed"), missing);
+      assert.ok(!(await readdir(join(dirname(f.options.ledgerFile), "plans"))).some(name => name.startsWith("packet-b-")));
+    });
+  });
+}
+
+test("A repair protects a passing public entry whose complete business plan is missing", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    tree.children[0].children[1].description = 'The visitor starts at the home page. Visitors can search. The top global search uses a searchbox named "Lookup".';
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    f.deps.planner.plan = async packet => {
+      if (packet.id === "packet-b") throw new Error("business plan unavailable");
+      return testPlan(packet);
+    };
+    f.deps.runner.run = async plan => {
+      const repairing = f.builder.requests.some(request => request.mode === "repair") && !f.git.restoredShas.length;
+      return plan.cases[0].id === "public-entry-contract" ? repairing ? fail(plan) : pass(plan)
+        : plan.packetId === "packet-c" && !repairing ? fail(plan) : pass(plan);
+    };
+    const summary = await f.run();
+    assert.equal(f.git.restoredShas.length, 1);
+    assert.ok(!summary.verifiedRequirementIds.includes("B"));
+    assert.equal((await f.events()).find(event => event.type === "repair_batch_finished")?.detail?.retained, false);
+  });
+});
+
+test("Unresolved final entry checks do not erase reproduced business failures", async () => {
+  await withModulePipeline(async f => {
+    const tree = JSON.parse(await readFile(f.options.requirementsFile, "utf8"));
+    tree.children[0].children[1].description = 'The visitor starts at the home page. Visitors can search. The top global search uses a searchbox named "Lookup".';
+    await writeFile(f.options.requirementsFile, JSON.stringify(tree));
+    let detecting = false;
+    f.deps.logSink = { write: line => {
+      const event = JSON.parse(line);
+      if (event.type === "module_boundary_audit_finished" && event.detail?.moduleId === "SECOND") detecting = true;
+    } };
+    const run = f.builder.run.bind(f.builder);
+    f.builder.run = async (request, options) => {
+      const result = await run(request, options);
+      return request.mode === "repair" ? { ...result, outcome: "failed", summary: "fixture repair refused" } : result;
+    };
+    f.deps.runner.run = async plan => {
+      if (plan.cases[0].id === "public-entry-contract") return detecting ? {
+        packetId: plan.packetId, verdict: "inconclusive", passedCases: [],
+        failures: [{ caseId: plan.cases[0].id, stepIndex: 0, category: "runner", message: "entry execution unavailable" }],
+      } : pass(plan);
+      return plan.packetId === "packet-b" ? fail(plan) : pass(plan);
+    };
+    const summary = await f.run();
+    assert.ok(summary.failedRequirementIds?.includes("B"));
+    assert.ok(!summary.inconclusiveRequirementIds?.includes("B"));
+  });
+});
+
 test("A transient non-target preparation guard is retried before retaining the confirmed repair", async () => {
   await withModulePipeline(async f => {
     let guardFailures = 0;

@@ -198,7 +198,14 @@ test("Builder, baseline and Judge assets preserve global-entry and separate-role
     const text = loadPrompt("judge", asset);
     assert.match(text, /首页入口与表单提交按钮/);
     assert.match(text, /公共入口链/);
+    assert.match(text, /expectCss/);
+    assert.match(text, /background-color/);
+    assert.match(text, /heading containing/);
+    assert.match(text, /gridcell/);
   }
+  assert.match(baseline, /检查继承应用的既有组件拷贝/);
+  assert.match(baseline, /旧 ID 副本/);
+  assert.match(baseline, /实际计算背景色/);
   assert.match(loadPrompt("judge", "probe-planner"), /在 banner 内核对对应控件及进入目标的结果/);
   assert.match(loadPrompt("judge", "probe-review"), /全局控件的 banner 与局部控件的明示作用域分别保留/);
 });

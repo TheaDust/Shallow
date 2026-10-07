@@ -40,6 +40,9 @@ test("Authorized entry guidance reaches every product and repair mode without mi
       const compiled = compileBuilderPrompt(request);
       const body = compiled.systemPrompt + "\n" + compiled.taskPrompt;
       assert.ok(compiled.taskPrompt.includes(accessibleFragment));
+      assert.match(body, /继承应用中的公共组件拷贝/);
+      assert.match(body, /管理型对话框保存后先呈现更新的列表/);
+      assert.match(body, /150ms、500ms 和失败分支/);
       assert.ok(compiled.systemPrompt.includes(selfTest));
       assert.match(compiled.systemPrompt, /全局页头使用顶层 `<header>`（banner）/);
       assert.match(compiled.systemPrompt, /与唯一的 `<main>` 主内容区并列/);
@@ -52,6 +55,8 @@ test("Authorized entry guidance reaches every product and repair mode without mi
       const repositoryFragment = loadPrompt("fragments", "repository-collaboration");
       assert.equal(body.includes(repositoryFragment), kind === "repository_collaboration");
       if (kind === "repository_collaboration") {
+        assert.match(body, /登录入口的角色、名称和容器以当前需求为准/);
+        assert.match(body, /先识别已知旧 ID 与关联引用/);
         assert.match(body, /工作台提供当前身份可见的组织和可读仓库的具名入口/);
         assert.match(body, /本包实现组织或仓库功能且提供登录工作台时/);
         assert.match(body, /已登录身份与本页规定的具名对象入口一起就绪/);
@@ -61,6 +66,12 @@ test("Authorized entry guidance reaches every product and repair mode without mi
         assert.match(body, /后台继续校验每次读取和写入的权限/);
         assert.match(body, /先通过项目路由工具完成导航，再关闭菜单/);
         assert.match(body, /在正式构建的应用中从首页登录，逐段检查/);
+      }
+      if (kind === "spreadsheet") {
+        assert.match(body, /按坐标提供可访问名称/);
+        assert.match(body, /条件格式检查实际计算背景色/);
+        assert.match(body, /明确的范围与列配置/);
+        assert.match(body, /先识别已知旧 ID 与关联引用/);
       }
     }
   }
