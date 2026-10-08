@@ -6,6 +6,7 @@ import type { WorkPacket } from "../types.js";
 import { planValidationFeedback, type ProbePlanner } from "./llm-probe-planner.js";
 import { parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
 import { assertCoverageAccountedFor } from "./probe-coverage.js";
+import { assertCompatibilityPlan } from "./compatibility-contracts.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
 type CachedPacket = Pick<WorkPacket, "id" | "requirementIds"> &
@@ -36,7 +37,14 @@ export class PlanCache {
     try {
       const raw = await readFile(this.pathFor(packet.id), "utf8");
       const plan = parseProbePlan(JSON.parse(raw), packet);
-      if (packet.requirements) assertCoverageAccountedFor(plan, packet.requirements);
+      assertCacheablePlan(plan);
+      if (packet.requirements) {
+        assertCoverageAccountedFor(plan, packet.requirements);
+        assertCompatibilityPlan(plan, {
+          requirements: packet.requirements,
+          prerequisites: packet.prerequisites,
+        });
+      }
       return plan;
     } catch {
       return undefined;
@@ -44,6 +52,7 @@ export class PlanCache {
   }
 
   async write(packetId: string, plan: ProbePlan): Promise<void> {
+    assertCacheablePlan(plan);
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const payload = JSON.stringify(plan);
     await writeFile(this.pathFor(packetId), payload, { encoding: "utf8", mode: 0o600 });
@@ -90,11 +99,17 @@ export function spawnPlanGeneration(
   onFailure?: (error: unknown) => Promise<void>,
 ): Promise<ProbePlan | undefined> {
   const generate = async (): Promise<ProbePlan> => {
-    try { return parseProbePlan(await planner.plan(packet, undefined, { timeoutMs }), packet); }
+    try {
+      const plan = parseProbePlan(await planner.plan(packet, undefined, { timeoutMs }), packet);
+      assertCacheablePlan(plan);
+      return plan;
+    }
     catch (error) {
       const feedback = planValidationFeedback(error);
       if (!feedback) throw error;
-      return parseProbePlan(await planner.plan(packet, feedback, { timeoutMs }), packet);
+      const plan = parseProbePlan(await planner.plan(packet, feedback, { timeoutMs }), packet);
+      assertCacheablePlan(plan);
+      return plan;
     }
   };
   return generate()
@@ -106,4 +121,10 @@ export function spawnPlanGeneration(
       await onFailure?.(error).catch(() => {});
       return undefined;
     });
+}
+
+function assertCacheablePlan(plan: ProbePlan): void {
+  if (plan.cases.some(probeCase => probeCase.steps.some(step => step.op === "expectClosedOverlaysEmpty"))) {
+    throw new Error("Controller-owned compatibility steps cannot be stored as requirement plans");
+  }
 }

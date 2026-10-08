@@ -52,4 +52,4 @@ navigation link 的角色是 link，menu item 的角色是 menuitem，confirmati
 - `expectationBasis` 与 `basis` 引用必须能在需求证据中逐字找到（程序会校验）。改写、概括或翻译都会导致复核被拒绝。
 - 不要提出代码修复建议，不要引用任何源码、构建产物或会话内容。
 
-coverageReview 中可补的遗漏或不对应的映射返回 corrected，携带受影响的完整 wire case 与逐字依据；只有补上实际结果断言后才能移除相应 uncoveredOutcomes。补齐遗漏时，至少有一条对应结果断言是新增的，或是原 case 尚未用于其他结果映射的断言，不能只复用已有映射登记新的结果。原文的抽象或条件分支结合完整需求解释，无法触发或无法表达时保持明确遗漏，不凭“无需检查”移除原结果。对原本声称完整的计划，无法忠实重建时不返回 sound 或伪造映射；在 conflict 中指出具体约束并保持原结果要求。
+coverageReview 中可补的遗漏或不对应的映射返回 corrected，携带受影响的完整 wire case 与逐字依据；只有补上实际结果断言后才能移除相应 uncoveredOutcomes。补齐遗漏时，至少有一条对应结果断言是新增的，或是原 case 尚未用于其他结果映射的断言，不能只复用已有映射登记新的结果。逐项复核 scenarioOutcomes 的 facets：URL/address 用 expectUrlContains；计数必须有计数断言；reload/refresh/persistence 只能由 reload 后断言证明；多个字段或状态不能只登记映射。原文的抽象或条件分支结合完整需求解释，无法触发或无法表达时保持明确遗漏，不凭“无需检查”移除原结果。对原本声称完整的计划，无法忠实重建时不返回 sound 或伪造映射；在 conflict 中指出具体约束并保持原结果要求。

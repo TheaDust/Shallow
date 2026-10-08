@@ -20,6 +20,7 @@ import {
   type ProbePlan,
 } from "./probe-schema.js";
 import { assertCoverageAccountedFor, scenarioOutcomes } from "./probe-coverage.js";
+import { assertCompatibilityPlan } from "./compatibility-contracts.js";
 import { parsePlanReview, preparationReviewJsonSchema, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
 export interface ProbePlanOptions {
@@ -291,7 +292,9 @@ export class LlmProbePlanner implements ProbePlanner {
       });
     }
     try {
-      return parsePlanReview(value, packet, original, reviewTargets);
+      const review = parsePlanReview(value, packet, original, reviewTargets);
+      if (review.status === "corrected") assertCompatibilityPlan(review.plan, packet);
+      return review;
     } catch (error) {
       throw new ProbePlannerError("review", "Probe planner review violates the review contract", {
         cause: error, content, apiKey: this.config.apiKey,
@@ -311,7 +314,8 @@ export class LlmProbePlanner implements ProbePlanner {
 
   private parse(
     content: string,
-    packet: Pick<WorkPacket, "id" | "requirementIds"> & Partial<Pick<WorkPacket, "requirements">>,
+    packet: Pick<WorkPacket, "id" | "requirementIds"> &
+      Partial<Pick<WorkPacket, "requirements" | "prerequisites">>,
   ): ProbePlan {
     let value: unknown;
     try {
@@ -331,7 +335,16 @@ export class LlmProbePlanner implements ProbePlanner {
         throw new Error("Planner cannot supply controller coverage review state");
       }
       const plan = parseProbePlan(value, packet);
-      if (packet.requirements) assertCoverageAccountedFor(plan, packet.requirements);
+      if (plan.cases.some(probeCase => probeCase.steps.some(step => step.op === "expectClosedOverlaysEmpty"))) {
+        throw new Error("expectClosedOverlaysEmpty is reserved for controller-owned compatibility plans");
+      }
+      if (packet.requirements) {
+        assertCoverageAccountedFor(plan, packet.requirements);
+        assertCompatibilityPlan(plan, {
+          requirements: packet.requirements,
+          prerequisites: packet.prerequisites,
+        });
+      }
       return plan;
     } catch (error) {
       throw new ProbePlannerError("schema", "Probe planner content violates ProbePlan", {
