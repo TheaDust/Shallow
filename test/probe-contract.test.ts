@@ -46,6 +46,10 @@ test("URL assertions require an explicit address contract and a grounded value",
   assert.doesNotThrow(() => assertCoverageAccountedFor(parseProbePlan(wire("feature-a"), input), input.requirements));
   assert.throws(() => parseProbePlan(wire("invented"), input), /requirement evidence or a prior scenario input/);
   const noAddress = packet("Selecting branch `feature-a` keeps it selected after reload.");
+  noAddress.requirements[0].scenarioContracts = [{ id: "address", name: "Address", steps: [
+    { keyword: "WHEN", content: "The visitor selects `feature-a`." },
+    { keyword: "THEN", content: noAddress.requirements[0].text },
+  ] }];
   assert.throws(() => parseProbePlan({ ...wire("feature-a"), packetId: noAddress.id }, noAddress), /explicit page address\/URL/);
   const changed = parseProbePlan(wire("feature-a"), input);
   const assertion = changed.cases[0].steps.at(-1);

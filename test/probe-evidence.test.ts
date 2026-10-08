@@ -176,8 +176,9 @@ test("Real GitHub compound results cannot be covered by a single whole-THEN mapp
   const weak: ProbePlan = { packetId: input.id, cases: [{ id: "edit", requirementIds: input.requirementIds,
     purpose: "happy_path", expectationBasis: [scenario.steps.at(-1)!.content], steps: [
       { op: "goto", path: "/" }, { op: "fill", locator: { by: "label", text: "Issue title", exact: true }, value: "New title" },
+      { op: "reload" },
       { op: "expectVisible", locator: { by: "role", role: "heading", name: "New title", exact: true } },
-    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, assertionIndexes: [2] }] }] };
+    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, assertionIndexes: [3] }] }] };
   assert.throws(() => parseProbePlan(weak, input), /compound result.*clauseIndex/);
   weak.cases[0].outcomeChecks![0].clauseIndex = 0;
   const parsed = parseProbePlan(weak, input);

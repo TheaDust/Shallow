@@ -124,7 +124,7 @@ export function spawnPlanGeneration(
 }
 
 function assertCacheablePlan(plan: ProbePlan): void {
-  if (plan.cases.some(probeCase => probeCase.steps.some(step => step.op === "expectClosedOverlaysEmpty"))) {
+  if (plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
     throw new Error("Controller-owned compatibility steps cannot be stored as requirement plans");
   }
 }

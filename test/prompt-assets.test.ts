@@ -204,10 +204,14 @@ test("Builder, baseline and Judge assets preserve global-entry and separate-role
     assert.match(text, /background-color/);
     assert.match(text, /heading containing/);
     assert.match(text, /gridcell/);
+    assert.match(text, /notValue/);
+    assert.match(text, /scope/);
   }
   assert.match(baseline, /检查继承应用的既有组件拷贝/);
   assert.match(baseline, /旧 ID 副本/);
   assert.match(baseline, /实际计算背景色/);
+  assert.match(baseline, /同一失败表单/);
+  assert.match(baseline, /完整的数值与实体单位文字/);
   assert.match(loadPrompt("judge", "probe-planner"), /在 banner 内核对对应控件及进入目标的结果/);
   assert.match(loadPrompt("judge", "probe-review"), /全局控件的 banner 与局部控件的明示作用域分别保留/);
 });

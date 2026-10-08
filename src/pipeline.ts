@@ -181,6 +181,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let gatewayPhase: PipelinePhase = "implementation";
   const preplanAbort = new AbortController();
   const pendingPlans = new Map<string, { ready: boolean; failed: boolean; recoveryAttempted: boolean; promise: Promise<void> }>();
+  const compatibilityGuards = new Map<string, { packet: WorkPacket; plan: ProbePlan }>();
   const noProgressRefinements = new Set<string>();
   const recoveryAuditPolicy = { refineLocators: true, noProgressRefinements };
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
@@ -559,7 +560,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const recoverMissingPlan = cached === undefined && pending?.ready === true && !pending.recoveryAttempted;
       if (recoverMissingPlan) pending.recoveryAttempted = true;
       const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"),
-        { ...recoveryAuditPolicy, retryPlan: recoverMissingPlan });
+        { ...recoveryAuditPolicy, retryPlan: recoverMissingPlan && pending?.failed !== true });
       if (result.plan && shouldWritePlanCache(cached, result.plan)) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
@@ -584,10 +585,20 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     // the normal Builder repair loop.
     let compatibilityChecks = new Map<string, { packet: WorkPacket; plan: ProbePlan; result: CompatibilityResult }>();
     const compatibilityPlans = new Map<string, { packet: WorkPacket; plan: ProbePlan }>();
-    for (const packet of packets.filter(auditEligible)) {
+    const addCompatibility = (packet: WorkPacket, plan: ProbePlan): void => {
+      const previous = compatibilityPlans.get(packet.id);
+      const ids = new Set(previous?.plan.cases.map(probeCase => probeCase.id));
+      compatibilityPlans.set(packet.id, { packet, plan: previous
+        ? { ...previous.plan, cases: [...previous.plan.cases, ...plan.cases.filter(probeCase => !ids.has(probeCase.id))] }
+        : plan });
+    };
+    // Retain one successful sample of each shared contract across modules;
+    // later repairs must preserve it, rather than replaying every old overlay.
+    for (const guard of compatibilityGuards.values()) addCompatibility(guard.packet, guard.plan);
+    for (const packet of modulePackets.filter(auditEligible)) {
       const plan = overlayLifecyclePlan(packet, results.get(packet.id)?.plan);
       if (!plan) continue;
-      compatibilityPlans.set(packet.id, { packet, plan });
+      addCompatibility(packet, plan);
     }
     const sources = packets.flatMap(packet => {
       const result = results.get(packet.id);
@@ -600,14 +611,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const crossRoute = globalControlCrossRoutePlan(packet,
         result?.status === "verified" ? result.plan : undefined, sources);
       if (!crossRoute) continue;
-      const existing = compatibilityPlans.get(packet.id);
-      compatibilityPlans.set(packet.id, { packet,
-        plan: existing ? { ...existing.plan, cases: [...existing.plan.cases, ...crossRoute.cases] } : crossRoute });
+      addCompatibility(packet, crossRoute);
       break;
     }
     for (const [id, check] of compatibilityPlans) {
       const result = await checkCompatibility(check.packet, check.plan, "audit");
       compatibilityChecks.set(id, { ...check, result });
+      if (result.status === "passed") for (const probeCase of check.plan.cases) {
+        const kind = probeCase.id.startsWith("compat-global-") ? "global" : "overlay";
+        compatibilityGuards.set(kind, { packet: check.packet, plan: { packetId: check.plan.packetId, cases: [probeCase] } });
+      }
       if (result.status === "failed" && !targetPackets.includes(check.packet)) targetPackets.push(check.packet);
     }
     await state.record({ at: now(), type: "module_boundary_audit_finished",
@@ -833,6 +846,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       results = nextResults;
       publicChecks = nextPublicChecks;
       compatibilityChecks = nextCompatibilityChecks;
+      for (const check of compatibilityChecks.values()) if (check.result.status === "passed") {
+        for (const probeCase of check.plan.cases) {
+          const kind = probeCase.id.startsWith("compat-global-") ? "global" : "overlay";
+          compatibilityGuards.set(kind, { packet: check.packet, plan: { packetId: check.plan.packetId, cases: [probeCase] } });
+        }
+      }
       await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true,
         improvedCases, resolvedGaps, reason: "verified improvement with regression coverage" } });
     }

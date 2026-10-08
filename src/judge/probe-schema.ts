@@ -60,16 +60,18 @@ export type ProbeStep =
   | { op: "expectDisabled" | "expectEnabled"; locator: ProbeLocator }
   | { op: "expectAttribute"; locator: ProbeLocator; attribute: (typeof STATE_ATTRIBUTES)[number]; value: "true" | "false" | "mixed" }
   | ({ op: "expectCss"; locator: ProbeLocator; property: (typeof CSS_PROPERTIES)[number]; immediate?: boolean } &
-    ({ value: string; differentFrom?: never } | { differentFrom: ProbeLocator; value?: never }))
+    ({ value: string; notValue?: never; differentFrom?: never } | { notValue: string; value?: never; differentFrom?: never }
+      | { differentFrom: ProbeLocator; value?: never; notValue?: never }))
   | { op: "expectText"; locator: ProbeLocator; text: string; exact?: boolean; anyOf?: string[] }
   | { op: "expectDownload"; locator: ProbeLocator; fileNameSuffix: string; text: string }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
   | { op: "expectUrlContains"; value: string }
-  | ({ op: "expectAccessibleCount"; noun: string } &
+  | ({ op: "expectAccessibleCount"; noun: string; scope?: ProbeScope } &
     ({ exact: number; minimum?: never } | { minimum: number; exact?: never }))
   /** Controller-owned compatibility assertion. It is never accepted from Planner JSON. */
   | { op: "expectClosedOverlaysEmpty" }
+  | { op: "expectAwayFromHome" }
   | { op: "reload" }
   | { op: "newContext"; actor?: string }
   | { op: "switchContext"; actor: string };
@@ -200,6 +202,8 @@ const STEP_SCHEMA = {
     objectSchema({ op: literalSchema("expectCss"), locator: LOCATOR_REF,
       property: { type: "string", enum: [...CSS_PROPERTIES] }, value: NONEMPTY_STRING_SCHEMA, immediate: OPTIONAL_BOOLEAN_SCHEMA }),
     objectSchema({ op: literalSchema("expectCss"), locator: LOCATOR_REF,
+      property: { type: "string", enum: [...CSS_PROPERTIES] }, notValue: NONEMPTY_STRING_SCHEMA, immediate: OPTIONAL_BOOLEAN_SCHEMA }),
+    objectSchema({ op: literalSchema("expectCss"), locator: LOCATOR_REF,
       property: { type: "string", enum: [...CSS_PROPERTIES] }, differentFrom: LOCATOR_REF, immediate: OPTIONAL_BOOLEAN_SCHEMA }),
     ...["fill", "select", "expectValue"].map((op) => objectSchema({
       op: literalSchema(op), locator: LOCATOR_REF, value: STRING_SCHEMA,
@@ -219,10 +223,9 @@ const STEP_SCHEMA = {
     }),
     objectSchema({ op: literalSchema("expectUrlContains"), value: NONEMPTY_STRING_SCHEMA }),
     objectSchema({ op: literalSchema("expectAccessibleCount"), noun: NONEMPTY_STRING_SCHEMA,
-      exact: { type: "integer", minimum: 0 } }),
+      scope: SCOPE_REF, exact: { type: "integer", minimum: 0 } }),
     objectSchema({ op: literalSchema("expectAccessibleCount"), noun: NONEMPTY_STRING_SCHEMA,
-      minimum: { type: "integer", minimum: 0 } }),
-    objectSchema({ op: literalSchema("expectClosedOverlaysEmpty") }),
+      scope: SCOPE_REF, minimum: { type: "integer", minimum: 0 } }),
     objectSchema({ op: literalSchema("reload") }),
     objectSchema({ op: literalSchema("newContext"), actor: { ...OPTIONAL_STRING_SCHEMA, minLength: 1 } }),
     objectSchema({ op: literalSchema("switchContext"), actor: NONEMPTY_STRING_SCHEMA }),
@@ -277,7 +280,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed Planner op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, expectUrlContains, expectAccessibleCount, reload, newContext, switchContext. expectClosedOverlaysEmpty is reserved for controller-owned compatibility plans and Planner output using it is rejected. expectUrlContains is allowed only for an explicit page address/URL result. expectAccessibleCount requires one aggregate accessible phrase containing the number and requirement-derived noun. The initial browser context is named default. newContext with actor creates and selects a retained named context; switchContext selects a previously created actor or default without changing application data. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed Planner op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectCss, expectText, expectDownload, expectValue, expectCount, expectUrlContains, expectAccessibleCount, reload, newContext, switchContext. Controller-owned compatibility operations are not available to Planner output. expectUrlContains is allowed only for an explicit page address/URL result. expectAccessibleCount requires one unique visible phrase containing the number and requirement-derived noun; optional flat scope identifies its entity and is frozen during locator refinement. expectCss supports only background-color with exactly one of value, notValue or differentFrom; immediate controls one read versus polling. The initial browser context is named default. newContext with actor creates and selects a retained named context; switchContext selects a previously created actor or default without changing application data. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -383,7 +386,8 @@ export function parseProbePlan(
       for (const [stepIndex, step] of probeCase.steps.entries()) {
         const locators = "locator" in step ? [step.locator,
           ...(step.op === "expectCss" && step.differentFrom ? [step.differentFrom] : [])]
-          : step.op === "drag" ? [step.from, step.to] : [];
+          : step.op === "drag" ? [step.from, step.to]
+            : step.op === "expectAccessibleCount" && step.scope ? [{ by: "role", role: "generic", scope: step.scope } as ProbeLocator] : [];
         for (const locator of locators) {
           enforceGlobalSearchBannerScope(locator, { requirements: scoped, prerequisites: packet.prerequisites },
             `ProbePlan case ${probeCase.id} step ${stepIndex}`);
@@ -817,7 +821,10 @@ function validateExpectationGrounding(probeCase: ProbeCase, evidence: readonly A
   const texts = requirementEvidenceTexts(evidence);
   const joined = texts.join("\n");
   const normalized = joined.replace(/\s+/g, " ").toLowerCase();
-  const hasAddressContract = /\b(?:page\s+)?(?:address|url)\b/i.test(maskRequirementLiterals(joined));
+  const behavior = evidence.flatMap(item => [item.product.description, item.text, ...item.scenarios,
+    ...(item.scenarioContracts ?? []).flatMap(scenario => scenario.steps.map(step => step.content)),
+    ...item.ancestors.map(ancestor => ancestor.description)]).join("\n");
+  const hasAddressContract = /\b(?:page\s+)?(?:address|url)\b/i.test(maskRequirementLiterals(behavior));
   const entered = new Set(probeCase.steps.flatMap(step =>
     step.op === "fill" || step.op === "select" ? [step.value.toLowerCase()] : []));
   for (const [index, step] of probeCase.steps.entries()) {
@@ -964,18 +971,19 @@ function parseStep(value: unknown, location: string): ProbeStep {
         attribute: attribute as (typeof STATE_ATTRIBUTES)[number], value };
     }
     case "expectCss": {
-      keys(step, ["op", "locator", "property", "value", "differentFrom", "immediate"], location);
+      keys(step, ["op", "locator", "property", "value", "notValue", "differentFrom", "immediate"], location);
       if (!CSS_PROPERTIES.includes(step.property as (typeof CSS_PROPERTIES)[number])) {
         throw new Error(`${location}: expectCss only supports background-color`);
       }
       const base = { op, locator: parseLocator(step.locator, `${location}.locator`),
         property: step.property as (typeof CSS_PROPERTIES)[number],
         ...(step.immediate == null ? {} : { immediate: boolean(step.immediate, `${location}.immediate`) }) } as const;
-      if ((step.value != null) === (step.differentFrom != null)) {
-        throw new Error(`${location}: expectCss requires exactly one of value or differentFrom`);
+      if ([step.value, step.notValue, step.differentFrom].filter(value => value != null).length !== 1) {
+        throw new Error(`${location}: expectCss requires exactly one of value, notValue or differentFrom`);
       }
       return step.value != null ? { ...base, value: text(step.value, `${location}.value`) }
-        : { ...base, differentFrom: parseLocator(step.differentFrom, `${location}.differentFrom`) };
+        : step.notValue != null ? { ...base, notValue: text(step.notValue, `${location}.notValue`) }
+          : { ...base, differentFrom: parseLocator(step.differentFrom, `${location}.differentFrom`) };
     }
     case "setChecked": {
       keys(step, ["op", "locator", "checked"], location);
@@ -1044,7 +1052,7 @@ function parseStep(value: unknown, location: string): ProbeStep {
       return { op, value: dataText(step.value, `${location}.value`) };
     }
     case "expectAccessibleCount": {
-      keys(step, ["op", "noun", "exact", "minimum"], location);
+      keys(step, ["op", "noun", "exact", "minimum", "scope"], location);
       if ((step.exact != null) === (step.minimum != null)) {
         throw new Error(`${location}: expectAccessibleCount requires exactly one of exact or minimum`);
       }
@@ -1055,8 +1063,10 @@ function parseStep(value: unknown, location: string): ProbeStep {
       if (!Number.isSafeInteger(count) || (count as number) < 0) {
         throw new Error(`${location}.${field} must be a non-negative integer`);
       }
-      return field === "exact" ? { op, noun, exact: count as number } : { op, noun, minimum: count as number };
+      const scope = step.scope == null ? {} : { scope: parseScope(step.scope, `${location}.scope`) };
+      return field === "exact" ? { op, noun, exact: count as number, ...scope } : { op, noun, minimum: count as number, ...scope };
     }
+    case "expectAwayFromHome":
     case "expectClosedOverlaysEmpty": {
       keys(step, ["op"], location);
       return { op };
@@ -1126,11 +1136,7 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
     base = { ...base, firstMatch: text(locator.firstMatch, `${location}.firstMatch`) };
   }
   if (locator.scope != null) {
-    const scope = record(locator.scope, `${location}.scope`);
-    const { hasText, ...target } = scope;
-    if ("scope" in target || "fallbacks" in target || "firstMatch" in target) throw new Error(`${location}.scope must be flat`);
-    const parsed = parseLocator(target, `${location}.scope`, false);
-    base = { ...base, scope: { ...parsed, ...(hasText == null ? {} : { hasText: text(hasText, `${location}.scope.hasText`) }) } };
+    base = { ...base, scope: parseScope(locator.scope, `${location}.scope`) };
   }
   if (locator.fallbacks == null) return base;
   if (!allowFallbacks) throw new Error(`${location} fallbacks must not be nested`);
@@ -1146,6 +1152,13 @@ function parseLocator(value: unknown, location: string, allowFallbacks = true): 
     throw new Error(`${location} fallbacks must preserve firstMatch selection`);
   }
   return { ...base, fallbacks };
+}
+
+function parseScope(value: unknown, location: string): ProbeScope {
+  const { hasText, ...target } = record(value, location);
+  if ("scope" in target || "fallbacks" in target || "firstMatch" in target) throw new Error(`${location} must be flat`);
+  const parsed = parseLocator(target, location, false);
+  return { ...parsed, ...(hasText == null ? {} : { hasText: text(hasText, `${location}.hasText`) }) };
 }
 
 const CONTROL_OPERATIONS = new Set<ProbeStep["op"]>([
@@ -1174,7 +1187,7 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
   if (!name) return [];
   const role = `(?:${ARIA_ROLES.join("|")})`;
   const roleList = `${role}(?:\\s+or\\s+${role})*`;
-  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:(?:containing|named|(?:with\\s+(?:the\\s+)?)?accessible\\s+name|and\\s+accessible\\s+name)\\s+)?$`, "i");
+  const before = new RegExp(`\\b(${roleList})(?:\\s+role)?\\s+(?:(?:containing|(?:is\\s+)?named|(?:(?:whose|with)\\s+(?:the\\s+)?)?accessible\\s+name(?:\\s+(?:is|matches))?|and\\s+accessible\\s+name)\\s+)?(?:\\s*(?:#+\\s+)?(?:or|and)\\s*)*$`, "i");
   const after = new RegExp(`^\\s*(${roleList})\\b`, "i");
   const scoped = new RegExp(`\\b(?:in|within|inside)\\s+(?:the\\s+)?(?:${role}\\s+(?:named\\s+)?)?(?:\"([^\"\\n]+)\"|“([^”]+)”|\x60([^\x60]+)\x60)`, "gi");
   const scopeName = locator.scope && candidateTargetName(locator.scope as ProbeLocator);
@@ -1189,7 +1202,12 @@ export function declaredLocatorRoles(locator: ProbeLocator, packet: Pick<WorkPac
       const matchesScope = !containers.length || !!scopeName && containers.some(value => normalizeName(value) === normalizeName(scopeName));
       for (const literal of sentence.matchAll(/`([^`]+)`|"([^"\n]+)"|“([^”]+)”/g)) {
         if (normalizeName(literal[1] ?? literal[2] ?? literal[3]) !== normalizeName(name)) continue;
-        const prefix = canonicalRolePhrase(maskRequirementLiterals(sentence.slice(0, literal.index)));
+        // A quoted ARIA keyword followed by `role` is syntax, not a UI name.
+        // Preserve it before masking names such as the button and its dialog.
+        const rolePrefix = sentence.slice(0, literal.index).replace(
+          new RegExp(`(?:\x60(${role})\x60|"(${role})"|“(${role})”)\\s+role\\b`, "gi"),
+          (_match, backtick: string, quoted: string, curly: string) => `${backtick ?? quoted ?? curly} role`);
+        const prefix = canonicalRolePhrase(maskRequirementLiterals(rolePrefix));
         const rawSuffix = sentence.slice(literal.index! + literal[0].length);
         const suffix = canonicalRolePhrase(maskRequirementLiterals(rawSuffix));
         // In `a "Style" option named "Red fill"`, option binds Red fill. It

@@ -713,9 +713,10 @@ test("A completeness-review failure keeps the valid plan pending without regener
       { keyword: "THEN", content: "the profile is saved and remains after refresh" },
     ] }];
   const wire = validPlan();
+  wire.cases[0].steps.splice(3, 0, { op: "reload" });
   (wire.cases[0] as Record<string, unknown>).outcomeChecks = [
-    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 0, assertionIndexes: [3] },
-    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 1, assertionIndexes: [3] },
+    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 0, assertionIndexes: [4] },
+    { scenarioId: "save-profile", stepIndex: 2, clauseIndex: 1, assertionIndexes: [4] },
   ];
   let calls = 0;
   const planner = new LlmProbePlanner(config(), async (_input, init) => {

@@ -50,10 +50,17 @@ function assertAuthPublicEntry(plan: ProbePlan, packet: CompatibilityPacket): vo
   const relevant = relevantCases(plan, packet, text =>
     /\brevoked browser\b|\bredirected to (?:the )?(?:sign[ -]?in|log[ -]?in) page\b/i.test(text));
   if (!relevant.length) return;
-  const valid = relevant.some(probeCase => probeCase.steps.some(step => step.op === "expectVisible" &&
-    locatorName(step.locator) !== undefined && names.includes(locatorName(step.locator)!) &&
-    step.locator.by === "role" && step.locator.role === "link" && step.locator.exact === true &&
-    step.locator.scope?.by === "role" && step.locator.scope.role === "main"));
+  const valid = relevant.some(probeCase => {
+    let revoked = -1;
+    for (const [index, step] of probeCase.steps.entries()) if (step.op === "click" &&
+      /\b(?:revoke|expire|end session)\b/i.test(locatorName(step.locator) ?? "")) revoked = index;
+    const after = revoked < 0 ? (probeCase.setupStepCount ?? 0) : revoked;
+    return probeCase.steps.some((step, index) => index > after && step.op === "expectVisible" &&
+      locatorName(step.locator) !== undefined && names.includes(locatorName(step.locator)!) &&
+      step.locator.by === "role" && step.locator.role === "link" && step.locator.exact === true &&
+      step.locator.scope?.by === "role" && step.locator.scope.role === "main" &&
+      (revoked >= 0 || probeCase.steps.slice(after, index).some(before => before.op === "reload")));
+  });
   if (!valid) throw new Error("Compatibility contract requires the declared unauthenticated entry link to be visible in main after session revocation");
 }
 
@@ -88,11 +95,23 @@ function assertUniqueConflictContext(plan: ProbePlan, packet: CompatibilityPacke
       const cases = plan.cases.filter(probeCase => (probeCase.outcomeChecks ?? []).some(check => check.scenarioId === scenario.id));
       if (!cases.length) continue;
       const valid = cases.some(probeCase => {
-        const submitted = probeCase.steps.some(step => step.op === "fill" && step.value === value);
-        const retained = probeCase.steps.some(step => step.op === "expectValue" && step.value === value);
-        const single = probeCase.steps.some(step => step.op === "expectCount" && step.count === 1 &&
+        const submitted = probeCase.steps.findIndex(step => step.op === "fill" && step.value === value);
+        const failed = probeCase.steps.findIndex((step, index) => index > submitted &&
+          (step.op === "expectText" && /\b(?:already exists|duplicate|conflict)\b/i.test(step.text) ||
+            step.op === "expectVisible" && /\b(?:already exists|duplicate|conflict)\b/i.test(locatorName(step.locator) ?? "")));
+        if (submitted < 0 || failed < 0) return false;
+        const field = probeCase.steps[submitted];
+        if (field.op !== "fill") return false;
+        const exit = probeCase.steps.findIndex((step, index) => index > failed && (
+          ["goto", "reload", "newContext", "switchContext"].includes(step.op) ||
+          step.op === "click" && step.locator.by === "role" && step.locator.role === "link" ||
+          step.op === "press" && step.key === "Escape"));
+        const context = probeCase.steps.slice(failed + 1, exit < 0 ? undefined : exit);
+        const retained = context.some(step => step.op === "expectValue" && step.value === value &&
+          locatorName(step.locator) === locatorName(field.locator));
+        const single = context.some(step => step.op === "expectCount" && step.count === 1 &&
           locatorName(step.locator) === value && step.locator.exact === true);
-        return submitted && retained && single;
+        return retained && single;
       });
       if (!valid) throw new Error(`Compatibility contract requires the non-sensitive submitted identifier ${JSON.stringify(value)} to remain in the form and appear exactly once in the conflict context`);
     }
@@ -111,7 +130,8 @@ function declaredPublicEntryLinks(packet: CompatibilityPacket): string[] {
   for (const text of requirementEvidenceTexts(packet.requirements, packet.prerequisites)) {
     for (const match of text.matchAll(/\b(?:visible\s+)?link(?:\s+named)?\s*[“"']([^”"']+)[”"']/gi)) names.add(match[1]);
   }
-  return [...names];
+  const authentication = [...names].filter(name => /\b(?:sign[ -]?in|log[ -]?in|login)\b/i.test(name));
+  return authentication.length ? authentication : names.size === 1 ? [...names] : [];
 }
 
 function exactHeading(step: ProbeStep, value: string): boolean {

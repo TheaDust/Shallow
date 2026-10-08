@@ -11,10 +11,11 @@ export function overlayLifecyclePlan(packet: WorkPacket, businessPlan: ProbePlan
   if (!businessPlan || !packet.requirements.some(item => item.product.evolution)) return undefined;
   const evidence = requirementEvidenceTexts(packet.requirements, packet.prerequisites).join(" ");
   if (!/\b(?:dialog|menu|popover|modal)\b/i.test(evidence)) return undefined;
-  // Only inspect a lifecycle that the grounded business plan actually opens
-  // and safely closes. Merely seeing an unrelated hidden menu elsewhere in the
-  // application must not create a compatibility failure.
-  const lifecycle = businessPlan.cases.map(overlayReopenCase).find((value): value is ProbeCase => value !== undefined);
+  // Exercise an explicit lifecycle when available. Shared menu/dialog
+  // consumers also have a closed-surface contract at a grounded checkpoint.
+  const lifecycle = businessPlan.cases.map(overlayReopenCase).find((value): value is ProbeCase => value !== undefined)
+    ?? (/\bmenu\b/i.test(evidence)
+      ? businessPlan.cases.map(closedSurfaceReadyCase).find((value): value is ProbeCase => value !== undefined) : undefined);
   return lifecycle ? { packetId: packet.id, cases: [lifecycle] } : undefined;
 }
 
@@ -33,32 +34,56 @@ export function globalControlCrossRoutePlan(
     return source.plan.cases.map(probeCase => globalSearchSequence(probeCase, controls[0].name));
   }).find((value): value is ProbeStep[] => value !== undefined);
   if (!sequence) return undefined;
-  const source = preferredCase(businessPlan.cases)!;
+  const source = prefix.probeCase;
   return { packetId: packet.id, cases: [{
     id: `compat-global-cross-route-${source.id}`,
     requirementIds: source.requirementIds,
     purpose: "happy_path",
     expectationBasis: source.expectationBasis,
-    setupStepCount: prefix.length,
-    steps: [...structuredClone(prefix), ...structuredClone(sequence)],
+    setupStepCount: prefix.steps.length + 1,
+    steps: [...structuredClone(prefix.steps), { op: "expectAwayFromHome" }, ...structuredClone(sequence)],
   }] };
 }
 
-function nestedPrefix(cases: readonly ProbeCase[]): ProbeStep[] | undefined {
+function nestedPrefix(cases: readonly ProbeCase[]): { probeCase: ProbeCase; steps: ProbeStep[] } | undefined {
+  let fallback: { probeCase: ProbeCase; steps: ProbeStep[] } | undefined;
   for (const probeCase of cases) {
     const setupCount = probeCase.setupStepCount ?? 0;
-    if (setupCount > 1 && probeCase.steps[setupCount - 1]?.op.startsWith("expect") &&
-      probeCase.steps.slice(0, setupCount).some(step => step.op === "click")) {
-      return probeCase.steps.slice(0, setupCount);
-    }
-    let acted = false;
-    for (let index = 0; index < probeCase.steps.length; index += 1) {
+    if (setupCount > 14) continue;
+    let lastAssertion = -1;
+    let navigation = false;
+    let extendedNavigation = false;
+    for (let index = 0; index < Math.min(probeCase.steps.length, 14); index += 1) {
       const step = probeCase.steps[index];
-      if (["click", "doubleClick", "rightClick"].includes(step.op)) acted = true;
-      if (acted && step.op.startsWith("expect") && index > 1 && index < 15) return probeCase.steps.slice(0, index + 1);
+      const link = step.op === "click" && step.locator.by === "role" && step.locator.role === "link";
+      const search = (step.op === "fill" || step.op === "press" && step.key === "Enter") &&
+        step.locator.by === "role" && step.locator.role === "searchbox";
+      if (index >= setupCount && !link && !search && step.op !== "goto" && !step.op.startsWith("expect")) break;
+      if (link || search) navigation = true;
+      if (index >= setupCount && (link || search)) extendedNavigation = true;
+      if (step.op.startsWith("expect")) lastAssertion = index;
+    }
+    if (navigation && lastAssertion > 1) {
+      const candidate = { probeCase, steps: probeCase.steps.slice(0, lastAssertion + 1) };
+      const checkpoint = probeCase.steps[lastAssertion];
+      if (extendedNavigation || "locator" in checkpoint && checkpoint.locator.by === "role" && checkpoint.locator.role === "heading") return candidate;
+      fallback ??= candidate;
     }
   }
-  return undefined;
+  return fallback;
+}
+/** Shared menu/dialog consumers may leave a stale closed surface before a user
+ * ever opens it. Reuse a bounded, grounded readiness checkpoint to inspect it. */
+function closedSurfaceReadyCase(probeCase: ProbeCase): ProbeCase | undefined {
+  if (probeCase.purpose !== "happy_path") return undefined;
+  let end = -1;
+  for (let index = 0; index < Math.min(probeCase.steps.length, 15); index += 1) {
+    if (probeCase.steps[index].op.startsWith("expect")) end = index;
+  }
+  if (end < 1 || probeCase.steps[0].op !== "goto" || probeCase.steps[0].path !== "/") return undefined;
+  return { id: `compat-closed-surfaces-${probeCase.id}`, requirementIds: probeCase.requirementIds,
+    purpose: "happy_path", expectationBasis: probeCase.expectationBasis,
+    steps: [...structuredClone(probeCase.steps.slice(0, end + 1)), { op: "expectClosedOverlaysEmpty" }] };
 }
 
 function overlayReopenCase(probeCase: ProbeCase): ProbeCase | undefined {
@@ -110,9 +135,4 @@ function globalSearchSequence(probeCase: ProbeCase, name: string): ProbeStep[] |
   const end = start + 1 + endOffset;
   const sequence = probeCase.steps.slice(start, end + 1);
   return sequence.some(step => step.op === "press" && sameControl(step) && step.key === "Enter") ? sequence : undefined;
-}
-
-function preferredCase(cases: readonly ProbeCase[]): ProbeCase | undefined {
-  return cases.find(item => item.purpose === "happy_path") ??
-    cases.find(item => item.purpose === "persistence") ?? cases[0];
 }

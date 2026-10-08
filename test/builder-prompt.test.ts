@@ -42,6 +42,10 @@ test("Authorized entry guidance reaches every product and repair mode without mi
       assert.ok(compiled.taskPrompt.includes(accessibleFragment));
       assert.match(body, /继承应用中的公共组件拷贝/);
       assert.match(body, /管理型对话框保存后先呈现更新的列表/);
+      assert.match(body, /同一失败表单上下文/);
+      assert.match(body, /完整的数值与实体单位文字/);
+      assert.match(body, /全局控件在首页、登录后及实体详情/);
+      assert.match(body, /默认状态也写入地址/);
       assert.match(body, /150ms、500ms 和失败分支/);
       assert.ok(compiled.systemPrompt.includes(selfTest));
       assert.match(compiled.systemPrompt, /全局页头使用顶层 `<header>`（banner）/);

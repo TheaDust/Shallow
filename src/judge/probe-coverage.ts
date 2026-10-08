@@ -74,13 +74,16 @@ export function observableFacets(text: string): ObservableFacet[] {
   // Count is identified from the contract shape, not from a product noun. A
   // complete quoted status such as “Replaced 3 cells” remains one text facet;
   // its exact text assertion is also a valid count-bearing assertion.
-  if (/\b(?:count|number|total)\b/i.test(masked) || /\b\d+\s+[\p{L}][\p{L}\p{N}_-]*\b/u.test(text)) add("count");
+  if (/\b(?:count|number|total)\b/i.test(masked) || observableLiterals(text).some(isCountPhrase)) add("count");
   const statePattern = /\b(?:status|state|active|inactive|revoked|archived|current\s+session|selected|highlighted|checked|unchecked|gone|absent|removed)\b/i;
   const stateSegments = commaSegments(text).filter(segment => statePattern.test(maskRequirementLiterals(segment)));
   if (stateSegments.length > 1) for (const segment of stateSegments) add("state", segment);
   else if (statePattern.test(masked)) add("state");
   const visible = /\b(?:display(?:s|ed)?|show(?:s|n)?|visible|exposes?|appears?|marker|heading|link|field|label)\b/i.test(masked);
-  const literals = /\bor\b/i.test(masked) ? [] : observableLiterals(text);
+  // Attribute values, control names used to open an editor, and row tuples are
+  // not standalone display strings. Their existing typed assertions/review
+  // retain their meaning; do not invent an additional text node for them.
+  const literals = /\bor\b/i.test(masked) ? [] : displayedLiterals(text);
   if (visible && literals.length > 0) for (const literal of literals) add("visibility", literal);
   else if (visible) add("visibility");
   if (afterReload) add("persistence");
@@ -93,6 +96,23 @@ function observableLiterals(text: string): string[] {
     .map(match => (match[1] ?? match[2] ?? match[3]).replace(/\s+/g, " ").trim())
     .filter(value => value.length > 0 && value.length <= 256);
   return [...new Set(values)];
+}
+
+function displayedLiterals(text: string): string[] {
+  const verb = /\b(?:displays?|shows?|contains?|prefilled|lists?)\b/i.exec(maskRequirementLiterals(text));
+  const values = [...text.matchAll(/`([^`]+)`|“([^”]+)”|"([^"\n]+)"/g)].filter(match => {
+    const prefix = text.slice(0, match.index);
+    if (/\b(?:aria-[\w-]+|data-[\w-]+)\s*=\s*$/.test(prefix)) return false;
+    if (verb && match.index! < verb.index) return false;
+    if (/\b(?:in|within|inside|via|using|through)\s*$/i.test(prefix)) return false;
+    if (/\bsame\s*$/i.test(prefix) && /^\s+value\b/i.test(text.slice(match.index! + match[0].length))) return false;
+    return !match[0].includes("/");
+  }).map(match => (match[1] ?? match[2] ?? match[3]).replace(/\s+/g, " ").trim());
+  return [...new Set(values.filter(value => value.length > 0 && value.length <= 256))];
+}
+
+function isCountPhrase(value: string): boolean {
+  return /^(?:\d+\s+[\p{L}][\p{L}\p{N}_-]*|(?:replaced|created|deleted|updated|removed|added|found|matched|selected)\s+\d+\s+[\p{L}][\p{L}\p{N}_-]*)$/iu.test(value.trim());
 }
 
 function commaSegments(text: string): string[] {
@@ -156,10 +176,27 @@ function observableFacetIssue(
   const business = probeCase.steps.slice(setupStepCount);
   const outcome = outcomes.get(outcomeKey(check));
   if (!outcome) return undefined;
-  const assertions = check.assertionIndexes.map(index => business[index]).filter(step => step?.op.startsWith("expect"));
+  const mapped = check.assertionIndexes.filter(index => business[index]?.op.startsWith("expect"));
   for (const facet of outcome.facets) {
+    // A later reload elsewhere in a continuous case must not erase an earlier
+    // valid persistence check. Conversely, another field checked after reload
+    // cannot cover this field's persistence.
+    const indexes = facet.phase === "after_reload" ? mapped.filter(index =>
+      business.slice(0, index).some(step => step.op === "reload")) : mapped;
+    const assertions = indexes.map(index => business[index]);
+    if (facet.phase === "after_reload" && !assertions.length) {
+      return "reload/refresh result is not asserted after a reload step";
+    }
     if (facet.kind === "url" && !assertions.some(step => step.op === "expectUrlContains")) {
       return "explicit page address/URL result is not mapped to expectUrlContains";
+    }
+    if (facet.kind === "url") {
+      const tail = facet.text.slice(/\b(?:address|url)\b/i.exec(maskRequirementLiterals(facet.text))?.index ?? 0);
+      for (const value of observableLiterals(tail)) {
+        if (!assertions.some(step => step.op === "expectUrlContains" && step.value === value)) {
+          return `page address/URL value ${JSON.stringify(value)} is not proven by its mapped assertion`;
+        }
+      }
     }
     if (facet.kind === "count" && !assertions.some(step => assertionProvesCount(step, facet.text))) {
       return "explicit count result is not mapped to a count-bearing assertion";
@@ -169,20 +206,26 @@ function observableFacetIssue(
       return `state fact ${JSON.stringify(facet.text)} is not proven by a mapped assertion`;
     }
     if (facet.kind === "visibility" && facet.text !== outcome.text &&
-      !assertions.some(step => assertionMentions(step, facet.text))) {
+      !assertions.some(step => /\b(?:no longer|does not|contains? no|no entry|absent|gone)\b/i.test(maskRequirementLiterals(outcome.text))
+        ? (step.op === "expectHidden" || step.op === "expectCount" && step.count === 0) && assertionMentions(step, facet.text)
+        : assertionProvesDisplay(step, facet.text))) {
       return `displayed field ${JSON.stringify(facet.text)} is not proven by a mapped assertion`;
     }
-    if (facet.phase === "after_reload") {
-      let reloadIndex = -1;
-      for (let index = business.length - 1; index >= 0; index -= 1) {
-        if (business[index].op === "reload") { reloadIndex = index; break; }
-      }
-      if (reloadIndex < 0 || !check.assertionIndexes.some(index => index > reloadIndex)) {
-        return "reload/refresh result is not asserted after a reload step";
+    for (const attribute of facet.text.matchAll(/\b(aria-(?:expanded|pressed|selected|checked))\s*=\s*["'`](true|false|mixed)["'`]/g)) {
+      if (!assertions.some(step => step.op === "expectAttribute" && step.attribute === attribute[1] && step.value === attribute[2])) {
+        return `state attribute ${attribute[1]}=${attribute[2]} is not proven by a mapped assertion`;
       }
     }
   }
   return undefined;
+}
+
+function assertionProvesDisplay(step: ProbeStep, expected: string): boolean {
+  const wanted = expected.replace(/\s+/g, " ").trim().toLowerCase();
+  if (step.op === "expectText") return [step.text, ...(step.anyOf ?? [])]
+    .some(value => value.replace(/\s+/g, " ").toLowerCase().includes(wanted));
+  if (step.op === "expectValue") return step.value.replace(/\s+/g, " ").toLowerCase().includes(wanted);
+  return step.op === "expectVisible" && assertionMentions(step, expected);
 }
 
 function assertionMentions(step: ProbeStep, expected: string): boolean {
@@ -199,27 +242,37 @@ function assertionMentions(step: ProbeStep, expected: string): boolean {
 }
 
 function assertionProvesCount(step: ProbeStep, evidence: string): boolean {
-  const numeric = /\b(\d+)\b/.exec(evidence)?.[1];
-  const word = /\b(zero|one)\b/i.exec(evidence)?.[1]?.toLowerCase();
+  const countText = observableLiterals(evidence).find(isCountPhrase) ?? maskRequirementLiterals(evidence);
+  const numeric = /\b(\d+)\b/.exec(countText)?.[1];
+  const word = /\b(zero|one)\b/i.exec(countText)?.[1]?.toLowerCase();
   const expected = numeric === undefined ? word === "zero" ? 0 : word === "one" ? 1 : undefined : Number(numeric);
-  if (step.op === "expectCount") return expected === undefined || step.count === expected;
   if (step.op === "expectAccessibleCount") {
     if (expected === undefined) return true;
     if (step.exact === expected) return true;
     return /\b(?:at least|minimum(?: of)?)\b/i.test(evidence) && step.minimum === expected;
   }
-  return step.op === "expectText" && (expected === undefined
-    ? /\d|count|total/i.test([step.text, ...(step.anyOf ?? [])].join(" "))
-    : [step.text, ...(step.anyOf ?? [])].some(value => new RegExp(`(^|\\D)${expected}(?:\\D|$)`).test(value)));
+  const values = step.op === "expectText" ? [step.text, ...(step.anyOf ?? [])]
+    : step.op === "expectVisible" && step.locator.by === "text" && step.locator.exact === true ? [step.locator.text] : [];
+  return values.some(value => isCountPhrase(value) && (expected === undefined ||
+    new RegExp(`(^|\\D)${expected}(?:\\D|$)`).test(value)));
 }
 
 function assertionProvesState(step: ProbeStep, evidence: string): boolean {
+  const masked = maskRequirementLiterals(evidence);
+  if (/\b(?:active|selected)\b/i.test(masked) && /\btab\b/i.test(masked)) {
+    return step.op === "expectAttribute" && step.attribute === "aria-selected" && step.value === "true" &&
+      step.locator.by === "role" && step.locator.role === "tab";
+  }
   const targets = [...observableLiterals(evidence),
     ...[...evidence.matchAll(/\b(active|inactive|revoked|archived|selected|highlighted|checked|unchecked)\b/gi)]
       .map(match => match[1])];
   if (!targets.length) return step.op === "expectText" || step.op === "expectAttribute" ||
     step.op === "expectVisible" || step.op === "expectHidden";
   const absent = /\b(?:gone|absent|removed|hidden|no longer)\b/i.test(evidence);
+  if (step.op === "expectAttribute" && /\b(?:selected|checked|unchecked)\b/i.test(masked)) {
+    const attribute = /\b(?:checked|unchecked)\b/i.test(masked) ? "aria-checked" : "aria-selected";
+    return step.attribute === attribute && step.value === (/\bunchecked\b/i.test(masked) ? "false" : "true");
+  }
   return targets.some(target => assertionMentions(step, target)) && (absent
     ? step.op === "expectHidden" || step.op === "expectCount" && step.count === 0
     : step.op === "expectVisible" || step.op === "expectText" || step.op === "expectAttribute" ||

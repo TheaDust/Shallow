@@ -31,6 +31,7 @@ interface BrowserSession {
   context: BrowserContext;
   page: Page;
   crashed: boolean;
+  homeRoute?: string;
 }
 
 class ProbeExecutionError extends Error {
@@ -209,10 +210,17 @@ async function executeStep(
     }
     try {
       await session.page.goto(target.href, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+      if (step.path === "/") session.homeRoute = routeIdentity(session.page.url());
       return session;
     } catch (error) {
       throw new ProbeExecutionError("navigation", compactError(error));
     }
+  }
+  if (step.op === "expectAwayFromHome") {
+    if (!session.homeRoute || routeIdentity(session.page.url()) === session.homeRoute) {
+      throw new ProbeExecutionError("runner", "Compatibility preparation did not reach a route beyond the home page");
+    }
+    return session;
   }
   if (step.op === "reload") {
     try {
@@ -233,18 +241,31 @@ async function executeStep(
     }
   }
   if (step.op === "expectAccessibleCount") {
+    let observed: string[] = [];
+    let target: Locator | undefined;
     try {
       const noun = escapeRegex(step.noun.replace(/s$/i, ""));
       const pattern = new RegExp(`^(\\d+)\\s+${noun}(?:s)?$`, "i");
+      let root: Page | Locator = session.page;
+      if (step.scope) {
+        root = locate(session.page, step.scope as ProbeLocator);
+        if (step.scope.hasText !== undefined) root = root.filter({ hasText: step.scope.hasText });
+        await expect(root).toBeVisible({ timeout: timeoutMs });
+      }
+      target = root.getByText(pattern, { exact: true }).filter({ visible: true });
       await expect.poll(async () => {
-        const values = await session.page.getByText(pattern, { exact: true }).filter({ visible: true }).allTextContents();
-        const counts = values.map(value => Number(pattern.exec(value.trim())?.[1])).filter(Number.isFinite);
-        return step.exact !== undefined ? counts.includes(step.exact) : counts.some(value => value >= step.minimum);
+        observed = await target!.allTextContents();
+        if (observed.length !== 1) return false;
+        const count = Number(pattern.exec(observed[0].trim())?.[1]);
+        return step.exact !== undefined ? count === step.exact : count >= step.minimum;
       }, { timeout: timeoutMs, message: `Expected an aggregate accessible ${step.noun} count` })
         .toBe(true);
       return session;
     } catch (error) {
-      throw new ProbeExecutionError("assertion", compactError(error));
+      const expected = step.exact !== undefined ? `exactly ${step.exact}` : `at least ${step.minimum}`;
+      throw new ProbeExecutionError(observed.length > 1 ? "locator" : "assertion",
+        `Expected one visible ${step.noun} count, ${expected}; observed ${JSON.stringify(observed.slice(0, 3))}. ${compactError(error)}`,
+        await ariaSnapshot(session.page, timeoutMs, target, step.scope));
     }
   }
   if (step.op === "expectClosedOverlaysEmpty") {
@@ -394,9 +415,11 @@ async function executeStep(
           if (step.immediate) {
             const actual = await locator.evaluate((element, property) => getComputedStyle(element).getPropertyValue(property),
               step.property, { timeout: timeoutMs });
-            expect(actual, `Expected computed ${step.property} immediately`).toBe(step.value);
+            if (step.notValue !== undefined) expect(actual).not.toBe(step.notValue);
+            else expect(actual, `Expected computed ${step.property} immediately`).toBe(step.value);
           } else {
-            await expect(locator).toHaveCSS(step.property, step.value, { timeout: timeoutMs });
+            if (step.notValue !== undefined) await expect(locator).not.toHaveCSS(step.property, step.notValue, { timeout: timeoutMs });
+            else await expect(locator).toHaveCSS(step.property, step.value, { timeout: timeoutMs });
           }
         }
         break;
@@ -442,6 +465,13 @@ async function executeStep(
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function routeIdentity(value: string): string {
+  const url = new URL(value);
+  const path = url.pathname.replace(/\/+$/, "") || "/";
+  const hash = url.hash.slice(1).split("?")[0].replace(/\/+$/, "");
+  return `${url.origin}${path}${hash ? `#${hash}` : ""}`;
 }
 
 /**

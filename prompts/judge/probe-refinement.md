@@ -21,3 +21,5 @@ heading containing 某名称仍指 heading，结果 link 使用自己的 link �
 只返回 JSON 对象 `{ "patches": [{ "caseId": "...", "stepIndex": 0, "locator": { "by": "role", "role": "button", "name": "...", "exact": true, "scope": null, "firstMatch": null, "fallbacks": null } }] }`；已有 firstMatch 时照原文保留，不能照抄 null。每个失败 step 至多一个补丁，scope 单层、fallbacks 最多 3 个。不要返回完整 plan、step、操作或预期；全部失败 step 均无可信新定位时返回 `{ "patches": [] }`。
 
 firstMatch 保留原文授权的首个可见控件选择，包括已获明确控件与容器关系支持的“第一条 changed line”选择。精化只保持该语义；普通 strict 歧义仍通过有依据的 scope 或同目标定位纠正。
+
+expectAccessibleCount 的单层 scope 固定实体，noun 与期望数值也不变；多个计数不能靠另一个实体满足。expectUrlContains 保留对应结果的完整标识。expectCss 的 value/notValue/differentFrom 和 immediate 是固定预期；notValue 只是否定需求给定的 background-color，不允许换颜色或猜默认值。button 与同名 dialog（包括 `dialog role whose accessible name matches`）分别绑定，不把触发按钮角色套到容器。

@@ -293,7 +293,12 @@ export class LlmProbePlanner implements ProbePlanner {
     }
     try {
       const review = parsePlanReview(value, packet, original, reviewTargets);
-      if (review.status === "corrected") assertCompatibilityPlan(review.plan, packet);
+      if (review.status === "corrected") {
+        if (review.plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
+          throw new Error("Compatibility assertions are reserved for controller-owned compatibility plans");
+        }
+        assertCompatibilityPlan(review.plan, packet);
+      }
       return review;
     } catch (error) {
       throw new ProbePlannerError("review", "Probe planner review violates the review contract", {
@@ -335,8 +340,8 @@ export class LlmProbePlanner implements ProbePlanner {
         throw new Error("Planner cannot supply controller coverage review state");
       }
       const plan = parseProbePlan(value, packet);
-      if (plan.cases.some(probeCase => probeCase.steps.some(step => step.op === "expectClosedOverlaysEmpty"))) {
-        throw new Error("expectClosedOverlaysEmpty is reserved for controller-owned compatibility plans");
+      if (plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
+        throw new Error("Compatibility assertions are reserved for controller-owned compatibility plans");
       }
       if (packet.requirements) {
         assertCoverageAccountedFor(plan, packet.requirements);

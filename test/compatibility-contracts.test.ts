@@ -41,7 +41,8 @@ test("revoked sessions preserve the requirement-declared public re-entry link", 
   const base: ProbePlan = { packetId: input.id, cases: [{ id: "revoked", requirementIds: ["A"],
     purpose: "happy_path", expectationBasis: [input.requirements[0].text],
     outcomeChecks: [{ scenarioId: "revoked", stepIndex: 1, assertionIndexes: [0] }],
-    steps: [{ op: "expectVisible", locator: { by: "role", role: "main" } }],
+    steps: [{ op: "click", locator: { by: "role", role: "button", name: "Revoke session", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "main" } }],
   }] };
   assert.throws(() => assertCompatibilityPlan(base, input), /unauthenticated entry link/);
   base.cases[0].steps.push({ op: "expectVisible", locator: { by: "role", role: "link", name: "Enter account",
@@ -63,16 +64,22 @@ test("independent detail identity and uniqueness conflict checks use grounded su
     outcomeChecks: [{ scenarioId: "detail", stepIndex: 1, assertionIndexes: [0] }],
     steps: [{ op: "expectVisible", locator: { by: "role", role: "heading", name: "stable-1", exact: true } }],
   }, { id: "conflict", requirementIds: ["A"], purpose: "negative", expectationBasis: [input.requirements[0].text],
-    outcomeChecks: [{ scenarioId: "conflict", stepIndex: 1, assertionIndexes: [2] }], steps: [
+    outcomeChecks: [{ scenarioId: "conflict", stepIndex: 1, assertionIndexes: [1] }], steps: [
       { op: "fill", locator: { by: "label", text: "Tag", exact: true }, value: "stable-1" },
-      { op: "expectValue", locator: { by: "label", text: "Tag", exact: true }, value: "stable-1" },
       { op: "expectText", locator: { by: "role", role: "alert" }, text: "Tag already exists", exact: true },
+      { op: "expectValue", locator: { by: "label", text: "Tag", exact: true }, value: "stable-1" },
       { op: "expectCount", locator: { by: "text", text: "stable-1", exact: true }, count: 1 },
     ] }] };
   assert.doesNotThrow(() => assertCompatibilityPlan(plan, input));
   const weakened = structuredClone(plan);
-  weakened.cases[1].steps.splice(1, 1);
+  weakened.cases[1].steps.splice(2, 1);
   assert.throws(() => assertCompatibilityPlan(weakened, input), /remain in the form/);
+  const elsewhere = structuredClone(plan);
+  elsewhere.cases[1].steps.splice(3, 0, { op: "goto", path: "/" });
+  assert.throws(() => assertCompatibilityPlan(elsewhere, input), /conflict context/);
+  const beforeError = structuredClone(plan);
+  [beforeError.cases[1].steps[1], beforeError.cases[1].steps[2]] = [beforeError.cases[1].steps[2], beforeError.cases[1].steps[1]];
+  assert.throws(() => assertCompatibilityPlan(beforeError, input), /remain in the form/);
 });
 
 test("uniqueness compatibility never requires a sensitive submitted value to be echoed", () => {
@@ -118,6 +125,41 @@ test("global controls replay a grounded home action after an anonymous nested ro
   const crossRoute = globalControlCrossRoutePlan(packet("A record detail is readable."), nestedPlan,
     [{ packet: searchPacket, plan: search }]);
   assert.ok(crossRoute);
-  assert.equal(crossRoute.cases[0].setupStepCount, 3);
-  assert.equal(crossRoute.cases[0].steps[3].op, "fill");
+  assert.equal(crossRoute.cases[0].setupStepCount, 5);
+  assert.equal(crossRoute.cases[0].steps[4].op, "expectAwayFromHome");
+  assert.equal(crossRoute.cases[0].steps[5].op, "fill");
+});
+
+test("shared closed surfaces are sampled at readiness without requiring a dialog to have been opened", () => {
+  const input = packet('The shared account menu is available after sign-in.');
+  const ready = overlayLifecyclePlan(input, nestedPlan);
+  assert.ok(ready);
+  assert.equal(ready.cases[0].steps.at(-1)?.op, "expectClosedOverlaysEmpty");
+  assert.equal(ready.cases[0].outcomeChecks, undefined);
+});
+
+test("cross-route preparation continues beyond login to an entity and stops before its mutation", () => {
+  const input = packet('The global search control has searchbox role and accessible name "Lookup".');
+  const source: ProbePlan = { packetId: input.id, cases: [{ id: "search", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: [input.requirements[0].text], steps: [
+      { op: "goto", path: "/" },
+      { op: "fill", locator: { by: "role", role: "searchbox", name: "Lookup", exact: true, scope: { by: "role", role: "banner" } }, value: "Record" },
+      { op: "press", locator: { by: "role", role: "searchbox", name: "Lookup", exact: true, scope: { by: "role", role: "banner" } }, key: "Enter" },
+      { op: "expectVisible", locator: { by: "role", role: "link", name: "Record", exact: true } },
+    ] }] };
+  const business = structuredClone(nestedPlan);
+  business.cases[0].setupStepCount = 3;
+  business.cases[0].steps = [
+    { op: "goto", path: "/" }, { op: "click", locator: { by: "role", role: "button", name: "Authenticate", exact: true } },
+    { op: "expectVisible", locator: { by: "text", text: "Owner", exact: true } },
+    { op: "click", locator: { by: "role", role: "link", name: "Record", exact: true } },
+    { op: "expectVisible", locator: { by: "role", role: "heading", name: "Record", exact: true } },
+    { op: "click", locator: { by: "role", role: "button", name: "Delete record", exact: true } },
+    { op: "expectHidden", locator: { by: "role", role: "heading", name: "Record", exact: true } },
+  ];
+  const derived = globalControlCrossRoutePlan(input, business, [{ packet: input, plan: source }]);
+  assert.ok(derived);
+  assert.equal(derived.cases[0].steps[4].op, "expectVisible");
+  assert.equal(derived.cases[0].steps[5].op, "expectAwayFromHome");
+  assert.equal(derived.cases[0].steps.some(step => step.op === "click" && step.locator.by === "role" && step.locator.name === "Delete record"), false);
 });

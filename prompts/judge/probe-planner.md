@@ -60,6 +60,10 @@ Seed data、Seed values、evaluation seed、pre-provisions/pre-provisioned 与 G
 
 ## 断言
 
+断言对应当前结果的实体、值、正负预期和阶段。URL 明示标识逐项使用 expectUrlContains，不能换成同段中的另一个对象或任意片段。业务人数不以按钮节点数量证明；expectAccessibleCount 检查唯一的完整数值与单位文字，多实体时用单层 scope 限定本实体，scope、noun 和数值在 locator 精化中保持不变。完整消息的 exact expectVisible 也是消息证据，错误文案中的数字不是额外人数；ARIA 值使用 expectAttribute，不能查找字面 true/false。持久化的各字段分别在对应 reload 后检查。
+
+管理保存先核对更新列表，再按需求关闭或继续操作，不用立即 reload、重开管理器绕过中间状态。expectCss 的 background-color 支持 value、notValue 或 differentFrom 三者之一；删除或非匹配结果可用需求给定的填充颜色做 notValue，不猜默认颜色。需求要求即时变化时沿用 immediate 语义，保留拒绝、原状态与刷新结果。
+
 expectText 默认匹配完整文本；子串设 exact:false，多种有依据的措辞用 anyOf。expectValue 检查输入值；expectCount 0 检查不存在，expectHidden 接受不可见或不存在。expectAttribute 只用于 aria-expanded、aria-pressed、aria-selected、aria-checked，值限 true/false/mixed。expectDisabled/expectEnabled 检查原生或 ARIA 禁用状态，目标与所有 fallback 使用交互 role 或 label；“可见但禁用”同时检查 expectVisible 和 expectDisabled，取消、撤销或权限变化后核对对应状态。禁用通过状态断言验证；错误拒绝同时核对错误及记录未改变。
 
 需求要求下载文本文件时使用 expectDownload：locator 指向具名交互控件，fileNameSuffix 为需求支持的文件名后缀，text 为由本 case 输入与业务规则得出的完整 UTF-8 内容。该操作负责点击并等待下载，不先另行 click。文本比较接受 UTF-8 BOM，统一 CRLF/LF 换行；下载上限 64 KiB，预期 text 上限 2000 字符。CSV 结果按需求核对转义、空单元格和公式计算值，不能只点击导出按钮或检查页面仍可见。导出前后及刷新后的状态用其他断言分别核对。
