@@ -1,8 +1,15 @@
+# Dependencies, builds and caches
 node_modules/
 dist/
 build/
 coverage/
-*.log
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Local credentials and machine state
 .env
 .env.*
 !.env.example
@@ -10,16 +17,38 @@ coverage/
 Thumbs.db
 .worktrees/
 .superpowers/
+
+# Generated applications, run records and packages
+/official-run/
+/runs/
+/tmp/
+/output/
+/outputs/
+/artifacts/
+/shallowcode-local/
+.arc/
+shallow-progress/
+sse-capture/
+*.sse
+*.log
+run-log.txt
+run-ledger.jsonl
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Browser sessions and reports
+.playwright-cli/
 .playwright-mcp/
-runs/
-__pycache__/
-tmp/
-docs/handoff
-# 只内联官方 benchmark 的 webapp 任务资产；runner clone（含 node_modules、报告）保持本地
-/benchmarks/*
-!/benchmarks/arc-bench/
-/benchmarks/arc-bench/*
-!/benchmarks/arc-bench/arc-bench/
-/benchmarks/arc-bench/arc-bench/*
-!/benchmarks/arc-bench/arc-bench/webapp/
+playwright-report/
+test-results/
+blob-report/
+
+# Local research and external benchmark copies
+/docs/
+/benchmarks/
+
+# Local regression checks against archived runs
+/test/final[0-9]*-regression.test.ts
 

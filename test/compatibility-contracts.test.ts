@@ -200,7 +200,7 @@ test("count diagnostics are bounded expressions and do not replace arithmetic ou
 });
 
 test("the current session corpus checks persistence after revocation, not after an earlier refresh", async () => {
-  const catalog = await loadRequirementCatalog("official-run/final-5/github/requirements/requirements.yaml", { inheritedApplication: true });
+  const catalog = await loadRequirementCatalog("data/final/hackathon-evolution--github/requirements.yaml", { inheritedApplication: true });
   const input = auditPackets(catalog).find(packet => packet.requirementIds.includes("REQ-1-4"))!;
   const scenario = input.requirements[0].scenarioContracts![1];
   const source: ProbePlan = { packetId: input.id, cases: [{ id: "owner", requirementIds: input.requirementIds,
@@ -216,7 +216,7 @@ test("the current session corpus checks persistence after revocation, not after 
 });
 
 test("public re-entry belongs to the known revoked actor, and ambiguous identities are not guessed", async () => {
-  const catalog = await loadRequirementCatalog("official-run/final-5/github/requirements/requirements.yaml", { inheritedApplication: true });
+  const catalog = await loadRequirementCatalog("data/final/hackathon-evolution--github/requirements.yaml", { inheritedApplication: true });
   const input = auditPackets(catalog).find(packet => packet.requirementIds.includes("REQ-1-4"))!;
   const scenario = input.requirements[0].scenarioContracts![2];
   const signIn = { by: "role" as const, role: "button", name: "Sign in", exact: true };

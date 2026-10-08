@@ -1,414 +1,158 @@
 # ShallowCode
 
-ShallowCode 是 coding agent 之外的一层轻量比赛控制器，面向 GOSIM Factory 2026 / ARC-Bench。它的边界只有一句话：
+ShallowCode 是面向 GOSIM Factory / ARC-Bench 的轻量 coding-agent 控制器。它将需求树分组交给 Pi coding-agent 实现，再用独立生成的黑盒探针验收目标应用，管理可运行检查点、修复和交付。
 
-> 只实现 coding agent 因为不知道整场比赛的全局状态而无法可靠实现的部分。
+Pi coding-agent（`@mariozechner/pi-coding-agent`）是唯一实现目标应用业务代码的 Builder。控制器负责调度与验收，并可安装任务无关的脚手架和通用能力。核心原则是 **Never let the builder grade itself**。
 
-Pi coding-agent（`@mariozechner/pi-coding-agent`）负责创建和修改目标应用、选择技术栈、局部构建与修复；ShallowCode 负责解析整棵需求树、按完整模块组织实现、用独立 LLM 生成黑盒探针、用真实浏览器验收、分别维护可运行检查点与功能验证状态，并完成最终交付验证。当前设计见 [模块优先重构](docs/2026-09-13-module-first-refactor.md)；引擎替换与模块反馈见 [Pi SDK 重构](docs/2026-09-14-pi-sdk-refactor-plan.md)；早期设计见 `docs/superpowers/specs/2026-09-02-shallowcode-v1-lite-design.md`、`2026-09-04-shallowcode-opencode-prompts-design.md` 与 `2026-09-05-builder-prompts-externalization-design.md`（Builder prompt 体系）。
-
-## 快速开始
-
-```powershell
-npm ci
-```
-
-配置三个网关变量（Pi Builder 与 Probe Planner 共用同一网关）：
-
-| 环境变量 | 说明 |
-| --- | --- |
-| `OPENAI_API_KEY` | 网关 API key，由 Planner 请求头与 Pi Worker 在进程内注入 provider |
-| `OPENAI_BASE_URL` | OpenAI-compatible 网关地址 |
-| `MODEL` | 网关接受的完整模型 ID（含 `/` 时原样传递） |
-
-三个变量可以写入仓库根目录的 `.env` 文件（模板见 `.env.example`，`.env` 不会入库），真实环境变量优先于文件值；credential smoke 同样读取 `.env`。
-
-Pi 在独立 Worker 子进程中把网关注册为进程内 `shallow-gateway` provider（Chat Completions），模型走上述网关；网关密钥经 IPC 传递，不落命令行或模型配置文件。运行环境须提供 Node.js/npm（>= 20.18.1）、Git 与 Playwright Chromium（可用 `npx playwright install chromium` 安装），无需全局安装 Pi CLI 或其它 coding agent。
-
-启动一次完整运行：
-
-```powershell
-npm start -- --requirements-dir data/official-competition/hackathon--sheet --output-dir tmp/main --budget-ms 600000
-```
-
-| 参数 | 说明 |
-| --- | --- |
-| `--requirements-dir` | 包含 `requirements.yaml` 的目录 |
-| `--output-dir` | 目标应用输出目录（会作为独立 Git 仓库维护 accepted 状态） |
-| `--budget-ms` | 可选，开发调度预算（非负整数毫秒）；缺省或 `0` 表示不限时，阶段调用与交付的边界见“预算与超时” |
-
-初赛需求位于 `data/official-competition/hackathon--github`（仓库协作）与 `data/official-competition/hackathon--sheet`（电子表格），更换 `--requirements-dir` 即可切换题目。本地约定主线使用 `tmp/main`，baseline 使用 `tmp/baseline`；两者分别维护输出与 `.arc`。每次新实验前先保存需要保留的结果，再手动清空对应实验目录。
-
-通过 Python 适配入口运行主线，使用：
-
-```powershell
-python main.py data/official-competition/hackathon--sheet --output-dir tmp/main --type web
-```
-
-Python 层从真实环境读取 `SHALLOW_BUDGET_MS` 和 `ARCBENCH_*`，模型网关三变量由 TypeScript 层合并 `.env`。本地运行显式传入输出目录。
-
-主线可选环境变量：`SHALLOW_PROBE_PORT` 指定生成期探针端口（默认随机，保留 3000 用于评测）；`SHALLOW_RUN_DIR` 指定运行日志的父目录，每次运行在其下建立独立子目录；`SHALLOW_BUILDER_CONTEXT_WINDOW` 指定主线 Builder 上下文窗口（默认 256000，范围 131072..1000000）；`SHALLOW_MEMORY_GATE_MAX_WAIT_MS` 指定 cgroup 内存背压的最长等待毫秒数（默认 60000，`0` 表示不在重活前等待）；`SHALLOW_REFERENCE_IMAGES` 开启参考图片进入模型上下文（**默认关闭**，取 `1`/`true`/`yes`/`on` 开启）；`SHALLOW_FINAL_AUDIT_GENERATE_PLAN` 控制最终验收在缺少已有 plan 时是否调用 Planner 补生成（**默认关闭**，关闭时仅复用已有 plan）。
-
-运行结束返回 `RunSummary`，`failed` 时进程退出码为 1，其余为 0。
-
-`delivered` 要求最终验证通过且当前验收范围的全部原子需求均已 verified；范围内仍有 blocked 或 todo 需求时为 `partial`。`pipeline_finished` 事件包含结果、接受 SHA、已验证、阻塞和待处理需求 ID；跳过沿用项时还记录验收范围与跳过的 ID。
-
-增量开发时，将 `--output-dir` 指向含 `frontend/` 和 `backend/` 的已有产物目录，`--requirements-dir` 指向本轮需求。决赛由平台自动注入基线，主线直接在该目录修改并保留当前文件，原始根名称也能启用继承应用上下文。显式 `Evolution` 标签、`Evolution Requirements for ...` 和阶段后缀继续支持。Evolution 启动时从 `shallow-progress/plans` 冻结旧需求 ID，按 Original/Modified Feature Description 标记识别修改项；继承应用通过可运行检查后，初次 Builder 只收到新增、历史记录缺失或明确修改项。主线缺省 `SHALLOW_EVOLUTION_AUDIT_INHERITED=0`，模块边界、最终验收及交付汇总只覆盖这些增量项；设为 `1` 恢复沿用项的独立回归。历史计划不进入本轮私有缓存或 Builder 输入，跳过项单独列出且不记为 verified。主线不读取测试目录，继续使用公共端口合同。详见 [增量与阶段任务支持](docs/2026-10-02-progressive-stage-support.md)。
-
-## Raw Pi baseline
-
-baseline 通过 `baseline/main.py` 或 `baseline/index.ts` 运行，用于比较直接驱动同一 Pi 执行层（raw Pi）的效果：
-
-```powershell
-python baseline/main.py data/official-competition/hackathon--sheet --output-dir tmp/baseline --type web
-npx tsx baseline/index.ts --requirements-dir data/official-competition/hackathon--sheet --output-dir tmp/baseline
-```
-
-| 维度 | ShallowCode 主线 | baseline |
-| --- | --- | --- |
-| 工作单元 | 运行时 LLM 语义分组，程序校验 4 条/12 场景/20k 字符与依赖；失败带反馈重试一次后才回退 | 按声明顺序提交 ROOT 的直接子树及全部后代 |
-| 会话 | 实现阶段每个工作包使用全新会话；修复使用新会话 | 一次运行复用同一个会话 |
-| 模型上下文窗口 | 256k（缺省，可用 `SHALLOW_BUILDER_CONTEXT_WINDOW` 覆盖） | 1M（`BASELINE_CONTEXT_WINDOW`，单会话避免过早压缩） |
-| 输入 | 当前需求、产品及依赖合同、种子数据、可用参考图片 | `baseline/system.md`、当前子树 JSON、需求目录及已完成模块 ID |
-| 完成依据 | 可运行检查点与独立功能验收分开记录；最终交付验证 | Pi 调用结果；Python 入口另检查 frontend/backend 目录 |
-| 观测 | 结构化台账、中文日志与 `.arc` | `[baseline]` stderr 日志与 `.arc` 模块状态 |
-
-baseline 的 `completed` 表示调用完成，业务正确性由后续独立评估确认。其 TypeScript 入口在正常结束循环时返回 0，即使存在失败或因预算跳过的模块；比较结果时应同时查看日志中的完成量和失败量。`baseline/system.md` 的平台合同与实现措辞与 `prompts/system/platform-contract.md` 对齐，但不含主线的工作包概念。
-
-baseline 单模块调用不限总预算时上限为4.5小时，显式预算时按预算缩放（见“预算与超时”）。每次调用结束后父进程回收该调用拥有的进程组/作业并等待退出确认；清理失败会终止本轮运行，清理成功后继续处理下一模块。
-
-## 运行流程总览
-
-下图对应 `src/pipeline.ts` 的 `runPipeline`：实现阶段按功能组推进，并在后台为对应审计包生成探针计划；修复统一在模块边界就地发生，全部实现完成后逐项独立验收（只检测不修复），最后交付验证。
+## 工作方式
 
 ```mermaid
 flowchart TD
-    C[Catalog：需求树 / 种子数据 / 图片 / 依赖] --> G[运行时语义分组<br/>程序校验 / 确定性回退]
-    G --> M[功能组实现<br/>每包一个全新会话]
-    M -.并行生成.-> P[生成探针计划并落盘]
-    M --> K[安装 / 构建 / 启动检查<br/>保存可运行检查点]
-    K -->|下一功能组| M
-    K -->|切换模块| BA[模块边界审计与修复<br/>每模块至多两轮]
-    BA --> M
-    K -->|全部实现完成| J[逐项独立验收（只检测）]
-    P -.缓存计划.-> BA
-    P -.缓存计划.-> J
-    J --> F[最终交付验证]
-    F -->|失败且有余量| DR[交付修复至多三轮]
-    DR --> F
+    C[需求树 / 场景 / 种子 / 依赖] --> G[功能分组]
+    G --> B[Pi Worker：模块实现]
+    B --> K[安装 / 构建 / 启动<br/>可运行检查点]
+    K -->|模块未结束| B
+    K -->|模块边界| J[独立 Judge：规划与浏览器验收]
+    J -->|下一模块| B
+    J -->|有界修复| R[Pi Worker：就地修复]
+    R --> K
+    J -->|模块实现结束| A[最终验收：只检测]
+    A --> D[交付验证]
+    D --> S[delivered / partial / failed]
 ```
 
-1. Catalog 保留完整需求树、原子描述、场景、图片和种子数据，并展开和校验依赖。主线启动时正常调用一次 LLM 生成有序功能组：输入完整需求描述、公共产品与祖先合同、目录、显式依赖、原始场景数和字符数，省略场景正文。程序校验完整唯一覆盖、依赖序、单 ROOT 模块及 4 条/12 场景/20,000 字符上限；单条超限完整独立保留。JSON/分组无效或不可恢复的模型故障使用 `featureGroupPackets` 的确定性结果，记录原因，不发起语义修正循环。分组目的仅作诊断，Builder/Judge 仍接收完整原文与场景。
-2. 分组输入提供按同模块、依赖和容量生成的确定性参考分组；模型结合业务链重组，在容量与内聚程度相当时优先减少包数，并核对相邻小包的合并机会。按功能组逐包实现，每包使用全新会话，跨包交接只经代码、测试与 ARCHITECTURE.md。Builder 按索引定位相关入口和测试，集中完成同一改动面后检查，沿用未变化且已成功检查的输入。每包开始后并行生成该组相关审计包的探针计划并落盘，供后续验收复用。
-3. 功能组完成后做安装、构建与启动检查，保存可运行检查点。它不授予功能 verified；切换模块时对上一模块执行模块边界审计，失败按模块独立配额至多两轮修复。依赖门禁只问“有没有可运行的实现”：已有可运行检查点的依赖一律放行下游实现，尚未 verified 的记录 `dependency_gate_provisional`，最终交付仍须完整验收；依赖尚无已完成的可运行实现时才阻塞下游 Builder 与探针预规划。组内及当前尚未验收模块内的依赖不受此门禁影响。修复后必须既有 verified 全保持且至少一个修复目标变为 verified；没有改善、出现回归或无法重新验证既有 pass 时恢复修复前版本。
-4. 全部功能组实现或实现预算耗尽后，按原子需求逐项独立验收（已通过优先）；Judge 仅看需求与浏览器观察。最终验收只检测不修复：可复现业务失败标记 failed 计入交付状态，不再发起跨模块的集中修复。
-5. 最后执行 FinalVerifier（install → build → 就绪 → 浏览器 smoke → grader-like 额外端口复验），失败且有余量时至多三轮交付修复并完整复验（Builder 未完成回执的轮次直接回滚不复验）；随后生成对应交付版本的功能状态与运行结果。
+1. Catalog 解析 `requirements.yaml`，保留需求原文、场景、种子声明、参考图与依赖。功能分组由 LLM 提议，程序校验覆盖、模块边界、容量与依赖顺序；无法获得有效结果时使用确定性分组。
+2. Builder 按功能组推进模块实现。每组从新会话开始，以代码、测试和目标项目的 `ARCHITECTURE.md` 交接；开发检查使用文件、shell、`run_tests`、`app` 和按需启动的 browser 工具。
+3. 控制器在独立候选副本中安装、构建和启动应用，通过一致性检查后保存可运行版本。模块边界由 Judge 独立验收，必要时有界修复，并复验已有通过路径。
+4. 最终验收检查当前验收范围，记录行为结果；交付验证检查安装、构建、健康检查、浏览器首页、公共兼容端口及未知路径。交付故障可触发有界修复与复验。
 
-`acceptedSha` 保留字段名，但现在表示可运行检查点；`verifiedRequirementIds` 才表示当前版本独立探针通过的需求。初始空状态只用于首次回滚。Planner/定位错误不会删除已保存的实现。
+### 独立验收与状态
 
-## Builder 开发检查与模块边界审计
+Judge Planner 只接收需求与浏览器观测，不读取目标源码、diff 或 Builder 会话。Builder 接收需求、种子、可选参考图和白名单失败观测；隐藏计划、`.arc/` 与 `shallow-progress/` 对 Builder 工具屏蔽。主线端口来自公共运行合同，不读取官方测试目录。
 
-`app` 工具按平台合同提供 start/status/stop：依赖安装和构建完成后，start 等待健康检查并返回 browser 使用的 baseUrl；status 查询进程状态，stop 只停止本次调用持有的应用。父进程管理服务，正常结束或 Worker 超时后统一回收，再删除独立数据目录。主线与 baseline 均可用；重新构建前先 stop。
+Planner 生成受 schema 校验的浏览器白名单 DSL；Runner 用 Playwright 执行导航、交互和结果断言，按角色、label 或可见文字定位。计划须引用需求依据并映射显式场景结果，保持控件角色、对象身份和严格定位；Planner 不能提交任意脚本。
 
-`browser` 注入 page/context/Playwright expect，返回页面文字、可访问结构与显式观察；脚本失败以携带页面诊断的错误返回。支持图片的模型可按需请求视口截图。脚本正常返回仅是开发证据，不授予需求 verified。
-
-Pi Builder 持有文件（read/edit/write）、shell 工具、`run_tests` 测试执行工具与会话内 `browser` 工具。每个实现工作包都在全新会话中执行，会话内先规划（逐条映射需求 ID 的改动与检查方式）再实施，跨包交接只通过项目文件（代码、测试、ARCHITECTURE.md）完成；复杂或边界逻辑必须编写传统测试并用 `run_tests` 运行（shell 中的测试命令会被确定性拒绝并提示改用 `run_tests`）。run_tests 默认实际执行；独立于运行数据和构建产物的确定性测试可显式设置 `reuse=true`，同一 Worker 内 target/filter 相同且整个项目的源码、测试、配置与锁文件摘要未变时才复用成功结果，摘要排除 `.arc` 与 `shallow-progress` 私有证据。状态与集成检查实际执行；失败、超时或项目输入变化始终重跑。`browser` 工具是昂贵操作（惰性启动真实 Chromium、脚本化页面操作），仅在构建、类型检查与传统测试无法回答真实浏览器行为问题时验证关键路径；它**不**持有常驻浏览器/MCP 自测工具。控制器在每次调用结束、进程释放之后执行安装、构建与独立浏览器检查，并把白名单失败观测反馈给 Builder。
-
-具体地，每个模块实现并保存可运行检查点后，控制器在切换到下一模块时对该模块的审计包执行完整模块边界审计，复用实现阶段并行生成并落盘的缓存探针计划。边界审计发现可复现业务失败，或符合下述条件的缺失控件时触发模块边界修复，每个模块独立拥有至多两轮配额；修复后重跑缓存计划并优先复查已通过路径。边界修复失去既有 pass、无法重新验证或没有任何修复目标→verified 改善时恢复原检查点并停止。跨模块依赖只要已有可运行检查点就放行下游实现，不要求上游先通过独立验收；控制器对尚未 verified 的依赖发出 `dependency_gate_provisional`，上游自身仍须完整验收。依赖尚无已完成的可运行实现时发出 `dependency_gate_blocked`，跳过下游 Builder 与 Planner。修复统一在模块边界就地发生，没有末尾集中修复；交付修复仍独立至多三轮。
-
-### 候选构建复用与数据隔离
-
-Judge 在控制器应用副本中另启实例，复用匹配的构建产物；控制器在验收前准备。源码、新建文件、产物或依赖安装状态变化会使构建凭据失效。浏览器重试及定位器精化复用本次候选；最终交付验证也复用匹配产物。报告、探针完成事件和接受事件关联 `candidateId`、`buildId`、`runtimeId`、输入摘要及产物摘要；接受 Git 提交前后再次复核，变更时回滚。
-
-输入摘要覆盖输出目录所有普通文件，包括未跟踪和被 Git 忽略的业务文件；排除根 `.git`、`.arc` 和 `node_modules`。应用符号链接/junction 当前会被拒绝。私有副本重新准备时清理旧应用文件，保留有效的控制器依赖。依赖声明、锁文件、npm 配置、平台合同和进程环境参与安装键；安装生命周期脚本、本地依赖或 workspaces 存在时，源文件变化也触发重装。依赖目录用文件元数据检查通常的修改/删除，不逐次读取全部依赖内容；仅在当前运行复用。
-
-运行数据必须写入 `SHALLOW_DATA_DIR` 指定目录，未设置该变量时由应用使用缺省数据目录。种子数据保留为应用输入，由应用初始化到数据目录。每次独立探针执行在控制器私有 workspace 下用 `mkdtemp` 建立全新数据目录，由应用按种子数据初始化；同一 case 内刷新、新浏览器上下文及需要验证的重启继续用同一数据目录，失败确认用另一个全新目录。数据由该执行生命周期清理，不混入源码摘要，不回写交付应用，也不接触官方评估数据。
-
-Pi Worker 等待 SDK 压缩、自动重试及后续续跑结束才判断终态；保留已收到的正常完成回执，压缩后以 assistant 结尾而无法继续时按完成或截断失败结束等待，空终态回执在原窗口补问一次。超时日志保留已经收到的 token/工具统计及恢复状态。
-
-Pi Worker 的每次调用（含 baseline）也获得独立的 `SHALLOW_DATA_DIR`，shell 与 run_tests 继承它；父进程回收 Worker 后删除该目录，正常结束与超时均清理。应用必须遵守此环境变量；控制器不会猜测并删除应用自己的任意 data 文件。种子声明是初始状态，场景 GIVEN 所需的变更由准备动作建立，不能预先写入种子。
-
-`candidate_prepared` 记录是否复用、安装/构建和总准备耗时，`candidate_prepare_failed` 记录失败阶段。安装、构建和启动失败走已有修复配额；验收或提交期间发现候选变化则终止本轮并恢复接受基线。构建副本与摘要是生命周期一致性措施，不是 OS 沙箱；应用构建脚本的语义仍由 Builder 负责。
-
-Pi Worker、会话续接、进程组/作业回收、图片回退、网关 SSE 容错与开发检查的契约由 `test/pi-worker.test.ts`、`test/pi-errors.test.ts`、`test/sse-resilience.test.ts`、`test/process-lifecycle.test.ts` 与 `test/prompt-builder` 相关测试覆盖；会话内 browser 工具由 `test/browser/builder-browser-tool.test.ts`（真实 Chromium）覆盖；模块边界审计的额度与回滚由 `test/pipeline.e2e.test.ts` 覆盖。真实模型是否遵循开发检查流程，需要显式启用凭证冒烟后另行验证。
-
-模块边界还从未纳入完整审计的已验证模块中，各抽查一条缓存的种子成功入口；不新增探针规划，不以抽查代替完整验收。抽查未通过时完整复核该需求，沿用当前模块的两轮修复额度；修复后复查这些入口。不同归属的同名种子分别保留，后续模块扩展共享数据时保护已有入口。
-
-接受边界修复前，其他尚未进入守卫的已验证原子需求各复查一条缓存成功路径；某个前置需求通过不代表其整个模块已受保护。抽查结果只保护被执行的路径，不替代完整验收。需求锚定的控件路径与共享种子、前置路径一样必须复验确认；修复后恢复的计划同步写入缓存和产物镜像。
-
-Judge 区分准备目标的名字与角色依据：页面已有同名可操作控件、失败角色未获需求授权时，优先恢复定位，不把猜测授予 Builder 修复。原文明示的角色在精化及每个 fallback 中保持；仅角色未规定时允许同一控件的等价呈现。直接角色/名称声明按原文匹配，带明示容器的声明只用于相应 scope。
-
-## 需求证据与模型输入
-
-主线从选定目录的 `requirements.yaml` 读取需求。Builder 的实现、修复和根因修复输入包含当前 packet、产品目标、祖先说明与已满足的直接依赖合同。
-
-顶层 `data` 按分类全量渲染为种子数据段，保留预置账号、名称、数值和场景约定；空数组省略该段。交付修复的输入聚焦最终验证失败与平台运行合同。Planner 接收当前需求的 ID、名称、原文、场景、祖先说明、引用路径和精确 UI 文案，使用这些文字证据生成探针。精确文案保留普通双引号、中文引号与反引号中的文本。
-
-探针按核心结果、校验边界、权限、反向操作、持久化和跨视图联动确定覆盖，合并重复路径，case 上限按原子场景数取 6..12，准备最多 15 步、业务与结果最多 30 步、总计最多 45 步。身份与元数据定位使用需求支持的具体对象 scope；选择操作同时支持原生 select 与确有富交互需求、激活后暴露可见 option 的 ARIA combobox，输入值断言仅匹配可执行该操作的控件。确认流程在原语义复核额度内核对。复核输入明确携带准备末尾断言及其是否已通过，准备失败先核对目标对象和初始状态。通用 Combobox 以原生 select 作为真实表单控件，并在激活时只暴露当前控件的一组可点击 option，同时兼容浏览器 selectOption 与 click-option 流程；Hash URL 工具同步通知 React 并接管普通站内 hash 链接，避免菜单卸载与异步 hashchange 竞态。
-
-种子入口按场景身份、归属和权限沿需求允许的列表、搜索或其他公开路径核对；复用已有准备缺口的复核与复现门槛。含遗漏的有效探针计划在原规划窗口内接受一次覆盖复核，只有补上实际断言后才移除对应遗漏；复核失败保留部分计划，剩余覆盖缺口仍阻止 verified。文本文件下载使用 `expectDownload` 点击具名控件并核对文件名后缀和 UTF-8 内容，接受 BOM 与 CRLF/LF 换行，下载读取限 64 KiB 且受步骤截止时间约束；超限或无法读取保持 inconclusive。
-
-种子摘录兼容 `Seed data`、`Seed values`、`evaluation seed`、`pre-provisions/pre-provisioned` 及 GIVEN 中明确的既有记录和关系，保留原文、凭证与场景作用域。尚未使用的创建目标不播种；Builder 和 Planner 仍需结合完整原文区分已有、缺失和待变更状态。
-
-Planner 接收按句子、分号及 and/but 并列结果分出的 `scenarioOutcomes`，用 `scenarioId/stepIndex/clauseIndex` 逐项映射实际断言。缺少结果映射或明确无法表达的结果均不能授予 verified；旧的复合结果缓存须重新规划。声称完整覆盖的复合计划在首次生成时再做一次独立需求复核，检查断言是否实际对应全部结果，共用原规划截止时间和反馈重试额度；复核失败会缓存结构有效但 `coverageReview: pending` 的计划，模块边界验收只重试这次复核，不重新生成整份计划，最终只检测验收仍将其记为 inconclusive。规划与复核用量分别记账。
-
-原文明示第一个具名控件时可使用 locator 的 `firstMatch` 原文引用，选择 scope 内第一个可见匹配；第一条代码行等容器指令还须有该控件与容器的明示关系及同一操作依据。普通同名控件继续要求严格唯一，数据文字和其他场景不能授权选择第一个；精化保留该选择，count 和不存在断言保持完整范围。
-
-### 参考图片
-
-参考图片**默认不进入模型上下文**，由 `SHALLOW_REFERENCE_IMAGES` 显式开启。关闭时 `pi-worker.ts` 连磁盘都不读图，Builder 纯按文字与场景工作；启动时 stderr 会打印当前开关状态。
-
-开启后，`src/builder/reference-images.ts` 读取当前 packet 原子需求与祖先描述、`visual_reference` 引用的本地 PNG、JPEG、WebP、GIF，优先原子图片，校验需求目录归属、真实路径及文件签名，去重后以 SDK 文件附件发送。每张图片上限 10 MiB，每包合计上限 30 MiB。附件由控制器传入，引用路径相对于需求目录；图片用于补充布局和交互结构，业务规则仍以文字和场景为准。
-
-**开启时会先做视觉能力预探测。** `src/builder/vision-probe.ts` 的 `VisionCapability` 在第一次附带前向网关发一个 1×1 PNG 请求，最多占本次 Builder 调用剩余时间的十分之一，且单次至多 15 秒。成功响应表示支持；只有错误内容明确指出图片输入不受支持才禁用后续附件。429、5xx、超时及其他不明确响应保留为“未知”，继续携图，由现有网关恢复和携图失败回退处理。预探测只请求一次；实际 Builder 调用使用扣除探测耗时后的剩余额度。
-
-缺失、越界、格式不支持或超限的引用会记录跳过原因，Builder 依据文字继续。读取范围仅限需求目录内的本地文件。
-
-`builder_reference_images` 事件记录模式、附件数量及跳过原因，写入台账和中文日志：`disabled`（开关关闭）、`unsupported`（预探测判定不支持）、`text_fallback`（事后回退）、`attached`、`unavailable`。诊断仅保存图片使用状态，图片载荷经模型输入通道传递。
-
-## 独立验收
-
-每个原子需求独立规划并检查，case 数量由独立场景覆盖决定，上限按场景数取 6..12；准备最多 15 步、业务与结果最多 30 步、总计最多 45 步。outcomeChecks 引用原始场景结果与业务后缀断言位置；遗漏通过 uncoveredOutcomes 说明，覆盖不足保持 inconclusive。wire case 的 `assertion` 必填，执行器将它附到 steps 末尾。支持 expectHidden 和有限 ARIA 状态断言 expectAttribute（expanded/pressed/selected/checked），用于检查每次切换后的状态。goto 默认从 `/` 出发，非根路径必须逐字出现在需求或前置需求文字中；定位精化保留需求明示的目标名称。role/label/text 定位支持单层 scope 和字面 hasText，可以定位某张卡片或某行内的重复按钮。有限动作还包括右键、格子拖拽、内联文本文件上传、浏览器剪贴板准备与复制/粘贴组合键。文件控件必须上传；Sheet 菜单和粘贴计划必须先建立操作前提。禁止 CSS/XPath、任意脚本、文件路径读取及跨源导航。
-
-定位失败在 Judge 内精化，最多两轮；混合报告也先处理 locator 部分。期望值、操作、输入和顺序保持固定。首页缺失种子声明对象链接、当前 case 的需求或前置上下文明示该目标的搜索入口且页面快照有唯一 searchbox 时，可在原点击前插入只读搜索；种子值和仅直接地址不授权搜索，也不替代需求规定的首页入口。同名对象只依据目标紧邻的明示 owner 字段与快照中的完整 owner/name 身份限定 scope，其他字段不推断归属；证据不足交给现有需求复核。部分 case 因此通过时保留改进计划继续检查，整条探针通过后在新应用实例复验。计划因模型输出长度截断时，后台预规划和审计规划各允许一次较短完整计划的重试。仍无法建立证据、计划无效或浏览器故障时记 inconclusive，保留可运行检查点。若此前已有成功交互，且需求明示的操作控件在两个新应用实例中均于同一步缺失，则允许 Builder 按需求诊断；猜测名称、初始页面未定位和基础设施故障不触发该路径。该诊断仍须独立复验改善并通过既有路径回归才能保留。纯业务失败须在新应用实例重现同一失败位置和类别后才能记 failed，交给所在模块的边界修复。
-
-模块边界复查本模块及其已通过的传递前置需求，使用缓存计划尽早发现共享状态变化。修复每模块至多两轮、新会话，保护既有 verified 和失败需求中已通过的 case。整个原子变为 verified、新 case 经新实例确认通过、或经复核重复的准备/控件缺口推进到后续已复现失败，均可保留改善并继续下一轮；待测行为、输入和结果保持一致。无改善或既有 pass 无法复验时恢复原检查点并停止，局部改善保持 failed/inconclusive。全部模块完成后的最终验收只检测不修复，failed 直接计入交付状态。Builder 自述不能授予通过。
-
-需求同时明确访客可搜索、访客首页起点和唯一具名全局 searchbox 时，控制器独立检查 banner 与其搜索控件，即使完整业务计划缺失也执行。检查不调用模型、不进入业务计划缓存；重复缺口与业务失败共用当前模块的两轮修复额度，修复后用新实例确认入口改善并保护此前通过的入口。`public_entry_checked` 只记录入口证据，不授予完整需求 verified；最终检测同样检查，完整规划和场景覆盖的缺口仍保留。
-
-Probe DSL 的 `expectCss` 只允许 `background-color`，默认轮询浏览器计算样式：`value` 核对有需求依据的计算色值，`notValue` 否定需求给定的填充颜色，`differentFrom` 比较需求授权的对照对象，三者互斥。需求要求立即显示时用 `immediate:true`，只读一次，不能等待持久化完成来掩盖提交窗口中的旧画面。不能用规则存在代替填充结果。通用 Dialog 关闭时卸载内容；继承应用中的既有拷贝由 Builder 原位升级，管理型保存与关闭策略由使用方按需求决定。
-
-`expectAccessibleCount` 检查唯一可见的数值与实体单位文字；多个实体通过单层 `scope` 区分，scope、noun 与期望数值在定位精化中固定。计数失败反馈携带期望、实际文字与页面摘录；其他按钮的节点数不能证明业务人数。URL 结果核对该结果明示的标识，状态属性沿用类型化断言，持久化的每个字段分别在相应 reload 后成立。错误文案数字、属性值与字段标签不被误认成额外人数或展示节点。
-
-共享菜单/对话框的兼容性样本复用有依据的页面就绪路径，检查未打开过的关闭内容；跨页面样本在准备后实际核对已离开首页，再重放全局操作。每模块只增加有界样本，并保留已通过的共享样本保护后续修复；兼容性证据不单独授予整条需求 verified。私有检查不进入 Planner schema 或计划缓存。背景规划已经耗尽反馈重试时，模块边界只再做一次实际规划请求；最终补规划和原有修复轮数保持原配置。
-
-## 交付阶段
-
-FinalVerifier 检查安装、构建、启动、健康状态和浏览器根页面。可恢复浏览器基础设施故障最多重试一次。存在剩余额度时，交付故障最多进行一次代码修复并完整复验；默认不限总时长也不会无限重试。
-
-保留交付修复后，旧功能通过证据失效：按剩余额度重新验收，未重验的功能记 inconclusive。最终 `delivered` 需要交付验证通过且全部原子需求 verified；可运行但功能未全验证时为 partial，交付验证失败为 failed。
-
-## 运行产物与日志
-
-主线每次运行产生以下可观测产物：
-
-- **stderr**：运行事件的脱敏 JSON；包含规划、应用启停、探针、修复安排和交付验证等阶段。Planner 原始响应片段只进入私有台账。
-- **run-log.txt（人类可读）**：与 ledger 同目录，显示本地时间、累计耗时、事件序号、尝试次数，以及可用的阶段耗时、需求名称、失败分类、证据 ID、接受 SHA 和最终 verified/blocked/todo 数量及未完成 ID。每次 Builder 调用另附汇总：耗时分布、轮次、工具调用总数与最慢工具、tokens（入/出/缓存读/缓存写/总计）、**输出字节数、各工具调用次数、上下文压缩次数**；Planner 每次 LLM 调用（规划/定位精化/语义复核）另附 `probe_planner_usage` token 用量行（入/出/缓存读/缓存写/总计，网关未回报时省略）。这些汇总只记录数量与体积，不写入任何模型正文或工具参数。Builder 回执标为“自述回执（非验收）”，换行转换为可见分隔，保持每事件一行。启动时打印文件绝对路径。
-- **run-ledger.jsonl（机读台账）**：`%TMP%/shallowcode-runs/<目录运行ID>/run-ledger.jsonl`。内部事件采用判别联合，由 `RunStateStore` 注入运行 UUID、唯一事件 ID、递增序号、累计耗时、最后接受 SHA 和已登记的 packet 尝试次数；SHA 表示接受基线，不是当前未提交候选的摘要。生产启动事件记录模型、Builder/Planner 超时、prompt 资产与 Probe schema 的 SHA-256；当前 usage 标记 `unavailable`，不报告估算计费 token。
-- **evidence/**：与 ledger 同目录，保存失败报告的白名单文本、执行计划 SHA-256、失败步骤的定位候选及每个候选的错误；完整计划和断言不落盘。每运行最多 128 份、每份最多 8 个失败、每个步骤最多 4 个候选、各文本字段最多 1500 字符，单文件硬上限 128 KiB；包含总失败数、尝试次数和接受基线。日志通过 ID 引用，正文保留在控制器目录。
-- **arc-projection.jsonl**：与 ledger 同目录，保存官方格式的平台事件及完整需求树投影意图，内部记录带唯一 ID。主线结束时从它重建本轮 `.arc`，重复 ID 只投影一次；写入失败记录告警，不改变已提交的验收决定。
-- **输出仓库与 `.arc/`**：见 ARC-Bench 提交一节。
-
-Planner 失败事件（`probe_preplan_failed`、`probe_planner_retry`、`probe_planner_failed`、`probe_refinement_failed`）包含错误类别、底层错误信息与可用的模型内容片段。中文日志和 stderr 展示类别与原因，`contentPreview` 仅保留在私有 ledger。JSON 或 ProbePlan 校验失败时，一次重试会携带校验原因、内容片段和完整 schema；传输错误在 Planner 操作窗口内重试。`probe_started` 记录执行计划指纹，`probe_refined` 记录恢复轮次及前后计划指纹，`probe_refinement_failed` 记录轮次与被保留的计划指纹；定位明文仅在私有证据中。反馈仅在 Judge 侧使用。
-
-`diagnostics.ts` 统一处理日志、Builder 观测和 Planner 诊断：先替换已知网关密钥，过滤常见授权头、Cookie、引号内密码和 URL 凭证，再清理控制字符并截断。字段匹配不会误删 `inputTokens` 等数值统计。原始需求与种子数据保持原样；脱敏是有限规则，不保证识别任意未标记敏感文本。
-
-`SHALLOW_RUN_DIR` 指定运行目录的父目录，生产装配拒绝日志目录落在候选输出中，并检查真实路径以识别目录链接。私有证据不进入 `.arc`、Builder 输入或完整浏览器 trace；Builder 反馈仍单独从白名单报告构建。Pi Worker 关闭扩展、Skill、模板、主题与上下文文件的自动发现，Builder 指导由固定合同及条件 fragments 编译；`read`/`edit`/`write` 只允许候选，全部拒绝 `.arc` 与 `shallow-progress`。`list_capabilities`/`install_capability` 只接受控制器内建 ID，复制任务无关组件且不覆盖已有不同文件。Builder 仍可按当前需求从 npm 安装公开、任务无关且精确锁版本的通用组件库；成品页面、业务模板、当前任务专用包、git URL、远程脚本和未批准 Pi package 明确禁止。shell 命令文本含 `.arc`、`run-ledger`、`run-log`、`/workspace/tests`、`.codex`、`.pi` 或 `../` 越界即拒绝；工具子进程继承最小环境变量（PATH、系统根、临时目录等），不继承网关密钥或任意宿主配置。这是运行时工具层限制，不是 OS 级隔离；bash 文本变换或自定义 subagent 仍可能绕过。运行目录由操作者按需归档和清理，目前没有自动过期清理；目录归属检查和 POSIX 创建权限不是完整 OS 隔离，Windows ACL/容器挂载仍待运行环境验证。投影重放也不是完整运行恢复。设计与官方协议映射见 [观测与 ARC 投影说明](docs/2026-09-07-observability-arc-projection.md)。
-
-GitOps（`src/git-ops.ts`）细节：
-
-- 输出目录必须是 git 仓库根（`open` 会 init 或校验），仓库内提交统一使用内联 `-c user.name=ShallowCode -c user.email=shallowcode@local.invalid`。
-- 首次打开时若没有 `.gitignore`，会写入 `node_modules/`、`dist/`、`build/`、`.next/`、`.env` 并**立即提交**；已有文件（包括空文件）保持原样，读取错误直接报告。
-- 首次初始化允许目录为空，或只含 `.gitignore` 与平台预置的 `.arc/`、`requirements/`；其他残留会被拒绝。重新打开既有仓库时，GitOps 按根提交标题识别 ShallowCode 仓库：匹配 `shallow: initial state` 或 `chore: add ShallowCode ignore rules` 后，自动清理应用的未提交改动并删除旧 `runner-events.jsonl`；其他仓库有未提交应用改动时会拒绝打开。复用输出目录前应备份人工修改及需要保留的运行记录。
-- 回滚不再移动 HEAD：`restore --source <acceptedSha> --staged --worktree -- . :(top,exclude).arc` 同步索引与工作区（会删除被拒尝试引入的源码文件），`clean -fd -e .arc/` 清掉未跟踪残留，然后以 `--allow-empty` 提交恢复提交。失败尝试保留在历史中永远可达，`.arc` 保留完整运行事件和当前溯源记录，不加入忽略规则。
-- 单条 git 命令默认 30s 超时，超时杀死子进程并等其退出后报错，避免悬挂与目录句柄泄漏。
-
-## 预算与超时
-
-### 故障来源与修复机会
-
-| 来源 | 处理 |
+| Judge 结果 | 含义 |
 | --- | --- |
-| Builder 普通失败 | 仅在相对接受基线存在实际应用改动、且应用可运行时 rescue；无改动或不可运行则恢复并标 blocked |
-| 实现包超时或终态不完整 | 中断代码通过可运行检查和已有通过路径复验后保存为空需求检查点，否则回滚；复合包首次因上下文 overflow 耗尽截止时间、且该次压缩后无任何新工具调用时直接原子拆分，压缩后仍在推进的属于墙钟耗尽、照常走整包续做；其他情况用新会话续做同包一次、至多 45min，仍未完成再拆；拆出的原子包按首次实现对待，原调用上限加一次至多 45min 续做，仍失败才 blocked、不记 implemented；全部受实现阶段剩余预算限制 |
-| 网关 429/408/5xx 或连接故障 | Builder 与 Planner 共享退避，在调用/阶段额度内持续重试；中断代码可另存检查点；一个调用窗口耗尽后用新窗口重试同一需求包/修复批次，网关恢复即继续实现；不可重试的认证/请求错误停止派发，需求保持待处理 |
-| 正常实现回执后安装/构建/启动检查失败 | 同包同会话回传实际错误并续做一次，与首次实现共用原包截止时间；成功后重查，仍失败则保存尝试、回滚并标 blocked。超时重试后的调用不叠加此续做 |
-| 可复现业务失败 | 保留实现，由所在模块的边界修复处理（每模块至多两轮）；复查既有通过项 |
-| Planner JSON/schema 错误 | 一次带反馈的修正；失败记 inconclusive |
-| 准备前缀失败 | 在现有定位/准备恢复额度内复核；模型只返回新准备步骤与需求引用，程序计算边界并拼回原待测后缀。普通业务纠正也只返回受影响 case，未修改 case 由程序恢复。仅需求锚定的控件及具名容器缺口可在复现后进入 Builder 诊断；猜测目标先由 Judge 纠正，歧义不授权修复。完整计划校验后在新应用实例执行 |
-| Locator 失败（包括混合报告） | 在 Judge 内最多两轮定位精化；仍记 inconclusive。需求明示控件在已有成功交互后、两次新实例中于同一步缺失时，可进入模块边界诊断修复 |
-| 浏览器执行故障 | 每次原子验收最多重试一次；仍失败记 inconclusive |
-| Planner 鉴权/协议故障 | 当前验收记 inconclusive，不触发应用编辑或回滚 |
-| Pi Worker 启动故障 | 停止运行并恢复检查点 |
-| Pi Worker 调用结束/超时 | 父进程回收拥有的进程组/作业并等待退出确认；清理失败按执行故障终止本轮 |
-| 最终验证基础设施故障 | 最多一次重试；代码交付修复另限三轮 |
+| `pass` | 探针通过；需求取得 `verified` 还须满足覆盖与复核要求 |
+| `fail` | 业务断言失败；控制器确认可复现的失败后记录 `failed` |
+| `inconclusive` | 规划、覆盖、准备、定位、执行或预算等问题导致证据不足 |
 
-验收报告的原始类别仍保留；只有 `audit_result` 中的 failed 才表示已复现业务失败；符合条件的 locator 缺失保持 inconclusive，以诊断目的进入同一修复配额。应用实例的业务数据由 CandidateRuntime 分次初始化，浏览器 context 隔离本身不代表服务端数据隔离。
+`acceptedSha` 表示可运行检查点，`verifiedRequirementIds` 表示当前版本已通过独立行为验收的需求。构建成功和 Builder 回执都不授予 `verified`。Judge 故障保留可运行实现；未接受的修复恢复检查点，并保留失败尝试的 Git 历史和审计记录。
 
-主线网关恢复由 `src/gateway-recovery.ts` 管理：Planner 最多两路并行，与 Builder 同时工作；两者收到临时网关错误后共享退避窗口。控制器按失败类型指数退避：429 限流从 30 秒起、上限 5 分钟；5xx/408/连接故障从 5 秒起、上限 1 分钟；均遵守更长的 `Retry-After`。Planner 请求使用流式 Chat Completions，汇集 SSE 内容后严格校验完整计划；普通 JSON 响应也可读取。无总预算时每次 Planner 操作的网关恢复窗口为12分钟，从取得并发槽后开始计时，有正预算时受阶段剩余额度限制。后台预规划按包独立恢复：可重试网关错误耗尽当前窗口后，重新排队并续开新窗口，继续与 Builder 并行；成功、不可重试错误或阶段预算耗尽时结束，管线退出时取消排队、退避和在途请求。后台预规划不挡 Builder 保存可运行检查点，在模块边界验收前收敛；窗口耗尽的验收记 inconclusive，同一候选最终检测跳过重复的无计划请求。Builder 仍受各调用上限约束。网关错误后的重试不越过阶段或 Builder 调用剩余额度；Builder 调用窗口耗尽后，控制器用新窗口重试同一需求包或修复批次，直至网关恢复或阶段预算耗尽。网关把上游 `connection reset by peer` 包装成 HTTP 400 时，仅凭实际网关状态与 SDK 错误消息的精确组合将其按连接故障重试；普通 400、认证和请求格式错误不重试，Builder 的认证失败与请求错误都停止派发并保留未完成需求；Planner 单独的认证/协议错误保持 Judge 故障隔离。
+独立 case 使用隔离的应用运行与数据目录，继承已有应用时复制其默认持久化数据；同一 case 内的刷新与新浏览器会话继续使用该 case 的服务端状态。候选源码或构建发生变化会使原验证证据失效。
 
-中途写出的应用通过可运行检查和已有通过路径复验后可保存为空需求列表的检查点，供原工作包继续实现；它不增加 implemented，也不授予 verified。阶段预算耗尽时，未完成需求写入 `blockedRequirementIds`/`pendingRequirementIds`，父目录仅在全部后代实现后标记实现完成。
+## 快速开始
 
-### 模型请求的公共前缀
+需要 Node.js **>= 20.18.1**、npm、Git 和 Playwright Chromium。Python 适配入口另需 Python 3；Pi SDK 随 npm 依赖安装。
 
-运行时分组使用 `prompts/planning/feature-grouping.md`，只依据本次 Catalog 需求生成 ID 分组，不固定题目、成员组合或组数。输入提供模块→原子 ID 归属表；提示词优先约束单模块与容量，再按状态/操作链划分并平衡包边界，在依赖合法且复杂度适当时连续安排同一模块，减少边界验收往返。`feature_grouping_started`、`feature_grouping_usage`、`feature_grouping_retry`、`feature_grouping_finished` 记录启动、实际 token、重试原因、校验后的组映射与来源。JSON、响应或分组错误携带具体反馈重试一次，跨模块错误列出包内 ID 与各自 moduleId；首次输出额度 64k，截断重试 128k，两次失败或鉴权/请求拒绝后才回退。分组使用 Planner 共享网关恢复和并发池：真正的临时网关错误持续重试；无总预算时等待在途响应，不设独立截止，正预算时计入实现阶段剩余额度。分组结果在当前运行内复用；未完成复合包和含未就绪成员的混合依赖包按原子继续调度，记录 `implementation_split`。baseline 保持原有 ROOT 子树调度。
-
-Builder 任务正文先放产品目标与共享种子、平台合同、回执格式及适用规则，再放本包路径、依赖、需求、任务编号、尝试次数和行动；交付修复先放公共合同与规则，再放失败观测。Planner 的计划生成与语义复核请求先放产品与共享种子，再放前置需求、本条需求和 packetId；重试反馈追加在后面。相同内容保持确定顺序，为上游前缀缓存提供复用条件。实际命中率仍以网关返回的 usage 为准。
-
-### 时间额度
-
-默认或显式 `--budget-ms 0` **不限总时长**。正预算按累计截止点预留：实现60%、初验20%、修复15%、交付5%；前面未用完的时间可用于后续阶段。
-
-| 调用 | main 上限（还受阶段剩余时间和 runtime 配置约束） |
-| --- | --- |
-| 模块实现 | 90分钟（正预算时另受实现阶段剩余预算限制） |
-| 模块边界修复 | 1小时，且最多使用剩余修复阶段的一半，留出复验时间 |
-| 交付修复 | 单次30分钟，至多三轮 |
-| Planner / locator 精化 | 无总预算时每次操作含恢复最多12分钟（排队不计时），后台预规划可续开窗口；正预算时受阶段剩余额度限制 |
-| Pi Worker 进程组回收 | 5秒 |
-| git 单命令 | 30秒 |
-| 探针单步 / case | 2秒 / 15秒；case 受阶段剩余时间约束 |
-| 构建 / 启动 | 180秒 / 30秒 |
-
-baseline 保留原有预算行为：总预算缺省0，单模块调用正预算时取 `deriveModelTimeouts` 的 Builder 上限两倍，不限时时三倍（4.5小时）。main 正预算限制阶段和新调用，安装、构建、关闭与最终检查仍有独立超时，因此不是整个进程的强制截止时刻。
-
-## ARC 平台合同
-
-`src/runtime-config.ts` 固定目标应用的平台合同（不来自 LLM 输出）：
-
-- 健康检查 `/health`
-- `frontend/`、`backend/` 各自 `npm install`
-- `frontend/` 执行 `npm run build`
-- `backend/` 执行 `npm run start`，必须读取 `PORT` 环境变量（缺省 3000）
-- 前端通过同源相对路径访问后端，构建产物中不写死主机或端口
-
-端口 3000 是评测端口：平台在评测阶段用它访问网站，生成期占用会被 SIGTERM。因此 ShallowCode 在生成与验证阶段使用独立探针端口——每次运行随机挑选空闲端口，可用环境变量或 `.env` 中的 `SHALLOW_PROBE_PORT` 显式指定（拒绝 3000）；Builder prompt 中会写明这两个端口语义。
-
-无论 Pi 选择什么框架，Builder 按此形态产出，判定与交付按此形态验证，保证跨 WorkPacket 的可复现判定。
-
-## ARC-Bench 提交（适配包契约）
-
-ShallowCode 依照官方参考实现 [`octos-org/arc-adapter`](https://github.com/octos-org/arc-adapter) 的适配包契约提交评测。
-
-平台调用方式：
-
-```
-python main.py <requirement_path> [--output-dir DIR] [--type web] [--web-port N]
-```
-
-| 输入 | 来源 |
-| --- | --- |
-| 需求目录 | argv 或 `ARCBENCH_TASK_DIR` |
-| 交付目录 | `--output-dir` 或 `ARCBENCH_TEMPLATE_DIR` |
-| 模型通道 | 环境变量 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `MODEL`（也支持 `.env`） |
-
-`main.py`（仅用 Python 标准库）只做四件事：解析参数与 `ARCBENCH_*` 回退、准备 Node 运行时（`npm ci` + `npx playwright install chromium`）、以 `npx tsx index.ts` 驱动管线（参数映射为 `--requirements-dir/--output-dir/--budget-ms`，总预算可用 `SHALLOW_BUDGET_MS` 注入）、收尾检查交付目录含 `frontend/` 与 `backend/`。
-
-主线打开一个真正没有应用代码的输出仓库后，会在第一次基线提交前安装同一份任务无关最小脚手架：React + Vite + TypeScript 空白入口、锁定依赖、Vitest/Testing Library 测试环境、同源 JSON 请求与 Hash URL 工具、零依赖 Node HTTP 后端、原子 JSON 文件存储、健康检查、按本次平台合同生成的多端口监听、生产静态文件服务以及未接线的可访问 UI primitives。它不包含导航、领域数据、业务 API 路由、组合后的产品视图或任何当前赛题业务行为。已有 `frontend/` + `backend/` 的 evolution 模板以及含其他项目文件的目录均保持原样。Builder 继续通过真实 Pi/LLM 调用负责全部业务代码；capability 只提供通用 primitives，领域模型、页面及业务行为由本次 Builder 调用实现。通用 UI 的资产回归由 `test/browser/ui-primitives.test.ts` 在真实 Chromium 中验证，测试文件保留在控制器侧；两条安装路径交付相同的 UI 源码，业务组件测试由 Builder 按实际需求编写。脚手架状态会进入 `pipeline_started.starterScaffold`，用于对照首次可运行时间、Builder 耗时和 token，不把提示词字符数当费用。
-
-平台通过交付目录内的文件观察进度，管线运行时写入：
-
-- `<交付目录>/.arc/runner-events.jsonl`：`runner_state` / `requirement_state` / `signal` 事件流（`src/arc-protocol.ts`，时间戳为 UTC `YYYY-MM-DD HH:MM:SS`）
-- `<交付目录>/.arc/traceability/*.json`：七张溯源表——requirements、scenarios（从需求树生成）、node_states（随 accept/block 更新），其余表保留空对象
-- `signal` 事件：`git_commit`（每次 accept 刷新提交历史）、`requirement_tree_stored`（需求树刷新），使用官方六项 `refresh` 字段；Builder 回执归内部日志。
-- 交付仓库的 git 提交历史（`captureAccepted` 每次 accept 自动产生）
-
-工程要点：
-
-- 运行事件以脱敏 JSON 行镜像到 stderr，人类可读中文日志见 run-log.txt（启动时打印路径）
-- 上传上限约 50MB：本仓库不含 node_modules 与浏览器二进制，Playwright Chromium 在评测机运行时下载
-- 评测机是共享的：探针端口随机化、每个 case 隔离 context、不依赖本地残留状态
-- UI 契约（写入 Builder prompt）：关键输入用 `type="text"`、每个字段配可见 `<label>`、校验错误用 JS 输出文字而不用 HTML5 `required`、按钮用带纯文本的 `<button>`
-
-提交流程（按官方 `arc.sh`）：
-
-```sh
-sh arc.sh pack   https://github.com/<org>/<repo>   # 验证打包
-sh arc.sh submit <题目> <模型> https://github.com/<org>/<repo>  #官方示例：sh arc.sh submit ticketbooking gpt-5.5 https://github.com/octos-org/arc-adapter
-sh arc.sh check
-```
-
-## 测试
+在仓库根目录执行：
 
 ```powershell
-npm run typecheck        # TypeScript 类型检查
-npm test                 # 单元与集成测试（含无凭证完整 pipeline e2e）
-npm run test:browser     # 真实 Chromium 浏览器测试
-npm run test:all         # 以上全部
+npm ci
+npx playwright install chromium
+Copy-Item .env.example .env
 ```
 
-无凭证测试使用 `FakeBuilder` / `FakeProbePlanner` / `FakeGitOps`，并以真实 Git、候选运行时和 Chromium 验证模块实现顺序、Judge 故障保留代码、模块边界修复与回归恢复、候选一致性、定位精化、阶段预算和最终交付。基于假模型的测试不证明真实模型的耗时或正确率改善；固定模型/题目/机器资源的15、30、45分钟对照实验用于后续实测。
+编辑 `.env`，填写 Builder 与 Planner 共用的网关配置：
 
-种子数据与图片链路另覆盖：全量提示词注入、目录越界及链接检查、附件编码、拒图后纯文本回退、回退次数与超时限制、诊断落盘。请求与图片附件由真实 Pi SDK 在 Worker 中装配，真实网关的图片消费能力需单独实测。
+| 变量 | 说明 |
+| --- | --- |
+| `OPENAI_API_KEY` | 网关 API key |
+| `OPENAI_BASE_URL` | OpenAI-compatible 网关地址，如 `https://gateway.example.com/v1` |
+| `MODEL` | 网关接受的完整模型 ID，包含 `/` 时原样传递 |
 
-真实 Pi / LLM 集成由 credential smoke 覆盖：
+真实环境变量优先于 `.env`；`.env` 已被 Git 忽略。Pi 在独立 Worker 中注册 Chat Completions provider，密钥经 IPC 注入。
+
+运行电子表格示例：
 
 ```powershell
-npm run smoke:credentials
+npm start -- --requirements-dir data/official-competition/hackathon--sheet
 ```
 
-仅当 `RUN_CREDENTIAL_SMOKE=1` 且三个网关变量齐备（环境变量或 `.env`）时执行，否则明确 SKIP。
+仓库协作示例位于 `data/official-competition/hackathon--github`，更换需求目录即可运行。
 
-## 目录结构
+| CLI 参数 | 说明 |
+| --- | --- |
+| `--requirements-dir` | 必填；目录中须有 `requirements.yaml` |
+| `--output-dir` | 目标应用目录；缺省为系统临时目录下的 `shallowcode-local/main` |
+| `--budget-ms` | 非负整数毫秒；缺省或 `0` 表示不限总调度时长，单次调用仍有上限 |
 
-```text
-main.py                        ARC-Bench 适配包入口：参数解析、Node 运行时准备、驱动管线
-index.ts                       生产入口：CLI、.env 加载、凭证装配、依赖注入、退出码
-baseline/
-  main.py                      baseline 的 Python 适配入口与输出目录检查
-  index.ts                     ROOT 子树顺序调度、单会话运行、模块状态记录
-  system.md                    baseline 系统提示词与平台合同
-prompts/
-  system/                      Builder 系统合同、四类任务模板（实现/修复/根因修复/交付修复）、action 与 receipt 资产
-                               seed-data、reference-images* 与 platform-extra-ports 输入说明资产
-  fragments/                   产品域实现规则：可访问控件、服务端持久化、权限、仓库协作、表格、交付合同
-  judge/                       Probe Planner 系统提示词（计划生成与 locator 精化，英文）
-scaffold/minimal-web/          真空项目通用外壳：空入口、路由/API/持久化底座、测试环境与零依赖 Node 后端
-src/
-  types.ts                     领域类型：需求、WorkPacket、平台合同、ShadowReport、RunEvent
-  cli.ts                       严格 CLI 参数解析
-  catalog.ts                   requirements.yaml → 需求树与种子数据（重复/依赖/环校验）
-  scheduler.ts                 确定性有界功能组调度、逐原子验收包
-  pipeline.ts                  模块实现、检查点、独立验收、模块边界修复与交付
-  run-budget.ts                显式正预算的阶段预留与调用剩余额度
-  run-state.ts                 验收状态、可运行检查点 SHA、脱敏 ledger 与 logSink
-  git-ops.ts                   输出仓库操作：初始化 + .gitignore、capture/restore、单命令超时
-  starter-scaffold.ts          仅向没有应用代码的输出仓库安装通用外壳，并写入平台额外端口
-  final-verifier.ts            交付验证（install→build→启动→readiness→浏览器 smoke→grader-like 额外端口复验）与 CommandAppLifecycle
-  arc-protocol.ts              官方 .arc/ 事件与完整需求树、串行投影及重建
-  diagnostics.ts              自由文本凭证脱敏、控制字符清理及长度限制
-  runtime-config.ts            网关配置、预算→模型超时派生、平台合同、探针端口；主线端口取公共合同
-  process-spawn.ts             子进程 seam：Windows .cmd 经 cmd.exe，拒绝 shell 元字符
-  human-log.ts                 运行事件 → 中文人类可读日志行（本地时间 + 耗时）
-  prompt-assets.ts             prompts/ 资产加载与 {{占位符}} 模板填充
-  builder/
-    port.ts                    BuilderPort/BuilderResult 端口（completed/failed/timed_out）
-    execution-port.ts          引擎无关的 CodingAgent 端口（controller 与 raw baseline 共用）
-    prompt-builder.ts          PromptBuilder：编译 prompt、驱动 CodingAgentPort、拒图文本回退
-    pi-worker-client.ts        Pi Worker 子进程：IPC、会话文件映射、进程组/作业回收、退出确认
-    pi-worker.ts               唯一导入 Pi SDK 的入口：单次调用、会话续接、工具装配、结果判定
-    pi-execution-stats.ts      Pi 会话事件聚合：token 用量与模型/工具耗时分布
-    sse-capture.ts             opt-in 诊断：把网关 text/event-stream 响应体落盘
-    sse-resilience.ts          始终启用的网关 SSE 容错：丢弃非法事件、补 [DONE]、内容截断走重试
-    capability-catalog.ts      任务无关组件能力清单、状态检查与无覆盖安装
-    pi-tools.ts                read/edit/write 路径限制、shell 后端及 capability 工具（测试命令引导到 run_tests）
-    pi-test-tool.ts            run_tests 工具：限内存传统测试执行（Vitest 单 worker、node:test 单并发；成功输出简述）
-    reference-images.ts        当前工作包引用图片的读取、路径与格式校验、大小限制
-    prompt.ts / prompt-input.ts  prompt 编译（四种模式）与输入类型
-    prompt-fragments.ts        产品词典 → fragments 选择
-    shadow-observation.ts      ShadowReport → 白名单观测（清洗、截断）
-  judge/
-    audit.ts                   Judge 故障恢复、业务失败复现与独立验收结果
-    navigation-recovery.ts     按种子与可访问快照复查首页搜索导航
-    probe-schema.ts            显式 assertion、单层 scope 与 locator-only refinement 校验
-    llm-probe-planner.ts       LLM 探针规划（JSON 容错提取、带失败诊断的 locator refinement；额度由 pipeline 管理）
-    playwright-probe-runner.ts 真实 Chromium 探针执行与 verdict 判定
-  process-lifecycle.ts        Pi Worker 进程组/作业所有权、回收确认与工具最小环境
-  memory-snapshot.ts           Linux cgroup 内存诊断采样（memory.current/peak/max/events）
-  memory-gate.ts               cgroup 水位背压：候选安装/构建与探针浏览器启动前等待内存余量
-scaffold/minimal-web/frontend/src/ui/
-                               空项目预置的任务无关可访问 React primitives
-test/
-  *.test.ts                    单元/集成测试（含无凭证全链路 e2e）
-  browser/                     真实 Chromium 测试
-  fakes/ fixtures/ helpers/    测试专用 fake、fixture app 与工具（不属于生产架构）
-docs/superpowers/              设计文档（specs/）与实施计划（plans/）
-data/official-competition/        初赛需求树（hackathon--github / hackathon--sheet）及参考图片；data/ 下其余目录为练习题树
+CLI 使用 `--key value` 格式。需要固定目录或继续已有应用时传入 `--output-dir`；输出目录作为独立 Git 仓库维护，空目录可自动初始化，已有完整 `frontend/` + `backend/` 应用作为本轮起点。主线和 baseline 应使用不同输出目录。
+
+常用可选配置：
+
+| 变量 | 缺省与用途 |
+| --- | --- |
+| `SHALLOW_RUN_DIR` | 系统临时目录下的 `shallowcode-runs`；每次运行建立独立日志子目录 |
+| `SHALLOW_REFERENCE_IMAGES` | `0`；设为 `1` 开启参考图输入，首次附带前探测视觉能力 |
+| `SHALLOW_FINAL_AUDIT_GENERATE_PLAN` | `0`；最终验收复用已有计划，设为 `1` 可为缺计划项补规划 |
+| `SHALLOW_BUILDER_CONTEXT_WINDOW` | `256000`；主线 Builder 上下文窗口 |
+
+缺计划项保持 `inconclusive`。其他配置见 [.env.example](.env.example) 与 [runtime-config.ts](src/runtime-config.ts)。
+
+### Python 适配入口与 baseline
+
+```powershell
+python main.py data/official-competition/hackathon--sheet --type web
+python baseline/main.py data/official-competition/hackathon--sheet --type web
 ```
 
-## 设计边界
+[main.py](main.py) 对接平台参数、检查运行环境并驱动 TypeScript 管线。`SHALLOW_BUDGET_MS` 和 `ARCBENCH_*` 从真实环境读取，网关三变量也可来自仓库 `.env`。
 
-- 生产路径只有一个业务代码 Builder：Pi coding-agent（独立 Worker 子进程）；ShallowCode 不新增第二套源码编辑工具。
-- Builder 文案全部外置在 `prompts/` 中文资产中（系统合同、任务模板、规则碎片、回执），Probe Planner 系统提示词外置在 `prompts/judge/` 英文资产中，代码只负责组装与填充。
-- Probe Planner 依据需求证据工作，与目标应用源码、diff 及 Builder 会话隔离；Builder 接收需求、种子数据、参考图片与白名单观测。官方测试和官方结果不进入运行模块。
-- Probe Runner 不执行模型生成的任意代码，只解释白名单 DSL。
-- 失败次数有硬上限（模块边界修复每模块至多两轮，交付阶段至多三轮修复）；未接受的候选按最后 accepted SHA 执行回滚，回滚操作本身的错误会向上传播。
+[baseline](baseline/index.ts) 直接驱动同一 Pi 执行层，按 ROOT 子树顺序实现并复用一个会话，缺省输出为临时目录下的 `shallowcode-local/baseline`。它记录调用完成状态；业务正确性需要独立评估。
+
+## 平台运行合同
+
+目标应用提供 `frontend/` 与 `backend/`：两者支持 `npm install`，前端支持 `npm run build`，后端通过 `npm run start` 启动并提供前端构建产物。
+
+后端读取 `PORT`（缺省 `3000`），同时监听公共兼容端口 `3301`，若两者相同则只绑定一次；提供 `/health` 和 `/api/health`。前端通过同源相对路径调用后端，未知 API 或资源返回错误响应且进程保持存活。
+
+生成期使用独立探针端口，并设置 `ARC_EXTRA_PORTS=0`。交付验证另外以只设置 `PORT` 的方式复验兼容端口。合同的来源是 [runtime-config.ts](src/runtime-config.ts) 和 [平台提示词](prompts/system/platform-contract.md)。
+
+## 增量与阶段任务
+
+将输出目录指向已有应用、需求目录指向本轮 YAML，即可继续增量开发。Catalog 支持明确的 Evolution 标签和 Stage / Phase 后缀；前序阶段的外部依赖只作上下文，验收覆盖使用当前需求树。
+
+Evolution 从历史计划与进度检查点提取需求 ID，用于区分新增、历史记录缺失、明确修改和沿用项。继承应用通过可运行检查后，初次实现聚焦增量项；缺省 `SHALLOW_EVOLUTION_AUDIT_INHERITED=0`，设为 `1` 可恢复沿用项回归。跳过项单独列出，历史记录不授予本轮 `verified`。
+
+入口与范围规则见 [catalog.ts](src/catalog.ts)、[evolution.ts](src/evolution.ts) 和 [增量起点提示词](prompts/system/incremental-start-inherited.md)。
+
+## 结果与日志
+
+`delivered` 要求交付验证通过且当前验收范围全部 `verified`；交付验证通过但仍有未验证需求时为 `partial`；交付验证失败时为 `failed`。进程退出码为 `0` 也可能对应 `partial`，应读取 `pipeline_finished` 的完整汇总。
+
+| 产物 | 用途 |
+| --- | --- |
+| stderr JSON | 实时结构化事件 |
+| `run-log.txt` | 中文运行日志；启动时打印绝对路径 |
+| `run-ledger.jsonl` | 同一私有日志目录中的机读台账 |
+| `<output-dir>/.arc/` | 平台事件与需求状态投影 |
+| `<output-dir>/shallow-progress/` | 产物可见进度日志与计划镜像，对 Builder 屏蔽 |
+
+结构化事件、运行日志和台账经过脱敏。以上状态描述本轮控制器验收；官方得分以独立官方评测报告为准。
+
+## 源码导航与开发
+
+| 修改方向 | 入口 |
+| --- | --- |
+| 生产装配与适配 | [index.ts](index.ts)、[main.py](main.py) |
+| 需求、调度与分组 | [catalog.ts](src/catalog.ts)、[scheduler.ts](src/scheduler.ts)、[llm-feature-grouper.ts](src/llm-feature-grouper.ts) |
+| 管线与预算 | [pipeline.ts](src/pipeline.ts)、[run-budget.ts](src/run-budget.ts) |
+| Builder、工具与提示词装配 | [src/builder/](src/builder/)、[prompts/system/](prompts/system/)、[prompts/fragments/](prompts/fragments/) |
+| Judge 规划、DSL、覆盖与执行 | [src/judge/](src/judge/)、[prompts/judge/](prompts/judge/) |
+| 候选、回滚与交付 | [candidate-runtime.ts](src/candidate-runtime.ts)、[git-ops.ts](src/git-ops.ts)、[final-verifier.ts](src/final-verifier.ts) |
+| 事件与观测 | [run-state.ts](src/run-state.ts)、[human-log.ts](src/human-log.ts)、[arc-protocol.ts](src/arc-protocol.ts) |
+
+开发检查使用 [package.json](package.json) 中的脚本：
+
+```powershell
+npm run typecheck
+npm test
+npm run test:browser
+npm run test:all
+```
+
+`test:all` 依次执行类型检查、单元/集成测试和 Chromium 测试，交付前运行。测试使用 `node:test`，可单跑 `npx tsx --test test/catalog.test.ts`。真实网关冒烟需配置凭证并设置 `RUN_CREDENTIAL_SMOKE=1`，再运行 `npm run smoke:credentials`。
+
+修改规则和按任务查找源码的索引见 [AGENTS.md](AGENTS.md)。
