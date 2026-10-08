@@ -199,6 +199,8 @@ test("Builder, baseline and Judge assets preserve global-entry and separate-role
     assert.match(text, /首页入口与表单提交按钮/);
     assert.match(text, /公共入口链/);
     assert.match(text, /expectCss/);
+    assert.match(text, /expectUrlContains/);
+    assert.match(text, /expectAccessibleCount|计数/);
     assert.match(text, /background-color/);
     assert.match(text, /heading containing/);
     assert.match(text, /gridcell/);

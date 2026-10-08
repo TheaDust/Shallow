@@ -436,6 +436,28 @@ test("A permanent planning error stays isolated to its packet", async () => {
   });
 });
 
+test("A failed background plan is recovered once at the module boundary without enabling final planning", async () => {
+  await withModulePipeline(async f => {
+    f.options.generateFinalAuditPlans = false;
+    const calls = new Map<string, number>();
+    f.deps.planner.plan = async packet => {
+      const count = (calls.get(packet.id) ?? 0) + 1;
+      calls.set(packet.id, count);
+      if (packet.id === "packet-a" && count === 1) {
+        throw new ProbePlannerError("response", "background response was empty");
+      }
+      return testPlan(packet);
+    };
+    const summary = await f.run();
+    assert.equal(summary.status, "delivered");
+    assert.deepEqual(summary.verifiedRequirementIds, ["A", "B", "C"]);
+    assert.equal(calls.get("packet-a"), 2, "one background attempt plus one boundary recovery");
+    assert.equal(calls.get("packet-b"), 1);
+    assert.equal(calls.get("packet-c"), 1);
+    assert.ok((await f.events()).some(event => event.type === "probe_preplan_failed" && event.packetId === "packet-a"));
+  });
+});
+
 test("Pipeline failure cancels active background planning before cleanup completes", async () => {
   await withModulePipeline(async f => {
     let started!: () => void;

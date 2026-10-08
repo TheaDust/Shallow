@@ -222,6 +222,52 @@ async function executeStep(
       throw new ProbeExecutionError("navigation", compactError(error));
     }
   }
+  if (step.op === "expectUrlContains") {
+    try {
+      await expect.poll(() => session.page.url(), { timeout: timeoutMs,
+        message: `Expected page URL to contain ${JSON.stringify(step.value)}` })
+        .toContain(step.value);
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("assertion", compactError(error));
+    }
+  }
+  if (step.op === "expectAccessibleCount") {
+    try {
+      const noun = escapeRegex(step.noun.replace(/s$/i, ""));
+      const pattern = new RegExp(`^(\\d+)\\s+${noun}(?:s)?$`, "i");
+      await expect.poll(async () => {
+        const values = await session.page.getByText(pattern, { exact: true }).filter({ visible: true }).allTextContents();
+        const counts = values.map(value => Number(pattern.exec(value.trim())?.[1])).filter(Number.isFinite);
+        return step.exact !== undefined ? counts.includes(step.exact) : counts.some(value => value >= step.minimum);
+      }, { timeout: timeoutMs, message: `Expected an aggregate accessible ${step.noun} count` })
+        .toBe(true);
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("assertion", compactError(error));
+    }
+  }
+  if (step.op === "expectClosedOverlaysEmpty") {
+    try {
+      await expect.poll(() => session.page.locator('dialog,[role="dialog"],[role="alertdialog"],[role="menu"]')
+        .evaluateAll(elements => elements.flatMap(element => {
+          const style = getComputedStyle(element);
+          const closed = element instanceof HTMLDialogElement && !element.open || element.hasAttribute("hidden") ||
+            element.getAttribute("aria-hidden") === "true" || element.getAttribute("data-state") === "closed" ||
+            style.display === "none" || style.visibility === "hidden";
+          if (!closed) return [];
+          const content = element.querySelector('h1,h2,h3,h4,h5,h6,p,form,input,textarea,select,button,a,[role="button"],[role="link"],[role="menuitem"]');
+          if (!content) return [];
+          const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+          return [{ tag: element.tagName.toLowerCase(), role: element.getAttribute("role") ?? "",
+            text: text.slice(0, 160), controls: element.querySelectorAll('input,textarea,select,button,a,[role="button"],[role="link"],[role="menuitem"]').length }];
+        })), { timeout: timeoutMs, message: "Closed dialog/menu content must leave the user query surface" })
+        .toEqual([]);
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("assertion", compactError(error));
+    }
+  }
   if (step.op === "setClipboardText") {
     try {
       await session.context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -392,6 +438,10 @@ async function executeStep(
       message, await ariaSnapshot(session.page, timeoutMs, locator, step.locator.scope));
   }
   return session;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

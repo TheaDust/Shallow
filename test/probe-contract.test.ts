@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { publicEntryPlan } from "../src/judge/public-entry.js";
+import { assertCoverageAccountedFor, observableFacets } from "../src/judge/probe-coverage.js";
 
 test("Computed background assertions are bounded and keep comparison targets frozen", () => {
   const locator = { by: "role", role: "gridcell", name: "F4", exact: true } as const;
@@ -30,6 +31,56 @@ test("Computed background assertions are bounded and keep comparison targets fro
       { op: "expectCss", locator, property: "background-color", differentFrom: { by: "text", text: "guessed comparison" } },
     ] }] };
   assert.throws(() => parseProbePlan(ungrounded, input), /unanchored text locator/);
+});
+
+test("URL assertions require an explicit address contract and a grounded value", () => {
+  const input = packet("Selecting branch `feature-a` keeps `feature-a` in the page address after reload.");
+  input.requirements[0].scenarioContracts = [{ id: "address", name: "Address", steps: [
+    { keyword: "WHEN", content: "The visitor selects `feature-a`." },
+    { keyword: "THEN", content: "The page address identifies `feature-a` after reload." },
+  ] }];
+  const wire = (value: string) => ({ packetId: input.id, uncoveredOutcomes: [], cases: [{ id: "address",
+    requirementIds: input.requirementIds, purpose: "persistence", expectationBasis: [input.requirements[0].text],
+    outcomeChecks: [{ scenarioId: "address", stepIndex: 1, assertionIndexes: [2] }],
+    steps: [{ op: "goto", path: "/" }, { op: "reload" }], assertion: { op: "expectUrlContains", value } }] });
+  assert.doesNotThrow(() => assertCoverageAccountedFor(parseProbePlan(wire("feature-a"), input), input.requirements));
+  assert.throws(() => parseProbePlan(wire("invented"), input), /requirement evidence or a prior scenario input/);
+  const noAddress = packet("Selecting branch `feature-a` keeps it selected after reload.");
+  assert.throws(() => parseProbePlan({ ...wire("feature-a"), packetId: noAddress.id }, noAddress), /explicit page address\/URL/);
+  const changed = parseProbePlan(wire("feature-a"), input);
+  const assertion = changed.cases[0].steps.at(-1);
+  if (assertion?.op !== "expectUrlContains") assert.fail("missing URL assertion");
+  const original = structuredClone(changed);
+  assertion.value = "feature-b";
+  assert.throws(() => assertLocatorOnlyRefinement(original, changed), /only locator/);
+});
+
+test("Accessible aggregate counts are noun-grounded and do not replace exact status text", () => {
+  const input = packet("The detail displays the reaction type and count; adding one updates the reaction count.");
+  const wire = (assertion: unknown) => ({ packetId: input.id, cases: [{ id: "count", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [input.requirements[0].text], steps: [{ op: "goto", path: "/" }], assertion }] });
+  assert.doesNotThrow(() => parseProbePlan(wire({ op: "expectAccessibleCount", noun: "reaction", exact: 1 }), input));
+  assert.doesNotThrow(() => parseProbePlan(wire({ op: "expectAccessibleCount", noun: "reactions", minimum: 1 }), input));
+  assert.throws(() => parseProbePlan(wire({ op: "expectAccessibleCount", noun: "release", exact: 1 }), input), /requirement-declared noun/);
+  assert.throws(() => parseProbePlan(wire({ op: "expectAccessibleCount", noun: "reaction", exact: 1, minimum: 0 }), input), /exactly one/);
+});
+
+test("observable facets preserve one outcome while separating explicit displayed fields", () => {
+  const fields = observableFacets("The detail displays `alpha`, `beta`, and `gamma` after reload.");
+  assert.deepEqual(fields.filter(item => item.kind === "visibility").map(item => item.text),
+    ["alpha", "beta", "gamma"]);
+  assert.ok(fields.every(item => item.phase === "after_reload"));
+  assert.equal(fields.filter(item => item.kind === "persistence").length, 1);
+
+  const alternative = observableFacets("The page displays `Ready` or an inactive marker.");
+  assert.equal(alternative.filter(item => item.kind === "visibility").length, 1,
+    "alternatives remain one observable fact");
+  const status = observableFacets("The page displays the exact `Replaced 3 cells` message.");
+  assert.equal(status.filter(item => item.kind === "count").length, 1);
+  assert.equal(status.filter(item => item.kind === "visibility").length, 1);
+  assert.deepEqual(observableFacets("The Archived marker is gone, the record is Active.")
+    .filter(item => item.kind === "state").map(item => item.text),
+  ["The Archived marker is gone", "the record is Active."]);
 });
 
 test("setChecked accepts explicit state only on checkable controls", () => {

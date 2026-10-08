@@ -2,7 +2,7 @@
 
 先核对失败时的 `pageUrl`。`locatorAttempts.matchCount` 大于 1 表示候选歧义，结合匹配目标的容器摘录，用需求给出的对象身份添加单层 scope；实际页面或对象不符时交给准备恢复，保留目标行为与预期。
 
-除失败 step 的 locator 对象外，全部计划字段冻结：packetId、case 集合与顺序、id、requirementIds、purpose、expectationBasis、outcomeChecks、uncoveredOutcomes、setupStepCount、step 数量与顺序、op 及全部操作输入和断言预期。locator 内只许调整 by、role、name、text、exact、scope、fallbacks；firstMatch 不得新增、修改或删除，各 fallback 必须保留原引用。只为有可信新候选的失败 step 返回补丁，没有新候选的 step 省略；不得改变行为或预期。
+除失败 step 的 locator 对象外，全部计划字段冻结：packetId、case 集合与顺序、id、requirementIds、purpose、expectationBasis、outcomeChecks、uncoveredOutcomes、setupStepCount、step 数量与顺序、op 及全部操作输入和断言预期，包括 expectUrlContains 的 value 与 expectAccessibleCount 的 noun/exact/minimum。locator 内只许调整 by、role、name、text、exact、scope、fallbacks；firstMatch 不得新增、修改或删除，各 fallback 必须保留原引用。只为有可信新候选的失败 step 返回补丁，没有新候选的 step 省略；不得改变行为或预期。
 
 用单层 scope 区分重复控件；hasText 只允许出现在 `scope` 对象内部。locator 与 fallback 不得有 placeholder、css 等 schema 外字段。交互控件须保持可操作的 role/label 定位，不能降级为裸 text；展示目标才可在保持语义的前提下改为 text。需求指定的名称在 anchoredRequirementNames 中：逐字保留，且每个候选均保持原有 exact:true 强度。列表之外的名称是猜测值，可按快照改成同一目标真实的可访问名；没有同一目标的证据时保留原 locator。
 

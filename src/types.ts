@@ -151,6 +151,8 @@ interface RunEventDetails {
     failureKind?: InconclusiveKind; navigationRecovered?: boolean; uncoveredOutcomes?: number };
   repair_guard_checked: { requirementIds: string[]; status: "passed" | "regressed" | "unresolved"; critical: boolean; retried: boolean; failureKind?: InconclusiveKind };
   public_entry_checked: { requirementIds: string[]; status: "passed" | "failed" | "unresolved"; failureKind?: InconclusiveKind };
+  compatibility_checked: { requirementIds: string[]; contract: "derived_web_contracts";
+    status: "passed" | "failed" | "unresolved"; failureKind?: InconclusiveKind };
   repair_batch_started: { round: number; requirementIds: string[] };
   repair_batch_finished: { round: number; retained: boolean; reason: string; improvedCases?: number; resolvedGaps?: number };
   repair_paused: { requirementIds: string[]; failure: import("./gateway-failure.js").GatewayFailure };

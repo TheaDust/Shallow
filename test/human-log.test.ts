@@ -10,6 +10,14 @@ test("Public entry samples report their evidence boundary", () => {
   assert.match(line, /完整场景验收另计/);
 });
 
+test("Compatibility samples cannot be mistaken for requirement verification", () => {
+  const line = formatLine(new HumanRunFormatter(), eventLine("2026-10-08T00:00:00Z", "compatibility_checked", {
+    packetId: "anonymous", detail: { requirementIds: ["A"], contract: "derived_web_contracts", status: "failed" },
+  }));
+  assert.match(line, /兼容性检查缺口已复现/);
+  assert.match(line, /不单独授予需求通过/);
+});
+
 import { HumanRunFormatter } from "../src/human-log.js";
 
 function eventLine(at: string, type: string, rest: Record<string, unknown> = {}): string {

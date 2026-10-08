@@ -32,6 +32,7 @@ import { parseFeatureGrouping, type FeatureGrouper } from "./feature-grouper.js"
 import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.js";
 import { publicEntryPlan } from "./judge/public-entry.js";
+import { globalControlCrossRoutePlan, overlayLifecyclePlan } from "./judge/compatibility-probes.js";
 import { groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, shouldWritePlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
@@ -49,6 +50,12 @@ import type {
   RequirementStatus,
   WorkPacket,
 } from "./types.js";
+
+/** Compatibility evidence may request a repair, but its type cannot represent
+ * a requirement-verifying status. */
+type CompatibilityResult = Omit<AuditResult, "status"> & {
+  status: "passed" | "failed" | "unresolved";
+};
 
 const BOUNDARY_REPAIR_CALL_CEILING_MS = 5_400_000;
 const IMPLEMENTATION_CALL_CEILING_MS = 5_400_000;
@@ -173,7 +180,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
   let currentBoundaryModule: string | undefined;
   let gatewayPhase: PipelinePhase = "implementation";
   const preplanAbort = new AbortController();
-  const pendingPlans = new Map<string, { ready: boolean; failed: boolean; promise: Promise<void> }>();
+  const pendingPlans = new Map<string, { ready: boolean; failed: boolean; recoveryAttempted: boolean; promise: Promise<void> }>();
   const noProgressRefinements = new Set<string>();
   const recoveryAuditPolicy = { refineLocators: true, noProgressRefinements };
   const gateway = deps.gatewayRecovery ?? new GatewayRecovery();
@@ -449,6 +456,16 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         failureKind: checked.failureKind } });
     return checked;
   };
+  const checkCompatibility = async (packet: WorkPacket, plan: ProbePlan, phase: PipelinePhase): Promise<CompatibilityResult> => {
+    const checked = await auditPacket(packet, plan, options, deps, state, () => budget.remaining(phase),
+      { refineLocators: false, retryPlan: false, checkCoverage: false });
+    const status = checked.status === "verified" ? "passed" : checked.status === "failed" ? "failed" : "unresolved";
+    await state.record({ at: now(), type: "compatibility_checked", packetId: packet.id,
+      detail: { requirementIds: packet.requirementIds, contract: "derived_web_contracts" as const,
+        status,
+        failureKind: checked.failureKind } });
+    return { ...checked, status };
+  };
   const publish = async (): Promise<void> => {
     for (const packet of packets) {
       const result = results.get(packet.id);
@@ -534,8 +551,15 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         boundaryResults.set(packet.id, { status: "inconclusive", failureKind: "budget", plan: cached, reason: "module boundary audit budget exhausted" });
         continue;
       }
+      const pending = pendingPlans.get(packet.id);
+      // The final audit remains cache-only. Recover exactly once here, while a
+      // Builder repair window still exists, when this run's completed
+      // background attempt either failed or produced a plan that no longer
+      // validates under the current requirement contract.
+      const recoverMissingPlan = cached === undefined && pending?.ready === true && !pending.recoveryAttempted;
+      if (recoverMissingPlan) pending.recoveryAttempted = true;
       const result = await auditPacket(packet, cached, options, deps, state, () => budget.remaining("audit"),
-        { ...recoveryAuditPolicy, retryPlan: pendingPlans.get(packet.id)?.failed !== true });
+        { ...recoveryAuditPolicy, retryPlan: recoverMissingPlan });
       if (result.plan && shouldWritePlanCache(cached, result.plan)) {
         await planCache.write(packet.id, result.plan).catch(() => {});
       }
@@ -555,6 +579,37 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       publicChecks.set(packet.id, { packet, plan, result });
       if (result.status === "failed" && !targetPackets.includes(packet)) targetPackets.push(packet);
     }
+    // Compatibility samples are deliberately separate from `results`: a pass
+    // cannot verify a requirement, while a reproducible failure can still enter
+    // the normal Builder repair loop.
+    let compatibilityChecks = new Map<string, { packet: WorkPacket; plan: ProbePlan; result: CompatibilityResult }>();
+    const compatibilityPlans = new Map<string, { packet: WorkPacket; plan: ProbePlan }>();
+    for (const packet of packets.filter(auditEligible)) {
+      const plan = overlayLifecyclePlan(packet, results.get(packet.id)?.plan);
+      if (!plan) continue;
+      compatibilityPlans.set(packet.id, { packet, plan });
+    }
+    const sources = packets.flatMap(packet => {
+      const result = results.get(packet.id);
+      return result?.status === "verified" && result.plan ? [{ packet, plan: result.plan }] : [];
+    });
+    // One nested-route sample per module is sufficient to prove that a declared
+    // global control keeps its home-page action semantics away from `/`.
+    for (const packet of modulePackets.filter(auditEligible)) {
+      const result = results.get(packet.id);
+      const crossRoute = globalControlCrossRoutePlan(packet,
+        result?.status === "verified" ? result.plan : undefined, sources);
+      if (!crossRoute) continue;
+      const existing = compatibilityPlans.get(packet.id);
+      compatibilityPlans.set(packet.id, { packet,
+        plan: existing ? { ...existing.plan, cases: [...existing.plan.cases, ...crossRoute.cases] } : crossRoute });
+      break;
+    }
+    for (const [id, check] of compatibilityPlans) {
+      const result = await checkCompatibility(check.packet, check.plan, "audit");
+      compatibilityChecks.set(id, { ...check, result });
+      if (result.status === "failed" && !targetPackets.includes(check.packet)) targetPackets.push(check.packet);
+    }
     await state.record({ at: now(), type: "module_boundary_audit_finished",
       detail: { moduleId, moduleName, packetIds: targetPackets.map(packet => packet.id),
         results: Object.fromEntries([...boundaryResults].map(([id, r]) => [id, r.status])),
@@ -566,7 +621,8 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         return result?.status === "failed" || result?.repairableProbeFailure;
       });
       const failures = [...new Set([...businessFailures,
-        ...[...publicChecks.values()].filter(check => check.result.status === "failed").map(check => check.packet)])];
+        ...[...publicChecks.values()].filter(check => check.result.status === "failed").map(check => check.packet),
+        ...[...compatibilityChecks.values()].filter(check => check.result.status === "failed").map(check => check.packet)])];
       if (!failures.length) break;
       const round = ++boundaryRepairCount;
       for (const item of failures) state.setPacketAttempt(item.id, round + 1);
@@ -575,10 +631,12 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const reports = failures.flatMap(item => [
         ...(results.get(item.id)?.report ? [results.get(item.id)!.report!] : []),
         ...(publicChecks.get(item.id)?.result.status === "failed" ? [publicChecks.get(item.id)!.result.report!] : []),
+        ...(compatibilityChecks.get(item.id)?.result.status === "failed" ? [compatibilityChecks.get(item.id)!.result.report!] : []),
       ]);
       const observation = toBuilderShadowObservation({ packetId: repairPacket.id,
         verdict: businessFailures.some(item => results.get(item.id)?.status === "failed") ||
-          failures.some(item => publicChecks.get(item.id)?.result.status === "failed") ? "fail" : "inconclusive",
+          failures.some(item => publicChecks.get(item.id)?.result.status === "failed" ||
+            compatibilityChecks.get(item.id)?.result.status === "failed") ? "fail" : "inconclusive",
         passedCases: [...new Set(reports.flatMap(report => report.passedCases))],
         failures: reports.flatMap(report => report.failures) }, deps.diagnosticSecrets);
       await state.record({ at: now(), type: "repair_batch_started", detail: { round, requirementIds: repairPacket.requirementIds } });
@@ -601,6 +659,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       }
       let nextResults = results;
       let nextPublicChecks = publicChecks;
+      let nextCompatibilityChecks = compatibilityChecks;
       let improvedCases = 0;
       let resolvedGaps = 0;
       if (!reason) {
@@ -716,6 +775,23 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           }
           nextPublicChecks.set(id, { ...check, result: checked });
         }
+        nextCompatibilityChecks = new Map(compatibilityChecks);
+        if (!regressed) for (const [id, check] of compatibilityChecks) {
+          if (check.result.status === "unresolved") continue;
+          let checked = await checkCompatibility(check.packet, check.plan, "repair");
+          if (checked.status === "unresolved" && budget.remaining("repair") > 0) {
+            checked = await checkCompatibility(check.packet, check.plan, "repair");
+          }
+          if (check.result.status === "passed") {
+            if (checked.status === "failed") { regressed = true; break; }
+            if (checked.status !== "passed") criticalUnconfirmed = true;
+          } else if (checked.status === "passed") {
+            checked = await checkCompatibility(check.packet, check.plan, "repair");
+            if (checked.status !== "passed") { progressUnconfirmed = true; break; }
+            improvedCases += checked.report?.passedCases.length ?? 0;
+          }
+          nextCompatibilityChecks.set(id, { ...check, result: checked });
+        }
         if (!regressed) for (const guard of pendingCriticalGuards) {
           const checked = await checkGuard(guard.packet, guard.plan, guard.policy);
           if (checked.status === "failed" || checked.repairableProbeFailure) { regressed = true; break; }
@@ -756,6 +832,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       await checkpoint(repairPacket.requirementIds, repairPacket.id, candidate);
       results = nextResults;
       publicChecks = nextPublicChecks;
+      compatibilityChecks = nextCompatibilityChecks;
       await state.record({ at: now(), type: "repair_batch_finished", detail: { round, retained: true,
         improvedCases, resolvedGaps, reason: "verified improvement with regression coverage" } });
     }
@@ -970,7 +1047,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const planTimeoutMs = budget.remaining("implementation");
       for (const auditPacket of relatedAuditPackets) {
         if (!results.has(auditPacket.id) && !pendingPlans.has(auditPacket.id)) {
-          const pending = { ready: false, failed: false, promise: Promise.resolve() };
+          const pending = { ready: false, failed: false, recoveryAttempted: false, promise: Promise.resolve() };
           pending.promise = spawnPlanGeneration(auditPacket, auditPacket.id, backgroundPlanner, planCache, planTimeoutMs,
             async error => {
               if (preplanAbort.signal.aborted) return;

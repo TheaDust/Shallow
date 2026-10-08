@@ -72,6 +72,8 @@ function describe(type: string, event: RunEvent): string | null {
       return `修复守卫${({ passed: "通过", regressed: "确认回归", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "检查"}（${packetId}）${detail?.critical ? "；必须确认的既有路径" : ""}${detail?.retried ? "；已用新应用实例重试" : ""}${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
     case "public_entry_checked":
       return `公共入口检查${({ passed: "通过", failed: "缺口已复现", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "完成"}（${packetId}）；仅为入口证据，完整场景验收另计${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
+    case "compatibility_checked":
+      return `兼容性检查${({ passed: "通过", failed: "缺口已复现", unresolved: "无法判定" } as Record<string, string>)[pickString(detail, "status") ?? ""] ?? "完成"}（${packetId}）；不单独授予需求通过${pickString(detail, "failureKind") ? `；分类 ${inconclusiveKindText(pickString(detail, "failureKind")!)}` : ""}`;
     case "repair_batch_started":
       return `开始第 ${detail?.round} 轮修复；需求 ${strings(detail?.requirementIds).join("、")}`;
     case "repair_batch_finished":

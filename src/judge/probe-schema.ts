@@ -65,6 +65,11 @@ export type ProbeStep =
   | { op: "expectDownload"; locator: ProbeLocator; fileNameSuffix: string; text: string }
   | { op: "expectValue"; locator: ProbeLocator; value: string }
   | { op: "expectCount"; locator: ProbeLocator; count: number }
+  | { op: "expectUrlContains"; value: string }
+  | ({ op: "expectAccessibleCount"; noun: string } &
+    ({ exact: number; minimum?: never } | { minimum: number; exact?: never }))
+  /** Controller-owned compatibility assertion. It is never accepted from Planner JSON. */
+  | { op: "expectClosedOverlaysEmpty" }
   | { op: "reload" }
   | { op: "newContext"; actor?: string }
   | { op: "switchContext"; actor: string };
@@ -212,6 +217,12 @@ const STEP_SCHEMA = {
       op: literalSchema("expectCount"), locator: LOCATOR_REF,
       count: { type: "integer", minimum: 0 },
     }),
+    objectSchema({ op: literalSchema("expectUrlContains"), value: NONEMPTY_STRING_SCHEMA }),
+    objectSchema({ op: literalSchema("expectAccessibleCount"), noun: NONEMPTY_STRING_SCHEMA,
+      exact: { type: "integer", minimum: 0 } }),
+    objectSchema({ op: literalSchema("expectAccessibleCount"), noun: NONEMPTY_STRING_SCHEMA,
+      minimum: { type: "integer", minimum: 0 } }),
+    objectSchema({ op: literalSchema("expectClosedOverlaysEmpty") }),
     objectSchema({ op: literalSchema("reload") }),
     objectSchema({ op: literalSchema("newContext"), actor: { ...OPTIONAL_STRING_SCHEMA, minLength: 1 } }),
     objectSchema({ op: literalSchema("switchContext"), actor: NONEMPTY_STRING_SCHEMA }),
@@ -266,7 +277,7 @@ export const PROBE_PLAN_BODY = {
             minItems: 0,
             maxItems: MAX_STEPS - 1,
             description:
-              "Allowed op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, reload, newContext, switchContext. The initial browser context is named default. newContext with actor creates and selects a retained named context; switchContext selects a previously created actor or default without changing application data. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
+              "Allowed Planner op values: goto, click, rightClick, drag, doubleClick, hover, press, fill, uploadFile, setClipboardText, select, setChecked, expectVisible, expectHidden, expectDisabled, expectEnabled, expectAttribute, expectText, expectDownload, expectValue, expectCount, expectUrlContains, expectAccessibleCount, reload, newContext, switchContext. expectClosedOverlaysEmpty is reserved for controller-owned compatibility plans and Planner output using it is rejected. expectUrlContains is allowed only for an explicit page address/URL result. expectAccessibleCount requires one aggregate accessible phrase containing the number and requirement-derived noun. The initial browser context is named default. newContext with actor creates and selects a retained named context; switchContext selects a previously created actor or default without changing application data. setChecked sets a checkbox/radio to checked=true/false without toggling an already correct state. uploadFile takes inline fileName/content, never a filesystem path. expectDownload clicks its interactive locator and checks the browser download's fileNameSuffix and UTF-8 text; text comparison normalizes CRLF to LF and accepts a UTF-8 BOM, with a 64 KiB download limit. Do not click the download control separately. drag takes from/to locators. press also permits ControlOrMeta+C/X/V and Shift+F10. Locators use role, label, or text only, with at most 3 ordered fallbacks describing other accessible renderings of the same control; fallbacks must not nest. Locator strings and expected text are literal, not regular expressions.",
             items: STEP_SCHEMA,
           },
         },
@@ -366,6 +377,7 @@ export function parseProbePlan(
       validateScenarioActions(probeCase, evidence);
       validateFirstMatchInstructions(probeCase, scoped, packet.prerequisites ?? []);
       validateOutcomeChecks(probeCase, scoped);
+      validateExpectationGrounding(probeCase, evidence);
       validateHeadingContract(probeCase, scoped);
       const exactUiStrings = evidence.flatMap(requirement => requirement.exactUiStrings);
       for (const [stepIndex, step] of probeCase.steps.entries()) {
@@ -800,6 +812,35 @@ function parseCase(
     ...(setupStepCount ? { setupStepCount: setupStepCount as number } : {}) };
 }
 
+/** Keep assertion-only DSL extensions tied to public requirement evidence. */
+function validateExpectationGrounding(probeCase: ProbeCase, evidence: readonly AtomicRequirement[]): void {
+  const texts = requirementEvidenceTexts(evidence);
+  const joined = texts.join("\n");
+  const normalized = joined.replace(/\s+/g, " ").toLowerCase();
+  const hasAddressContract = /\b(?:page\s+)?(?:address|url)\b/i.test(maskRequirementLiterals(joined));
+  const entered = new Set(probeCase.steps.flatMap(step =>
+    step.op === "fill" || step.op === "select" ? [step.value.toLowerCase()] : []));
+  for (const [index, step] of probeCase.steps.entries()) {
+    const location = `ProbePlan case ${probeCase.id} step ${index}`;
+    if (step.op === "expectUrlContains") {
+      const value = step.value.trim().toLowerCase();
+      if (!hasAddressContract) throw new Error(`${location}: expectUrlContains requires an explicit page address/URL contract`);
+      if (!value || !/[\p{L}\p{N}]/u.test(value) || (!normalized.includes(value) && !entered.has(value))) {
+        throw new Error(`${location}: expectUrlContains value must come from requirement evidence or a prior scenario input`);
+      }
+    }
+    if (step.op === "expectAccessibleCount") {
+      const noun = step.noun.toLowerCase();
+      const singular = noun.endsWith("s") ? noun.slice(0, -1) : noun;
+      const declared = normalized.includes(noun) || normalized.includes(singular);
+      const hasCountContract = /\b(?:count|number|total|decrements?|increments?|updated)\b/i.test(maskRequirementLiterals(joined));
+      if (!declared || !hasCountContract) {
+        throw new Error(`${location}: expectAccessibleCount requires a requirement-declared noun and count behavior`);
+      }
+    }
+  }
+}
+
 /** Reject plans whose stated setup cannot reach the action being tested. */
 function validateScenarioActions(probeCase: ProbeCase, evidence: readonly AtomicRequirement[]): void {
   const description = evidence.flatMap(item => [item.text, ...item.scenarios]).join(" ");
@@ -997,6 +1038,28 @@ function parseStep(value: unknown, location: string): ProbeStep {
         locator: parseLocator(step.locator, `${location}.locator`),
         count: count as number,
       };
+    }
+    case "expectUrlContains": {
+      keys(step, ["op", "value"], location);
+      return { op, value: dataText(step.value, `${location}.value`) };
+    }
+    case "expectAccessibleCount": {
+      keys(step, ["op", "noun", "exact", "minimum"], location);
+      if ((step.exact != null) === (step.minimum != null)) {
+        throw new Error(`${location}: expectAccessibleCount requires exactly one of exact or minimum`);
+      }
+      const noun = text(step.noun, `${location}.noun`).trim();
+      if (!noun || /\d/.test(noun)) throw new Error(`${location}.noun must be a requirement-derived count noun without a number`);
+      const field = step.exact != null ? "exact" : "minimum";
+      const count = step[field];
+      if (!Number.isSafeInteger(count) || (count as number) < 0) {
+        throw new Error(`${location}.${field} must be a non-negative integer`);
+      }
+      return field === "exact" ? { op, noun, exact: count as number } : { op, noun, minimum: count as number };
+    }
+    case "expectClosedOverlaysEmpty": {
+      keys(step, ["op"], location);
+      return { op };
     }
     case "expectDownload": {
       keys(step, ["op", "locator", "fileNameSuffix", "text"], location);
