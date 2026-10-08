@@ -17,10 +17,10 @@ import {
   groundedLocatorAnchors,
   NoLocatorProgressError,
   parseProbePlan,
+  isControllerCompatibilityStep,
   type ProbePlan,
 } from "./probe-schema.js";
-import { assertCoverageAccountedFor, scenarioOutcomes } from "./probe-coverage.js";
-import { assertCompatibilityPlan } from "./compatibility-contracts.js";
+import { assertCoverageAccountedFor, assertOutcomeAccounting, probeCoverageGaps, scenarioOutcomes } from "./probe-coverage.js";
 import { parsePlanReview, preparationReviewJsonSchema, type PlanReview, PROBE_REVIEW_JSON_SCHEMA } from "./semantic-review.js";
 
 export interface ProbePlanOptions {
@@ -125,7 +125,7 @@ export class LlmProbePlanner implements ProbePlanner {
     }
     const content = await this.complete(messages, options?.timeoutMs, undefined, options?.onUsage, options?.signal);
     const plan = this.parse(content, packet);
-    const hasOmissions = !!plan.uncoveredOutcomes?.length;
+    const hasOmissions = probeCoverageGaps(plan, packet.requirements).length > 0;
     if (!hasOmissions && !scenarioOutcomes(packet.requirements).some(item => item.clauseIndex !== undefined)) {
       return { ...plan, coverageReview: "verified" };
     }
@@ -294,10 +294,9 @@ export class LlmProbePlanner implements ProbePlanner {
     try {
       const review = parsePlanReview(value, packet, original, reviewTargets);
       if (review.status === "corrected") {
-        if (review.plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
+        if (review.plan.cases.some(probeCase => probeCase.steps.some(isControllerCompatibilityStep))) {
           throw new Error("Compatibility assertions are reserved for controller-owned compatibility plans");
         }
-        assertCompatibilityPlan(review.plan, packet);
       }
       return review;
     } catch (error) {
@@ -340,15 +339,13 @@ export class LlmProbePlanner implements ProbePlanner {
         throw new Error("Planner cannot supply controller coverage review state");
       }
       const plan = parseProbePlan(value, packet);
-      if (plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
+      if (plan.cases.some(probeCase => probeCase.steps.some(isControllerCompatibilityStep))) {
         throw new Error("Compatibility assertions are reserved for controller-owned compatibility plans");
       }
       if (packet.requirements) {
-        assertCoverageAccountedFor(plan, packet.requirements);
-        assertCompatibilityPlan(plan, {
-          requirements: packet.requirements,
-          prerequisites: packet.prerequisites,
-        });
+        // Keep structurally sound diagnostics for the module repair window.
+        // Missing semantic evidence remains a coverage gap, never verified.
+        assertOutcomeAccounting(plan, packet.requirements);
       }
       return plan;
     } catch (error) {

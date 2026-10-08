@@ -319,7 +319,7 @@ export function probeCoverageGaps(plan: ProbePlan, requirements: readonly Atomic
 }
 
 /** Account for every outcome at planning time, including honest DSL limitations. */
-export function assertCoverageAccountedFor(plan: ProbePlan, requirements: readonly AtomicRequirement[]): void {
+export function assertOutcomeAccounting(plan: ProbePlan, requirements: readonly AtomicRequirement[]): void {
   const outcomes = new Map(scenarioOutcomes(requirements).map(item => [outcomeKey(item), item]));
   const expected = new Set(outcomes.keys());
   const covered = new Set(plan.cases.flatMap(item => (item.outcomeChecks ?? []).map(outcomeKey)));
@@ -332,6 +332,12 @@ export function assertCoverageAccountedFor(plan: ProbePlan, requirements: readon
   }
   const missing = [...expected].filter(key => !covered.has(key) && !omitted.has(key));
   if (missing.length) throw new Error(`ProbePlan has unaccounted scenario outcomes: ${missing.join(", ")}`);
+}
+
+/** Full verification requires both honest accounting and actual semantic evidence. */
+export function assertCoverageAccountedFor(plan: ProbePlan, requirements: readonly AtomicRequirement[]): void {
+  assertOutcomeAccounting(plan, requirements);
+  const covered = new Set(plan.cases.flatMap(item => (item.outcomeChecks ?? []).map(outcomeKey)));
   const semantic = probeCoverageGaps(plan, requirements).filter(item => covered.has(outcomeKey(item)));
   if (semantic.length) {
     throw new Error(`ProbePlan has scenario outcomes without semantic assertion coverage: ${semantic.map(item =>

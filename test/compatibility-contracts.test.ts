@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { assertCompatibilityPlan, compatibilityApplicability } from "../src/judge/compatibility-contracts.js";
+import { assertCompatibilityPlan, compatibilityApplicability, resultCompatibilityPlan } from "../src/judge/compatibility-contracts.js";
 import { globalControlCrossRoutePlan, overlayLifecyclePlan } from "../src/judge/compatibility-probes.js";
 import type { ProbePlan } from "../src/judge/probe-schema.js";
 import type { WorkPacket } from "../src/types.js";
+import { loadRequirementCatalog } from "../src/catalog.js";
+import { auditPackets } from "../src/scheduler.js";
 
 function packet(text: string): WorkPacket {
   return { id: "anonymous", attempt: 1, requirementIds: ["A"], requirements: [{
@@ -128,6 +130,114 @@ test("global controls replay a grounded home action after an anonymous nested ro
   assert.equal(crossRoute.cases[0].setupStepCount, 5);
   assert.equal(crossRoute.cases[0].steps[4].op, "expectAwayFromHome");
   assert.equal(crossRoute.cases[0].steps[5].op, "fill");
+});
+
+test("detail conventions execute separately at their original scenario checkpoint", () => {
+  const input = packet("A unique tag identifies an independent record detail page.");
+  input.requirements[0].scenarioContracts = [{ id: "detail", name: "Open", steps: [
+    { keyword: "WHEN", content: "The visitor opens the exact `stable-1` record." },
+    { keyword: "THEN", content: "The record detail displays `stable-1`." },
+  ] }];
+  const plan: ProbePlan = { packetId: input.id, coverageReview: "pending", cases: [{
+    id: "detail", requirementIds: ["A"], purpose: "happy_path", expectationBasis: [input.requirements[0].text],
+    steps: [{ op: "goto", path: "/" }, { op: "expectVisible", locator: { by: "text", text: "stable-1", exact: true } },
+      { op: "click", locator: { by: "role", role: "link", name: "Another record", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "main" } }],
+    outcomeChecks: [{ scenarioId: "detail", stepIndex: 1, assertionIndexes: [1] }],
+  }] };
+  const original = structuredClone(plan);
+  const derived = resultCompatibilityPlan(input, plan)!;
+  assert.equal(derived.cases[0].steps.length, 3, "later navigation is not replayed before the detail check");
+  assert.deepEqual(derived.cases[0].steps.at(-1), { op: "expectVisible", locator: { by: "role", role: "heading", name: "stable-1", exact: true } });
+  assert.equal(derived.coverageReview, undefined);
+  assert.equal(derived.cases[0].outcomeChecks, undefined);
+  assert.deepEqual(plan, original);
+});
+
+test("duplicate identifier diagnostics stay in the failed form before any later navigation", () => {
+  const input = packet("The form publishes a unique tag for an independent record detail page and rejects duplicate tags.");
+  input.requirements[0].scenarioContracts = [{ id: "conflict", name: "Duplicate", steps: [
+    { keyword: "WHEN", content: "The user enters the existing tag `stable-1` and publishes the form." },
+    { keyword: "THEN", content: "The form displays `Tag already exists` and no duplicate record is created." },
+  ] }];
+  const plan: ProbePlan = { packetId: input.id, cases: [{ id: "conflict", requirementIds: ["A"], purpose: "negative",
+    expectationBasis: [input.requirements[0].text], steps: [
+      { op: "goto", path: "/" }, { op: "fill", locator: { by: "label", text: "Tag", exact: true }, value: "stable-1" },
+      { op: "expectText", locator: { by: "role", role: "alert" }, text: "Tag already exists" },
+      { op: "click", locator: { by: "role", role: "link", name: "Records", exact: true } },
+      { op: "expectVisible", locator: { by: "role", role: "main" } },
+    ], outcomeChecks: [{ scenarioId: "conflict", stepIndex: 1, clauseIndex: 0, assertionIndexes: [2] }] }] };
+  const derived = resultCompatibilityPlan(input, plan)!;
+  assert.equal(derived.cases[0].steps.length, 5);
+  assert.equal(derived.cases[0].steps[3].op, "expectValue");
+  assert.equal(derived.cases[0].steps[4].op, "expectFormContext");
+  assert.ok(!derived.cases[0].steps.some(step => step.op === "click"));
+  input.requirements[0].scenarioContracts[0].steps[0].content = "The user enters the existing tag `person@example.test`.";
+  const sensitiveField = plan.cases[0].steps[1];
+  if (sensitiveField.op === "fill") sensitiveField.value = "person@example.test";
+  assert.equal(resultCompatibilityPlan(input, plan), undefined, "sensitive identities are not echoed");
+  input.requirements[0].scenarioContracts[0].steps[0].content = "The user enters the existing identifier `opaque-id`.";
+  if (sensitiveField.op === "fill") {
+    sensitiveField.value = "opaque-id";
+    sensitiveField.locator = { by: "label", text: "API token" };
+  }
+  assert.equal(resultCompatibilityPlan(input, plan), undefined, "field semantics also exclude opaque secrets");
+});
+
+test("count diagnostics are bounded expressions and do not replace arithmetic outcome evidence", () => {
+  const input = packet("The record detail displays the item type and count.");
+  input.requirements[0].scenarioContracts = [{ id: "count", name: "Count", steps: [
+    { keyword: "WHEN", content: "The visitor opens the record." },
+    { keyword: "THEN", content: "The existing item count is visible." },
+  ] }];
+  const plan: ProbePlan = { packetId: input.id, cases: [{ id: "count", requirementIds: ["A"], purpose: "happy_path",
+    expectationBasis: [input.requirements[0].text], steps: [{ op: "goto", path: "/" },
+      { op: "expectVisible", locator: { by: "role", role: "main" } }],
+    outcomeChecks: [{ scenarioId: "count", stepIndex: 1, assertionIndexes: [1] }] }] };
+  assert.deepEqual(resultCompatibilityPlan(input, plan)!.cases[0].steps.at(-1), { op: "expectAccessibleCount", noun: "item", scope: { by: "role", role: "main" }, minimum: 0 });
+  delete input.requirements[0].product.evolution;
+  assert.equal(resultCompatibilityPlan(input, plan), undefined);
+});
+
+test("the current session corpus checks persistence after revocation, not after an earlier refresh", async () => {
+  const catalog = await loadRequirementCatalog("official-run/final-5/github/requirements/requirements.yaml", { inheritedApplication: true });
+  const input = auditPackets(catalog).find(packet => packet.requirementIds.includes("REQ-1-4"))!;
+  const scenario = input.requirements[0].scenarioContracts![1];
+  const source: ProbePlan = { packetId: input.id, cases: [{ id: "owner", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [scenario.steps[2].content], steps: [
+      { op: "goto", path: "/" }, { op: "reload" },
+      { op: "click", locator: { by: "role", role: "button", name: "Revoke session", exact: true } },
+      { op: "expectVisible", locator: { by: "text", text: "Session revoked", exact: true } },
+    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, clauseIndex: 0, assertionIndexes: [3] }] }] };
+  const derived = resultCompatibilityPlan(input, source)!;
+  assert.ok(derived.cases[0].id.startsWith("compat-persistence-"));
+  assert.equal(derived.cases[0].steps.at(-2)?.op, "reload", "the refresh must follow the actual revoke completion");
+  assert.equal(derived.cases[0].steps.at(-1)?.op, "expectVisible");
+});
+
+test("public re-entry belongs to the known revoked actor, and ambiguous identities are not guessed", async () => {
+  const catalog = await loadRequirementCatalog("official-run/final-5/github/requirements/requirements.yaml", { inheritedApplication: true });
+  const input = auditPackets(catalog).find(packet => packet.requirementIds.includes("REQ-1-4"))!;
+  const scenario = input.requirements[0].scenarioContracts![2];
+  const signIn = { by: "role" as const, role: "button", name: "Sign in", exact: true };
+  const source: ProbePlan = { packetId: input.id, cases: [{ id: "revoked", requirementIds: input.requirementIds,
+    purpose: "happy_path", expectationBasis: [scenario.steps[2].content], steps: [
+      { op: "goto", path: "/" }, { op: "fill", locator: { by: "label", text: "Username or email" }, value: "owner" },
+      { op: "click", locator: signIn }, { op: "newContext", actor: "peer" },
+      { op: "fill", locator: { by: "label", text: "Username or email" }, value: "owner" }, { op: "click", locator: signIn },
+      { op: "switchContext", actor: "default" }, { op: "click", locator: { by: "role", role: "button", name: "Revoke session" } },
+      { op: "reload" }, { op: "switchContext", actor: "peer" }, { op: "reload" },
+      { op: "expectVisible", locator: { by: "role", role: "main" } }, { op: "switchContext", actor: "default" },
+      { op: "expectVisible", locator: { by: "role", role: "main" } },
+    ], outcomeChecks: [{ scenarioId: scenario.id, stepIndex: 2, clauseIndex: 0, assertionIndexes: [11] }] }] };
+  const derived = resultCompatibilityPlan(input, source)!;
+  assert.equal(derived.cases[0].steps.at(-2)?.op, "reload");
+  assert.equal(derived.cases[0].steps.at(-3)?.op, "switchContext");
+  const actor = derived.cases[0].steps.at(-3)!;
+  assert.ok(actor.op === "switchContext" && actor.actor === "peer");
+  const otherIdentity = source.cases[0].steps[4];
+  if (otherIdentity.op === "fill") otherIdentity.value = "someone-else";
+  assert.equal(resultCompatibilityPlan(input, source), undefined);
 });
 
 test("shared closed surfaces are sampled at readiness without requiring a dialog to have been opened", () => {

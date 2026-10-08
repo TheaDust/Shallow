@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import { PlaywrightProbeRunner } from "../../src/judge/playwright-probe-runner.js";
 import { overlayLifecyclePlan } from "../../src/judge/compatibility-probes.js";
+import { resultCompatibilityPlan } from "../../src/judge/compatibility-contracts.js";
 import { toBuilderShadowObservation } from "../../src/builder/shadow-observation.js";
 import type { ProbePlan, ProbeStep } from "../../src/judge/probe-schema.js";
 import type { WorkPacket } from "../../src/types.js";
@@ -40,6 +41,45 @@ test("counts require one entity and retain the numeric expectation and observati
     const observation = toBuilderShadowObservation(report).failures.find(failure => failure.caseId === "wrong-target-count")!;
     assert.match(observation.message, /reaction.*exactly 1.*0 reactions/);
     assert.match(observation.accessibilityExcerpt!, /Target record/);
+  });
+});
+
+test("derived count diagnostics distinguish a bare number from a visible complete count", async () => {
+  const text = "The record detail displays the item type and count.";
+  const packet: WorkPacket = { id: "compatibility", attempt: 1, requirementIds: ["A"], requirements: [{
+    id: "A", name: "Counts", text, declarationIndex: 0, folderPath: ["ROOT"], dependencyIds: [], scenarios: [],
+    ancestors: [], references: [], exactUiStrings: [], seedDeclarations: [],
+    product: { rootId: "ROOT", rootName: "Anonymous", kind: "generic_web", description: "", seedData: [], evolution: true },
+    scenarioContracts: [{ id: "count", name: "Read", steps: [{ keyword: "WHEN", content: "The visitor opens the record." },
+      { keyword: "THEN", content: "The existing item count is visible." }] }],
+  }] };
+  const business = cases([["count", [{ op: "expectVisible", locator: { by: "role", role: "main" } }]]]);
+  business.cases[0].outcomeChecks = [{ scenarioId: "count", stepIndex: 1, assertionIndexes: [1] }];
+  const diagnostic = resultCompatibilityPlan(packet, business)!;
+  for (const [count, verdict] of [["1", "fail"], ["1 item", "pass"]]) {
+    await withPage(`<main><h1>Record</h1><span>${count}</span></main>`, async baseUrl => {
+      const runner = new PlaywrightProbeRunner();
+      assert.equal((await runner.run(business, { baseUrl, stepTimeoutMs: 600, caseTimeoutMs: 4000 })).verdict, "pass");
+      assert.equal((await runner.run(diagnostic, { baseUrl, stepTimeoutMs: 600, caseTimeoutMs: 4000 })).verdict, verdict);
+    });
+  }
+});
+
+test("failed-form identity cannot be supplied by another list or a hidden form node", async () => {
+  const locator = { by: "label", text: "Tag", exact: true } as const;
+  const plan = cases([["context", [{ op: "expectValue", locator, value: "stable-1" },
+    { op: "expectFormContext", locator, value: "stable-1" }]]]);
+  for (const [content, verdict] of [
+    ['<p hidden>stable-1</p>', "fail"], ['', "fail"], ['<p>stable-1</p>', "pass"],
+  ]) await withPage(`<main><form><label>Tag<input value="stable-1"></label><p role="alert">Already exists</p>${content}</form>
+    <section aria-label="Records"><a href="#/records/1">stable-1</a></section></main>`, async baseUrl => {
+    const report = await new PlaywrightProbeRunner().run(plan, { baseUrl, stepTimeoutMs: 600, caseTimeoutMs: 4000 });
+    assert.equal(report.verdict, verdict);
+    if (verdict === "fail") assert.match(report.failures[0].message, /failed form/);
+  });
+  await withPage('<main><div role="form"><label>Tag<input value="stable-1"></label><p>stable-1</p></div></main>', async baseUrl => {
+    const report = await new PlaywrightProbeRunner().run(plan, { baseUrl, stepTimeoutMs: 600, caseTimeoutMs: 4000 });
+    assert.equal(report.verdict, "inconclusive", "a legitimate non-native form cannot authorize an application repair");
   });
 });
 

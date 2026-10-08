@@ -49,9 +49,9 @@ function nestedPrefix(cases: readonly ProbeCase[]): { probeCase: ProbeCase; step
   let fallback: { probeCase: ProbeCase; steps: ProbeStep[] } | undefined;
   for (const probeCase of cases) {
     const setupCount = probeCase.setupStepCount ?? 0;
-    if (setupCount > 14) continue;
     let lastAssertion = -1;
     let navigation = false;
+    let openedLink = false;
     let extendedNavigation = false;
     for (let index = 0; index < Math.min(probeCase.steps.length, 14); index += 1) {
       const step = probeCase.steps[index];
@@ -60,10 +60,11 @@ function nestedPrefix(cases: readonly ProbeCase[]): { probeCase: ProbeCase; step
         step.locator.by === "role" && step.locator.role === "searchbox";
       if (index >= setupCount && !link && !search && step.op !== "goto" && !step.op.startsWith("expect")) break;
       if (link || search) navigation = true;
+      if (link) openedLink = true;
       if (index >= setupCount && (link || search)) extendedNavigation = true;
       if (step.op.startsWith("expect")) lastAssertion = index;
     }
-    if (navigation && lastAssertion > 1) {
+    if (navigation && openedLink && lastAssertion > 1) {
       const candidate = { probeCase, steps: probeCase.steps.slice(0, lastAssertion + 1) };
       const checkpoint = probeCase.steps[lastAssertion];
       if (extendedNavigation || "locator" in checkpoint && checkpoint.locator.by === "role" && checkpoint.locator.role === "heading") return candidate;

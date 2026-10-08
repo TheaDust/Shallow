@@ -222,6 +222,21 @@ async function executeStep(
     }
     return session;
   }
+  if (step.op === "expectFormContext") {
+    const field = await resolveLocator(session, { op: "expectValue", locator: step.locator, value: step.value }, timeoutMs);
+    const form = field.locator("xpath=ancestor::form[1]");
+    if (await form.count() !== 1) throw new ProbeExecutionError("runner", "The submitted field has no established native form context");
+    try {
+      // The submitted field identifies the existing native form. A list or a
+      // hidden template elsewhere cannot satisfy a failed-form convention.
+      await expect(form).toBeVisible({ timeout: timeoutMs });
+      const identifier = form.getByText(step.value, { exact: true }).filter({ visible: true });
+      await expect(identifier).toHaveCount(1, { timeout: timeoutMs });
+      return session;
+    } catch (error) {
+      throw new ProbeExecutionError("assertion", `The failed form must visibly retain one submitted identifier ${JSON.stringify(step.value)}: ${compactError(error)}`);
+    }
+  }
   if (step.op === "reload") {
     try {
       await session.page.reload({ waitUntil: "domcontentloaded", timeout: timeoutMs });

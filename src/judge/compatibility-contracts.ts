@@ -1,6 +1,8 @@
 import type { WorkPacket } from "../types.js";
 import type { ProbeCase, ProbeLocator, ProbePlan, ProbeStep } from "./probe-schema.js";
-import { declaredGlobalSearchControls, requirementEvidenceTexts } from "./probe-schema.js";
+import { declaredGlobalSearchControls, PROBE_LIMITS, requirementEvidenceTexts } from "./probe-schema.js";
+import { probeCoverageGaps, scenarioOutcomes } from "./probe-coverage.js";
+import { maskRequirementLiterals } from "../requirement-text.js";
 
 type CompatibilityPacket = Pick<WorkPacket, "requirements"> & Partial<Pick<WorkPacket, "prerequisites">>;
 
@@ -42,6 +44,142 @@ export function assertCompatibilityPlan(plan: ProbePlan, packet: CompatibilityPa
   if (applies.authPublicEntry) assertAuthPublicEntry(plan, packet);
   if (applies.entityDetailIdentity) assertDetailIdentityHeadings(plan, packet);
   if (applies.uniquePublishConflict) assertUniqueConflictContext(plan, packet);
+}
+
+/** Execute conventions against the candidate, rather than discarding a useful
+ * business plan because the model omitted a convention. No outcome mappings or
+ * completeness metadata are copied: these samples never verify a requirement. */
+export function resultCompatibilityPlan(packet: CompatibilityPacket & Pick<WorkPacket, "id">,
+  plan: ProbePlan | undefined): ProbePlan | undefined {
+  if (!plan || !packet.requirements.some(item => item.product.evolution)) return undefined;
+  const applies = compatibilityApplicability(packet);
+  const gaps = probeCoverageGaps(plan, packet.requirements);
+  const cases: ProbeCase[] = [];
+  const add = (source: ProbeCase, kind: string, end: number, assertions: ProbeStep[]): void => {
+    const setup = source.setupStepCount ?? 0;
+    if (!assertions.length || end < setup || end + 1 + assertions.length - setup > PROBE_LIMITS.businessSteps) return;
+    cases.push({ id: `compat-${kind}-${source.id}-${cases.length}`, requirementIds: source.requirementIds,
+      purpose: source.purpose, expectationBasis: source.expectationBasis,
+      ...(setup ? { setupStepCount: setup } : {}),
+      steps: [...structuredClone(source.steps.slice(0, end + 1)), ...assertions] });
+  };
+  for (const requirement of packet.requirements) for (const scenario of requirement.scenarioContracts ?? []) {
+    const results = scenarioOutcomes([requirement]).filter(item => item.scenarioId === scenario.id);
+    const then = results.map(item => item.text).join(" ");
+    const when = scenario.steps.find(step => step.keyword.toUpperCase() === "WHEN")?.content ?? "";
+    const given = scenario.steps.slice(0, scenario.steps.findIndex(step => step.keyword.toUpperCase() === "WHEN"))
+      .map(step => step.content).join(" ");
+    const sources = plan.cases.filter(item => item.outcomeChecks?.some(check => check.scenarioId === scenario.id));
+    for (const source of sources.slice(0, 1)) {
+      const checkpoint = Math.max(...source.outcomeChecks!.filter(check => check.scenarioId === scenario.id)
+        .flatMap(check => check.assertionIndexes.map(index => index + (source.setupStepCount ?? 0))));
+      if (applies.entityDetailIdentity && /\bdetail\b[^.!?]*\bdisplays?\b/i.test(then)) {
+        const value = detailIdentityValue(then, when);
+        if (value && !sensitive(value) && !source.steps.some(step => exactHeading(step, value))) {
+          add(source, "identity", checkpoint, [{ op: "expectVisible",
+            locator: { by: "role", role: "heading", name: value, exact: true } }]);
+        }
+      }
+      if (applies.uniquePublishConflict && /\b(?:already exists|duplicate|conflict)\b/i.test(then)) {
+        const value = /\b(?:existing|duplicate|conflicting)\b[^`]{0,80}`([^`]+)`/i.exec(when)?.[1];
+        const filled = source.steps.findIndex(step => step.op === "fill" && step.value === value);
+        const field = source.steps[filled];
+        const error = source.steps.findIndex((step, index) => index > filled && (
+          step.op === "expectText" && /\b(?:already exists|duplicate|conflict)\b/i.test(step.text) ||
+          step.op === "expectVisible" && /\b(?:already exists|duplicate|conflict)\b/i.test("locator" in step ? locatorName(step.locator) ?? "" : "")));
+        if (value && !sensitive(value) && field?.op === "fill" && error >= 0 &&
+          !/(?:password|token|secret|email|api[ _-]?key)/i.test(locatorName(field.locator) ?? "")) {
+          add(source, "conflict", error, [
+            { op: "expectValue", locator: structuredClone(field.locator), value },
+            { op: "expectFormContext", locator: structuredClone(field.locator), value },
+          ]);
+        }
+      }
+      if (applies.authPublicEntry && /\brevoked browser\b/i.test(then)) {
+        const context = revocationContext(source, declaredPublicEntryLinks(packet), checkpoint);
+        const reload = context?.revoked === undefined ? -1 : source.steps.findIndex((step, index) =>
+          index > context.action && step.op === "reload" && context.actors[index] === context.revoked);
+        const names = declaredPublicEntryLinks(packet);
+        if (reload >= 0 && names.length === 1) add(source, "auth", reload, [{ op: "expectVisible",
+          locator: { by: "role", role: "link", name: names[0], exact: true, scope: { by: "role", role: "main" } } }]);
+      }
+      const countGap = gaps.some(item => item.scenarioId === scenario.id && /count/i.test(item.reason));
+      if (countGap && /\bdetail\b/i.test(requirement.text)) {
+        const noun = [...maskRequirementLiterals(requirement.text).matchAll(/\b([a-z][\w-]*)\s+(?:type\s+and\s+)?counts?\b/gi)]
+          .map(match => match[1]).find(value => !/^(?:a|the|existing|updated|original|current|total|own)$/i.test(value));
+        if (noun) {
+          const returnsEmpty = /\b(?:returns? to|original value)\b/i.test(then) &&
+            /\bhas not\b/i.test(maskRequirementLiterals(given)) &&
+            new RegExp(`\\bno other\\b[^.!?]{0,60}\\b${noun}s?\\b`, "i").test(maskRequirementLiterals(given));
+          // This convention proves the complete count expression only. Actual
+          // arithmetic stays an uncovered business fact until independently checked.
+          add(source, "count", checkpoint, [{ op: "expectAccessibleCount", noun, scope: { by: "role", role: "main" },
+            ...(returnsEmpty ? { exact: 0 } : { minimum: 0 }) }]);
+        }
+      }
+      for (const outcome of results) {
+        const capitalState = /\bis\s+(Active|Inactive|Archived|Revoked)\b/.exec(outcome.text)?.[1];
+        if (!capitalState || !gaps.some(item => item.scenarioId === outcome.scenarioId && item.stepIndex === outcome.stepIndex &&
+          (item.clauseIndex ?? 0) === (outcome.clauseIndex ?? 0) && /state fact/i.test(item.reason))) continue;
+        const mapping = source.outcomeChecks!.find(check => check.scenarioId === outcome.scenarioId && check.stepIndex === outcome.stepIndex &&
+          (check.clauseIndex ?? 0) === (outcome.clauseIndex ?? 0));
+        if (mapping) add(source, "state", Math.max(...mapping.assertionIndexes) + (source.setupStepCount ?? 0), [{ op: "expectVisible",
+          locator: { by: "text", text: capitalState, exact: true, scope: { by: "role", role: "main" } } }]);
+      }
+      if (/\brevoked\b/i.test(then) && /\binactive\b/i.test(then) && /\bor\b/i.test(maskRequirementLiterals(then)) &&
+        /\b(?:reload|refresh)\b/i.test(scenario.steps.map(step => step.content).join(" "))) {
+        const marker = [...then.matchAll(/`([^`]+)`|“([^”]+)”|"([^"\n]+)"/g)]
+          .map(match => match[1] ?? match[2] ?? match[3])
+          .find(value => /\b(?:revoked|inactive|ended|expired)\b/i.test(value)) ?? "revoked";
+        const context = revocationContext(source, declaredPublicEntryLinks(packet), checkpoint);
+        if (context) {
+          const reload = source.steps.findIndex((step, index) => index > context.action && step.op === "reload" && context.actors[index] === context.owner);
+          const completed = source.steps.findIndex((step, index) => index > context.action && context.actors[index] === context.owner && (
+            step.op === "expectText" && [marker.toLowerCase(), "inactive"].includes(step.text.toLowerCase()) ||
+            step.op === "expectVisible" && [marker.toLowerCase(), "inactive"].includes((locatorName(step.locator) ?? "").toLowerCase()) ||
+            (step.op === "expectHidden" || step.op === "expectCount" && step.count === 0) &&
+              JSON.stringify(step.locator) === JSON.stringify((source.steps[context.action] as Extract<ProbeStep, { op: "click" }>).locator)));
+          const end = reload >= 0 ? reload : completed;
+          if (end >= 0) add(source, "persistence", end, [
+            ...(reload >= 0 ? [] : [{ op: "reload" as const }]),
+            { op: "expectVisible", locator: { by: "text", text: marker, exact: false, scope: { by: "role", role: "main" },
+              fallbacks: [{ by: "text", text: "inactive", exact: false, scope: { by: "role", role: "main" } }] } },
+          ]);
+        }
+      }
+    }
+  }
+  // One packet is one atomic audit; keep diagnostic browser work bounded.
+  return cases.length ? { packetId: plan.packetId, cases: cases.slice(0, 3) } : undefined;
+}
+
+/** Only a known owner and its unique, equally authenticated peer establish the
+ * browser to inspect. Unknown or overwritten contexts cannot authorize a guess. */
+function revocationContext(source: ProbeCase, entryNames: string[], checkpoint: number):
+  { action: number; owner: string; revoked?: string; actors: Array<string | undefined> } | undefined {
+  let actor: string | undefined = "default";
+  let ambiguous = false;
+  const known = new Set(["default"]);
+  const identifiers = new Map<string, string>();
+  const authenticated = new Map<string, string>();
+  const actors: Array<string | undefined> = [];
+  let context: { action: number; owner: string; revoked?: string; actors: Array<string | undefined> } | undefined;
+  for (const [index, step] of source.steps.entries()) {
+    if (step.op === "newContext") {
+      actor = step.actor;
+      if (!actor || known.has(actor)) ambiguous = true;
+      if (actor) known.add(actor);
+    } else if (step.op === "switchContext") actor = step.actor;
+    actors.push(actor);
+    if (actor && step.op === "fill" && /\b(?:username|email)\b/i.test(locatorName(step.locator) ?? "")) identifiers.set(actor, step.value);
+    if (actor && step.op === "click" && entryNames.includes(locatorName(step.locator) ?? "") && identifiers.has(actor)) authenticated.set(actor, identifiers.get(actor)!);
+    if (index <= checkpoint && actor && step.op === "click" && /\b(?:revoke|expire|end session)\b/i.test(locatorName(step.locator) ?? "")) {
+      const peers = [...known].filter(name => name !== actor);
+      const peer = !ambiguous && peers.length === 1 && authenticated.has(actor) && authenticated.get(actor) === authenticated.get(peers[0]) ? peers[0] : undefined;
+      context = { action: index, owner: actor, revoked: peer, actors };
+    }
+  }
+  return context;
 }
 
 function assertAuthPublicEntry(plan: ProbePlan, packet: CompatibilityPacket): void {

@@ -69,7 +69,9 @@ async function performAudit(packet: WorkPacket, cached: ProbePlan | undefined,
     if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, reason: "audit budget exhausted" };
     plan ??= await planProbe(packet, options, deps, state, remaining, policy.retryPlan !== false);
     if (!plan) return { status: "inconclusive", failureKind: "planning", reason: "probe planner failed" };
-    if (plan.coverageReview === "pending") {
+    // A known coverage gap must not hide independently executable diagnostics.
+    // Full plans with only an unresolved review retain the existing review gate.
+    if (plan.coverageReview === "pending" && probeCoverageGaps(plan, packet.requirements).length === 0) {
       if (!policy.refineLocators) {
         return { status: "inconclusive", failureKind: "review", plan,
           reason: "probe plan completeness review is unresolved" };
@@ -114,8 +116,11 @@ async function performAudit(packet: WorkPacket, cached: ProbePlan | undefined,
     }
     if (first.report.verdict === "pass") {
       if (plan.coverageReview === "pending") {
-        return { status: "inconclusive", failureKind: "review", plan, report: first.report,
-          reason: "probe plan completeness review is unresolved" };
+        const gaps = probeCoverageGaps(plan, packet.requirements);
+        return { status: "inconclusive", failureKind: gaps.length ? "coverage" : "review", plan, report: first.report,
+          ...(gaps.length ? { coverageGaps: gaps } : {}),
+          reason: gaps.length ? `${gaps.length} scenario outcomes lack verified assertion coverage`
+            : "probe plan completeness review is unresolved" };
       }
       if (!first.navigationRecovered) return { status: "verified", plan, report: first.report };
       if (remaining() <= 0) return { status: "inconclusive", failureKind: "budget", plan, report: first.report, reason: "navigation recovery confirmation budget exhausted" };

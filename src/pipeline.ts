@@ -33,6 +33,7 @@ import { RunBudget, type PipelinePhase } from "./run-budget.js";
 import { auditPacket, type AuditResult, type AuditPolicy } from "./judge/audit.js";
 import { publicEntryPlan } from "./judge/public-entry.js";
 import { globalControlCrossRoutePlan, overlayLifecyclePlan } from "./judge/compatibility-probes.js";
+import { resultCompatibilityPlan } from "./judge/compatibility-contracts.js";
 import { groundedLocatorNames, parseProbePlan, probePlanSha256, type ProbePlan } from "./judge/probe-schema.js";
 import { repairCaseProgress } from "./judge/repair-progress.js";
 import { PlanCache, shouldWritePlanCache, spawnPlanGeneration } from "./judge/plan-cache.js";
@@ -382,10 +383,10 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
         const plan = previous.plan ?? await planCache.read(packetToCheck);
         if (!plan || (previous.status !== "verified" && !passed.length)) continue;
         const guard = previous.status === "verified" ? plan : {
-          ...plan, cases: plan.cases.filter(item => passed.includes(item.id)),
+          packetId: plan.packetId, cases: plan.cases.filter(item => passed.includes(item.id)),
         };
         const checked = await auditPacket(packetToCheck, guard, options, deps, state,
-          () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false });
+          () => budget.remaining("implementation"), { refineLocators: false, retryPlan: false, checkCoverage: false });
         if (checked.status !== "verified") throw new Error(`Interrupted work did not preserve previously passed behavior: ${packetToCheck.requirementIds.join(", ")}`);
         if (checked.plan) {
           const recovered = mergeCheckedPlan(plan, checked.plan, packetToCheck);
@@ -503,6 +504,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     // its full audit and the current boundary's existing repair quota.
     const moduleOf = (packet: WorkPacket) => packet.requirements[0].folderPath[1] ?? packet.requirements[0].id;
     const coveredModules = new Set(targetPackets.map(moduleOf));
+    const partialModules = new Set<string>();
     const regressionChecks: Array<{ packet: WorkPacket; plan: ProbePlan }> = [];
     // Prefer a declared global entry over an object shortcut in the same module.
     // Its contract matters even when it has no standalone seed declaration.
@@ -512,13 +514,20 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
     for (const packet of regressionPackets) {
       const previous = results.get(packet.id);
       const ownerModule = moduleOf(packet);
-      if (coveredModules.has(ownerModule) || previous?.status !== "verified" || !previous.plan ||
+      const partial = previous?.status !== "verified" && (previous?.report?.passedCases.length ?? 0) > 0;
+      // A verified prerequisite covers its own paths, not a sibling's passed
+      // cases whose remaining outcomes are still inconclusive.
+      if (packetIds.includes(packet.id) || !previous?.plan ||
+        (partial ? partialModules.has(ownerModule) : coveredModules.has(ownerModule)) ||
         (!publicEntry(packet) && !packet.requirements.some(item => item.seedDeclarations.length > 0 || item.product.seedData.length > 0))) continue;
-      const entry = previous.plan.cases.find(item => item.purpose === "happy_path") ??
-        previous.plan.cases.find(item => item.purpose === "persistence");
+      const passed = new Set(previous.report?.passedCases ?? []);
+      const successful = previous.plan.cases.filter(item => previous.status === "verified" || passed.has(item.id));
+      const entry = successful.find(item => item.purpose === "happy_path") ??
+        successful.find(item => item.purpose === "persistence") ?? (partial ? successful[0] : undefined);
       if (!entry || budget.remaining("audit") <= 0) continue;
       coveredModules.add(ownerModule);
-      const check = { packet, plan: { ...previous.plan, cases: [entry] } };
+      if (partial) partialModules.add(ownerModule);
+      const check = { packet, plan: { packetId: previous.plan.packetId, cases: [entry] } };
       regressionChecks.push(check);
       const checked = await auditPacket(packet, check.plan, options, deps, state,
         () => budget.remaining("audit"), { refineLocators: false, retryPlan: false, checkCoverage: false });
@@ -600,16 +609,28 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       if (!plan) continue;
       addCompatibility(packet, plan);
     }
+    // Individual passed cases remain useful even when another outcome keeps
+    // the requirement inconclusive. Samples discard whole-plan review metadata.
+    const successfulPlan = (result: AuditResult | undefined): ProbePlan | undefined => {
+      if (!result?.plan) return undefined;
+      const passed = new Set(result.report?.passedCases ?? []);
+      const cases = result.plan.cases.filter(item => result.status === "verified" || passed.has(item.id));
+      return cases.length ? { packetId: result.plan.packetId, cases } : undefined;
+    };
+    for (const packet of modulePackets.filter(auditEligible)) {
+      const plan = resultCompatibilityPlan(packet, successfulPlan(results.get(packet.id)));
+      if (plan) addCompatibility(packet, plan);
+    }
     const sources = packets.flatMap(packet => {
-      const result = results.get(packet.id);
-      return result?.status === "verified" && result.plan ? [{ packet, plan: result.plan }] : [];
+      const plan = successfulPlan(results.get(packet.id));
+      return plan ? [{ packet, plan }] : [];
     });
-    // One nested-route sample per module is sufficient to prove that a declared
-    // global control keeps its home-page action semantics away from `/`.
+    // Sample an actually opened entity in the current module. A search-results
+    // page alone cannot expose a control that changes scope on entity pages.
     for (const packet of modulePackets.filter(auditEligible)) {
       const result = results.get(packet.id);
       const crossRoute = globalControlCrossRoutePlan(packet,
-        result?.status === "verified" ? result.plan : undefined, sources);
+        successfulPlan(result), sources);
       if (!crossRoute) continue;
       addCompatibility(packet, crossRoute);
       break;
@@ -618,7 +639,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       const result = await checkCompatibility(check.packet, check.plan, "audit");
       compatibilityChecks.set(id, { ...check, result });
       if (result.status === "passed") for (const probeCase of check.plan.cases) {
-        const kind = probeCase.id.startsWith("compat-global-") ? "global" : "overlay";
+        const kind = probeCase.id.split("-")[1] === "closed" ? "overlay" : probeCase.id.split("-")[1];
         compatibilityGuards.set(kind, { packet: check.packet, plan: { packetId: check.plan.packetId, cases: [probeCase] } });
       }
       if (result.status === "failed" && !targetPackets.includes(check.packet)) targetPackets.push(check.packet);
@@ -728,7 +749,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
           if (budget.remaining("repair") <= 0) { regressed = true; break; }
           const cachedPlan = previous.plan ?? await planCache.read(packet);
           const guardPlan = previous.status === "verified" ? cachedPlan : {
-            ...cachedPlan!, cases: cachedPlan!.cases.filter(item => passed.includes(item.id)),
+            packetId: cachedPlan!.packetId, cases: cachedPlan!.cases.filter(item => passed.includes(item.id)),
           };
           const policy = previous.status === "verified" ? recoveryAuditPolicy : { refineLocators: false };
           const recheck = await checkGuard(packet, guardPlan!, policy);
@@ -746,7 +767,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             pendingCriticalGuards.push({ packet: check.packet, plan: check.plan, policy });
           }
           const previous = results.get(check.packet.id)!;
-          if (recheck.plan) rechecked.set(check.packet.id, { ...previous, ...recheck,
+          if (recheck.plan) rechecked.set(check.packet.id, { ...previous, ...(previous.status === "verified" ? recheck : {}),
             plan: mergeCheckedPlan(previous.plan!, recheck.plan, check.packet) });
         }
         const reAudit = new Map<string, AuditResult>();
@@ -760,7 +781,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
             reAudit.set(packet.id, r);
             const progress = repairCaseProgress(results.get(packet.id)!, r);
             if (progress.passed.length && r.status !== "verified") {
-              const confirmation = await auditPacket(packet, { ...r.plan!,
+              const confirmation = await auditPacket(packet, { packetId: r.plan!.packetId,
                 cases: r.plan!.cases.filter(item => progress.passed.includes(item.id)) },
               options, deps, state, () => budget.remaining("repair"), { refineLocators: false, checkCoverage: false });
               if (confirmation.status !== "verified") { progressUnconfirmed = true; break; }
@@ -848,7 +869,7 @@ export async function runPipeline(options: PipelineOptions, deps: PipelineDeps):
       compatibilityChecks = nextCompatibilityChecks;
       for (const check of compatibilityChecks.values()) if (check.result.status === "passed") {
         for (const probeCase of check.plan.cases) {
-          const kind = probeCase.id.startsWith("compat-global-") ? "global" : "overlay";
+          const kind = probeCase.id.split("-")[1] === "closed" ? "overlay" : probeCase.id.split("-")[1];
           compatibilityGuards.set(kind, { packet: check.packet, plan: { packetId: check.plan.packetId, cases: [probeCase] } });
         }
       }

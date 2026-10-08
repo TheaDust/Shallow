@@ -4,9 +4,8 @@ import { join } from "node:path";
 
 import type { WorkPacket } from "../types.js";
 import { planValidationFeedback, type ProbePlanner } from "./llm-probe-planner.js";
-import { parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
-import { assertCoverageAccountedFor } from "./probe-coverage.js";
-import { assertCompatibilityPlan } from "./compatibility-contracts.js";
+import { isControllerCompatibilityStep, parseProbePlan, probePlanSha256, type ProbePlan } from "./probe-schema.js";
+import { assertCoverageAccountedFor, assertOutcomeAccounting } from "./probe-coverage.js";
 
 /** A packet as `parseProbePlan` accepts it: the cache must re-validate on read. */
 type CachedPacket = Pick<WorkPacket, "id" | "requirementIds"> &
@@ -39,11 +38,9 @@ export class PlanCache {
       const plan = parseProbePlan(JSON.parse(raw), packet);
       assertCacheablePlan(plan);
       if (packet.requirements) {
-        assertCoverageAccountedFor(plan, packet.requirements);
-        assertCompatibilityPlan(plan, {
-          requirements: packet.requirements,
-          prerequisites: packet.prerequisites,
-        });
+        assertOutcomeAccounting(plan, packet.requirements);
+        try { assertCoverageAccountedFor(plan, packet.requirements); }
+        catch { return { ...plan, coverageReview: "pending" }; }
       }
       return plan;
     } catch {
@@ -124,7 +121,7 @@ export function spawnPlanGeneration(
 }
 
 function assertCacheablePlan(plan: ProbePlan): void {
-  if (plan.cases.some(probeCase => probeCase.steps.some(step => ["expectClosedOverlaysEmpty", "expectAwayFromHome"].includes(step.op)))) {
+  if (plan.cases.some(probeCase => probeCase.steps.some(isControllerCompatibilityStep))) {
     throw new Error("Controller-owned compatibility steps cannot be stored as requirement plans");
   }
 }

@@ -72,6 +72,7 @@ export type ProbeStep =
   /** Controller-owned compatibility assertion. It is never accepted from Planner JSON. */
   | { op: "expectClosedOverlaysEmpty" }
   | { op: "expectAwayFromHome" }
+  | { op: "expectFormContext"; locator: ProbeLocator; value: string }
   | { op: "reload" }
   | { op: "newContext"; actor?: string }
   | { op: "switchContext"; actor: string };
@@ -96,6 +97,10 @@ export interface ProbePlan {
   navigationRecovered?: boolean;
   /** Controller-owned completeness review state; never sent to the planner. */
   coverageReview?: "verified" | "pending";
+}
+
+export function isControllerCompatibilityStep(step: ProbeStep): boolean {
+  return step.op === "expectClosedOverlaysEmpty" || step.op === "expectAwayFromHome" || step.op === "expectFormContext";
 }
 
 const MAX_CASES = 12;
@@ -1065,6 +1070,10 @@ function parseStep(value: unknown, location: string): ProbeStep {
       }
       const scope = step.scope == null ? {} : { scope: parseScope(step.scope, `${location}.scope`) };
       return field === "exact" ? { op, noun, exact: count as number, ...scope } : { op, noun, minimum: count as number, ...scope };
+    }
+    case "expectFormContext": {
+      keys(step, ["op", "locator", "value"], location);
+      return { op, locator: parseLocator(step.locator, `${location}.locator`), value: dataText(step.value, `${location}.value`) };
     }
     case "expectAwayFromHome":
     case "expectClosedOverlaysEmpty": {
