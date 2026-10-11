@@ -4,6 +4,8 @@ ShallowCode 是面向 GOSIM Factory / ARC-Bench 的轻量 coding-agent 控制器
 
 Pi coding-agent（`@mariozechner/pi-coding-agent`）是唯一实现目标应用业务代码的 Builder。控制器负责调度与验收，并可安装任务无关的脚手架和通用能力。核心原则是 **Never let the builder grade itself**。
 
+> 与比赛解耦后的 ShallowCode 维护在新仓库 [TheaDust/shallow-code](https://github.com/TheaDust/shallow-code.git)，仍在迭代中。
+
 ## 工作方式
 
 ```mermaid
